@@ -14,9 +14,9 @@
 use std::path::PathBuf;
 
 #[cfg(windows)]
-const LLAMA_SERVER_NAME: &str = "llama-server.exe";
+pub(crate) const LLAMA_SERVER_NAME: &str = "llama-server.exe";
 #[cfg(not(windows))]
-const LLAMA_SERVER_NAME: &str = "llama-server";
+pub(crate) const LLAMA_SERVER_NAME: &str = "llama-server";
 
 fn exe_dir() -> Option<PathBuf> {
     std::env::current_exe()
@@ -63,8 +63,29 @@ pub fn bundled_models_dir() -> PathBuf {
 /// scanned from. Always under the user's home directory so it's writable
 /// regardless of where the app itself is installed/mounted from.
 pub fn user_models_dir() -> PathBuf {
-    let home = directories::BaseDirs::new()
+    home_dir().join(".quickai").join("models")
+}
+
+fn home_dir() -> PathBuf {
+    directories::BaseDirs::new()
         .map(|d| d.home_dir().to_path_buf())
-        .unwrap_or_else(std::env::temp_dir);
-    home.join(".quickai").join("models")
+        .unwrap_or_else(std::env::temp_dir)
+}
+
+/// Parent of every per-build directory `llama_bin_install_dir` creates.
+/// `llama_install::list_installed` scans this so a build downloaded in an
+/// earlier run still shows up (and can be re-selected or deleted) even
+/// after it's aged out of "Look up llama.cpp builds"' GitHub results,
+/// which only ever shows a handful of the most recent releases.
+pub fn llama_bin_root_dir() -> PathBuf {
+    home_dir().join(".quickai").join("llama-bin")
+}
+
+/// Where a `llama-server` build fetched via ⚙ Settings' "Look up llama.cpp
+/// builds" gets installed, one subdirectory per build (`label` — see
+/// `llama_releases::LlamaBuild::install_label`) since the binary needs its
+/// shared libraries sitting right next to it and different builds' same-
+/// named libs (`libggml.so`, etc.) must not clobber each other.
+pub fn llama_bin_install_dir(label: &str) -> PathBuf {
+    llama_bin_root_dir().join(label)
 }

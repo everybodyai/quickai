@@ -5,7 +5,10 @@
 
 mod app;
 mod downloader;
+mod gpu;
 mod hardware;
+mod llama_install;
+mod llama_releases;
 mod models;
 mod paths;
 mod proxy;
