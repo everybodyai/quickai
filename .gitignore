@@ -1,0 +1,18 @@
+# Build output
+/target/
+/dist/
+
+# GGUF models — large binaries, not source. The bundled model is fetched
+# automatically by the build scripts (see build/common.sh:fetch_model) if
+# it's missing; other models are user-provided (see README.md).
+/models/
+
+# Vendored llama.cpp checkout (its own git repo — built locally via cmake,
+# see README.md "Rebuilding llama.cpp"). Not our source, and huge.
+/llama.cpp/
+
+# Packaging scratch/cache: re-created by build/appimage.sh each run, and
+# downloaded release artifacts cached by build/common.sh + build/appimage.sh.
+/build/AppDir/
+/build/.cache/
+/build/appimagetool-*.AppImage
