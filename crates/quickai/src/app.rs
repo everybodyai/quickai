@@ -5,7 +5,10 @@ use crossbeam_channel::Receiver;
 use eframe::egui;
 
 use crate::downloader::{self, DownloadEvent, DownloadHandle};
+use crate::gpu::{self, GpuVendor};
 use crate::hardware;
+use crate::llama_install::{self, InstallEvent, InstallHandle};
+use crate::llama_releases::{self, BuildLookupEvent, LlamaBuild};
 use crate::models::{discover_all, ModelEntry};
 use crate::paths;
 use crate::proxy::TrafficEvent;
@@ -63,6 +66,22 @@ pub struct App {
     /// `None` shows every session at once; `Some(session_key)` filters the
     /// 📡 Live tab down to just that client — see `TrafficTurn::session`.
     selected_session: Option<String>,
+    /// GPU vendor(s) this machine looks like it has — see `gpu::detect`.
+    /// Best-effort and computed once; only used to warn about a vendor-
+    /// locked llama.cpp build (CUDA/ROCm) that won't match the hardware.
+    gpu_vendors: Vec<GpuVendor>,
+    show_llama_lookup: bool,
+    llama_lookup_rx: Option<Receiver<BuildLookupEvent>>,
+    llama_lookup_results: Vec<LlamaBuild>,
+    llama_lookup_status: String,
+    /// Live text filter over `llama_lookup_results` — cleared whenever a
+    /// fresh lookup starts, since it's a client-side narrowing of that
+    /// specific result set rather than a search term of its own.
+    llama_lookup_filter: String,
+    llama_install: Option<InstallHandle>,
+    /// A delete awaiting user confirmation — see `PendingDelete` and
+    /// `show_confirm_delete_modal`.
+    pending_delete: Option<PendingDelete>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -89,6 +108,15 @@ struct TrafficTurn {
 }
 
 const MAX_TRAFFIC_TURNS: usize = 200;
+
+/// A destructive delete waiting on user confirmation via a modal — see
+/// `show_confirm_delete_modal`. Holding the info needed to both describe
+/// and perform the delete means the modal doesn't need to re-derive it
+/// (or risk acting on a stale index) once the user confirms.
+enum PendingDelete {
+    Model { filename: String, path: PathBuf },
+    LlamaBuild { label: String, install_dir: PathBuf },
+}
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -162,6 +190,14 @@ impl App {
             active_tab: Tab::Main,
             traffic: VecDeque::new(),
             selected_session: None,
+            gpu_vendors: gpu::detect(),
+            show_llama_lookup: false,
+            llama_lookup_rx: None,
+            llama_lookup_results: Vec::new(),
+            llama_lookup_status: String::new(),
+            llama_lookup_filter: String::new(),
+            llama_install: None,
+            pending_delete: None,
         }
     }
 
@@ -319,6 +355,65 @@ impl App {
         }
     }
 
+    /// Drains the llama.cpp build-lookup channel, if a search is running —
+    /// same shape as `poll_lookup`, for the models list.
+    fn poll_llama_lookup(&mut self) {
+        let Some(rx) = self.llama_lookup_rx.take() else {
+            return;
+        };
+        let mut done = false;
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                BuildLookupEvent::Found(b) => self.llama_lookup_results.push(b),
+                BuildLookupEvent::Status(s) => self.llama_lookup_status = s,
+                BuildLookupEvent::Done => done = true,
+            }
+        }
+        if done {
+            self.llama_lookup_status = if self.llama_lookup_results.is_empty() {
+                "No compatible builds found.".to_string()
+            } else {
+                format!("Found {} build(s).", self.llama_lookup_results.len())
+            };
+        } else {
+            self.llama_lookup_rx = Some(rx);
+        }
+    }
+
+    /// Drains the in-flight llama-server install's channel, if any. On
+    /// completion, points ⚙ Settings' binary override straight at the
+    /// freshly-installed executable and persists it — same idea as
+    /// `poll_download` selecting a newly-downloaded model.
+    fn poll_llama_install(&mut self) {
+        let Some(mut handle) = self.llama_install.take() else {
+            return;
+        };
+        let mut result = None;
+        while let Ok(event) = handle.rx.try_recv() {
+            match event {
+                InstallEvent::Progress { downloaded, total } => {
+                    handle.downloaded = downloaded;
+                    handle.total = total;
+                }
+                InstallEvent::Done(path) => result = Some(Ok(path)),
+                InstallEvent::Failed(msg) => result = Some(Err(msg)),
+            }
+        }
+        match result {
+            Some(Ok(path)) => {
+                self.push_log(format!("llama-server build installed: {}", path.display()));
+                self.llama_bin_input = path.display().to_string();
+                self.llama_server_bin = path.clone();
+                self.llama_bin_override = Some(path);
+                self.missing_binary_warned = false;
+                self.settings_error = None;
+                self.save_settings();
+            }
+            Some(Err(msg)) => self.push_log(format!("llama-server install failed: {msg}")),
+            None => self.llama_install = Some(handle),
+        }
+    }
+
     fn state_color(state: ServerState) -> egui::Color32 {
         match state {
             ServerState::Idle => egui::Color32::GRAY,
@@ -377,6 +472,62 @@ impl App {
                     }
                 });
 
+                let mut downloaded_model_indices: Vec<usize> = self
+                    .models
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, m)| !m.path.starts_with(&self.bundled_models_dir))
+                    .map(|(i, _)| i)
+                    .collect();
+                // Most-recently-downloaded first — a model has no other
+                // notion of "latest", so this uses the file's own mtime.
+                downloaded_model_indices.sort_by_key(|&i| {
+                    std::cmp::Reverse(
+                        std::fs::metadata(&self.models[i].path)
+                            .and_then(|m| m.modified())
+                            .ok(),
+                    )
+                });
+                if !downloaded_model_indices.is_empty() {
+                    ui.add_space(8.0);
+                    ui.label(egui::RichText::new("Downloaded models").strong())
+                        .on_hover_text(
+                            "Models fetched via the \"Model\" box, \"Look up online\", or \
+                             dropped into the folder above by hand, newest first. Bundled \
+                             models aren't listed here — they can't be deleted.",
+                        );
+                    let mut to_delete: Option<PendingDelete> = None;
+                    egui::ScrollArea::vertical()
+                        .id_salt("downloaded_models_scroll")
+                        .auto_shrink([false, true])
+                        .max_height(list_scroll_height(ui, DELETE_LIST_MAX_ROWS))
+                        .show(ui, |ui| {
+                            for &i in &downloaded_model_indices {
+                                let m = &self.models[i];
+                                ui.horizontal(|ui| {
+                                    if ui
+                                        .add(egui::Button::new("🗑").small())
+                                        .on_hover_text("Delete this model from disk")
+                                        .clicked()
+                                    {
+                                        to_delete = Some(PendingDelete::Model {
+                                            filename: m.filename.clone(),
+                                            path: m.path.clone(),
+                                        });
+                                    }
+                                    ui.label(format!(
+                                        "{} ({})",
+                                        m.display,
+                                        hardware::format_bytes(m.size_bytes)
+                                    ));
+                                });
+                            }
+                        });
+                    if let Some(pending) = to_delete {
+                        self.pending_delete = Some(pending);
+                    }
+                }
+
                 ui.add_space(10.0);
                 let active = self.manager.is_active();
                 ui.add_enabled_ui(!active, |ui| {
@@ -412,24 +563,65 @@ impl App {
                     .show(ui, |ui| {
                         ui.label("llama-server binary:").on_hover_text(
                             "Override the auto-detected llama-server executable — point this \
-                             at a custom build (e.g. a different backend, or a newer version). \
-                             Leave blank to use the bundled/auto-detected one.",
-                        );
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.llama_bin_input)
-                                .desired_width(ui.available_width())
-                                .hint_text(paths::llama_server_bin().display().to_string()),
+                             at a custom build (e.g. a different backend, or a newer version), \
+                             or paste a direct download URL to a release archive (.zip/.tar.gz) \
+                             to fetch and install it automatically. Leave blank to use the \
+                             bundled/auto-detected one.",
                         );
                         ui.horizontal(|ui| {
-                            if ui.button("Apply").clicked() {
-                                let trimmed = self.llama_bin_input.trim();
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.llama_bin_input)
+                                    .desired_width(ui.available_width() - 30.0)
+                                    .hint_text("Local binary path or a download URL..."),
+                            );
+                            if ui
+                                .button("...")
+                                .on_hover_text("Browse for a llama-server executable")
+                                .clicked()
+                            {
+                                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                                    self.llama_bin_input = path.display().to_string();
+                                }
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            let trimmed = self.llama_bin_input.trim().to_string();
+                            let is_url = downloader::looks_like_url(&trimmed);
+                            let apply_label = if is_url { "Download" } else { "Apply" };
+                            let apply_hover = if is_url {
+                                "Download and install a llama-server build from this direct \
+                                 URL (e.g. a release asset link copied from GitHub), then \
+                                 switch to it automatically — no need to go through \"Look up \
+                                 llama.cpp builds\" first."
+                            } else {
+                                "Point at an already-downloaded llama-server executable on \
+                                 disk, or leave blank to reset to the bundled/auto-detected one."
+                            };
+                            if ui
+                                .add_enabled(
+                                    self.llama_install.is_none(),
+                                    egui::Button::new(apply_label),
+                                )
+                                .on_hover_text(apply_hover)
+                                .clicked()
+                            {
                                 if trimmed.is_empty() {
                                     self.llama_server_bin = paths::llama_server_bin();
                                     self.llama_bin_override = None;
                                     self.missing_binary_warned = false;
                                     self.settings_error = None;
+                                    self.save_settings();
+                                } else if is_url {
+                                    self.settings_error = None;
+                                    let label = llama_install::label_from_url(&trimmed);
+                                    let ctx_clone = ui.ctx().clone();
+                                    self.llama_install = Some(llama_install::spawn_install(
+                                        trimmed,
+                                        label,
+                                        move || ctx_clone.request_repaint(),
+                                    ));
                                 } else {
-                                    let candidate = PathBuf::from(trimmed);
+                                    let candidate = PathBuf::from(&trimmed);
                                     if candidate.is_file() {
                                         self.llama_server_bin = candidate.clone();
                                         self.llama_bin_override = Some(candidate);
@@ -438,8 +630,8 @@ impl App {
                                     } else {
                                         self.settings_error = Some(format!("No file at {trimmed}"));
                                     }
+                                    self.save_settings();
                                 }
-                                self.save_settings();
                             }
                             if ui.button("Reset to default").clicked() {
                                 self.llama_bin_input.clear();
@@ -450,6 +642,255 @@ impl App {
                                 self.save_settings();
                             }
                         });
+
+                        let installed_builds = llama_install::list_installed();
+                        if !installed_builds.is_empty() {
+                            ui.add_space(8.0);
+                            ui.label(egui::RichText::new("Installed builds").strong())
+                                .on_hover_text(
+                                    "llama-server builds downloaded via \"Look up llama.cpp \
+                                     builds\" in an earlier run, most recently installed \
+                                     first — still listed here even once that list (which only \
+                                     ever shows a handful of the most recent GitHub releases) \
+                                     no longer includes them. \"Use\" switches to one \
+                                     instantly, with no re-download.",
+                                );
+                            let mut to_select: Option<PathBuf> = None;
+                            let mut to_delete: Option<PendingDelete> = None;
+                            egui::ScrollArea::vertical()
+                                .id_salt("installed_builds_scroll")
+                                .auto_shrink([false, true])
+                                .max_height(list_scroll_height(ui, DELETE_LIST_MAX_ROWS))
+                                .show(ui, |ui| {
+                                    for build in &installed_builds {
+                                        let is_current = self.llama_bin_override.as_deref()
+                                            == Some(build.binary_path.as_path());
+                                        ui.horizontal(|ui| {
+                                            if ui.selectable_label(is_current, "Use").clicked()
+                                                && !is_current
+                                            {
+                                                to_select = Some(build.binary_path.clone());
+                                            }
+                                            if ui
+                                                .add(egui::Button::new("🗑").small())
+                                                .on_hover_text("Delete this installed build")
+                                                .clicked()
+                                            {
+                                                to_delete = Some(PendingDelete::LlamaBuild {
+                                                    label: build.label.clone(),
+                                                    install_dir: build.install_dir.clone(),
+                                                });
+                                            }
+                                            let backend =
+                                                llama_releases::backend_label(&build.label);
+                                            ui.label(format!(
+                                                "{} ({backend}, {})",
+                                                build.label,
+                                                hardware::format_bytes(build.size_bytes)
+                                            ));
+                                        });
+                                    }
+                                });
+                            if let Some(path) = to_select {
+                                self.llama_bin_input = path.display().to_string();
+                                self.llama_server_bin = path.clone();
+                                self.llama_bin_override = Some(path);
+                                self.missing_binary_warned = false;
+                                self.settings_error = None;
+                                self.save_settings();
+                            }
+                            if let Some(pending) = to_delete {
+                                self.pending_delete = Some(pending);
+                            }
+                        }
+
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add_enabled(
+                                    self.llama_install.is_none(),
+                                    egui::Button::new("Look up llama.cpp builds"),
+                                )
+                                .on_hover_text(
+                                    "List recent llama-server builds published on llama.cpp's \
+                                     own GitHub releases, filtered to ones that match this \
+                                     machine's OS/CPU. Picking one downloads and installs it \
+                                     under ~/.quickai/llama-bin and applies it automatically — \
+                                     useful when the current binary can't load a model (e.g. a \
+                                     newer architecture) or doesn't match your GPU.",
+                                )
+                                .clicked()
+                            {
+                                self.show_llama_lookup = true;
+                                self.llama_lookup_results.clear();
+                                self.llama_lookup_filter.clear();
+                                self.llama_lookup_status =
+                                    "Checking github.com/ggml-org/llama.cpp releases...".into();
+                                let ctx_clone = ui.ctx().clone();
+                                self.llama_lookup_rx = Some(llama_releases::spawn_lookup(
+                                    move || ctx_clone.request_repaint(),
+                                ));
+                            }
+                            if self.show_llama_lookup
+                                && ui
+                                    .add(egui::Button::new("X").small())
+                                    .on_hover_text("Close build list")
+                                    .clicked()
+                            {
+                                self.show_llama_lookup = false;
+                            }
+                        });
+
+                        if let Some(handle) = &self.llama_install {
+                            ui.add_space(4.0);
+                            let text = match handle.total.filter(|t| *t > 0) {
+                                Some(total) => format!(
+                                    "Installing {}: {} / {}",
+                                    handle.label,
+                                    hardware::format_bytes(handle.downloaded),
+                                    hardware::format_bytes(total)
+                                ),
+                                None => format!(
+                                    "Installing {}: {}",
+                                    handle.label,
+                                    hardware::format_bytes(handle.downloaded)
+                                ),
+                            };
+                            ui.colored_label(egui::Color32::from_rgb(212, 160, 23), text);
+                            if let Some(total) = handle.total.filter(|t| *t > 0) {
+                                ui.add(egui::ProgressBar::new(
+                                    handle.downloaded as f32 / total as f32,
+                                ));
+                            }
+                        }
+
+                        if self.show_llama_lookup {
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new(&self.llama_lookup_status)
+                                    .small()
+                                    .color(egui::Color32::GRAY),
+                            );
+                            if self.llama_lookup_results.len() > 4 {
+                                ui.horizontal(|ui| {
+                                    ui.label("Filter:");
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut self.llama_lookup_filter)
+                                            .desired_width(160.0)
+                                            .hint_text("e.g. vulkan, rocm, b110..."),
+                                    )
+                                    .on_hover_text(
+                                        "Narrow the list below by tag, filename, or backend \
+                                         (CUDA/Vulkan/SYCL/ROCm/CPU) — matched against what's \
+                                         already listed, no extra lookup.",
+                                    );
+                                    if !self.llama_lookup_filter.is_empty()
+                                        && ui.add(egui::Button::new("X").small()).clicked()
+                                    {
+                                        self.llama_lookup_filter.clear();
+                                    }
+                                });
+                            }
+
+                            let mut to_install: Option<usize> = None;
+                            let mut reset_to_default = false;
+                            let filter = self.llama_lookup_filter.trim().to_ascii_lowercase();
+
+                            egui::ScrollArea::vertical()
+                                .id_salt("llama_lookup_results_scroll")
+                                .auto_shrink([false, true])
+                                .max_height(200.0)
+                                .show(ui, |ui| {
+                                    let is_default = self.llama_bin_override.is_none();
+                                    if filter.is_empty() {
+                                        ui.horizontal(|ui| {
+                                            if ui
+                                                .selectable_label(is_default, "Bundled/default")
+                                                .clicked()
+                                                && !is_default
+                                            {
+                                                reset_to_default = true;
+                                            }
+                                            ui.label(
+                                                egui::RichText::new(
+                                                    paths::llama_server_bin().display().to_string(),
+                                                )
+                                                .small()
+                                                .color(egui::Color32::GRAY),
+                                            );
+                                        });
+                                    }
+                                    let mut shown = 0;
+                                    for (i, b) in self.llama_lookup_results.iter().enumerate() {
+                                        let backend = llama_releases::backend_label(&b.asset_name);
+                                        if !filter.is_empty() {
+                                            let haystack = format!("{} {} {backend}", b.tag, b.asset_name)
+                                                .to_ascii_lowercase();
+                                            if !haystack.contains(&filter) {
+                                                continue;
+                                            }
+                                        }
+                                        shown += 1;
+                                        let label = b.install_label();
+                                        let is_current = self
+                                            .llama_bin_override
+                                            .as_ref()
+                                            .is_some_and(|p| p.display().to_string().contains(&label));
+                                        ui.horizontal(|ui| {
+                                            if ui.selectable_label(is_current, "Use").clicked()
+                                                && !is_current
+                                            {
+                                                to_install = Some(i);
+                                            }
+                                            let size = b
+                                                .size_bytes
+                                                .map(hardware::format_bytes)
+                                                .unwrap_or_else(|| "?".into());
+                                            ui.label(format!(
+                                                "{} — {} ({backend}, {size})",
+                                                b.tag, b.asset_name
+                                            ));
+                                        });
+                                        if let Some(warning) =
+                                            gpu::mismatch_warning(&self.gpu_vendors, backend)
+                                        {
+                                            ui.label(
+                                                egui::RichText::new(warning)
+                                                    .small()
+                                                    .color(egui::Color32::from_rgb(212, 160, 23)),
+                                            );
+                                        }
+                                    }
+                                    if shown == 0 && !filter.is_empty() {
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "No builds match \"{}\".",
+                                                self.llama_lookup_filter.trim()
+                                            ))
+                                            .small()
+                                            .color(egui::Color32::GRAY),
+                                        );
+                                    }
+                                });
+
+                            if reset_to_default {
+                                self.llama_bin_input.clear();
+                                self.llama_server_bin = paths::llama_server_bin();
+                                self.llama_bin_override = None;
+                                self.missing_binary_warned = false;
+                                self.settings_error = None;
+                                self.save_settings();
+                            }
+                            if let Some(i) = to_install {
+                                let b = &self.llama_lookup_results[i];
+                                let ctx_clone = ui.ctx().clone();
+                                self.llama_install = Some(llama_install::spawn_install(
+                                    b.url.clone(),
+                                    b.install_label(),
+                                    move || ctx_clone.request_repaint(),
+                                ));
+                            }
+                        }
 
                         ui.add_space(8.0);
                         ui.label("Extra command-line arguments:").on_hover_text(
@@ -529,8 +970,10 @@ impl App {
                         ui.label(
                             "Everything runs locally on this machine — your prompts and any files \
                          you feed the model never leave it, except when you explicitly use the \
-                         \"Model\" box or \"Look up online\", which contact the URL you gave or \
-                         Hugging Face to fetch/search for a file. Model output can be inaccurate, \
+                         \"Model\" box or \"Look up online\" (which contact the URL you gave or \
+                         Hugging Face to fetch/search for a file) or ⚙ Settings' \"Look up \
+                         llama.cpp builds\" (which contacts GitHub to list/download \
+                         llama-server releases). Model output can be inaccurate, \
                          biased, or simply wrong; treat it as a draft, not a fact, and don't \
                          rely on it for medical, legal, financial, or other safety-critical \
                          decisions. This software is provided \"as is\", without warranty of \
@@ -568,6 +1011,79 @@ impl App {
         self.show_about = open && !close_clicked;
     }
 
+    /// Shows a blocking "are you sure?" modal for `self.pending_delete`, if
+    /// any — the confirmation step every delete button (model or installed
+    /// llama-server build) goes through before anything actually touches
+    /// disk. A no-op when nothing is pending.
+    fn show_confirm_delete_modal(&mut self, ctx: &egui::Context) {
+        let Some(pending) = &self.pending_delete else {
+            return;
+        };
+        let (title, body) = match pending {
+            PendingDelete::Model { filename, .. } => (
+                "Delete model?",
+                format!("Delete \"{filename}\" from disk? This can't be undone."),
+            ),
+            PendingDelete::LlamaBuild { label, .. } => (
+                "Delete llama-server build?",
+                format!("Delete the installed build \"{label}\" from disk? This can't be undone."),
+            ),
+        };
+
+        let mut confirmed = false;
+        let mut cancelled = false;
+        let modal = egui::Modal::new(egui::Id::new("confirm_delete_modal")).show(ctx, |ui| {
+            ui.set_width(320.0);
+            ui.label(egui::RichText::new(title).strong());
+            ui.add_space(6.0);
+            ui.label(body);
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                if ui.button("Cancel").clicked() {
+                    cancelled = true;
+                }
+                if ui.button("Delete").clicked() {
+                    confirmed = true;
+                }
+            });
+        });
+        if modal.should_close() {
+            cancelled = true;
+        }
+
+        if confirmed {
+            match self.pending_delete.take() {
+                Some(PendingDelete::Model { filename, path }) => {
+                    match std::fs::remove_file(&path) {
+                        Ok(()) => self.push_log(format!("Deleted model: {filename}")),
+                        Err(e) => self.push_log(format!("Could not delete {filename}: {e}")),
+                    }
+                    self.rescan_models();
+                }
+                Some(PendingDelete::LlamaBuild { label, install_dir }) => {
+                    let was_active = self
+                        .llama_bin_override
+                        .as_deref()
+                        .is_some_and(|p| p.starts_with(&install_dir));
+                    match llama_install::delete_installed(&install_dir) {
+                        Ok(()) => self.push_log(format!("Deleted llama-server build: {label}")),
+                        Err(e) => self.push_log(format!("Could not delete build {label}: {e}")),
+                    }
+                    if was_active {
+                        self.llama_bin_input.clear();
+                        self.llama_server_bin = paths::llama_server_bin();
+                        self.llama_bin_override = None;
+                        self.missing_binary_warned = false;
+                        self.save_settings();
+                    }
+                }
+                None => {}
+            }
+        } else if cancelled {
+            self.pending_delete = None;
+        }
+    }
+
     /// Every distinct client (see `TrafficTurn::session`) that has shown up
     /// in the 📡 Live Traffic feed so far, in first-seen order.
     fn session_keys(&self) -> Vec<String> {
@@ -601,10 +1117,11 @@ impl App {
             .default_size(220.0)
             .size_range(160.0..=360.0)
             .show(ui, |ui| {
-                ui.label(
-                    "Click a client below to view just its conversation, or \"All\" for \
-                     everything mixed together.",
-                );
+                ui.label(egui::RichText::new("Conversations").strong())
+                    .on_hover_text(
+                        "Click a client below to view just its conversation, or \"All\" for \
+                         everything mixed together.",
+                    );
                 ui.add_space(6.0);
                 ui.separator();
 
@@ -673,73 +1190,94 @@ impl App {
                 }
             });
 
-        egui::CentralPanel::default().show(ui, |ui| {
-            ui.label(
-                "Every chat/completion request hitting this model, from any client, shown \
-                 as it happens.",
+        // Matches the left panel's frame margin (`Frame::side_top_panel`'s
+        // `Margin::symmetric(8, 2)`) instead of `CentralPanel`'s wider
+        // default top margin, so the two headers line up on the same row
+        // rather than the right one sitting a few pixels lower.
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin::symmetric(8, 2)),
             )
-            .on_hover_text(
-                "Only chat/completion endpoints are shown here — other traffic (the chat \
-                 UI's own page assets, health checks, etc.) is relayed to llama-server as \
-                 normal but not logged.",
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new("Live chat/completion traffic").strong())
+                .on_hover_text(
+                "Every chat/completion request hitting this model, from any client, shown as \
+                 it happens. Only chat/completion endpoints are shown here — other traffic \
+                 (the chat UI's own page assets, health checks, etc.) is relayed to \
+                 llama-server as normal but not logged.",
             );
-            ui.add_space(6.0);
-            ui.separator();
+                ui.add_space(6.0);
+                ui.separator();
 
-            let selected = self.selected_session.clone();
-            egui::ScrollArea::vertical()
-                .stick_to_bottom(true)
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    for turn in self
-                        .traffic
-                        .iter()
-                        .filter(|t| selected.as_deref().is_none_or(|s| t.session == s))
-                    {
-                        ui.group(|ui| {
-                            ui.set_width(ui.available_width());
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(format!("{} {}", turn.method, turn.path))
+                let selected = self.selected_session.clone();
+                egui::ScrollArea::vertical()
+                    .stick_to_bottom(true)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        for turn in self
+                            .traffic
+                            .iter()
+                            .filter(|t| selected.as_deref().is_none_or(|s| t.session == s))
+                        {
+                            ui.group(|ui| {
+                                ui.set_width(ui.available_width());
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "{} {}",
+                                            turn.method, turn.path
+                                        ))
                                         .strong()
                                         .monospace(),
-                                );
-                                if !turn.done {
+                                    );
+                                    if !turn.done {
+                                        ui.label(
+                                            egui::RichText::new("● live")
+                                                .color(egui::Color32::from_rgb(46, 139, 50)),
+                                        );
+                                    }
+                                });
+                                if let Some(prompt) = &turn.prompt {
                                     ui.label(
-                                        egui::RichText::new("● live")
-                                            .color(egui::Color32::from_rgb(46, 139, 50)),
+                                        egui::RichText::new(format!("↳ {prompt}"))
+                                            .color(egui::Color32::GRAY),
+                                    );
+                                }
+                                for attachment in &turn.attachments {
+                                    ui.label(
+                                        egui::RichText::new(format!("↳ {attachment}"))
+                                            .color(egui::Color32::GRAY),
+                                    );
+                                }
+                                if !turn.response.is_empty() {
+                                    ui.label(&turn.response);
+                                } else if turn.error.is_none() && !turn.done {
+                                    ui.label(egui::RichText::new("…").color(egui::Color32::GRAY));
+                                }
+                                if let Some(err) = &turn.error {
+                                    ui.colored_label(
+                                        egui::Color32::from_rgb(192, 57, 43),
+                                        format!("error: {err}"),
                                     );
                                 }
                             });
-                            if let Some(prompt) = &turn.prompt {
-                                ui.label(
-                                    egui::RichText::new(format!("↳ {prompt}"))
-                                        .color(egui::Color32::GRAY),
-                                );
-                            }
-                            for attachment in &turn.attachments {
-                                ui.label(
-                                    egui::RichText::new(format!("↳ {attachment}"))
-                                        .color(egui::Color32::GRAY),
-                                );
-                            }
-                            if !turn.response.is_empty() {
-                                ui.label(&turn.response);
-                            } else if turn.error.is_none() && !turn.done {
-                                ui.label(egui::RichText::new("…").color(egui::Color32::GRAY));
-                            }
-                            if let Some(err) = &turn.error {
-                                ui.colored_label(
-                                    egui::Color32::from_rgb(192, 57, 43),
-                                    format!("error: {err}"),
-                                );
-                            }
-                        });
-                        ui.add_space(4.0);
-                    }
-                });
-        });
+                            ui.add_space(4.0);
+                        }
+                    });
+            });
     }
+}
+
+/// How many rows the "Downloaded models"/"Installed builds" delete lists
+/// (⚙ Settings) show before scrolling, so a long download history doesn't
+/// push the rest of the window down.
+const DELETE_LIST_MAX_ROWS: usize = 4;
+
+/// Height for a `ScrollArea` that shows exactly `rows` list rows — each
+/// row is a `ui.horizontal` containing an interactive widget, so its
+/// height is governed by `interact_size.y` plus the spacing between rows.
+fn list_scroll_height(ui: &egui::Ui, rows: usize) -> f32 {
+    (ui.spacing().interact_size.y + ui.spacing().item_spacing.y) * rows as f32
 }
 
 /// Shortens `s` to at most `max_chars` characters (UTF-8-safe), replacing
@@ -772,6 +1310,8 @@ impl eframe::App for App {
         }
         self.poll_download();
         self.poll_lookup();
+        self.poll_llama_lookup();
+        self.poll_llama_install();
 
         let active = self.manager.is_active();
         let state = self.manager.state();
@@ -1365,6 +1905,43 @@ impl eframe::App for App {
                 );
             }
 
+            if state == ServerState::Crashed {
+                ui.add_space(6.0);
+                ui.group(|ui| {
+                    ui.colored_label(
+                        Self::state_color(state),
+                        "The server exited before it finished starting — see the log below \
+                         for the exact reason (a common one: \"unknown model architecture\", \
+                         meaning this llama-server build predates support for this model).",
+                    );
+                    let backend = llama_releases::backend_label(
+                        &self.llama_server_bin.display().to_string(),
+                    );
+                    if let Some(warning) = gpu::mismatch_warning(&self.gpu_vendors, backend) {
+                        ui.label(
+                            egui::RichText::new(warning)
+                                .small()
+                                .color(egui::Color32::from_rgb(212, 160, 23)),
+                        );
+                    }
+                    ui.label(
+                        egui::RichText::new(
+                            "Worth trying a different llama-server build:\n\
+                             1. Open ⚙ Settings → Advanced: llama.cpp.\n\
+                             2. Click \"Look up llama.cpp builds\" and pick one for your \
+                                platform/GPU from the list — it installs and applies \
+                                automatically.\n\
+                             3. Or, if you already have a llama-server build of your own \
+                                (a different backend, a custom compile, etc.), type or browse \
+                                to its path in the \"llama-server binary\" field above and \
+                                click Apply instead.\n\
+                             4. Click Start again.",
+                        )
+                        .small(),
+                    );
+                });
+            }
+
             ui.add_space(8.0);
             ui.separator();
             egui::ScrollArea::vertical()
@@ -1380,6 +1957,7 @@ impl eframe::App for App {
 
         self.show_settings_window(ui.ctx());
         self.show_about_window(ui.ctx());
+        self.show_confirm_delete_modal(ui.ctx());
     }
 
     fn on_exit(&mut self) {
