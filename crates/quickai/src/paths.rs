@@ -19,7 +19,10 @@ const LLAMA_SERVER_NAME: &str = "llama-server.exe";
 const LLAMA_SERVER_NAME: &str = "llama-server";
 
 fn exe_dir() -> Option<PathBuf> {
-    std::env::current_exe().ok()?.parent().map(|p| p.to_path_buf())
+    std::env::current_exe()
+        .ok()?
+        .parent()
+        .map(|p| p.to_path_buf())
 }
 
 fn dev_repo_root() -> PathBuf {

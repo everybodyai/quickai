@@ -19,6 +19,29 @@ pub fn looks_like_url(input: &str) -> bool {
     lower.starts_with("http://") || lower.starts_with("https://")
 }
 
+/// Symlinks `dest` to `source` if this platform supports it (Unix always
+/// does; Windows only without extra privilege outside Developer Mode) —
+/// `spawn_download`'s preferred way to make an imported local file show up
+/// in models_dir, since unlike a hard link it works across filesystem/
+/// volume boundaries too.
+#[cfg(unix)]
+fn try_symlink(source: &Path, dest: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(source, dest)
+}
+
+#[cfg(windows)]
+fn try_symlink(source: &Path, dest: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_file(source, dest)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn try_symlink(_source: &Path, _dest: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "symlinks not supported on this platform",
+    ))
+}
+
 pub enum DownloadEvent {
     Progress { downloaded: u64, total: Option<u64> },
     Done(String),
@@ -158,21 +181,36 @@ pub fn spawn_download(
             let metadata = match std::fs::metadata(&source) {
                 Ok(m) => m,
                 Err(e) => {
-                    send(DownloadEvent::Failed(format!("can't read {}: {e}", source.display())));
+                    send(DownloadEvent::Failed(format!(
+                        "can't read {}: {e}",
+                        source.display()
+                    )));
                     return;
                 }
             };
             if !metadata.is_file() {
-                send(DownloadEvent::Failed(format!("{} is not a file", source.display())));
+                send(DownloadEvent::Failed(format!(
+                    "{} is not a file",
+                    source.display()
+                )));
                 return;
             }
 
-            // Fast path: a hard link costs no extra disk space and is
-            // effectively instant regardless of model size, as long as
-            // source and models_dir share a filesystem/volume. Falls back
-            // to a real (chunked, progress-reporting) copy otherwise —
-            // e.g. the file lives on a different drive.
-            if std::fs::hard_link(&source, &final_path).is_ok() {
+            // Fast path: link rather than copy, so the original file stays
+            // exactly where it is (e.g. picked via the "..." browse button
+            // from anywhere on disk) and only a link shows up in
+            // models_dir — enough for it to appear in the model list,
+            // without an extra multi-GB copy. A symlink is tried first
+            // since, unlike a hard link, it works across filesystem/volume
+            // boundaries; a hard link is tried next since it needs no
+            // extra privilege on Windows (symlinks there need Developer
+            // Mode or admin) as long as source and models_dir share a
+            // volume. Falls back to a real (chunked, progress-reporting)
+            // copy only if neither link works.
+            let source_abs = std::fs::canonicalize(&source).unwrap_or_else(|_| source.clone());
+            if try_symlink(&source_abs, &final_path).is_ok()
+                || std::fs::hard_link(&source, &final_path).is_ok()
+            {
                 send(DownloadEvent::Progress {
                     downloaded: metadata.len(),
                     total: Some(metadata.len()),
@@ -184,7 +222,10 @@ pub fn spawn_download(
             let mut reader = match std::fs::File::open(&source) {
                 Ok(f) => f,
                 Err(e) => {
-                    send(DownloadEvent::Failed(format!("could not open {}: {e}", source.display())));
+                    send(DownloadEvent::Failed(format!(
+                        "could not open {}: {e}",
+                        source.display()
+                    )));
                     return;
                 }
             };
@@ -246,11 +287,16 @@ mod tests {
             }
         }
 
-        let filename = result.expect("download did not finish within timeout").expect("download failed");
+        let filename = result
+            .expect("download did not finish within timeout")
+            .expect("download failed");
         let path = dir.join(&filename);
         assert!(path.is_file(), "expected {} to exist", path.display());
         assert!(std::fs::metadata(&path).unwrap().len() > 0);
-        assert!(!dir.join(format!("{filename}.part")).exists(), "leftover .part file");
+        assert!(
+            !dir.join(format!("{filename}.part")).exists(),
+            "leftover .part file"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -265,9 +311,13 @@ mod tests {
         assert!(!looks_like_url("model.gguf"));
     }
 
-    /// A local path (not a URL) should be imported by filesystem copy/link
+    /// A local path (not a URL) should be imported by filesystem link/copy
     /// rather than an HTTP request, landing in models_dir under its own
-    /// filename with identical contents.
+    /// filename with identical contents. Source and dest here share a
+    /// filesystem (both under the OS temp dir), so this exercises the
+    /// symlink fast path specifically — the source file must stay in place
+    /// under its own path, untouched, with only a link appearing in
+    /// models_dir.
     #[test]
     fn imports_local_file_by_path() {
         let base = std::env::temp_dir().join(format!("quickai-import-test-{}", std::process::id()));
@@ -278,7 +328,12 @@ mod tests {
         let source_path = source_dir.join("my-model.gguf");
         std::fs::write(&source_path, b"fake gguf contents").unwrap();
 
-        let handle = spawn_download(source_path.display().to_string(), None, dest_dir.clone(), || {});
+        let handle = spawn_download(
+            source_path.display().to_string(),
+            None,
+            dest_dir.clone(),
+            || {},
+        );
         assert_eq!(handle.verb, "Importing");
 
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -293,11 +348,59 @@ mod tests {
             }
         }
 
-        let filename = result.expect("import did not finish within timeout").expect("import failed");
+        let filename = result
+            .expect("import did not finish within timeout")
+            .expect("import failed");
         assert_eq!(filename, "my-model.gguf");
         let imported_path = dest_dir.join(&filename);
-        assert_eq!(std::fs::read(&imported_path).unwrap(), b"fake gguf contents");
-        assert!(!dest_dir.join(format!("{filename}.part")).exists(), "leftover .part file");
+        assert_eq!(
+            std::fs::read(&imported_path).unwrap(),
+            b"fake gguf contents"
+        );
+        // Unix can always create a symlink without special privilege, so
+        // this is guaranteed there; Windows needs Developer Mode/admin for
+        // symlinks and falls back to a hard link instead, which this test
+        // doesn't have a portable std-only way to distinguish from a copy.
+        #[cfg(unix)]
+        assert!(
+            std::fs::symlink_metadata(&imported_path)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "expected a symlink into models_dir, not a copy"
+        );
+        assert!(
+            source_path.is_file(),
+            "source file should stay in place, untouched"
+        );
+        assert!(
+            !dest_dir.join(format!("{filename}.part")).exists(),
+            "leftover .part file"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Unix can always create a symlink as an unprivileged user, so this
+    /// checks `try_symlink` directly rather than only indirectly through
+    /// `spawn_download` — including that reading through the link
+    /// transparently returns the source's contents.
+    #[cfg(unix)]
+    #[test]
+    fn try_symlink_creates_a_working_link() {
+        let base =
+            std::env::temp_dir().join(format!("quickai-symlink-test-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let source = base.join("source.gguf");
+        std::fs::write(&source, b"abc").unwrap();
+        let link = base.join("link.gguf");
+
+        try_symlink(&source, &link).expect("symlink should succeed on Unix");
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(std::fs::read(&link).unwrap(), b"abc");
 
         let _ = std::fs::remove_dir_all(&base);
     }

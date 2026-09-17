@@ -67,7 +67,10 @@ pub struct ModelEntry {
 pub fn discover_all(bundled_dir: &Path, user_dir: &Path) -> Vec<ModelEntry> {
     let mut models = discover_models(bundled_dir);
     for m in discover_models(user_dir) {
-        if !models.iter().any(|existing| existing.filename == m.filename) {
+        if !models
+            .iter()
+            .any(|existing| existing.filename == m.filename)
+        {
             models.push(m);
         }
     }

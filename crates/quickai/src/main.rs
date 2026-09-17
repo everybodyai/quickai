@@ -8,6 +8,7 @@ mod downloader;
 mod hardware;
 mod models;
 mod paths;
+mod proxy;
 mod remote;
 mod server_manager;
 mod settings;

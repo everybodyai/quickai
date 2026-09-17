@@ -11,6 +11,8 @@ use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender};
 
+use crate::proxy::{self, TrafficEvent};
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ServerState {
     Idle,
@@ -35,6 +37,7 @@ impl ServerState {
 pub enum Event {
     Log(String),
     StateChanged(ServerState),
+    Traffic(TrafficEvent),
 }
 
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -49,6 +52,9 @@ pub struct ServerManager {
     state: ServerState,
     port: Option<u16>,
     model_name: Option<String>,
+    /// Only `Some` while "Show live conversation traffic" was on for the
+    /// current run — see `proxy.rs`.
+    proxy: Option<proxy::ProxyHandle>,
 }
 
 impl ServerManager {
@@ -62,6 +68,7 @@ impl ServerManager {
             state: ServerState::Idle,
             port: None,
             model_name: None,
+            proxy: None,
         }
     }
 
@@ -87,7 +94,11 @@ impl ServerManager {
     /// Drains any pending events, updating cached state. Call once per
     /// frame; returns true if anything changed (so callers can decide
     /// whether a repaint is worth it, though egui's wake already covers it).
-    pub fn poll(&mut self, log: &mut impl FnMut(String)) -> bool {
+    pub fn poll(
+        &mut self,
+        log: &mut impl FnMut(String),
+        traffic: &mut impl FnMut(TrafficEvent),
+    ) -> bool {
         let mut changed = false;
         while let Ok(event) = self.evt_rx.try_recv() {
             changed = true;
@@ -98,8 +109,14 @@ impl ServerManager {
                     if matches!(s, ServerState::Idle | ServerState::Crashed) {
                         self.port = None;
                         self.model_name = None;
+                        // Free the public port so a later Start (proxy on
+                        // or off, on any port) can bind cleanly.
+                        if let Some(proxy) = self.proxy.take() {
+                            proxy.stop();
+                        }
                     }
                 }
+                Event::Traffic(t) => traffic(t),
             }
         }
         changed
@@ -115,6 +132,7 @@ impl ServerManager {
         ctx_size: u32,
         n_gpu_layers: u32,
         extra_args: &str,
+        enable_proxy: bool,
         wake: impl Fn() + Send + Sync + 'static,
     ) {
         if self.is_active() {
@@ -123,8 +141,53 @@ impl ServerManager {
         let wake = Arc::new(wake);
         self.port = Some(port);
         self.model_name = Some(model_name.to_string());
-        self.state = ServerState::Starting;
         self.intentional_stop.store(false, Ordering::SeqCst);
+
+        // With the proxy on, llama-server itself binds an internal-only
+        // port that only the proxy talks to; the proxy binds `port` (what
+        // the GUI/clients actually connect to). With it off, llama-server
+        // binds `port` directly, exactly as before this feature existed.
+        let llama_port = if enable_proxy {
+            match ephemeral_port() {
+                Ok(p) => p,
+                Err(e) => {
+                    send(
+                        &self.evt_tx,
+                        Event::Log(format!(
+                            "Could not allocate an internal port for the live-traffic proxy: {e}"
+                        )),
+                        &wake,
+                    );
+                    send(
+                        &self.evt_tx,
+                        Event::StateChanged(ServerState::Crashed),
+                        &wake,
+                    );
+                    return;
+                }
+            }
+        } else {
+            port
+        };
+        if enable_proxy {
+            match proxy::spawn(port, llama_port, self.evt_tx.clone(), wake.clone()) {
+                Ok(handle) => self.proxy = Some(handle),
+                Err(e) => {
+                    send(
+                        &self.evt_tx,
+                        Event::Log(format!("Could not start the live-traffic proxy on port {port}: {e}. Is something else already using that port?")),
+                        &wake,
+                    );
+                    send(
+                        &self.evt_tx,
+                        Event::StateChanged(ServerState::Crashed),
+                        &wake,
+                    );
+                    return;
+                }
+            }
+        }
+        self.state = ServerState::Starting;
 
         let mut args: Vec<String> = vec![
             "--model".into(),
@@ -132,7 +195,7 @@ impl ServerManager {
             "--host".into(),
             "127.0.0.1".into(),
             "--port".into(),
-            port.to_string(),
+            llama_port.to_string(),
             "--ctx-size".into(),
             ctx_size.to_string(),
             "--n-gpu-layers".into(),
@@ -140,7 +203,11 @@ impl ServerManager {
         ];
         args.extend(parse_extra_args(extra_args));
 
-        send(&self.evt_tx, Event::Log(format!("$ {} {}", binary_path.display(), args.join(" "))), &wake);
+        send(
+            &self.evt_tx,
+            Event::Log(format!("$ {} {}", binary_path.display(), args.join(" "))),
+            &wake,
+        );
 
         let mut cmd = Command::new(binary_path);
         cmd.args(&args)
@@ -167,7 +234,14 @@ impl ServerManager {
                     Event::Log(format!("Failed to launch server process: {e}")),
                     &wake,
                 );
-                send(&self.evt_tx, Event::StateChanged(ServerState::Crashed), &wake);
+                send(
+                    &self.evt_tx,
+                    Event::StateChanged(ServerState::Crashed),
+                    &wake,
+                );
+                if let Some(proxy) = self.proxy.take() {
+                    proxy.stop();
+                }
                 return;
             }
         };
@@ -185,7 +259,12 @@ impl ServerManager {
             self.evt_tx.clone(),
             wake.clone(),
         );
-        spawn_health_poller(port, self.intentional_stop.clone(), self.evt_tx.clone(), wake);
+        spawn_health_poller(
+            llama_port,
+            self.intentional_stop.clone(),
+            self.evt_tx.clone(),
+            wake,
+        );
     }
 
     pub fn stop(&mut self) {
@@ -196,6 +275,12 @@ impl ServerManager {
         self.state = ServerState::Stopping;
         if let Some(child) = self.child.lock().unwrap().as_mut() {
             let _ = child.kill();
+        }
+        // Stop accepting new connections right away rather than waiting for
+        // the child-exit event to reach `poll()` — that still runs as a
+        // safety net (e.g. if llama-server crashes on its own).
+        if let Some(proxy) = self.proxy.take() {
+            proxy.stop();
         }
     }
 
@@ -244,6 +329,16 @@ fn parse_extra_args(input: &str) -> Vec<String> {
     args
 }
 
+/// Asks the OS for a free loopback port by briefly binding to port 0, then
+/// releasing it so llama-server can bind it moments later. There's a small
+/// theoretical race if something else grabs the exact same port in between,
+/// same as any "find a free port" trick — if it happens, llama-server just
+/// fails to bind and that surfaces in the log pane like any other failure.
+fn ephemeral_port() -> std::io::Result<u16> {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    listener.local_addr().map(|a| a.port())
+}
+
 fn send(tx: &Sender<Event>, event: Event, wake: &Arc<impl Fn() + Send + Sync + 'static>) {
     let _ = tx.send(event);
     wake();
@@ -282,10 +377,20 @@ fn spawn_waiter(
                 drop(guard);
                 let was_intentional = intentional_stop.load(Ordering::SeqCst);
                 if was_intentional {
-                    send(&evt_tx, Event::Log(format!("Server stopped (exit status: {status}).")), &wake);
+                    send(
+                        &evt_tx,
+                        Event::Log(format!("Server stopped (exit status: {status}).")),
+                        &wake,
+                    );
                     send(&evt_tx, Event::StateChanged(ServerState::Idle), &wake);
                 } else {
-                    send(&evt_tx, Event::Log(format!("Server process exited unexpectedly (exit status: {status}).")), &wake);
+                    send(
+                        &evt_tx,
+                        Event::Log(format!(
+                            "Server process exited unexpectedly (exit status: {status})."
+                        )),
+                        &wake,
+                    );
                     send(&evt_tx, Event::StateChanged(ServerState::Crashed), &wake);
                 }
                 return;
@@ -312,7 +417,11 @@ fn spawn_health_poller(
                 return;
             }
             if std::time::Instant::now() > deadline {
-                send(&evt_tx, Event::Log("Timed out waiting for server to become healthy.".into()), &wake);
+                send(
+                    &evt_tx,
+                    Event::Log("Timed out waiting for server to become healthy.".into()),
+                    &wake,
+                );
                 return;
             }
             if let Ok(resp) = ureq::get(&url).call() {
@@ -330,6 +439,13 @@ fn spawn_health_poller(
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
+
+    /// Both real-model integration tests below load the actual Bonsai-8B
+    /// model with full GPU offload; running them concurrently (the default
+    /// with `cargo test`) would make two llama-server processes fight over
+    /// the same GPU/VRAM. This forces them to run one at a time regardless
+    /// of test-harness parallelism.
+    static MODEL_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn parse_extra_args_splits_on_whitespace() {
@@ -354,6 +470,7 @@ mod tests {
     /// matching the manual validation done for the Python prototype.
     #[test]
     fn start_running_stop_cycle() {
+        let _guard = MODEL_TEST_LOCK.lock().unwrap();
         let binary = crate::paths::llama_server_bin();
         let model = crate::paths::bundled_models_dir().join("Bonsai-8B-Q1_0.gguf");
         assert!(binary.is_file(), "llama-server not built at {binary:?}");
@@ -371,6 +488,7 @@ mod tests {
             2048,
             999,
             "",
+            false,
             move || {
                 wake_count_clone.fetch_add(1, Ordering::Relaxed);
             },
@@ -379,7 +497,7 @@ mod tests {
         let deadline = std::time::Instant::now() + Duration::from_secs(30);
         let mut saw_running = false;
         while std::time::Instant::now() < deadline {
-            mgr.poll(&mut |line| println!("LOG: {line}"));
+            mgr.poll(&mut |line| println!("LOG: {line}"), &mut |_| {});
             if mgr.state() == ServerState::Running {
                 saw_running = true;
                 break;
@@ -387,7 +505,10 @@ mod tests {
             std::thread::sleep(Duration::from_millis(100));
         }
         assert!(saw_running, "server never reached Running within 30s");
-        assert!(wake_count.load(Ordering::Relaxed) > 0, "wake callback never fired");
+        assert!(
+            wake_count.load(Ordering::Relaxed) > 0,
+            "wake callback never fired"
+        );
 
         // Confirm it's really serving, not just self-reporting.
         let resp = ureq::get("http://127.0.0.1:8199/health").call();
@@ -397,13 +518,88 @@ mod tests {
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
         let mut saw_idle = false;
         while std::time::Instant::now() < deadline {
-            mgr.poll(&mut |line| println!("LOG: {line}"));
+            mgr.poll(&mut |line| println!("LOG: {line}"), &mut |_| {});
             if mgr.state() == ServerState::Idle {
                 saw_idle = true;
                 break;
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        assert!(saw_idle, "server never returned to Idle after stop() within 10s");
+        assert!(
+            saw_idle,
+            "server never returned to Idle after stop() within 10s"
+        );
+    }
+
+    /// With the live-traffic proxy on, llama-server binds an internal port
+    /// while the proxy itself binds the public one — confirms the model is
+    /// still reachable on the public port (through the proxy) and, crucially,
+    /// that stopping actually releases the public port rather than leaking
+    /// the proxy's listener.
+    #[test]
+    fn start_stop_with_proxy_frees_the_public_port() {
+        let _guard = MODEL_TEST_LOCK.lock().unwrap();
+        let binary = crate::paths::llama_server_bin();
+        let model = crate::paths::bundled_models_dir().join("Bonsai-8B-Q1_0.gguf");
+        assert!(binary.is_file(), "llama-server not built at {binary:?}");
+        assert!(model.is_file(), "test model missing at {model:?}");
+
+        const PUBLIC_PORT: u16 = 8198;
+        let mut mgr = ServerManager::new();
+        mgr.start(
+            &binary,
+            &model,
+            "bonsai-8b-test-proxy",
+            PUBLIC_PORT,
+            2048,
+            999,
+            "",
+            true,
+            || {},
+        );
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        let mut saw_running = false;
+        while std::time::Instant::now() < deadline {
+            mgr.poll(&mut |line| println!("LOG: {line}"), &mut |_| {});
+            if mgr.state() == ServerState::Running {
+                saw_running = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(saw_running, "server never reached Running within 30s");
+
+        // Reachable on the *public* port, i.e. actually through the proxy.
+        let resp = ureq::get(format!("http://127.0.0.1:{PUBLIC_PORT}/health")).call();
+        assert!(resp.is_ok_and(|r| r.status() == 200));
+
+        mgr.stop();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut saw_idle = false;
+        while std::time::Instant::now() < deadline {
+            mgr.poll(&mut |line| println!("LOG: {line}"), &mut |_| {});
+            if mgr.state() == ServerState::Idle {
+                saw_idle = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(
+            saw_idle,
+            "server never returned to Idle after stop() within 10s"
+        );
+
+        // The proxy's listener must be gone by now, or this bind fails.
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut freed = false;
+        while std::time::Instant::now() < deadline {
+            if std::net::TcpListener::bind(("127.0.0.1", PUBLIC_PORT)).is_ok() {
+                freed = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(freed, "public port was still bound after stop() settled");
     }
 }

@@ -8,6 +8,7 @@ use crate::downloader::{self, DownloadEvent, DownloadHandle};
 use crate::hardware;
 use crate::models::{discover_all, ModelEntry};
 use crate::paths;
+use crate::proxy::TrafficEvent;
 use crate::remote::{self, LookupEvent, RemoteModel};
 use crate::server_manager::{ServerManager, ServerState};
 use crate::settings::Settings;
@@ -26,7 +27,12 @@ pub struct App {
     models_dir: PathBuf,
     llama_server_bin: PathBuf,
     missing_binary_warned: bool,
-    custom_url: String,
+    /// Scratch text-edit buffer for the combined URL/path/search box — not
+    /// persisted. What it means depends on its shape: a `http(s)://` URL is
+    /// downloaded, an existing local file path is imported, anything else
+    /// is treated as a Hugging Face search term (see the "Go" button's
+    /// dynamic label right where it's used).
+    model_input: String,
     download: Option<DownloadHandle>,
     show_lookup: bool,
     lookup_rx: Option<Receiver<LookupEvent>>,
@@ -50,7 +56,39 @@ pub struct App {
     models_dir_input: String,
     llama_bin_input: String,
     settings_error: Option<String>,
+    /// Off by default — see `Settings::enable_traffic_proxy`.
+    enable_traffic_proxy: bool,
+    active_tab: Tab,
+    traffic: VecDeque<TrafficTurn>,
+    /// `None` shows every session at once; `Some(session_key)` filters the
+    /// 📡 Live tab down to just that client — see `TrafficTurn::session`.
+    selected_session: Option<String>,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    Main,
+    Live,
+}
+
+/// One request/response pair shown in the 📡 Live tab. `response` fills
+/// in as it streams; `done`/`error` mark when there's nothing more coming.
+struct TrafficTurn {
+    id: u64,
+    /// Which client this came from — see `TrafficEvent::Request`'s doc.
+    session: String,
+    method: String,
+    path: String,
+    prompt: Option<String>,
+    /// Best-effort description of any documents/images sent alongside the
+    /// prompt — see `TrafficEvent::Request::attachments`.
+    attachments: Vec<String>,
+    response: String,
+    done: bool,
+    error: Option<String>,
+}
+
+const MAX_TRAFFIC_TURNS: usize = 200;
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -58,10 +96,14 @@ impl App {
 
         let bundled_models_dir = paths::bundled_models_dir();
         let models_dir_override = settings.models_dir_override.as_deref().map(PathBuf::from);
-        let models_dir = models_dir_override.clone().unwrap_or_else(paths::user_models_dir);
+        let models_dir = models_dir_override
+            .clone()
+            .unwrap_or_else(paths::user_models_dir);
         let _ = std::fs::create_dir_all(&models_dir);
         let llama_bin_override = settings.llama_bin_override.as_deref().map(PathBuf::from);
-        let llama_server_bin = llama_bin_override.clone().unwrap_or_else(paths::llama_server_bin);
+        let llama_server_bin = llama_bin_override
+            .clone()
+            .unwrap_or_else(paths::llama_server_bin);
         let models = discover_all(&bundled_models_dir, &models_dir);
 
         let selected = settings
@@ -71,7 +113,8 @@ impl App {
             .unwrap_or(0);
 
         let total_ram_bytes = hardware::total_ram_bytes();
-        let recommended_filename = hardware::recommend(&models, total_ram_bytes);
+        let recommended_filename =
+            hardware::recommend(&models, total_ram_bytes, settings.n_gpu_layers);
 
         cc.egui_ctx.set_visuals(if settings.dark_mode {
             egui::Visuals::dark()
@@ -80,7 +123,10 @@ impl App {
         });
 
         let models_dir_input = models_dir.display().to_string();
-        let llama_bin_input = llama_bin_override.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
+        let llama_bin_input = llama_bin_override
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
 
         Self {
             manager: ServerManager::new(),
@@ -94,7 +140,7 @@ impl App {
             models_dir,
             llama_server_bin,
             missing_binary_warned: false,
-            custom_url: String::new(),
+            model_input: String::new(),
             download: None,
             show_lookup: false,
             lookup_rx: None,
@@ -112,6 +158,10 @@ impl App {
             models_dir_input,
             llama_bin_input,
             settings_error: None,
+            enable_traffic_proxy: settings.enable_traffic_proxy,
+            active_tab: Tab::Main,
+            traffic: VecDeque::new(),
+            selected_session: None,
         }
     }
 
@@ -124,7 +174,8 @@ impl App {
         self.selected = current
             .and_then(|f| self.models.iter().position(|m| m.filename == f))
             .unwrap_or(0);
-        self.recommended_filename = hardware::recommend(&self.models, self.total_ram_bytes);
+        self.recommended_filename =
+            hardware::recommend(&self.models, self.total_ram_bytes, self.n_gpu_layers);
     }
 
     fn push_log(&mut self, line: String) {
@@ -141,11 +192,66 @@ impl App {
             ctx_size: self.ctx_size,
             n_gpu_layers: self.n_gpu_layers,
             dark_mode: self.dark_mode,
-            models_dir_override: self.models_dir_override.as_ref().map(|p| p.display().to_string()),
-            llama_bin_override: self.llama_bin_override.as_ref().map(|p| p.display().to_string()),
+            models_dir_override: self
+                .models_dir_override
+                .as_ref()
+                .map(|p| p.display().to_string()),
+            llama_bin_override: self
+                .llama_bin_override
+                .as_ref()
+                .map(|p| p.display().to_string()),
             extra_args: self.extra_args.clone(),
+            enable_traffic_proxy: self.enable_traffic_proxy,
         }
         .save();
+    }
+
+    /// Applies one proxy `TrafficEvent` to the 📡 Live tab's turn list.
+    fn apply_traffic_event(&mut self, event: TrafficEvent) {
+        match event {
+            TrafficEvent::Request {
+                id,
+                session,
+                method,
+                path,
+                prompt,
+                attachments,
+            } => {
+                if self.traffic.len() >= MAX_TRAFFIC_TURNS {
+                    self.traffic.pop_front();
+                }
+                self.traffic.push_back(TrafficTurn {
+                    id,
+                    session,
+                    method,
+                    path,
+                    prompt,
+                    attachments,
+                    response: String::new(),
+                    done: false,
+                    error: None,
+                });
+            }
+            TrafficEvent::ResponseDelta { id, text } => {
+                if let Some(turn) = self.traffic.iter_mut().rev().find(|t| t.id == id) {
+                    turn.response.push_str(&text);
+                }
+            }
+            TrafficEvent::ResponseDone { id, full_text } => {
+                if let Some(turn) = self.traffic.iter_mut().rev().find(|t| t.id == id) {
+                    if let Some(text) = full_text {
+                        turn.response = text;
+                    }
+                    turn.done = true;
+                }
+            }
+            TrafficEvent::ResponseError { id, message } => {
+                if let Some(turn) = self.traffic.iter_mut().rev().find(|t| t.id == id) {
+                    turn.error = Some(message);
+                    turn.done = true;
+                }
+            }
+        }
     }
 
     /// Drains the in-flight download's channel, if any. On completion,
@@ -153,7 +259,9 @@ impl App {
     /// it; on failure, just logs — the caller already cleaned up the
     /// `.part` file.
     fn poll_download(&mut self) {
-        let Some(mut handle) = self.download.take() else { return };
+        let Some(mut handle) = self.download.take() else {
+            return;
+        };
         let mut result = None;
         while let Ok(event) = handle.rx.try_recv() {
             match event {
@@ -174,9 +282,12 @@ impl App {
                     .models
                     .iter()
                     .position(|m| m.filename == filename)
-                    .or_else(|| current.and_then(|f| self.models.iter().position(|m| m.filename == f)))
+                    .or_else(|| {
+                        current.and_then(|f| self.models.iter().position(|m| m.filename == f))
+                    })
                     .unwrap_or(0);
-                self.recommended_filename = hardware::recommend(&self.models, self.total_ram_bytes);
+                self.recommended_filename =
+                    hardware::recommend(&self.models, self.total_ram_bytes, self.n_gpu_layers);
                 self.save_settings();
             }
             Some(Err(msg)) => self.push_log(format!("Download failed: {msg}")),
@@ -186,7 +297,9 @@ impl App {
 
     /// Drains the online-lookup channel, if a search is running.
     fn poll_lookup(&mut self) {
-        let Some(rx) = self.lookup_rx.take() else { return };
+        let Some(rx) = self.lookup_rx.take() else {
+            return;
+        };
         let mut done = false;
         while let Ok(event) = rx.try_recv() {
             match event {
@@ -230,9 +343,9 @@ impl App {
                 ui.add_space(4.0);
 
                 ui.label("Downloaded models folder:").on_hover_text(
-                    "Where models fetched via \"Model URL / Path\", \"Import\", or \"Look \
-                     up online\" are saved and read back from. The models bundled with the \
-                     app itself live in their own read-only folder regardless of this.",
+                    "Where models fetched via the \"Model\" box (download/import/search) or \
+                     \"Look up online\" are saved and read back from. The models bundled with \
+                     the app itself live in their own read-only folder regardless of this.",
                 );
                 ui.add(egui::TextEdit::singleline(&mut self.models_dir_input).desired_width(ui.available_width()));
                 ui.horizontal(|ui| {
@@ -263,6 +376,32 @@ impl App {
                         self.settings_error = None;
                     }
                 });
+
+                ui.add_space(10.0);
+                let active = self.manager.is_active();
+                ui.add_enabled_ui(!active, |ui| {
+                    if ui
+                        .checkbox(&mut self.enable_traffic_proxy, "Show live conversation traffic")
+                        .on_hover_text(
+                            "Adds a small local proxy in front of llama-server so a new \"📡 \
+                             Live\" button can show chat/completion requests and replies live, \
+                             from any client — the built-in chat UI or an external app via the \
+                             🔌 API. Off by default: clients then connect straight to \
+                             llama-server, with no extra hop or overhead. Takes effect the next \
+                             time you click Start.",
+                        )
+                        .changed()
+                    {
+                        self.save_settings();
+                    }
+                });
+                if active {
+                    ui.label(
+                        egui::RichText::new("(Stop the server to change this — it applies on the next Start.)")
+                            .small()
+                            .color(egui::Color32::GRAY),
+                    );
+                }
 
                 ui.add_space(10.0);
                 ui.separator();
@@ -362,60 +501,64 @@ impl App {
             .default_width(520.0)
             .max_height(600.0)
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical().max_height(480.0).show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(format!("QuickAI v{}", env!("CARGO_PKG_VERSION")))
-                            .strong()
-                            .size(16.0),
-                    );
-                    ui.label(
+                egui::ScrollArea::vertical()
+                    .max_height(480.0)
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(format!("QuickAI v{}", env!("CARGO_PKG_VERSION")))
+                                .strong()
+                                .size(16.0),
+                        );
+                        ui.label(
                         "A simple GUI for starting and stopping local GGUF language models via \
                          llama-server (llama.cpp), with GPU acceleration through Vulkan.",
                     );
-                    ui.add_space(10.0);
+                        ui.add_space(10.0);
 
-                    ui.label(egui::RichText::new("Usage").strong());
-                    ui.label(
-                        "Pick a model, optionally adjust the port / context size / GPU layers \
+                        ui.label(egui::RichText::new("Usage").strong());
+                        ui.label(
+                            "Pick a model, optionally adjust the port / context size / GPU layers \
                          (⚙ Settings has more, including advanced llama.cpp options), then click \
                          Start and wait for the status to turn green. \"Open Chat UI\" opens a \
                          browser-based chat; \"🔌 API\" shows how to connect an external app \
                          instead. Only one model runs at a time.",
-                    );
-                    ui.add_space(10.0);
+                        );
+                        ui.add_space(10.0);
 
-                    ui.label(egui::RichText::new("Disclaimer").strong());
-                    ui.label(
-                        "Everything runs locally on this machine — your prompts and any files \
-                         you feed the model never leave it, except when you explicitly use \
-                         \"Model URL / Path\" or \"Look up online\", which contact the URL you \
-                         gave or Hugging Face to fetch a file. Model output can be inaccurate, \
+                        ui.label(egui::RichText::new("Disclaimer").strong());
+                        ui.label(
+                            "Everything runs locally on this machine — your prompts and any files \
+                         you feed the model never leave it, except when you explicitly use the \
+                         \"Model\" box or \"Look up online\", which contact the URL you gave or \
+                         Hugging Face to fetch/search for a file. Model output can be inaccurate, \
                          biased, or simply wrong; treat it as a draft, not a fact, and don't \
                          rely on it for medical, legal, financial, or other safety-critical \
                          decisions. This software is provided \"as is\", without warranty of \
                          any kind — see the license below.",
-                    );
-                    ui.add_space(10.0);
+                        );
+                        ui.add_space(10.0);
 
-                    ui.label(egui::RichText::new("License").strong());
-                    ui.label("QuickAI's own source code is licensed under the PolyForm Noncommercial License 1.0.0.");
-                    ui.add_space(4.0);
-                    ui.label("This package also bundles, unmodified and under their own licenses:");
-                    ui.label(
-                        "• llama-server, from llama.cpp — MIT License, © the ggml authors.\n\
+                        ui.label(egui::RichText::new("License").strong());
+                        ui.label("QuickAI's own source code is licensed under the PolyForm Noncommercial License 1.0.0.");
+                        ui.add_space(4.0);
+                        ui.label(
+                            "This package also bundles, unmodified and under their own licenses:",
+                        );
+                        ui.label(
+                            "• llama-server, from llama.cpp — MIT License, © the ggml authors.\n\
                          • Bonsai 8B and Bonsai 1.7B model weights, from PrismML — Apache \
                          License 2.0.",
-                    );
-                    ui.add_space(4.0);
-                    ui.label(
-                        egui::RichText::new(
-                            "Full license texts for all three are in LICENSE and \
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(
+                                "Full license texts for all three are in LICENSE and \
                              THIRD_PARTY_LICENSES.md next to this app.",
-                        )
-                        .small()
-                        .color(egui::Color32::GRAY),
-                    );
-                });
+                            )
+                            .small()
+                            .color(egui::Color32::GRAY),
+                        );
+                    });
 
                 ui.add_space(10.0);
                 if ui.button("Close").clicked() {
@@ -425,14 +568,207 @@ impl App {
         self.show_about = open && !close_clicked;
     }
 
+    /// Every distinct client (see `TrafficTurn::session`) that has shown up
+    /// in the 📡 Live Traffic feed so far, in first-seen order.
+    fn session_keys(&self) -> Vec<String> {
+        let mut keys: Vec<String> = Vec::new();
+        for t in &self.traffic {
+            if !keys.iter().any(|k| k == &t.session) {
+                keys.push(t.session.clone());
+            }
+        }
+        keys
+    }
+
+    /// Content of the 📡 Live tab (see the tab strip in `ui()`): a session
+    /// list down the left (like an MS Teams chat list — one row per client,
+    /// click to switch, or "All" to see everything mixed together) with the
+    /// picked session's conversation filling the rest of the tab on the
+    /// right.
+    fn show_live_traffic_tab(&mut self, ui: &mut egui::Ui) {
+        // Owned, not borrowed from `self.traffic` — so nothing here keeps
+        // `self` borrowed once we get to the mutable `selected_session`
+        // writes below.
+        let session_keys = self.session_keys();
+        if let Some(sel) = &self.selected_session {
+            if !session_keys.contains(sel) {
+                self.selected_session = None;
+            }
+        }
+
+        egui::Panel::left("live_traffic_sessions_panel")
+            .resizable(true)
+            .default_size(220.0)
+            .size_range(160.0..=360.0)
+            .show(ui, |ui| {
+                ui.label(
+                    "Click a client below to view just its conversation, or \"All\" for \
+                     everything mixed together.",
+                );
+                ui.add_space(6.0);
+                ui.separator();
+
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        let all_selected = self.selected_session.is_none();
+                        let all_label = format!(
+                            "💬 All\n{} message{}",
+                            self.traffic.len(),
+                            if self.traffic.len() == 1 { "" } else { "s" }
+                        );
+                        if ui.selectable_label(all_selected, all_label).clicked() {
+                            self.selected_session = None;
+                        }
+                        ui.add_space(2.0);
+
+                        for (i, key) in session_keys.iter().enumerate() {
+                            let mut count = 0usize;
+                            let mut live = false;
+                            let mut preview = String::new();
+                            for t in self.traffic.iter().filter(|t| &t.session == key) {
+                                count += 1;
+                                live |= !t.done;
+                                preview = t.prompt.clone().unwrap_or_else(|| {
+                                    if t.attachments.is_empty() {
+                                        t.path.clone()
+                                    } else {
+                                        t.attachments.join(", ")
+                                    }
+                                });
+                            }
+                            let dot = if live { "\u{25cf} " } else { "" };
+                            let label = format!(
+                                "{dot}Session {}\n{} \u{b7} {count} message{}",
+                                i + 1,
+                                truncate_preview(&preview, 34),
+                                if count == 1 { "" } else { "s" }
+                            );
+                            let selected = self.selected_session.as_deref() == Some(key.as_str());
+                            if ui
+                                .selectable_label(selected, label)
+                                .on_hover_text(format!("Client at {key}"))
+                                .clicked()
+                            {
+                                self.selected_session = Some(key.clone());
+                            }
+                            ui.add_space(2.0);
+                        }
+
+                        if session_keys.is_empty() {
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new(
+                                    "No traffic yet — waiting for the first request.",
+                                )
+                                .color(egui::Color32::GRAY),
+                            );
+                        }
+                    });
+
+                ui.add_space(6.0);
+                if ui.button("Clear all").clicked() {
+                    self.traffic.clear();
+                    self.selected_session = None;
+                }
+            });
+
+        egui::CentralPanel::default().show(ui, |ui| {
+            ui.label(
+                "Every chat/completion request hitting this model, from any client, shown \
+                 as it happens.",
+            )
+            .on_hover_text(
+                "Only chat/completion endpoints are shown here — other traffic (the chat \
+                 UI's own page assets, health checks, etc.) is relayed to llama-server as \
+                 normal but not logged.",
+            );
+            ui.add_space(6.0);
+            ui.separator();
+
+            let selected = self.selected_session.clone();
+            egui::ScrollArea::vertical()
+                .stick_to_bottom(true)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for turn in self
+                        .traffic
+                        .iter()
+                        .filter(|t| selected.as_deref().is_none_or(|s| t.session == s))
+                    {
+                        ui.group(|ui| {
+                            ui.set_width(ui.available_width());
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(format!("{} {}", turn.method, turn.path))
+                                        .strong()
+                                        .monospace(),
+                                );
+                                if !turn.done {
+                                    ui.label(
+                                        egui::RichText::new("● live")
+                                            .color(egui::Color32::from_rgb(46, 139, 50)),
+                                    );
+                                }
+                            });
+                            if let Some(prompt) = &turn.prompt {
+                                ui.label(
+                                    egui::RichText::new(format!("↳ {prompt}"))
+                                        .color(egui::Color32::GRAY),
+                                );
+                            }
+                            for attachment in &turn.attachments {
+                                ui.label(
+                                    egui::RichText::new(format!("↳ {attachment}"))
+                                        .color(egui::Color32::GRAY),
+                                );
+                            }
+                            if !turn.response.is_empty() {
+                                ui.label(&turn.response);
+                            } else if turn.error.is_none() && !turn.done {
+                                ui.label(egui::RichText::new("…").color(egui::Color32::GRAY));
+                            }
+                            if let Some(err) = &turn.error {
+                                ui.colored_label(
+                                    egui::Color32::from_rgb(192, 57, 43),
+                                    format!("error: {err}"),
+                                );
+                            }
+                        });
+                        ui.add_space(4.0);
+                    }
+                });
+        });
+    }
+}
+
+/// Shortens `s` to at most `max_chars` characters (UTF-8-safe), replacing
+/// the empty case with a placeholder so a session's chat-list row never
+/// shows a blank preview line.
+fn truncate_preview(s: &str, max_chars: usize) -> String {
+    if s.is_empty() {
+        return "(no prompt)".to_string();
+    }
+    let mut truncated: String = s.chars().take(max_chars).collect();
+    if s.chars().count() > max_chars {
+        truncated.push('\u{2026}');
+    }
+    truncated
 }
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let mut new_lines = Vec::new();
-        self.manager.poll(&mut |line| new_lines.push(line));
+        let mut new_traffic = Vec::new();
+        self.manager
+            .poll(&mut |line| new_lines.push(line), &mut |evt| {
+                new_traffic.push(evt)
+            });
         for line in new_lines {
             self.push_log(line);
+        }
+        for evt in new_traffic {
+            self.apply_traffic_event(evt);
         }
         self.poll_download();
         self.poll_lookup();
@@ -443,6 +779,19 @@ impl eframe::App for App {
         egui::CentralPanel::default().show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("QuickAI");
+
+                if self.enable_traffic_proxy {
+                    ui.add_space(12.0);
+                    ui.selectable_value(&mut self.active_tab, Tab::Main, "Main");
+                    ui.selectable_value(&mut self.active_tab, Tab::Live, "📡 Live")
+                        .on_hover_text(
+                            "Watch chat/completion requests and replies in real time as any \
+                             client talks to this model.",
+                        );
+                } else if self.active_tab != Tab::Main {
+                    self.active_tab = Tab::Main;
+                }
+
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let theme_icon = if self.dark_mode { "☀" } else { "🌙" };
                     let theme_hover = if self.dark_mode {
@@ -496,6 +845,16 @@ impl eframe::App for App {
                 });
             });
             ui.add_space(6.0);
+
+            if self.enable_traffic_proxy {
+                ui.separator();
+                ui.add_space(6.0);
+            }
+
+            if self.active_tab == Tab::Live {
+                self.show_live_traffic_tab(ui);
+                return;
+            }
 
             ui.group(|ui| {
                 ui.horizontal(|ui| {
@@ -568,11 +927,20 @@ impl eframe::App for App {
                         ui.add_space(2.0);
                         ui.label(
                             egui::RichText::new(format!(
-                                "★ Recommended for this machine (~{} RAM detected)",
-                                format_bytes(self.total_ram_bytes)
+                                "★ Recommended for this machine (~{} RAM detected{})",
+                                hardware::format_bytes(self.total_ram_bytes),
+                                if self.n_gpu_layers == 0 { ", CPU only" } else { "" }
                             ))
                             .color(egui::Color32::from_rgb(46, 139, 50))
                             .small(),
+                        )
+                        .on_hover_text(
+                            "A starting point, not a guarantee: based on total RAM and \
+                             whether GPU offload is enabled, favoring a smaller/faster \
+                             model on CPU-only setups since a big model stays slow \
+                             token-by-token no matter how much RAM is free. This can't \
+                             see actual VRAM, so a model with GPU offload on can still \
+                             run slower than expected if it doesn't fully fit on the GPU.",
                         );
                     }
                 } else {
@@ -592,49 +960,89 @@ impl eframe::App for App {
                 ui.horizontal(|ui| {
                     ui.add_enabled_ui(!active && self.download.is_none(), |ui| {
                         ui.horizontal(|ui| {
-                            ui.label("Model URL / Path:").on_hover_text(
-                                "Paste a direct https:// link to a .gguf file to download it, or \
-                                 a local filesystem path to one you already have (Linux or \
-                                 Windows style) to import it instead — either way it's copied \
-                                 into your downloaded-models folder (see ⚙ Settings).",
+                            ui.label("Model:").on_hover_text(
+                                "One box, three things it can mean: a direct https:// link \
+                                 downloads that file, an existing local path imports it, and \
+                                 anything else is treated as a Hugging Face search term. Use \
+                                 \"...\" to browse for a local file instead of typing a path.",
                             );
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.custom_url)
-                                    .hint_text("https://.../model.gguf  or  /path/to/model.gguf")
-                                    .desired_width(320.0),
+                            let field = ui.add(
+                                egui::TextEdit::singleline(&mut self.model_input)
+                                    .hint_text("URL, local path, or search by name...")
+                                    .desired_width(260.0),
                             );
-                            let trimmed = self.custom_url.trim();
-                            let is_url = downloader::looks_like_url(trimmed);
-                            let ready = !trimmed.is_empty()
-                                && (is_url || Path::new(trimmed).is_file());
-                            let button_label = if is_url || trimmed.is_empty() { "Download" } else { "Import" };
-                            let button_hover = if is_url || trimmed.is_empty() {
-                                "Download that URL into your models folder."
-                            } else {
-                                "Import that local file into your models folder — instant if \
-                                 it's on the same drive, otherwise copied with a progress bar."
-                            };
                             if ui
-                                .add_enabled(ready, egui::Button::new(button_label))
-                                .on_hover_text(button_hover)
+                                .button("...")
+                                .on_hover_text("Browse for a local .gguf file")
                                 .clicked()
                             {
-                                let input = self.custom_url.trim().to_string();
-                                self.custom_url.clear();
-                                let ctx_clone = ui.ctx().clone();
-                                self.download = Some(downloader::spawn_download(
-                                    input,
-                                    None,
-                                    self.models_dir.clone(),
-                                    move || ctx_clone.request_repaint(),
-                                ));
+                                if let Some(path) = rfd::FileDialog::new()
+                                    .add_filter("GGUF model", &["gguf"])
+                                    .pick_file()
+                                {
+                                    self.model_input = path.display().to_string();
+                                }
+                            }
+                            let trimmed = self.model_input.trim().to_string();
+                            let is_url = downloader::looks_like_url(&trimmed);
+                            let is_local_file = !is_url && Path::new(&trimmed).is_file();
+                            let (button_label, button_hover) = if trimmed.is_empty() {
+                                (
+                                    "Search",
+                                    "Type a URL, a local file path, or a model name to search \
+                                     Hugging Face for.",
+                                )
+                            } else if is_url {
+                                ("Download", "Download that URL into your models folder.")
+                            } else if is_local_file {
+                                (
+                                    "Import",
+                                    "Link that local file into your models folder — instant \
+                                     and no extra disk space, falling back to a copy only if \
+                                     linking isn't possible.",
+                                )
+                            } else {
+                                (
+                                    "Search",
+                                    "Search Hugging Face by name, then automatically widen the \
+                                     search to similar models too — all listed together below.",
+                                )
+                            };
+                            let submitted =
+                                field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                            let go = ui
+                                .add_enabled(!trimmed.is_empty(), egui::Button::new(button_label))
+                                .on_hover_text(button_hover)
+                                .clicked();
+                            if !trimmed.is_empty() && (go || submitted) {
+                                if is_url || is_local_file {
+                                    self.model_input.clear();
+                                    let ctx_clone = ui.ctx().clone();
+                                    self.download = Some(downloader::spawn_download(
+                                        trimmed,
+                                        None,
+                                        self.models_dir.clone(),
+                                        move || ctx_clone.request_repaint(),
+                                    ));
+                                } else {
+                                    self.show_lookup = true;
+                                    self.lookup_results.clear();
+                                    self.lookup_status =
+                                        format!("Searching Hugging Face for \"{trimmed}\"...");
+                                    let ctx_clone = ui.ctx().clone();
+                                    self.lookup_rx = Some(remote::spawn_keyword_search(
+                                        trimmed,
+                                        move || ctx_clone.request_repaint(),
+                                    ));
+                                }
                             }
                             ui.add_space(8.0);
                             if ui
                                 .button("Look up online")
                                 .on_hover_text(
                                     "Search Hugging Face for currently popular GGUF models you \
-                                     can download with one click, without knowing a direct URL.",
+                                     can download with one click, without knowing a direct URL \
+                                     or name.",
                                 )
                                 .clicked()
                             {
@@ -646,16 +1054,17 @@ impl eframe::App for App {
                             }
                         });
                     });
-                    // Only meaningful once the lookup section actually has
-                    // models on screen to close — greyed out while idle or
-                    // still searching, so it can't be clicked to "close"
-                    // nothing.
+                    // Only shown once the lookup section actually has models
+                    // on screen to close — hidden entirely while idle or
+                    // still searching, rather than shown greyed out with
+                    // nothing for it to do.
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let has_results = self.show_lookup && !self.lookup_results.is_empty();
-                        if ui
-                            .add_enabled(has_results, egui::Button::new("X").small())
-                            .on_hover_text("Close lookup results")
-                            .clicked()
+                        if has_results
+                            && ui
+                                .add(egui::Button::new("X").small())
+                                .on_hover_text("Close lookup results")
+                                .clicked()
                         {
                             self.show_lookup = false;
                         }
@@ -669,10 +1078,15 @@ impl eframe::App for App {
                             "{} {}: {} / {}",
                             handle.verb,
                             handle.label,
-                            format_bytes(handle.downloaded),
-                            format_bytes(total)
+                            hardware::format_bytes(handle.downloaded),
+                            hardware::format_bytes(total)
                         ),
-                        None => format!("{} {}: {}", handle.verb, handle.label, format_bytes(handle.downloaded)),
+                        None => format!(
+                            "{} {}: {}",
+                            handle.verb,
+                            handle.label,
+                            hardware::format_bytes(handle.downloaded)
+                        ),
                     };
                     ui.colored_label(egui::Color32::from_rgb(212, 160, 23), text);
                     if let Some(total) = handle.total.filter(|t| *t > 0) {
@@ -756,7 +1170,7 @@ impl eframe::App for App {
                                                         to_download = Some(i);
                                                     }
                                                     let size =
-                                                        m.size_bytes.map(format_bytes).unwrap_or_else(|| "?".into());
+                                                        m.size_bytes.map(hardware::format_bytes).unwrap_or_else(|| "?".into());
                                                     ui.label(format!(
                                                         "{} — {} ({size}, {} downloads)",
                                                         m.repo_id, m.filename, m.downloads
@@ -832,6 +1246,8 @@ impl eframe::App for App {
                         } else {
                             self.save_settings();
                             self.log_lines.clear();
+                            self.traffic.clear();
+                            self.selected_session = None;
                             let ctx_clone = ui.ctx().clone();
                             self.manager.start(
                                 &self.llama_server_bin,
@@ -841,6 +1257,7 @@ impl eframe::App for App {
                                 self.ctx_size,
                                 self.n_gpu_layers,
                                 &self.extra_args,
+                                self.enable_traffic_proxy,
                                 move || ctx_clone.request_repaint(),
                             );
                         }
@@ -967,20 +1384,5 @@ impl eframe::App for App {
 
     fn on_exit(&mut self) {
         self.manager.stop_blocking();
-    }
-}
-
-fn format_bytes(n: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    let mut size = n as f64;
-    let mut unit = 0;
-    while size >= 1024.0 && unit < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit += 1;
-    }
-    if unit == 0 {
-        format!("{n} B")
-    } else {
-        format!("{size:.1} {}", UNITS[unit])
     }
 }
