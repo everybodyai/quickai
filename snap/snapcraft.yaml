@@ -1,0 +1,92 @@
+name: quickai
+title: QuickAI
+base: core24
+version: '0.1.0'
+summary: Start/stop local GGUF LLMs (Bonsai, Qwen3) with one click, GPU-accelerated
+description: |
+  QuickAI is a native desktop GUI for starting and stopping local GGUF
+  language models via llama-server (llama.cpp), built with the Vulkan
+  backend so inference runs on the GPU across AMD/NVIDIA/Intel alike. Comes
+  bundled with two ready-to-run Bonsai models (8B and 1.7B, both 1-bit
+  quantized) — pick one, click Start, then open the built-in chat UI or
+  connect an external OpenAI-compatible client.
+grade: stable
+confinement: strict
+license: PolyForm-Noncommercial-1.0.0
+icon: assets/icons/icon-256.png
+contact: https://github.com/nujufas/QuickAI/issues
+issues: https://github.com/nujufas/QuickAI/issues
+source-code: https://github.com/nujufas/QuickAI
+website: https://github.com/nujufas/QuickAI
+
+platforms:
+  amd64:
+
+apps:
+  quickai:
+    command: bin/quickai
+    extensions: [gnome]
+    common-id: io.github.nujufas.quickai
+    plugs:
+      - network
+      - opengl
+
+parts:
+  quickai:
+    # Unlike jsonquery_gui (pure Rust), quickai needs a Vulkan-built
+    # llama-server, its .so libs, and two bundled GGUF models sitting right
+    # next to the GUI binary at runtime (see the main README's "Packaging"
+    # section) — `cargo build` alone only produces the GUI half. This part
+    # builds both from scratch: llama.cpp with -DGGML_VULKAN=ON the same
+    # way the main README's "First-time setup" does, then the quickai
+    # binary, then assembles them next to each other the way
+    # build/common.sh's package_bundle() does for the tar.gz/AppImage.
+    #
+    # Not using `plugin: rust` for the same reason noted in jsonquery_gui's
+    # snapcraft.yaml: it fetches its toolchain via the `rustup` *snap*,
+    # which the `gnome` extension's own PATH composition hides from the
+    # plugin's environment-validation step. Installing Rust ourselves via
+    # rustup.sh sidesteps that.
+    plugin: nil
+    source: .
+    build-packages:
+      - curl
+      - ca-certificates
+      - gcc
+      - pkg-config
+      - cmake
+      - ninja-build
+      - git
+      - libvulkan-dev
+      - glslc
+      - glslang-tools
+      - spirv-headers
+    override-build: |
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+          sh -s -- -y --default-toolchain stable --profile minimal
+      . "$HOME/.cargo/env"
+
+      git clone --depth 1 https://github.com/ggml-org/llama.cpp /tmp/llama.cpp
+      cmake -B /tmp/llama.cpp/build -S /tmp/llama.cpp -G Ninja \
+          -DGGML_VULKAN=ON -DCMAKE_BUILD_TYPE=Release
+      cmake --build /tmp/llama.cpp/build -j"$(nproc)"
+
+      cargo build --release -p quickai
+
+      install -d "$CRAFT_PART_INSTALL/bin/models"
+      install -Dm755 target/release/quickai "$CRAFT_PART_INSTALL/bin/quickai"
+      install -Dm755 /tmp/llama.cpp/build/bin/llama-server \
+          "$CRAFT_PART_INSTALL/bin/llama-server"
+      cp -P /tmp/llama.cpp/build/bin/libggml-base.so* \
+            /tmp/llama.cpp/build/bin/libggml-cpu.so* \
+            /tmp/llama.cpp/build/bin/libggml-vulkan.so* \
+            /tmp/llama.cpp/build/bin/libggml.so* \
+            /tmp/llama.cpp/build/bin/libllama-common.so* \
+            /tmp/llama.cpp/build/bin/libllama-server-impl.so \
+            /tmp/llama.cpp/build/bin/libllama.so* \
+            /tmp/llama.cpp/build/bin/libmtmd.so* \
+            "$CRAFT_PART_INSTALL/bin/" 2>/dev/null || true
+      curl -Lo "$CRAFT_PART_INSTALL/bin/models/Bonsai-8B-Q1_0.gguf" \
+          https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/main/Bonsai-8B-Q1_0.gguf
+      curl -Lo "$CRAFT_PART_INSTALL/bin/models/Bonsai-1.7B-Q1_0.gguf" \
+          https://huggingface.co/prism-ml/Bonsai-1.7B-gguf/resolve/main/Bonsai-1.7B-Q1_0.gguf

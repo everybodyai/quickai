@@ -11,8 +11,25 @@ use sysinfo::System;
 
 use crate::models::ModelEntry;
 
+const GB: u64 = 1024 * 1024 * 1024;
+
 pub fn total_ram_bytes() -> u64 {
     System::new_all().total_memory()
+}
+
+pub(crate) fn format_bytes(n: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    let mut size = n as f64;
+    let mut unit = 0;
+    while size >= 1024.0 && unit < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{n} B")
+    } else {
+        format!("{size:.1} {}", UNITS[unit])
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -67,9 +84,22 @@ pub fn speed_tier(model_size_bytes: u64, total_ram_bytes: u64, n_gpu_layers: u32
 /// comfortably fits this machine's RAM — leaving headroom for the OS and
 /// for context/activation overhead on top of the raw file size — biasing
 /// toward quality when the hardware allows it, and falling back to the
-/// smallest available model on constrained machines. Only sees system RAM,
-/// not VRAM, so it doesn't know whether GPU offload will actually apply.
-pub fn recommend(models: &[ModelEntry], total_ram_bytes: u64) -> Option<String> {
+/// smallest available model on constrained machines.
+///
+/// "Fits in RAM" alone isn't a good proxy for "runs at a reasonable
+/// speed" — a large model is slow to run token-by-token regardless of how
+/// much spare RAM sits behind it, and that effect is far more pronounced
+/// without GPU offload. So on top of the RAM check, this also caps how
+/// large a model it will actively recommend: a modest cap when
+/// `n_gpu_layers` is 0 (offload explicitly off, so definitely CPU-bound),
+/// a looser one otherwise. We still have no way to detect actual VRAM, so
+/// even the looser cap is conservative rather than "trust the GPU with
+/// anything" — `n_gpu_layers > 0` only means offload was requested, not
+/// that there's enough VRAM for it to matter. If nothing fits both the RAM
+/// budget and the speed cap, this falls back to the old RAM-only pick, and
+/// finally to the smallest model available, rather than recommending
+/// nothing.
+pub fn recommend(models: &[ModelEntry], total_ram_bytes: u64, n_gpu_layers: u32) -> Option<String> {
     let mut sized: Vec<&ModelEntry> = models.iter().filter(|m| m.size_bytes > 0).collect();
     if sized.is_empty() {
         return None;
@@ -79,11 +109,21 @@ pub fn recommend(models: &[ModelEntry], total_ram_bytes: u64) -> Option<String> 
     const OVERHEAD_FACTOR: f64 = 1.2;
     const RAM_FRACTION: f64 = 0.5;
     let budget = total_ram_bytes as f64 * RAM_FRACTION;
+    let fits_ram = |m: &&ModelEntry| (m.size_bytes as f64) * OVERHEAD_FACTOR <= budget;
+
+    const CPU_ONLY_SPEED_CAP: u64 = 6 * GB;
+    const GPU_REQUESTED_SPEED_CAP: u64 = 12 * GB;
+    let speed_cap = if n_gpu_layers == 0 {
+        CPU_ONLY_SPEED_CAP
+    } else {
+        GPU_REQUESTED_SPEED_CAP
+    };
 
     sized
         .iter()
         .rev()
-        .find(|m| (m.size_bytes as f64) * OVERHEAD_FACTOR <= budget)
+        .find(|m| fits_ram(m) && m.size_bytes <= speed_cap)
+        .or_else(|| sized.iter().rev().find(|m| fits_ram(m)))
         .or(sized.first())
         .map(|m| m.filename.clone())
 }
@@ -143,13 +183,15 @@ mod tests {
         }
     }
 
-    const GB: u64 = 1024 * 1024 * 1024;
-
     #[test]
     fn recommends_largest_model_that_fits_comfortably() {
         let models = vec![entry("small.gguf", GB), entry("big.gguf", 8 * GB)];
-        // 32 GB RAM: budget is 16 GB, big model (8 GB * 1.2 = 9.6 GB) fits.
-        assert_eq!(recommend(&models, 32 * GB), Some("big.gguf".to_string()));
+        // 32 GB RAM: budget is 16 GB, big model (8 GB * 1.2 = 9.6 GB) fits,
+        // and 8 GB is under the GPU-requested speed cap (12 GB).
+        assert_eq!(
+            recommend(&models, 32 * GB, 999),
+            Some("big.gguf".to_string())
+        );
     }
 
     #[test]
@@ -157,7 +199,41 @@ mod tests {
         let models = vec![entry("small.gguf", GB), entry("big.gguf", 8 * GB)];
         // 4 GB RAM: budget is 2 GB, neither fits the fits-check, so we fall
         // back to the smallest rather than recommending nothing.
-        assert_eq!(recommend(&models, 4 * GB), Some("small.gguf".to_string()));
+        assert_eq!(
+            recommend(&models, 4 * GB, 999),
+            Some("small.gguf".to_string())
+        );
+    }
+
+    #[test]
+    fn caps_size_more_tightly_when_gpu_offload_is_off() {
+        let models = vec![entry("small.gguf", 4 * GB), entry("big.gguf", 8 * GB)];
+        // 64 GB RAM: budget is 32 GB, so both models fit RAM comfortably.
+        // With GPU offload requested, 8 GB is under the 12 GB cap, so the
+        // bigger model wins on quality.
+        assert_eq!(
+            recommend(&models, 64 * GB, 999),
+            Some("big.gguf".to_string())
+        );
+        // With offload explicitly off (definitely CPU-bound), 8 GB exceeds
+        // the tighter 6 GB cap, so the smaller/faster model wins instead —
+        // same RAM, same models, different pick.
+        assert_eq!(
+            recommend(&models, 64 * GB, 0),
+            Some("small.gguf".to_string())
+        );
+    }
+
+    #[test]
+    fn falls_back_to_ram_only_pick_when_every_model_exceeds_the_speed_cap() {
+        let models = vec![entry("huge.gguf", 20 * GB)];
+        // 64 GB RAM: budget 32 GB, 20 GB * 1.2 = 24 GB fits, but 20 GB is
+        // over even the looser GPU-requested speed cap. With nothing else
+        // to recommend, fall back to the RAM-only pick rather than None.
+        assert_eq!(
+            recommend(&models, 64 * GB, 999),
+            Some("huge.gguf".to_string())
+        );
     }
 
     #[test]

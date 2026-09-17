@@ -32,6 +32,9 @@ model will run on this machine — a rough guide, not a live benchmark — a
 **⚙** settings button, and an **ℹ** about button (usage, disclaimer,
 license). Most controls have hover tooltips explaining what they do.
 
+If "Show live conversation traffic" is turned on in ⚙ Settings, a **📡
+Live** tab also appears next to **Main** — see the Settings bullet below.
+
 ## Adding more models
 
 - Drop any other `.gguf` file into the `models/` folder next to the app
@@ -63,6 +66,13 @@ Click **⚙** next to the speed icon for more:
   command-line arguments (e.g. `--threads 8`) appended to every launch.
   Hover the field for example flags. An unsupported flag will make the
   server fail to start; check the log pane at the bottom of the window.
+- **Show live conversation traffic** — off by default, so clients connect
+  straight to llama-server with no overhead. Turn it on to reveal a **📡
+  Live** tab next to **Main**, laid out like a chat app: a session list
+  down the left (one row per client — the chat UI, an external app via 🔌
+  API, etc. — click a row, or **All**, to switch) with that session's
+  requests/replies filling the rest of the tab on the right in real time.
+  Takes effect next time you click Start.
 
 ## License
 

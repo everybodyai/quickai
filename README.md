@@ -8,6 +8,39 @@ instead of ROCm, which doesn't officially support this card. Packages into
 a Linux tar.gz, a self-integrating AppImage, and a Windows zip — each
 bundled with the recommended model, ready to run standalone.
 
+## Installing a release
+
+Not published anywhere yet — the sections below describe how each channel
+will work starting with the first tagged release (packaging files are in
+place; nothing has been pushed/tagged/submitted so far).
+
+### AUR (Arch-based distros)
+
+An AUR package (`quickai-bin`) — see [`packaging/aur/`](packaging/aur/).
+
+### Homebrew (Linux)
+
+```bash
+brew tap nujufas/quickai
+brew install quickai
+```
+
+If Homebrew refuses the formula as an untrusted tap, run
+`brew trust nujufas/quickai` first.
+
+### Snap (Linux)
+
+```bash
+sudo snap install quickai
+```
+
+### Download a build
+
+Prebuilt Linux/AppImage and Windows binaries, attached to each
+[GitHub Release](https://github.com/nujufas/QuickAI/releases). You can also
+build everything yourself with the scripts in [`build/`](build/) — see
+"Packaging" below.
+
 ## Layout
 
 - `crates/quickai/` — the GUI (`main.rs`, `app.rs`, `server_manager.rs`,
@@ -87,6 +120,10 @@ name for connecting an external OpenAI-compatible client instead. **Stop**
 kills the server. Only one model runs at a time — Start is disabled while
 something is already running or starting.
 
+If "Show live conversation traffic" is turned on in ⚙ Settings, a **📡
+Live** tab also appears here, next to **Main** — see "Live conversation
+traffic" below.
+
 Picking a different model resets context size to a suggested default for
 it (`hardware::recommend_ctx_size` — bigger file, or less RAM headroom,
 means a smaller suggestion); it's still a plain editable field afterward,
@@ -126,14 +163,41 @@ Click the gear icon next to the speed indicator for:
     fail to start — check the log pane. Hover the field for more example
     flags.
 
-Both folder/binary overrides and the extra-args string persist across
-restarts alongside the other settings.
+- **Show live conversation traffic** — off by default. Turning it on adds
+  a small local proxy in front of llama-server (see "Live conversation
+  traffic" below) and reveals a **📡 Live** tab; off, clients connect
+  straight to llama-server with no extra hop. Takes effect on the next
+  Start, so it's disabled while a server is running.
+
+Both folder/binary overrides, the extra-args string, and the live-traffic
+toggle persist across restarts alongside the other settings.
 
 In dev (`cargo run`), the app falls back to this repo's own `llama.cpp/`
 and `models/` paths (see `crates/quickai/src/paths.rs`); in a packaged build
 it looks for `llama-server`/bundled `models/` right next to its own
 executable instead. Either way, that directory is treated as read-only —
 see "Adding more models" below for where downloads actually go.
+
+## Live conversation traffic (📡)
+
+Off by default. When turned on in ⚙ Settings, llama-server itself binds an
+internal-only port and QuickAI puts a small reverse proxy (`src/proxy.rs`,
+built on `tiny_http` + `ureq`) in front of it on the port you actually
+configured — every client (the built-in chat UI, or an external app via
+🔌 API) keeps talking to that same port and sees byte-for-byte the same
+responses, streaming included.
+
+The proxy also sniffs `/v1/chat/completions`- and `/completion`-shaped
+traffic (nothing else — page assets, `/health` checks, etc. are relayed
+but not logged) to feed the **📡 Live** tab, next to **Main** — laid out
+like a chat app: a session list down the left (one row per client
+connection, each showing a live indicator, a prompt preview, and a message
+count — click a row, or **All**, to switch) with the picked session's
+requests and replies filling the rest of the tab on the right as they
+stream in. **Clear all** empties the list.
+
+This sniffing is best-effort and never affects what a client actually
+receives — a parsing miss just leaves an entry blank in the 📡 window.
 
 ## Adding more models
 

@@ -29,6 +29,12 @@ pub struct Settings {
     /// invocation, e.g. `--threads 8 --flash-attn on`. Empty by default.
     #[serde(default)]
     pub extra_args: String,
+    /// Off by default: clients connect straight to llama-server with no
+    /// extra hop. When on, QuickAI puts a small local proxy in front of
+    /// llama-server (see `proxy.rs`) so the 📡 Live window can show
+    /// chat/completion traffic as it happens.
+    #[serde(default)]
+    pub enable_traffic_proxy: bool,
 }
 
 fn default_dark_mode() -> bool {
@@ -46,6 +52,7 @@ impl Default for Settings {
             models_dir_override: None,
             llama_bin_override: None,
             extra_args: String::new(),
+            enable_traffic_proxy: false,
         }
     }
 }
@@ -90,10 +97,14 @@ mod tests {
             "n_gpu_layers": 999
         }"#;
         let settings: Settings = serde_json::from_str(old_json).unwrap();
-        assert_eq!(settings.last_model_filename, Some("Bonsai-8B-Q1_0.gguf".to_string()));
+        assert_eq!(
+            settings.last_model_filename,
+            Some("Bonsai-8B-Q1_0.gguf".to_string())
+        );
         assert!(settings.dark_mode);
         assert_eq!(settings.models_dir_override, None);
         assert_eq!(settings.llama_bin_override, None);
         assert_eq!(settings.extra_args, "");
+        assert!(!settings.enable_traffic_proxy);
     }
 }

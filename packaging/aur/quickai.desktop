@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=QuickAI
+GenericName=LLM Server Manager
+Comment=Start/stop local GGUF models (Bonsai, Qwen3) on the GPU via llama.cpp
+Exec=quickai
+Icon=quickai
+Categories=Development;Utility;
+Terminal=false
+StartupWMClass=quickai
