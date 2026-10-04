@@ -4,19 +4,21 @@ A Rust/[egui](https://github.com/emilk/egui) GUI for starting and stopping
 local GGUF models via `llama-server` (from
 [llama.cpp](https://github.com/ggml-org/llama.cpp)), built with the
 **Vulkan** backend so inference runs on the AMD GPU (RX 6700 XT / RADV)
-instead of ROCm, which doesn't officially support this card. Packages into
-a Linux tar.gz, a self-integrating AppImage, and a Windows zip — each
-bundled with the recommended model, ready to run standalone.
+instead of ROCm, which doesn't officially support this card. It is packaged
+as a Linux tar.gz, a self-integrating AppImage, and a Windows zip — each
+bundled with the recommended model, ready to run standalone — by the separate
+`quickai_base` repository, which holds all the packaging and release tooling.
 
 ## Installing a release
 
 Not published anywhere yet — the sections below describe how each channel
-will work starting with the first tagged release (packaging files are in
-place; nothing has been pushed/tagged/submitted so far).
+will work starting with the first tagged release (the packaging files are in
+place in `quickai_base`; nothing has been pushed/tagged/submitted so far).
 
 ### AUR (Arch-based distros)
 
-An AUR package (`quickai-bin`) — see [`packaging/aur/`](packaging/aur/).
+An AUR package (`quickai-bin`); its PKGBUILD is in `quickai_base`'s
+`packaging/aur/`.
 
 ### Homebrew (Linux)
 
@@ -38,7 +40,7 @@ sudo snap install quickai
 
 Prebuilt Linux/AppImage and Windows binaries, attached to each
 [GitHub Release](https://github.com/nujufas/QuickAI/releases). You can also
-build everything yourself with the scripts in [`build/`](build/) — see
+build everything yourself with the scripts in `quickai_base` — see
 "Packaging" below.
 
 ## Layout
@@ -48,13 +50,13 @@ build everything yourself with the scripts in [`build/`](build/) — see
 - `llama.cpp/` — vendored llama.cpp source (its own git checkout —
   gitignored here, see "First-time setup" below), built locally with
   `-DGGML_VULKAN=ON`. Binaries live in `llama.cpp/build/bin/`.
-- `models/` — GGUF files the GUI lists. Gitignored (large binaries, not
-  source); running any `build/*` script fetches the bundled models
-  automatically if missing (`fetch_model()` in `build/common.sh`,
-  downloaded from `prism-ml/Bonsai-8B-gguf` and `prism-ml/Bonsai-1.7B-gguf`
-  on Hugging Face). The others below were symlinked from
-  `~/repo/fillpdf/models/` (that's where they were first downloaded) and
-  aren't fetched automatically:
+- `models/` — GGUF files the GUI lists under `cargo run`. Gitignored (large
+  binaries, not source). The two Bonsai models come from
+  `prism-ml/Bonsai-8B-gguf` and `prism-ml/Bonsai-1.7B-gguf` on Hugging Face;
+  `build/fetch-models.sh --link-into <this checkout>/models` in `quickai_base`
+  downloads them (pinned and checksummed) and puts them here. The others
+  below were symlinked from `~/repo/fillpdf/models/` (that's where they were
+  first downloaded) and aren't fetched automatically:
   - `Bonsai-8B-Q1_0.gguf` — Bonsai 8B, 1-bit (Q1_0), ~1.1 GB, Apache-2.0.
     Bundled into every packaged build.
   - `Bonsai-1.7B-Q1_0.gguf` / `bonsai-1.7b-q1_0.gguf` — Bonsai 1.7B, 1-bit
@@ -76,11 +78,13 @@ build everything yourself with the scripts in [`build/`](build/) — see
   Bonsai variants (better quality, ~50% bigger) and a 27B multimodal
   variant, but per PrismML's own docs the ternary ones currently need a
   separate PrismML fork of llama.cpp — skipped here in favor of mainline.
-- `assets/` — app icon (PNG/ICO/hicolor set for the AppImage).
-- `build/` — packaging scripts (see below).
-- `dist/` — packaged output. Gitignored, along with `target/`, `models/`,
-  `llama.cpp/`, and the packaging scripts' own caches (`build/.cache/`,
-  `build/AppDir/`, `build/appimagetool-*.AppImage`) — see `.gitignore`.
+- `assets/` — the app icon the binary embeds: `icon.png` (the window icon,
+  `include_bytes!` in `main.rs`) and `icon.ico` (the Windows exe's icon
+  resource, `build.rs`). The generator that draws it and every packaging asset
+  derived from it (hicolor sizes, MSIX and Store images) live in
+  `quickai_base/assets/`.
+- `target/`, `models/` and `llama.cpp/` are gitignored (see `.gitignore`).
+  Packaged output goes to `quickai_base/dist/`, not here.
 
 The AppImage self-registers a desktop launcher
 (`~/.local/share/applications/quickai.desktop`) the first time it's run.
@@ -89,8 +93,9 @@ Delete that file if you don't want it there.
 ## First-time setup
 
 `llama.cpp/` is gitignored (it's a vendored checkout, not this project's
-source), so a fresh clone needs it built once before `cargo run` or
-`build/linux.sh`/`build/appimage.sh` will work:
+source), so a fresh clone needs it built once before `cargo run` will work
+(packaging doesn't need it: `quickai_base` bundles a pinned official llama.cpp
+release instead):
 
 ```bash
 git clone https://github.com/ggml-org/llama.cpp
@@ -102,9 +107,13 @@ cmake --build build -j$(nproc)
 Requires the Vulkan build deps: `libvulkan-dev`, `glslc`, `glslang-tools`,
 `spirv-headers`, `vulkan-tools`, `ninja-build`.
 
-`models/` is also gitignored; the bundled model doesn't need a manual step
-though — any `build/*.sh` script (or `windows.bat`) fetches it into
-`models/` automatically the first time, if it's not already there.
+`models/` is also gitignored: `cargo run` lists what is in it. The two
+real-model integration tests in `server_manager.rs` are `#[ignore]`d by default
+so that `cargo test` passes on a fresh clone and on CI, where neither
+`llama.cpp/` nor `models/` exists; run them with
+`cargo test -p quickai -- --ignored` once `llama.cpp/build/bin/llama-server` is
+built and `models/Bonsai-8B-Q1_0.gguf` is in place (see "Layout" above for how
+to fetch the model).
 
 ## Running it (dev)
 
@@ -259,44 +268,28 @@ smaller number to partially offload a model too large for VRAM.
 
 ## Packaging
 
+Packaging and distribution live in the separate `quickai_base` repository, not
+here. It builds the Linux tar.gz, the AppImage, the Windows zip and the snap
+from a checkout of this repository (check out a release tag first), and holds
+the AUR / Homebrew / Scoop / Chocolatey / Microsoft Store packaging
+for them:
+
 ```bash
-build/all.sh          # linux tar.gz + AppImage + windows zip
-build/linux.sh         # Linux tar.gz only
-build/appimage.sh      # AppImage only
-build/windows.sh       # Windows zip, cross-compiled via `cross` + Docker
-build\windows.bat      # Windows zip, run natively ON Windows instead
+quickai_base/build/all.sh      # linux tar.gz + AppImage + windows zip -> quickai_base/dist/
 ```
 
-Every package bundles: the GUI binary, `llama-server` + its runtime libs,
-both `models/Bonsai-8B-Q1_0.gguf` and `models/Bonsai-1.7B-Q1_0.gguf`, and a
-short end-user `README.md` (`build/PACKAGE_README.md`). Output lands in
-`dist/`.
-
-- **Linux/AppImage** ship this repo's own Vulkan-accelerated `llama-server`
-  build, plus only the llama-specific `.so`s it needs (`libggml*`,
-  `libllama*`, `libmtmd*`) — not libc/libstdc++/Vulkan-loader, which are
-  assumed present on any modern desktop with a working GPU driver, same as
-  llama.cpp itself assumes.
-- **Windows** does *not* cross-compile llama.cpp (a C++/CMake/Vulkan
-  project — `cross` only handles the Rust half). Instead it downloads the
-  **official prebuilt Vulkan build** from llama.cpp's own GitHub releases
-  for the same version tag the local build came from (`LLAMA_RELEASE_TAG`
-  in `build/common.sh`, currently `b11007`), caching it under
-  `build/.cache/`. Bump that tag if `llama.cpp/` is ever updated/rebuilt.
-- The GUI binary itself cross-compiles cleanly via `cross` (already set up
-  on this machine — same tool/Docker image the sibling `jsonquery` project
-  uses for its Windows builds).
-
-All three were built and smoke-tested end-to-end while setting this up:
-extracted tar.gz resolves its bundled `.so`s standalone (verified with
-`ldd`), the AppImage self-integrates a desktop entry and runs its bundled
-`llama-server` from the mounted `usr/bin/`, and the Windows `.exe`/DLLs
-were verified as valid PE32+ binaries (can't execute Windows binaries on
-this machine, so that side wasn't runtime-tested).
+Every package bundles the GUI binary, `llama-server` + its runtime libs (the
+official llama.cpp Vulkan release, pinned there), both
+`models/Bonsai-8B-Q1_0.gguf` and `models/Bonsai-1.7B-Q1_0.gguf`, and a short
+end-user README. In a packaged build the app finds `llama-server` and the
+bundled `models/` right next to its own executable (`paths.rs`), so that layout
+is part of the contract between this repository and `quickai_base`.
 
 ## Updating llama.cpp
 
-The build dependencies installed for this (`libvulkan-dev`, `glslc`,
+This is the dev copy `cargo run` uses; the packages bundle a pinned official
+release instead (`quickai_base/build/config.env`). The build dependencies
+installed for this (`libvulkan-dev`, `glslc`,
 `glslang-tools`, `spirv-headers`, `vulkan-tools`, `ninja-build`) are now on
 the system, so `git pull` + rebuild works going forward:
 
@@ -309,6 +302,13 @@ cmake --build build -j$(nproc)
 
 `vulkaninfo --summary` confirms the GPU is visible to Vulkan
 (`AMD Radeon RX 6700 XT (RADV NAVI22)`) if anything ever needs re-checking.
+
+## Privacy
+
+QuickAI has no telemetry, accounts or update checks, and keeps your prompts on
+your computer. It talks to the internet only when you ask it to (searching for
+or downloading a model or a llama.cpp build); the details are in
+[PRIVACY.md](PRIVACY.md).
 
 ## License
 

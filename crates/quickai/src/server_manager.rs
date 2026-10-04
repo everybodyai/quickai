@@ -468,7 +468,12 @@ mod tests {
     /// Full start -> healthy -> stop -> idle cycle against the real
     /// Bonsai-8B model and the real llama-server binary (dev-tree paths),
     /// matching the manual validation done for the Python prototype.
+    ///
+    /// Ignored by default: a fresh clone (and CI) has neither the binary nor
+    /// the model, since `llama.cpp/` and `models/` are gitignored. Run it with
+    /// `cargo test -p quickai -- --ignored` once both are in place.
     #[test]
+    #[ignore = "needs llama.cpp/build/bin/llama-server and models/Bonsai-8B-Q1_0.gguf"]
     fn start_running_stop_cycle() {
         let _guard = MODEL_TEST_LOCK.lock().unwrap();
         let binary = crate::paths::llama_server_bin();
@@ -536,7 +541,10 @@ mod tests {
     /// still reachable on the public port (through the proxy) and, crucially,
     /// that stopping actually releases the public port rather than leaking
     /// the proxy's listener.
+    ///
+    /// Ignored by default, for the same reason as `start_running_stop_cycle`.
     #[test]
+    #[ignore = "needs llama.cpp/build/bin/llama-server and models/Bonsai-8B-Q1_0.gguf"]
     fn start_stop_with_proxy_frees_the_public_port() {
         let _guard = MODEL_TEST_LOCK.lock().unwrap();
         let binary = crate::paths::llama_server_bin();

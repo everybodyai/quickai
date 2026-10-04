@@ -16,10 +16,10 @@ mod remote;
 mod server_manager;
 mod settings;
 
-/// Must match the AppImage's `.desktop` file (`StartupWMClass=quickai`,
-/// see `build/appimage.sh`) so window managers associate the running window
-/// with the launcher icon — otherwise "pin to taskbar" after launch doesn't
-/// stick.
+/// Must match the AppImage's `.desktop` file (`StartupWMClass=quickai`, made
+/// by `build/appimage.sh` in the `quickai_base` repository) so window managers
+/// associate the running window with the launcher icon — otherwise "pin to
+/// taskbar" after launch doesn't stick.
 const APP_ID: &str = "quickai";
 
 fn main() -> eframe::Result {

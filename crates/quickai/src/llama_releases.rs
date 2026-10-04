@@ -3,7 +3,7 @@
 //! look runnable on this machine's OS and CPU architecture. The GUI's
 //! equivalent of `remote.rs`'s model lookup, but for the server binary
 //! itself rather than the model file — see the naming convention this
-//! mirrors in `build/common.sh`'s `fetch_windows_llama` (this repo's own
+//! mirrors in `quickai_base`'s `build/common.sh` (`fetch_llama`; its
 //! packaging scripts fetch the same releases the same way).
 //!
 //! Two quirks of that release feed worth knowing:

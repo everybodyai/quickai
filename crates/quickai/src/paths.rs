@@ -1,9 +1,9 @@
 //! Locates the `llama-server` binary and the two models directories. In a
 //! packaged build the binary and the *bundled* models live right next to
-//! this executable (see build/*.sh); under `cargo run` neither does, so we
-//! fall back to the paths this repo's own `llama.cpp`/`models` directories
-//! live at, resolved at compile time via `CARGO_MANIFEST_DIR` (this crate is
-//! always at `<repo>/crates/quickai`).
+//! this executable (see the build scripts in the `quickai_base` repository);
+//! under `cargo run` neither does, so we fall back to the paths this repo's
+//! own `llama.cpp`/`models` directories live at, resolved at compile time via
+//! `CARGO_MANIFEST_DIR` (this crate is always at `<repo>/crates/quickai`).
 //!
 //! Downloaded models are kept separate, under `~/.quickai/models`, rather
 //! than next to the executable: a packaged build's own directory can be
