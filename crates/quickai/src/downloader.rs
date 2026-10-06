@@ -7,7 +7,7 @@
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use crossbeam_channel::Receiver;
+use crate::jobs::{Job, JobEvent};
 
 /// Whether `input` should be fetched over HTTP rather than treated as a
 /// local filesystem path. Deliberately just a scheme check — everything
@@ -42,22 +42,6 @@ fn try_symlink(_source: &Path, _dest: &Path) -> std::io::Result<()> {
     ))
 }
 
-pub enum DownloadEvent {
-    Progress { downloaded: u64, total: Option<u64> },
-    Done(String),
-    Failed(String),
-}
-
-pub struct DownloadHandle {
-    pub rx: Receiver<DownloadEvent>,
-    pub label: String,
-    pub downloaded: u64,
-    pub total: Option<u64>,
-    /// "Downloading"/"Importing" — just for the progress label, so a local
-    /// file copy doesn't confusingly claim to be a network download.
-    pub verb: &'static str,
-}
-
 const CHUNK: usize = 256 * 1024;
 
 /// Turns a URL or local path (plus an optional suggested filename, e.g.
@@ -89,12 +73,12 @@ fn stream_to_part(
     reader: &mut impl Read,
     total: Option<u64>,
     part_path: &Path,
-    send: &impl Fn(DownloadEvent),
+    send: &dyn Fn(JobEvent<String>),
 ) -> Result<(), ()> {
     let mut file = match std::fs::File::create(part_path) {
         Ok(f) => f,
         Err(e) => {
-            send(DownloadEvent::Failed(format!(
+            send(JobEvent::Failed(format!(
                 "could not create {}: {e}",
                 part_path.display()
             )));
@@ -109,25 +93,25 @@ fn stream_to_part(
             Ok(0) => break,
             Ok(n) => n,
             Err(e) => {
-                send(DownloadEvent::Failed(format!("copy error: {e}")));
+                send(JobEvent::Failed(format!("copy error: {e}")));
                 let _ = std::fs::remove_file(part_path);
                 return Err(());
             }
         };
         if let Err(e) = file.write_all(&buf[..n]) {
-            send(DownloadEvent::Failed(format!("write error: {e}")));
+            send(JobEvent::Failed(format!("write error: {e}")));
             let _ = std::fs::remove_file(part_path);
             return Err(());
         }
         downloaded += n as u64;
-        send(DownloadEvent::Progress { downloaded, total });
+        send(JobEvent::Progress { downloaded, total });
     }
     Ok(())
 }
 
 /// Starts the download (or local-file import) in a background thread and
-/// returns immediately with a handle the UI can poll each frame via
-/// `handle.rx.try_recv()`. `input` is either a `http(s)://` URL or a local
+/// returns immediately with a `Job` the UI polls each frame via
+/// `Job::poll`. `input` is either a `http(s)://` URL or a local
 /// filesystem path (Unix or Windows-style) to an existing `.gguf` file —
 /// see `looks_like_url`.
 pub fn spawn_download(
@@ -135,18 +119,13 @@ pub fn spawn_download(
     filename_hint: Option<String>,
     models_dir: PathBuf,
     wake: impl Fn() + Send + Sync + 'static,
-) -> DownloadHandle {
-    let (tx, rx) = crossbeam_channel::unbounded();
+) -> Job<String> {
     let filename = safe_filename(&input, filename_hint.as_deref());
     let label = filename.clone();
     let from_url = looks_like_url(&input);
+    let verb = if from_url { "Downloading" } else { "Importing" };
 
-    std::thread::spawn(move || {
-        let send = |e: DownloadEvent| {
-            let _ = tx.send(e);
-            wake();
-        };
-
+    Job::spawn(label, verb, wake, move |send| {
         let final_path = models_dir.join(&filename);
         let part_path = models_dir.join(format!("{filename}.part"));
 
@@ -154,7 +133,7 @@ pub fn spawn_download(
         // exist yet on a fresh machine (unlike the bundled models dir,
         // this one isn't shipped with the package).
         if let Err(e) = std::fs::create_dir_all(&models_dir) {
-            send(DownloadEvent::Failed(format!(
+            send(JobEvent::Failed(format!(
                 "could not create {}: {e}",
                 models_dir.display()
             )));
@@ -165,7 +144,7 @@ pub fn spawn_download(
             let resp = match ureq::get(&input).call() {
                 Ok(r) => r,
                 Err(e) => {
-                    send(DownloadEvent::Failed(format!("request failed: {e}")));
+                    send(JobEvent::Failed(format!("request failed: {e}")));
                     return;
                 }
             };
@@ -181,7 +160,7 @@ pub fn spawn_download(
             let metadata = match std::fs::metadata(&source) {
                 Ok(m) => m,
                 Err(e) => {
-                    send(DownloadEvent::Failed(format!(
+                    send(JobEvent::Failed(format!(
                         "can't read {}: {e}",
                         source.display()
                     )));
@@ -189,7 +168,7 @@ pub fn spawn_download(
                 }
             };
             if !metadata.is_file() {
-                send(DownloadEvent::Failed(format!(
+                send(JobEvent::Failed(format!(
                     "{} is not a file",
                     source.display()
                 )));
@@ -211,18 +190,18 @@ pub fn spawn_download(
             if try_symlink(&source_abs, &final_path).is_ok()
                 || std::fs::hard_link(&source, &final_path).is_ok()
             {
-                send(DownloadEvent::Progress {
+                send(JobEvent::Progress {
                     downloaded: metadata.len(),
                     total: Some(metadata.len()),
                 });
-                send(DownloadEvent::Done(filename));
+                send(JobEvent::Done(filename));
                 return;
             }
 
             let mut reader = match std::fs::File::open(&source) {
                 Ok(f) => f,
                 Err(e) => {
-                    send(DownloadEvent::Failed(format!(
+                    send(JobEvent::Failed(format!(
                         "could not open {}: {e}",
                         source.display()
                     )));
@@ -235,29 +214,21 @@ pub fn spawn_download(
         }
 
         if let Err(e) = std::fs::rename(&part_path, &final_path) {
-            send(DownloadEvent::Failed(format!(
+            send(JobEvent::Failed(format!(
                 "could not finalize {}: {e}",
                 final_path.display()
             )));
             return;
         }
 
-        send(DownloadEvent::Done(filename));
-    });
-
-    DownloadHandle {
-        rx,
-        label,
-        downloaded: 0,
-        total: None,
-        verb: if from_url { "Downloading" } else { "Importing" },
-    }
+        send(JobEvent::Done(filename));
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     /// Real download against Hugging Face's API (small JSON, not an actual
     /// GGUF — this exercises the streaming/rename mechanics, not the
@@ -268,26 +239,15 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("quickai-dl-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
 
-        let handle = spawn_download(
+        let mut job = spawn_download(
             "https://huggingface.co/api/models/unsloth/Qwen3-1.7B".to_string(),
             Some("test-download.json".to_string()),
             dir.clone(),
             || {},
         );
 
-        let deadline = Instant::now() + Duration::from_secs(20);
-        let mut result = None;
-        while Instant::now() < deadline && result.is_none() {
-            if let Ok(event) = handle.rx.recv_timeout(Duration::from_millis(200)) {
-                match event {
-                    DownloadEvent::Done(f) => result = Some(Ok(f)),
-                    DownloadEvent::Failed(e) => result = Some(Err(e)),
-                    DownloadEvent::Progress { .. } => {}
-                }
-            }
-        }
-
-        let filename = result
+        let filename = job
+            .wait(Duration::from_secs(20))
             .expect("download did not finish within timeout")
             .expect("download failed");
         let path = dir.join(&filename);
@@ -328,27 +288,16 @@ mod tests {
         let source_path = source_dir.join("my-model.gguf");
         std::fs::write(&source_path, b"fake gguf contents").unwrap();
 
-        let handle = spawn_download(
+        let mut job = spawn_download(
             source_path.display().to_string(),
             None,
             dest_dir.clone(),
             || {},
         );
-        assert_eq!(handle.verb, "Importing");
+        assert_eq!(job.verb, "Importing");
 
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let mut result = None;
-        while Instant::now() < deadline && result.is_none() {
-            if let Ok(event) = handle.rx.recv_timeout(Duration::from_millis(200)) {
-                match event {
-                    DownloadEvent::Done(f) => result = Some(Ok(f)),
-                    DownloadEvent::Failed(e) => result = Some(Err(e)),
-                    DownloadEvent::Progress { .. } => {}
-                }
-            }
-        }
-
-        let filename = result
+        let filename = job
+            .wait(Duration::from_secs(10))
             .expect("import did not finish within timeout")
             .expect("import failed");
         assert_eq!(filename, "my-model.gguf");

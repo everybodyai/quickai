@@ -1,0 +1,710 @@
+{
+  "first_run_no_model": {
+    "derived": {
+      "gpu_offload": true
+    },
+    "engine": "llamacpp",
+    "sections": [
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "TCP port llama-server listens on, on this machine only (127.0.0.1) — never exposed to your network. The default 8080 is fine unless something else on your system is already using it; any free port from 1-65535 works.",
+            "hint": null,
+            "id": "port",
+            "key": "llamacpp.port",
+            "label": "Port",
+            "legacy_key": "port",
+            "options": [],
+            "origin": "selection",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "port",
+            "value": 8080,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Maximum number of tokens (roughly, word-pieces) of conversation llama.cpp keeps in memory at once — prompt plus reply combined. Bigger means it remembers more of a long chat/document, but uses more RAM/VRAM and can respond slower. Typical values: 2048-4096 for short chats, 8192-16384 for longer ones, 32768+ only for large documents on machines with memory to spare.",
+            "hint": null,
+            "id": "ctx_size",
+            "key": "llamacpp.ctx_size",
+            "label": "Context size",
+            "legacy_key": "ctx_size",
+            "options": [],
+            "origin": "selection",
+            "persist": "global",
+            "range": [
+              256.0,
+              131072.0
+            ],
+            "required": false,
+            "step": 64.0,
+            "type": "int",
+            "value": 4096,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "How many of the model's layers to run on the GPU instead of the CPU. 999 (default) offloads every layer llama.cpp can — fastest, if the model fits in your GPU's VRAM. 0 = CPU only. If Start crashes or the log shows an out-of-memory error, the model likely doesn't fit in VRAM — try a smaller number (e.g. 20-40) to offload only part of it, or 0 to fall back to CPU entirely.",
+            "hint": null,
+            "id": "n_gpu_layers",
+            "key": "llamacpp.n_gpu_layers",
+            "label": "GPU layers",
+            "legacy_key": "n_gpu_layers",
+            "options": [],
+            "origin": "selection",
+            "persist": "global",
+            "range": [
+              0.0,
+              999.0
+            ],
+            "required": false,
+            "step": null,
+            "type": "int",
+            "value": 999,
+            "visible": true,
+            "widget": null
+          }
+        ],
+        "id": "primary"
+      },
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Override the auto-detected llama-server executable — point this at a custom build (e.g. a different backend, or a newer version), or paste a direct download URL to a release archive (.zip/.tar.gz) to fetch and install it automatically. Leave blank to use the bundled/auto-detected one.",
+            "hint": "Local binary path or a download URL...",
+            "id": "bin_override",
+            "key": "llamacpp.bin_override",
+            "label": "llama-server binary",
+            "legacy_key": "llama_bin_override",
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "runtime_path",
+            "value": null,
+            "visible": true,
+            "widget": "runtime_manager"
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Appended verbatim to the llama-server command, after the built-in options (port/context size/GPU layers). Space-separated; wrap a value containing spaces in \"double quotes\". An invalid or unsupported flag will make the server fail to start — check the log pane at the bottom of the main window if Start doesn't work.\n\nExamples:\n--threads 8         number of CPU threads to use\n--flash-attn on     enable flash attention (faster; needs support)\n--batch-size 512    tokens processed per batch\n--no-mmap           disable memory-mapping the model file\n--rope-freq-base 0  override RoPE frequency base (long-context models)",
+            "hint": "e.g. --threads 8 --flash-attn on",
+            "id": "extra_args",
+            "key": "llamacpp.extra_args",
+            "label": "Extra command-line arguments",
+            "legacy_key": "extra_args",
+            "options": [],
+            "origin": "selection",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": "",
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": null,
+            "hint": null,
+            "id": "last_model",
+            "key": "llamacpp.last_model",
+            "label": "last_model",
+            "legacy_key": "last_model_filename",
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "hidden",
+            "value": null,
+            "visible": false,
+            "widget": null
+          }
+        ],
+        "id": "advanced"
+      },
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Where models fetched via the \"Model\" box (download/import/search) or \"Look up online\" are saved and read back from. The models bundled with the app itself live in their own read-only folder regardless of this.",
+            "hint": null,
+            "id": "models_dir",
+            "key": "llamacpp.models_dir",
+            "label": "Downloaded models folder",
+            "legacy_key": "models_dir_override",
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "dir",
+            "value": null,
+            "visible": true,
+            "widget": null
+          }
+        ],
+        "id": "app"
+      }
+    ]
+  },
+  "large_model_little_ram": {
+    "derived": {
+      "gpu_offload": true
+    },
+    "engine": "llamacpp",
+    "sections": [
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "TCP port llama-server listens on, on this machine only (127.0.0.1) — never exposed to your network. The default 8080 is fine unless something else on your system is already using it; any free port from 1-65535 works.",
+            "hint": null,
+            "id": "port",
+            "key": "llamacpp.port",
+            "label": "Port",
+            "legacy_key": "port",
+            "options": [],
+            "origin": "selection",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "port",
+            "value": 8080,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Maximum number of tokens (roughly, word-pieces) of conversation llama.cpp keeps in memory at once — prompt plus reply combined. Bigger means it remembers more of a long chat/document, but uses more RAM/VRAM and can respond slower. Typical values: 2048-4096 for short chats, 8192-16384 for longer ones, 32768+ only for large documents on machines with memory to spare.",
+            "hint": null,
+            "id": "ctx_size",
+            "key": "llamacpp.ctx_size",
+            "label": "Context size",
+            "legacy_key": "ctx_size",
+            "options": [],
+            "origin": {
+              "computed": "recommend_ctx_size"
+            },
+            "persist": "global",
+            "range": [
+              256.0,
+              131072.0
+            ],
+            "required": false,
+            "step": 64.0,
+            "type": "int",
+            "value": 1024,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "How many of the model's layers to run on the GPU instead of the CPU. 999 (default) offloads every layer llama.cpp can — fastest, if the model fits in your GPU's VRAM. 0 = CPU only. If Start crashes or the log shows an out-of-memory error, the model likely doesn't fit in VRAM — try a smaller number (e.g. 20-40) to offload only part of it, or 0 to fall back to CPU entirely.",
+            "hint": null,
+            "id": "n_gpu_layers",
+            "key": "llamacpp.n_gpu_layers",
+            "label": "GPU layers",
+            "legacy_key": "n_gpu_layers",
+            "options": [],
+            "origin": "selection",
+            "persist": "global",
+            "range": [
+              0.0,
+              999.0
+            ],
+            "required": false,
+            "step": null,
+            "type": "int",
+            "value": 999,
+            "visible": true,
+            "widget": null
+          }
+        ],
+        "id": "primary"
+      },
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Override the auto-detected llama-server executable — point this at a custom build (e.g. a different backend, or a newer version), or paste a direct download URL to a release archive (.zip/.tar.gz) to fetch and install it automatically. Leave blank to use the bundled/auto-detected one.",
+            "hint": "Local binary path or a download URL...",
+            "id": "bin_override",
+            "key": "llamacpp.bin_override",
+            "label": "llama-server binary",
+            "legacy_key": "llama_bin_override",
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "runtime_path",
+            "value": null,
+            "visible": true,
+            "widget": "runtime_manager"
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Appended verbatim to the llama-server command, after the built-in options (port/context size/GPU layers). Space-separated; wrap a value containing spaces in \"double quotes\". An invalid or unsupported flag will make the server fail to start — check the log pane at the bottom of the main window if Start doesn't work.\n\nExamples:\n--threads 8         number of CPU threads to use\n--flash-attn on     enable flash attention (faster; needs support)\n--batch-size 512    tokens processed per batch\n--no-mmap           disable memory-mapping the model file\n--rope-freq-base 0  override RoPE frequency base (long-context models)",
+            "hint": "e.g. --threads 8 --flash-attn on",
+            "id": "extra_args",
+            "key": "llamacpp.extra_args",
+            "label": "Extra command-line arguments",
+            "legacy_key": "extra_args",
+            "options": [],
+            "origin": "selection",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": "",
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": null,
+            "hint": null,
+            "id": "last_model",
+            "key": "llamacpp.last_model",
+            "label": "last_model",
+            "legacy_key": "last_model_filename",
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "hidden",
+            "value": null,
+            "visible": false,
+            "widget": null
+          }
+        ],
+        "id": "advanced"
+      },
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Where models fetched via the \"Model\" box (download/import/search) or \"Look up online\" are saved and read back from. The models bundled with the app itself live in their own read-only folder regardless of this.",
+            "hint": null,
+            "id": "models_dir",
+            "key": "llamacpp.models_dir",
+            "label": "Downloaded models folder",
+            "legacy_key": "models_dir_override",
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "dir",
+            "value": null,
+            "visible": true,
+            "widget": null
+          }
+        ],
+        "id": "app"
+      }
+    ]
+  },
+  "server_running": {
+    "derived": {
+      "gpu_offload": true
+    },
+    "engine": "llamacpp",
+    "sections": [
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": false,
+            "error": null,
+            "help": "TCP port llama-server listens on, on this machine only (127.0.0.1) — never exposed to your network. The default 8080 is fine unless something else on your system is already using it; any free port from 1-65535 works.",
+            "hint": null,
+            "id": "port",
+            "key": "llamacpp.port",
+            "label": "Port",
+            "legacy_key": "port",
+            "options": [],
+            "origin": "selection",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "port",
+            "value": 8080,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": false,
+            "error": null,
+            "help": "Maximum number of tokens (roughly, word-pieces) of conversation llama.cpp keeps in memory at once — prompt plus reply combined. Bigger means it remembers more of a long chat/document, but uses more RAM/VRAM and can respond slower. Typical values: 2048-4096 for short chats, 8192-16384 for longer ones, 32768+ only for large documents on machines with memory to spare.",
+            "hint": null,
+            "id": "ctx_size",
+            "key": "llamacpp.ctx_size",
+            "label": "Context size",
+            "legacy_key": "ctx_size",
+            "options": [],
+            "origin": "selection",
+            "persist": "global",
+            "range": [
+              256.0,
+              131072.0
+            ],
+            "required": false,
+            "step": 64.0,
+            "type": "int",
+            "value": 4096,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": false,
+            "error": null,
+            "help": "How many of the model's layers to run on the GPU instead of the CPU. 999 (default) offloads every layer llama.cpp can — fastest, if the model fits in your GPU's VRAM. 0 = CPU only. If Start crashes or the log shows an out-of-memory error, the model likely doesn't fit in VRAM — try a smaller number (e.g. 20-40) to offload only part of it, or 0 to fall back to CPU entirely.",
+            "hint": null,
+            "id": "n_gpu_layers",
+            "key": "llamacpp.n_gpu_layers",
+            "label": "GPU layers",
+            "legacy_key": "n_gpu_layers",
+            "options": [],
+            "origin": "selection",
+            "persist": "global",
+            "range": [
+              0.0,
+              999.0
+            ],
+            "required": false,
+            "step": null,
+            "type": "int",
+            "value": 999,
+            "visible": true,
+            "widget": null
+          }
+        ],
+        "id": "primary"
+      },
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Override the auto-detected llama-server executable — point this at a custom build (e.g. a different backend, or a newer version), or paste a direct download URL to a release archive (.zip/.tar.gz) to fetch and install it automatically. Leave blank to use the bundled/auto-detected one.",
+            "hint": "Local binary path or a download URL...",
+            "id": "bin_override",
+            "key": "llamacpp.bin_override",
+            "label": "llama-server binary",
+            "legacy_key": "llama_bin_override",
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "runtime_path",
+            "value": null,
+            "visible": true,
+            "widget": "runtime_manager"
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Appended verbatim to the llama-server command, after the built-in options (port/context size/GPU layers). Space-separated; wrap a value containing spaces in \"double quotes\". An invalid or unsupported flag will make the server fail to start — check the log pane at the bottom of the main window if Start doesn't work.\n\nExamples:\n--threads 8         number of CPU threads to use\n--flash-attn on     enable flash attention (faster; needs support)\n--batch-size 512    tokens processed per batch\n--no-mmap           disable memory-mapping the model file\n--rope-freq-base 0  override RoPE frequency base (long-context models)",
+            "hint": "e.g. --threads 8 --flash-attn on",
+            "id": "extra_args",
+            "key": "llamacpp.extra_args",
+            "label": "Extra command-line arguments",
+            "legacy_key": "extra_args",
+            "options": [],
+            "origin": "selection",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": "",
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": null,
+            "hint": null,
+            "id": "last_model",
+            "key": "llamacpp.last_model",
+            "label": "last_model",
+            "legacy_key": "last_model_filename",
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "hidden",
+            "value": null,
+            "visible": false,
+            "widget": null
+          }
+        ],
+        "id": "advanced"
+      },
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Where models fetched via the \"Model\" box (download/import/search) or \"Look up online\" are saved and read back from. The models bundled with the app itself live in their own read-only folder regardless of this.",
+            "hint": null,
+            "id": "models_dir",
+            "key": "llamacpp.models_dir",
+            "label": "Downloaded models folder",
+            "legacy_key": "models_dir_override",
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "dir",
+            "value": null,
+            "visible": true,
+            "widget": null
+          }
+        ],
+        "id": "app"
+      }
+    ]
+  },
+  "small_model_default_context": {
+    "derived": {
+      "gpu_offload": true
+    },
+    "engine": "llamacpp",
+    "sections": [
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "TCP port llama-server listens on, on this machine only (127.0.0.1) — never exposed to your network. The default 8080 is fine unless something else on your system is already using it; any free port from 1-65535 works.",
+            "hint": null,
+            "id": "port",
+            "key": "llamacpp.port",
+            "label": "Port",
+            "legacy_key": "port",
+            "options": [],
+            "origin": "selection",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "port",
+            "value": 8080,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Maximum number of tokens (roughly, word-pieces) of conversation llama.cpp keeps in memory at once — prompt plus reply combined. Bigger means it remembers more of a long chat/document, but uses more RAM/VRAM and can respond slower. Typical values: 2048-4096 for short chats, 8192-16384 for longer ones, 32768+ only for large documents on machines with memory to spare.",
+            "hint": null,
+            "id": "ctx_size",
+            "key": "llamacpp.ctx_size",
+            "label": "Context size",
+            "legacy_key": "ctx_size",
+            "options": [],
+            "origin": {
+              "computed": "recommend_ctx_size"
+            },
+            "persist": "global",
+            "range": [
+              256.0,
+              131072.0
+            ],
+            "required": false,
+            "step": 64.0,
+            "type": "int",
+            "value": 16384,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "How many of the model's layers to run on the GPU instead of the CPU. 999 (default) offloads every layer llama.cpp can — fastest, if the model fits in your GPU's VRAM. 0 = CPU only. If Start crashes or the log shows an out-of-memory error, the model likely doesn't fit in VRAM — try a smaller number (e.g. 20-40) to offload only part of it, or 0 to fall back to CPU entirely.",
+            "hint": null,
+            "id": "n_gpu_layers",
+            "key": "llamacpp.n_gpu_layers",
+            "label": "GPU layers",
+            "legacy_key": "n_gpu_layers",
+            "options": [],
+            "origin": "selection",
+            "persist": "global",
+            "range": [
+              0.0,
+              999.0
+            ],
+            "required": false,
+            "step": null,
+            "type": "int",
+            "value": 999,
+            "visible": true,
+            "widget": null
+          }
+        ],
+        "id": "primary"
+      },
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Override the auto-detected llama-server executable — point this at a custom build (e.g. a different backend, or a newer version), or paste a direct download URL to a release archive (.zip/.tar.gz) to fetch and install it automatically. Leave blank to use the bundled/auto-detected one.",
+            "hint": "Local binary path or a download URL...",
+            "id": "bin_override",
+            "key": "llamacpp.bin_override",
+            "label": "llama-server binary",
+            "legacy_key": "llama_bin_override",
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "runtime_path",
+            "value": null,
+            "visible": true,
+            "widget": "runtime_manager"
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Appended verbatim to the llama-server command, after the built-in options (port/context size/GPU layers). Space-separated; wrap a value containing spaces in \"double quotes\". An invalid or unsupported flag will make the server fail to start — check the log pane at the bottom of the main window if Start doesn't work.\n\nExamples:\n--threads 8         number of CPU threads to use\n--flash-attn on     enable flash attention (faster; needs support)\n--batch-size 512    tokens processed per batch\n--no-mmap           disable memory-mapping the model file\n--rope-freq-base 0  override RoPE frequency base (long-context models)",
+            "hint": "e.g. --threads 8 --flash-attn on",
+            "id": "extra_args",
+            "key": "llamacpp.extra_args",
+            "label": "Extra command-line arguments",
+            "legacy_key": "extra_args",
+            "options": [],
+            "origin": "selection",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": "",
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": null,
+            "hint": null,
+            "id": "last_model",
+            "key": "llamacpp.last_model",
+            "label": "last_model",
+            "legacy_key": "last_model_filename",
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "hidden",
+            "value": null,
+            "visible": false,
+            "widget": null
+          }
+        ],
+        "id": "advanced"
+      },
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "Where models fetched via the \"Model\" box (download/import/search) or \"Look up online\" are saved and read back from. The models bundled with the app itself live in their own read-only folder regardless of this.",
+            "hint": null,
+            "id": "models_dir",
+            "key": "llamacpp.models_dir",
+            "label": "Downloaded models folder",
+            "legacy_key": "models_dir_override",
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "dir",
+            "value": null,
+            "visible": true,
+            "widget": null
+          }
+        ],
+        "id": "app"
+      }
+    ]
+  }
+}

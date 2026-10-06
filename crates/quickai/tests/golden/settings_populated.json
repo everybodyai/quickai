@@ -1,0 +1,11 @@
+{
+  "last_model_filename": "Qwen3-4B-Q4_K_M.gguf",
+  "port": 8099,
+  "ctx_size": 8192,
+  "n_gpu_layers": 20,
+  "dark_mode": false,
+  "models_dir_override": "/data/models",
+  "llama_bin_override": "/opt/llama/llama-server",
+  "extra_args": "--threads 8 --flash-attn on",
+  "enable_traffic_proxy": true
+}

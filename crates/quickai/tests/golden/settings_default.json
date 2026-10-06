@@ -1,0 +1,11 @@
+{
+  "last_model_filename": null,
+  "port": 8080,
+  "ctx_size": 4096,
+  "n_gpu_layers": 999,
+  "dark_mode": true,
+  "models_dir_override": null,
+  "llama_bin_override": null,
+  "extra_args": "",
+  "enable_traffic_proxy": false
+}

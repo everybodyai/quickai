@@ -1,0 +1,153 @@
+# ILLUSTRATIVE. The shared nouns that engines, recipes and the UI refer to by id.
+# Modalities, adapter kinds (what a recipe calls "components") and API definitions. This is data-tier:
+# it can name things and describe them, it cannot launch anything or reach any host.
+schema = 1
+kind = "vocab"
+id = "core"
+
+# ---- modalities ----------------------------------------------------------------------------------------
+[[modality]]
+id = "text"
+label = "Text"
+
+[[modality]]
+id = "image"
+label = "Images"
+
+[[modality]]
+id = "audio"
+label = "Audio"
+
+[[modality]]
+id = "video"
+label = "Video"
+
+# ---- adapter kinds: extra artifacts attached to a model at run time -------------------------------------
+# A kind says what the user sees (label, help, fields) and what the artifact is (formats, how to spot one).
+# How a particular engine attaches it (flags, env, files, calls) lives in that engine's document.
+[[adapter_kind]]
+id = "mmproj"
+label = "Vision / audio / video projector"
+help = "Lets a text model take images, audio or video as input. It must come from the same model family as the base model."
+cardinality = "0..1"
+formats = ["gguf"]
+adds_input = ["image", "audio", "video"]        # a recipe narrows this to what its projector really supports
+discover = { glob = ["mmproj*.gguf", "*mmproj*.gguf"] }      # llama.cpp's own convention: the file name starts with "mmproj"
+fields = [
+  { id = "offload", label = "Offload projector to GPU", type = "bool", default = true },
+  { id = "image_min_tokens", label = "Minimum tokens per image", type = "int", optional = true, advanced = true },
+  { id = "image_max_tokens", label = "Maximum tokens per image", type = "int", optional = true, advanced = true },
+]
+
+[[adapter_kind]]
+id = "lora"
+label = "LoRA adapter"
+help = "A small fine-tune applied on top of the base model."
+cardinality = "0..n"
+formats = ["gguf"]
+fields = [
+  { id = "scale", label = "Scale", type = "float", range = [0.0, 2.0], step = 0.05, default = 1.0 },
+]
+
+[[adapter_kind]]
+id = "draft"
+label = "Draft model"
+help = "A small model that proposes tokens for the main model to check (speculative decoding)."
+cardinality = "0..1"
+formats = ["gguf"]
+fields = [
+  { id = "n_max", label = "Tokens to draft", type = "int", range = [1, 64], default = 3 },
+  { id = "gpu_layers", label = "Draft GPU layers", type = "int", range = [0, 999], optional = true, advanced = true },
+]
+
+# ---- APIs: what a client can call, and how the proxy reads it ------------------------------------------
+# `decode` drives the Live tab: framing, and JSON pointers to the text. Relaying is never affected.
+[[api]]
+id = "openai.chat"
+paths = ["/v1/chat/completions"]
+capabilities = ["chat"]
+
+[api.decode]
+framing = ["sse", "json"]
+delta = ["/choices/0/delta/content"]
+final = ["/choices/0/message/content"]
+
+[api.decode.chat]
+messages = "/messages"
+role = "/role"
+content = "/content"
+skip_roles = ["system"]
+parts = { type = "/type", text = "/text" }
+
+[[api.examples]]
+label = "Text"
+when = "true"
+curl = '''
+curl ${api.base_url}/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"${api.model}","messages":[{"role":"user","content":"Hello"}]}'
+'''
+
+[[api.examples]]
+label = "Image"
+when = "has(model.modalities.input, 'image')"
+curl = '''
+curl ${api.base_url}/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"${api.model}","messages":[{"role":"user","content":[{"type":"text","text":"What is in this picture?"},{"type":"image_url","image_url":{"url":"data:image/png;base64,<BASE64>"}}]}]}'
+'''
+
+[[api]]
+id = "openai.completions"
+paths = ["/v1/completions"]
+capabilities = ["completion"]
+
+[api.decode]
+framing = ["sse", "json"]
+prompt = "/prompt"
+delta = ["/choices/0/text"]
+final = ["/choices/0/text"]
+
+[[api]]
+id = "openai.embeddings"
+paths = ["/v1/embeddings"]
+capabilities = ["embedding"]
+
+[[api]]
+id = "llamacpp.completion"
+paths = ["/completion"]
+capabilities = ["completion"]
+
+[api.decode]
+framing = ["sse", "json"]
+prompt = "/prompt"
+delta = ["/content"]
+final = ["/content"]
+
+[[api]]
+id = "ollama.chat"
+paths = ["/api/chat"]
+capabilities = ["chat"]
+
+[api.decode]
+framing = ["ndjson", "json"]
+delta = ["/message/content"]
+final = ["/message/content"]
+
+[api.decode.chat]
+messages = "/messages"
+role = "/role"
+content = "/content"
+skip_roles = ["system"]
+images = "/images"              # base64 images in a message become attachments in the Live tab
+
+[[api]]
+id = "ollama.generate"
+paths = ["/api/generate"]
+capabilities = ["completion"]
+
+[api.decode]
+framing = ["ndjson", "json"]
+prompt = "/prompt"
+delta = ["/response"]
+final = ["/response"]

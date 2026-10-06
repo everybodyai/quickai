@@ -21,48 +21,10 @@ use std::sync::Arc;
 use crossbeam_channel::Sender;
 use serde_json::Value;
 
+use crate::events::{Event, TrafficEvent};
 use crate::hardware::format_bytes;
-use crate::server_manager::Event;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
-
-/// One update about traffic passing through the proxy, for the GUI's 📡 Live
-/// window. `id` correlates a request with its (possibly streamed) response.
-#[derive(Clone, Debug)]
-pub enum TrafficEvent {
-    /// `session` identifies which client this came from — the client's
-    /// `ip:port`, which is stable for one TCP connection (so several
-    /// requests over one keep-alive connection share a session) and
-    /// distinct across simultaneous clients (a browser tab vs. an external
-    /// API caller, say). It's a heuristic, not a true higher-level "chat
-    /// session": a client that reconnects (e.g. after an idle timeout)
-    /// shows up as a new one.
-    Request {
-        id: u64,
-        session: String,
-        method: String,
-        path: String,
-        prompt: Option<String>,
-        /// Best-effort description of any non-text parts of that same
-        /// message — an attached image, PDF, etc. — so a client that sends
-        /// a document alongside its text still shows up as more than a
-        /// blank prompt in the 📡 Live window. Empty when the message had
-        /// no such parts, or wasn't in a shape this recognises.
-        attachments: Vec<String>,
-    },
-    ResponseDelta {
-        id: u64,
-        text: String,
-    },
-    ResponseDone {
-        id: u64,
-        full_text: Option<String>,
-    },
-    ResponseError {
-        id: u64,
-        message: String,
-    },
-}
 
 /// Requests larger than this are still relayed in full, just not sniffed —
 /// keeps a huge upload from being buffered twice in memory.
@@ -684,13 +646,18 @@ mod tests {
             let _ = stream.write_all(resp.as_bytes());
         });
 
-        let public_listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let public_port = public_listener.local_addr().unwrap().port();
-        drop(public_listener);
-
         let (evt_tx, evt_rx) = crossbeam_channel::unbounded();
         let wake = Arc::new(|| {});
-        let handle = spawn(public_port, upstream_port, evt_tx, wake).unwrap();
+        // A port found by binding 0 can still be held when `spawn` binds it (a child that another
+        // test has just forked keeps the listener until it execs): ask for another one.
+        let (public_port, handle) = (0..5)
+            .find_map(|_| {
+                let port = crate::runtime::process::ephemeral_port().unwrap();
+                spawn(port, upstream_port, evt_tx.clone(), wake.clone())
+                    .ok()
+                    .map(|handle| (port, handle))
+            })
+            .expect("five free ports in a row were all taken");
 
         let resp = ureq::post(format!(
             "http://127.0.0.1:{public_port}/v1/chat/completions"
