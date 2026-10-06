@@ -1,0 +1,89 @@
+# ILLUSTRATIVE. Model recipes. Today's KNOWN_MODELS (models.rs) and the bundled-model pins of
+# quickai_base/build/config.env become data here. This tier is data-only: a recipe can name sources,
+# but the network policy decides which hosts may actually be contacted.
+#
+# A recipe names its components (main weights, a projector, adapters) and, per engine, how to run it.
+# A recipe with no `run.<engine>` table is simply not offered under that engine.
+schema = 1
+kind = "catalog"
+id = "starter"
+
+[[model]]
+id = "bonsai-8b"
+name = "Bonsai 8B (1-bit Q1_0)"
+note = "1-bit quantized, ~1.1 GB, Apache-2.0. Bundled with this package."
+license = "Apache-2.0"
+modalities = { input = ["text"], output = ["text"] }
+bundled = true
+
+[model.components.main]
+file = "Bonsai-8B-Q1_0.gguf"
+sources = [
+  { bundle = "models/Bonsai-8B-Q1_0.gguf" },
+  { huggingface = { repo = "prism-ml/Bonsai-8B-gguf", rev = "48516770dd04643643e9f9019a2a349cf26c5dbd", file = "Bonsai-8B-Q1_0.gguf" }, sha256 = "284a335aa3fb2ced3b1b01fcb40b08aa783e3b70832767f0dd2e3fdfa134bd54" },
+]
+
+[model.run.llamacpp]            # nothing extra needed. No [model.run.ollama]: the Q1_0 files are llama.cpp-only until proven otherwise (A5)
+
+[[model]]
+id = "bonsai-1.7b"
+name = "Bonsai 1.7B (1-bit Q1_0)"
+note = "1-bit quantized, ~0.25 GB, Apache-2.0. Bundled with this package; the lighter pick if the 8B runs slowly on this machine."
+license = "Apache-2.0"
+modalities = { input = ["text"], output = ["text"] }
+bundled = true
+
+[model.components.main]
+file = ["Bonsai-1.7B-Q1_0.gguf", "bonsai-1.7b-q1_0.gguf"]      # both spellings are recognised today
+sources = [
+  { bundle = "models/Bonsai-1.7B-Q1_0.gguf" },
+  { huggingface = { repo = "prism-ml/Bonsai-1.7B-gguf", rev = "210a9e99f79cb184909d49595906526eb2b3dd9a", file = "Bonsai-1.7B-Q1_0.gguf" }, sha256 = "3d7c6c90dd98717a203adb22d5eacd2581850e40aa5327e144b97766cae5f7e3" },
+]
+
+[model.run.llamacpp]
+
+[[model]]
+id = "qwen3-1.7b"
+name = "Qwen3 1.7B (Q8_0)"
+note = "Instruction-tuned chat model, small and fast."
+modalities = { input = ["text"], output = ["text"] }
+
+[model.components.main]
+file = "qwen3-1.7b-q8_0.gguf"   # no `sources`: this recipe only gives a name and a note to a file the user brings
+
+[model.run.llamacpp]
+
+# One recipe, two engines: a file for llama.cpp, a named reference for Ollama.
+[[model]]
+id = "qwen3-4b"
+name = "Qwen3 4B"
+note = "Instruction-tuned chat model, larger and slower than the 1.7B."
+modalities = { input = ["text"], output = ["text"] }
+
+[model.components.main]
+file = "qwen3-4b-q4_k_m.gguf"
+
+[model.run.llamacpp]
+
+[model.run.ollama]
+ref = "qwen3:4b"                # assumed to exist in Ollama's library; confirm before shipping
+
+# A FICTIONAL vision model, to show components. The names, repositories and sizes are invented.
+[[model]]
+id = "example-vl-7b"
+name = "Example VL 7B (vision)"
+note = "Fictional: shows a model with a projector."
+modalities = { input = ["text", "image"], output = ["text"] }
+
+[model.components.main]
+sources = [ { huggingface = { repo = "example-org/Example-VL-7B-GGUF", file = "Example-VL-7B-Q4_K_M.gguf" } } ]
+
+[model.components.mmproj]
+kind = "mmproj"
+sources = [ { huggingface = { repo = "example-org/Example-VL-7B-GGUF", file = "mmproj-Example-VL-7B-f16.gguf" } } ]
+
+[model.run.llamacpp]
+components = ["main", "mmproj"]     # the projector is attached by engines/llamacpp.toml [components.mmproj]
+
+[model.run.ollama]
+ref = "example-vl:7b"               # Ollama's multimodal models are self-contained: no projector to attach

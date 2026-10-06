@@ -1,0 +1,463 @@
+[
+  {
+    "args": [
+      "--model",
+      "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8080",
+      "--ctx-size",
+      "4096",
+      "--n-gpu-layers",
+      "999"
+    ],
+    "env": [
+      [
+        "LD_LIBRARY_PATH",
+        "/ROOT/bin"
+      ]
+    ],
+    "input": {
+      "binary": "/ROOT/bin/llama-server",
+      "ctx_size": 4096,
+      "extra_args": "",
+      "inherited_ld_library_path": "",
+      "model": "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "n_gpu_layers": 999,
+      "port": 8080,
+      "proxy": false
+    },
+    "log_line": "$ /ROOT/bin/llama-server --model /ROOT/models/Bonsai-8B-Q1_0.gguf --host 127.0.0.1 --port 8080 --ctx-size 4096 --n-gpu-layers 999",
+    "name": "defaults",
+    "program": "/ROOT/bin/llama-server",
+    "server_port": 8080
+  },
+  {
+    "args": [
+      "--model",
+      "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8080",
+      "--ctx-size",
+      "4096",
+      "--n-gpu-layers",
+      "999"
+    ],
+    "env": [
+      [
+        "LD_LIBRARY_PATH",
+        "/ROOT/bin:/usr/lib:/opt/cuda/lib64"
+      ]
+    ],
+    "input": {
+      "binary": "/ROOT/bin/llama-server",
+      "ctx_size": 4096,
+      "extra_args": "",
+      "inherited_ld_library_path": "/usr/lib:/opt/cuda/lib64",
+      "model": "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "n_gpu_layers": 999,
+      "port": 8080,
+      "proxy": false
+    },
+    "log_line": "$ /ROOT/bin/llama-server --model /ROOT/models/Bonsai-8B-Q1_0.gguf --host 127.0.0.1 --port 8080 --ctx-size 4096 --n-gpu-layers 999",
+    "name": "inherited_loader_path",
+    "program": "/ROOT/bin/llama-server",
+    "server_port": 8080
+  },
+  {
+    "args": [
+      "--model",
+      "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "41234",
+      "--ctx-size",
+      "4096",
+      "--n-gpu-layers",
+      "999"
+    ],
+    "env": [
+      [
+        "LD_LIBRARY_PATH",
+        "/ROOT/bin"
+      ]
+    ],
+    "input": {
+      "binary": "/ROOT/bin/llama-server",
+      "ctx_size": 4096,
+      "extra_args": "",
+      "inherited_ld_library_path": "",
+      "model": "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "n_gpu_layers": 999,
+      "port": 9000,
+      "proxy": true
+    },
+    "log_line": "$ /ROOT/bin/llama-server --model /ROOT/models/Bonsai-8B-Q1_0.gguf --host 127.0.0.1 --port 41234 --ctx-size 4096 --n-gpu-layers 999",
+    "name": "proxy_on",
+    "program": "/ROOT/bin/llama-server",
+    "server_port": 41234
+  },
+  {
+    "args": [
+      "--model",
+      "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "41234",
+      "--ctx-size",
+      "8192",
+      "--n-gpu-layers",
+      "20",
+      "--threads",
+      "8",
+      "--flash-attn",
+      "on"
+    ],
+    "env": [
+      [
+        "LD_LIBRARY_PATH",
+        "/ROOT/bin:/usr/lib"
+      ]
+    ],
+    "input": {
+      "binary": "/ROOT/bin/llama-server",
+      "ctx_size": 8192,
+      "extra_args": "--threads 8 --flash-attn on",
+      "inherited_ld_library_path": "/usr/lib",
+      "model": "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "n_gpu_layers": 20,
+      "port": 9000,
+      "proxy": true
+    },
+    "log_line": "$ /ROOT/bin/llama-server --model /ROOT/models/Bonsai-8B-Q1_0.gguf --host 127.0.0.1 --port 41234 --ctx-size 8192 --n-gpu-layers 20 --threads 8 --flash-attn on",
+    "name": "proxy_on_with_extras_and_loader_path",
+    "program": "/ROOT/bin/llama-server",
+    "server_port": 41234
+  },
+  {
+    "args": [
+      "--model",
+      "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "1",
+      "--ctx-size",
+      "256",
+      "--n-gpu-layers",
+      "0"
+    ],
+    "env": [
+      [
+        "LD_LIBRARY_PATH",
+        "/ROOT/bin"
+      ]
+    ],
+    "input": {
+      "binary": "/ROOT/bin/llama-server",
+      "ctx_size": 256,
+      "extra_args": "",
+      "inherited_ld_library_path": "",
+      "model": "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "n_gpu_layers": 0,
+      "port": 1,
+      "proxy": false
+    },
+    "log_line": "$ /ROOT/bin/llama-server --model /ROOT/models/Bonsai-8B-Q1_0.gguf --host 127.0.0.1 --port 1 --ctx-size 256 --n-gpu-layers 0",
+    "name": "lowest_values",
+    "program": "/ROOT/bin/llama-server",
+    "server_port": 1
+  },
+  {
+    "args": [
+      "--model",
+      "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "65535",
+      "--ctx-size",
+      "131072",
+      "--n-gpu-layers",
+      "999"
+    ],
+    "env": [
+      [
+        "LD_LIBRARY_PATH",
+        "/ROOT/bin"
+      ]
+    ],
+    "input": {
+      "binary": "/ROOT/bin/llama-server",
+      "ctx_size": 131072,
+      "extra_args": "",
+      "inherited_ld_library_path": "",
+      "model": "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "n_gpu_layers": 999,
+      "port": 65535,
+      "proxy": false
+    },
+    "log_line": "$ /ROOT/bin/llama-server --model /ROOT/models/Bonsai-8B-Q1_0.gguf --host 127.0.0.1 --port 65535 --ctx-size 131072 --n-gpu-layers 999",
+    "name": "highest_values",
+    "program": "/ROOT/bin/llama-server",
+    "server_port": 65535
+  },
+  {
+    "args": [
+      "--model",
+      "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8080",
+      "--ctx-size",
+      "4096",
+      "--n-gpu-layers",
+      "999",
+      "--threads",
+      "8",
+      "--flash-attn",
+      "on"
+    ],
+    "env": [
+      [
+        "LD_LIBRARY_PATH",
+        "/ROOT/bin"
+      ]
+    ],
+    "input": {
+      "binary": "/ROOT/bin/llama-server",
+      "ctx_size": 4096,
+      "extra_args": "--threads 8   --flash-attn on",
+      "inherited_ld_library_path": "",
+      "model": "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "n_gpu_layers": 999,
+      "port": 8080,
+      "proxy": false
+    },
+    "log_line": "$ /ROOT/bin/llama-server --model /ROOT/models/Bonsai-8B-Q1_0.gguf --host 127.0.0.1 --port 8080 --ctx-size 4096 --n-gpu-layers 999 --threads 8 --flash-attn on",
+    "name": "extra_args_plain",
+    "program": "/ROOT/bin/llama-server",
+    "server_port": 8080
+  },
+  {
+    "args": [
+      "--model",
+      "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8080",
+      "--ctx-size",
+      "4096",
+      "--n-gpu-layers",
+      "999",
+      "--lora",
+      "/path/with spaces/adapter.gguf",
+      "--threads",
+      "4"
+    ],
+    "env": [
+      [
+        "LD_LIBRARY_PATH",
+        "/ROOT/bin"
+      ]
+    ],
+    "input": {
+      "binary": "/ROOT/bin/llama-server",
+      "ctx_size": 4096,
+      "extra_args": "--lora \"/path/with spaces/adapter.gguf\" --threads 4",
+      "inherited_ld_library_path": "",
+      "model": "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "n_gpu_layers": 999,
+      "port": 8080,
+      "proxy": false
+    },
+    "log_line": "$ /ROOT/bin/llama-server --model /ROOT/models/Bonsai-8B-Q1_0.gguf --host 127.0.0.1 --port 8080 --ctx-size 4096 --n-gpu-layers 999 --lora /path/with spaces/adapter.gguf --threads 4",
+    "name": "extra_args_double_quoted",
+    "program": "/ROOT/bin/llama-server",
+    "server_port": 8080
+  },
+  {
+    "args": [
+      "--model",
+      "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8080",
+      "--ctx-size",
+      "4096",
+      "--n-gpu-layers",
+      "999",
+      "single quoted"
+    ],
+    "env": [
+      [
+        "LD_LIBRARY_PATH",
+        "/ROOT/bin"
+      ]
+    ],
+    "input": {
+      "binary": "/ROOT/bin/llama-server",
+      "ctx_size": 4096,
+      "extra_args": "'single quoted'",
+      "inherited_ld_library_path": "",
+      "model": "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "n_gpu_layers": 999,
+      "port": 8080,
+      "proxy": false
+    },
+    "log_line": "$ /ROOT/bin/llama-server --model /ROOT/models/Bonsai-8B-Q1_0.gguf --host 127.0.0.1 --port 8080 --ctx-size 4096 --n-gpu-layers 999 single quoted",
+    "name": "extra_args_single_quoted",
+    "program": "/ROOT/bin/llama-server",
+    "server_port": 8080
+  },
+  {
+    "args": [
+      "--model",
+      "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8080",
+      "--ctx-size",
+      "4096",
+      "--n-gpu-layers",
+      "999",
+      "--chat-template",
+      ""
+    ],
+    "env": [
+      [
+        "LD_LIBRARY_PATH",
+        "/ROOT/bin"
+      ]
+    ],
+    "input": {
+      "binary": "/ROOT/bin/llama-server",
+      "ctx_size": 4096,
+      "extra_args": "--chat-template \"\"",
+      "inherited_ld_library_path": "",
+      "model": "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "n_gpu_layers": 999,
+      "port": 8080,
+      "proxy": false
+    },
+    "log_line": "$ /ROOT/bin/llama-server --model /ROOT/models/Bonsai-8B-Q1_0.gguf --host 127.0.0.1 --port 8080 --ctx-size 4096 --n-gpu-layers 999 --chat-template ",
+    "name": "extra_args_empty_quotes",
+    "program": "/ROOT/bin/llama-server",
+    "server_port": 8080
+  },
+  {
+    "args": [
+      "--model",
+      "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8080",
+      "--ctx-size",
+      "4096",
+      "--n-gpu-layers",
+      "999",
+      "--port",
+      "9999",
+      "--ctx-size",
+      "512"
+    ],
+    "env": [
+      [
+        "LD_LIBRARY_PATH",
+        "/ROOT/bin"
+      ]
+    ],
+    "input": {
+      "binary": "/ROOT/bin/llama-server",
+      "ctx_size": 4096,
+      "extra_args": "--port 9999 --ctx-size 512",
+      "inherited_ld_library_path": "",
+      "model": "/ROOT/models/Bonsai-8B-Q1_0.gguf",
+      "n_gpu_layers": 999,
+      "port": 8080,
+      "proxy": false
+    },
+    "log_line": "$ /ROOT/bin/llama-server --model /ROOT/models/Bonsai-8B-Q1_0.gguf --host 127.0.0.1 --port 8080 --ctx-size 4096 --n-gpu-layers 999 --port 9999 --ctx-size 512",
+    "name": "extra_args_repeat_a_builtin",
+    "program": "/ROOT/bin/llama-server",
+    "server_port": 8080
+  },
+  {
+    "args": [
+      "--model",
+      "/ROOT/my models/Qwen3 4B.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8080",
+      "--ctx-size",
+      "4096",
+      "--n-gpu-layers",
+      "999"
+    ],
+    "env": [
+      [
+        "LD_LIBRARY_PATH",
+        "/ROOT/with space"
+      ]
+    ],
+    "input": {
+      "binary": "/ROOT/with space/llama-server",
+      "ctx_size": 4096,
+      "extra_args": "",
+      "inherited_ld_library_path": "",
+      "model": "/ROOT/my models/Qwen3 4B.gguf",
+      "n_gpu_layers": 999,
+      "port": 8080,
+      "proxy": false
+    },
+    "log_line": "$ /ROOT/with space/llama-server --model /ROOT/my models/Qwen3 4B.gguf --host 127.0.0.1 --port 8080 --ctx-size 4096 --n-gpu-layers 999",
+    "name": "paths_with_spaces",
+    "program": "/ROOT/with space/llama-server",
+    "server_port": 8080
+  },
+  {
+    "args": [
+      "--model",
+      "/ROOT/models/模型-ü.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8080",
+      "--ctx-size",
+      "4096",
+      "--n-gpu-layers",
+      "999"
+    ],
+    "env": [
+      [
+        "LD_LIBRARY_PATH",
+        "/ROOT/bin"
+      ]
+    ],
+    "input": {
+      "binary": "/ROOT/bin/llama-server",
+      "ctx_size": 4096,
+      "extra_args": "",
+      "inherited_ld_library_path": "",
+      "model": "/ROOT/models/模型-ü.gguf",
+      "n_gpu_layers": 999,
+      "port": 8080,
+      "proxy": false
+    },
+    "log_line": "$ /ROOT/bin/llama-server --model /ROOT/models/模型-ü.gguf --host 127.0.0.1 --port 8080 --ctx-size 4096 --n-gpu-layers 999",
+    "name": "unicode_model_path",
+    "program": "/ROOT/bin/llama-server",
+    "server_port": 8080
+  }
+]

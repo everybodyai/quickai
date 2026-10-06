@@ -1,0 +1,232 @@
+# ILLUSTRATIVE. Nothing loads this file yet; the grammar is frozen in Phase 1 of docs/architecture.md.
+#
+# llama.cpp as data. It reproduces what the app does today (server_manager.rs, paths.rs, llama_install.rs,
+# llama_releases.rs, models.rs, downloader.rs, remote.rs, settings.rs) and adds the adapter bindings of the
+# pinned llama-server (build 11007; every flag below was checked against its --help, see docs/engine-facts.md).
+#
+# Conventions: "${...}" interpolates a value from the context (a string that is exactly one ${...} keeps the
+# value's type). `when` / `visible_when` are expressions of the closed language in architecture.md section 7.
+schema = 1
+kind = "engine"
+id = "llamacpp"
+requires = { primitives = ["locate@1", "exec.probe@1", "feed.github_release@1", "install.archive@1", "spawn@1", "probe.http@1", "catalog.scan_dir@1", "catalog.hf_gguf@1", "decode@1"] }
+
+[engine]
+name = "llama.cpp"
+server_name = "llama-server"
+summary = "One llama-server process serves one GGUF model."
+license = "MIT"
+bundled = true
+homepage = "https://github.com/ggml-org/llama.cpp"
+egress = []                     # hosts the engine itself contacts; none, because QuickAI never passes -hf or --model-url
+
+[provides]
+apis = ["openai.chat", "openai.completions", "llamacpp.completion", "openai.embeddings"]
+web_ui = { path = "/", label = "Open Chat UI" }     # the "Open Chat UI" button exists iff this is present
+accepts = { formats = ["gguf"] }
+model_name_matters = false
+default_port = 8080
+
+# What the installed build can do is learned from the build itself, not guessed from version numbers.
+[runtime]
+version = { exec = ["${binary}", "--version"], regex = 'build (\d+)', as = "build" }
+flags = { exec = ["${binary}", "--help"], parse = "help_flags", skip = "has been removed" }     # fills runtime.has_flag("--mmproj"); `skip` drops the tombstones for removed flags (L13)
+
+[locate]                        # no network; the first hit wins
+strategies = [
+  { use = "setting", field = "bin_override" },
+  { use = "next_to_exe", file = "llama-server" },
+  { use = "dev_tree", path = "llama.cpp/build/bin/llama-server" },
+]
+
+[acquire]                       # "Look up llama.cpp builds"
+root = "${data}/llama-bin"
+feed = { use = "github_release", repo = "ggml-org/llama.cpp", per_page = 10, show = 5, prereleases = true }
+assets = { by = "keywords", ext = [".zip", ".tar.gz"], exclude = ["cudart"], os = { windows = ["win"], macos = ["macos", "osx"], linux = ["ubuntu", "linux"] }, arch = { x86_64 = ["x64", "x86_64", "amd64"], aarch64 = ["arm64", "aarch64"] }, label = "${tag}-${stem}" }
+install = { use = "archive", binary = { name = "llama-server", search_depth = 4 }, chmod = true }
+filter_hint = "e.g. vulkan, rocm, b110..."      # the placeholder of the box that narrows the list of builds
+backends = [
+  { match = "cuda", label = "CUDA", needs_gpu = "nvidia" },
+  { match = "vulkan", label = "Vulkan" },
+  { match = "sycl", label = "SYCL" },
+  { match = "hip", label = "ROCm/HIP", needs_gpu = "amd" },
+  { match = "rocm", label = "ROCm/HIP", needs_gpu = "amd" },
+  { match = "cpu", label = "CPU" },
+]
+
+[launch]
+strategies = ["spawn"]
+
+[launch.spawn]
+program = "${runtime.binary}"
+args = ["--model", "${model.main.path}", "--host", "127.0.0.1", "--port", "${listen_port}"]   # fields append their own `arg` bindings, by order
+env = [ { name = "LD_LIBRARY_PATH", prepend = "${runtime.dir}", sep = ":" } ]
+group = false
+stop = { policy = "kill" }
+
+[launch.ready]
+probe = { use = "http", path = "/health", expect = 200 }
+timeout = "120s"
+interval = "500ms"
+
+# ---- settings form: each field carries its UI and its binding -------------------------------------
+[[field]]
+id = "port"
+label = "Port"
+type = "port"
+default = 8080
+legacy_key = "port"
+help = "TCP port llama-server listens on, on this machine only (127.0.0.1)..."    # today's hover text, verbatim, in the real manifest
+bind.port = "public"
+ui = { section = "primary", order = 10 }
+
+[[field]]
+id = "ctx_size"
+label = "Context size"
+type = "int"
+range = [256, 131072]
+step = 64
+default = { fn = "recommend_ctx_size", args = ["model.size_bytes", "sys.ram_bytes"] }
+recompute_on = ["model"]        # today: picking another model resets the value to the recommendation
+legacy_key = "ctx_size"
+bind.arg = ["--ctx-size", "${value}"]
+ui = { section = "primary", order = 20 }
+
+[[field]]
+id = "n_gpu_layers"
+label = "GPU layers"
+type = "int"
+range = [0, 999]
+default = 999
+legacy_key = "n_gpu_layers"
+bind.arg = ["--n-gpu-layers", "${value}"]
+derive = { gpu_offload = "value > 0" }      # feeds the speed-tier and recommended-model heuristics
+ui = { section = "primary", order = 30 }
+
+[[field]]
+id = "extra_args"
+label = "Extra command-line arguments"
+type = "text"
+default = ""
+legacy_key = "extra_args"
+bind.arg_split = true           # shell-like split with quotes, appended last; contributes nothing when empty
+ui = { section = "advanced", order = 90 }
+
+[[field]]
+id = "bin_override"
+label = "llama-server binary"
+type = "runtime_path"           # a file path, or a download URL that triggers an install
+legacy_key = "llama_bin_override"
+ui = { section = "advanced", widget = "runtime_manager", order = 1 }
+
+[[field]]
+id = "models_dir"
+label = "Downloaded models folder"
+type = "dir"
+default = "${data}/models"
+legacy_key = "models_dir_override"
+ui = { section = "app", order = 1 }
+
+[[field]]
+id = "last_model"
+type = "hidden"
+legacy_key = "last_model_filename"
+
+# ---- fields that exist only when the selected model needs them (verified flags, L5) --------------------
+[[field]]
+id = "ffmpeg_dir"
+label = "ffmpeg folder"
+type = "dir"
+optional = true
+visible_when = "has(model.modalities.input, 'video') and runtime.has_flag('--video-ffmpeg-dir')"
+bind.arg = ["--video-ffmpeg-dir", "${value}"]
+help = "Video input needs ffmpeg and ffprobe. Leave empty to search PATH."
+ui = { section = "advanced", order = 40 }
+
+[[field]]
+id = "video_fps"
+label = "Video frames per second"
+type = "float"
+range = [0.1, 30.0]
+default = 4.0
+visible_when = "has(model.modalities.input, 'video') and runtime.has_flag('--video-fps')"
+bind.arg = ["--video-fps", "${value}"]
+ui = { section = "advanced", order = 41 }
+
+# ---- how each component kind (adapter) is attached; the kinds themselves live in vocab/core.toml --------
+[components.mmproj]
+requires_flag = "--mmproj"
+bind.arg = ["--mmproj", "${component.path}"]
+
+[components.mmproj.fields.offload]
+bind.arg_when_false = ["--no-mmproj-offload"]
+
+[components.mmproj.fields.image_min_tokens]
+bind.arg = ["--image-min-tokens", "${value}"]
+
+[components.mmproj.fields.image_max_tokens]
+bind.arg = ["--image-max-tokens", "${value}"]
+
+[components.lora]
+requires_flag = "--lora-scaled"
+bind.each = "${component.path}:${component.scale}"      # one item per attached adapter
+bind.sep = ","
+bind.arg = ["--lora-scaled", "${each}"]
+live = { call = { method = "POST", path = "/lora-adapters", body = "${components.lora}" } }    # Scale may change while running; the body shape is to be confirmed (A11)
+
+[components.draft]
+requires_flag = "--model-draft"
+bind.arg = ["--model-draft", "${component.path}"]
+
+[components.draft.fields.n_max]
+requires_flag = "--spec-draft-n-max"        # the name in b11007; a build without it simply does not show the field
+bind.arg = ["--spec-draft-n-max", "${value}"]
+
+[components.draft.fields.gpu_layers]
+requires_flag = "--n-gpu-layers-draft"
+bind.arg = ["--n-gpu-layers-draft", "${value}"]
+
+# ---- models: where they come from, how a typed string is read, how to look them up ----------------------
+[models]
+sources = [
+  { use = "bundle_dir", path = "${exe_dir}/models" },
+  { use = "scan_dir", path = "${field.models_dir}", ext = [".gguf"], writable = true },
+]
+acquire = { use = "file", dir = "${field.models_dir}" }
+input_rules = [
+  { when = "is_url(input)", do = "download" },
+  { when = "is_file(input)", do = "import" },
+  { do = "search", provider = "hf_popular" },
+]
+
+[[models.lookup]]
+id = "hf_popular"
+use = "catalog.hf_gguf"
+search = { filter = "gguf", sort = "downloads", limit = 50 }
+inspect = { popular = 30, keyword = 20, similar = 20 }
+prefer_quants = ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q4_0", "Q8_0", "Q6_K", "Q3_K_M"]
+skip_files = ["-of-", "mtp"]
+stopwords = ["gguf", "model", "models", "the", "and", "for", "with"]
+buckets = [
+  { label = "High (15 GB+)", min = "15GiB" },
+  { label = "Medium (4-15 GB)", min = "4GiB", max = "15GiB" },
+  { label = "Small (< 4 GB)", max = "4GiB" },
+]
+
+[traffic]
+apis = ["openai.chat", "openai.completions", "llamacpp.completion"]
+
+[api_info]
+base_url = "http://127.0.0.1:${public_port}/v1"
+api_key = { value = "none", note = "llama.cpp doesn't require one by default; leave it blank, or use any placeholder value if your client insists on a non-empty string." }
+model = { value = "${session.model_display}", note = "Only one model is ever loaded at a time, so most OpenAI-compatible clients work with any value here." }
+example = "openai.chat"
+
+[[diagnostic]]
+when = { log_matches = 'unknown model architecture' }
+hint = "This llama-server build predates support for this model. Try a newer build: Settings, Advanced: llama.cpp, Look up llama.cpp builds."
+action = "open:settings.runtime"
+
+[[diagnostic]]
+when = { exited_during = "starting" }
+hint = "The server exited before it finished starting; the log below has the exact reason."

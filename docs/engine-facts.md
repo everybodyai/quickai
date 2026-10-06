@@ -1,0 +1,106 @@
+# Engine facts
+
+Facts about the engines that the manifests in [`examples/`](examples/) encode, with how each was checked.
+Last updated: 2026-10-06. **L**, **O**, **S** are facts about llama.cpp, Ollama and sidecar runners. **A** are
+assumptions: each is settled by a spike before a manifest relies on it, and the table at the end says which are.
+
+## llama.cpp
+
+Checked by running the pinned release (build 11007, the `llama-server` the bundles ship, from
+`quickai_base/build/.cache/llama-b11007-linux/`) with `--version` and `--help`, and by reading the docs of the
+dev checkout in `quickai/llama.cpp` (commit 0bec16e, 2026-09-16).
+
+| # | Fact | Checked by |
+|---|---|---|
+| L1 | `llama-server --version` prints `version: 0.4.1-dev (build 11007, commit 2f3fd0252)`. | ran it |
+| L2 | `--help` has 259 option lines that start in column 0. 139 of the flags name an environment variable (`(env: LLAMA_ARG_CTX_SIZE)`). Flags have aliases (`-md, --model-draft`). The text is machine-parsable. | ran it, counted |
+| L3 | The dev build and b11007 list 338 and 339 flags; the only difference is `--rpc`. The two local builds are the same age and agree. How fast flags drift across releases is not measured (A10), but see L13: the build itself records removals. | ran both, diffed |
+| L4 | Multimodal: `-mm, --mmproj FILE`; `-mmu, --mmproj-url URL`; `--mmproj-auto, --no-mmproj`; `--mmproj-offload, --no-mmproj-offload`; `-mmdev, --mmproj-device DEVICE`; `--image-min-tokens N`; `--image-max-tokens N`. With `-hf` the projector can be omitted. | `--help` |
+| L5 | Video: `--video-fps N` (default 4.0), `--video-timestamp-interval N` (default 5000 ms), `--video-ffmpeg-dir DIR` (default: search `PATH` for ffmpeg and ffprobe). The docs say "we support image, audio and video input"; chat content parts are `input_audio` (mp3, wav, flac) and `input_video`. | `--help`, `docs/multimodal.md`, server README |
+| L6 | LoRA: `--lora FNAME` (comma-separated for several); `--lora-scaled FNAME:SCALE,...`; `--lora-init-without-apply`; `GET /lora-adapters` and `POST /lora-adapters` change scales while running. Control vectors: `--control-vector[-scaled]`, `--control-vector-layer-range`. | `--help`, server README |
+| L7 | Speculative decoding: `--spec-draft-model, -md, --model-draft FNAME`; `--spec-draft-n-max N` (default 3); `--spec-draft-n-min N`; `--spec-draft-ngl, -ngld, --gpu-layers-draft, --n-gpu-layers-draft N`; `--spec-type none,draft-simple,draft-eagle3,draft-mtp,…`. The older `--draft-max` and `--draft-min` are listed as removed (L13). | `--help` |
+| L8 | No vocoder or TTS flag exists in `llama-server` b11007. | `--help`, searched for `vocoder` and `tts` |
+| L9 | Router mode: start `llama-server` **without a model**. `--models-dir PATH`, `--models-preset PATH` (INI), `--models-max N` (default 4), `--models-autoload`. Requests route by the `model` field (POST) or the `?model=` query parameter (GET). Instances inherit the router's arguments and environment. In a `--models-dir`, a model with several GGUF files (multimodal, shards) goes in its own subdirectory, and the projector's file name must start with `mmproj`. | `--help`, server README |
+| L10 | Presets: an INI file, one section per model. Keys are CLI arguments without dashes (short forms and `LLAMA_ARG_*` names also work); `[*]` holds globals. Precedence: command line, then the model's section, then `[*]`. Preset-only keys: `load-on-startup`, `stop-timeout`, `dedup-cache-models`. | server README |
+| L11 | `GET /props` returns `modalities` (the docs sample shows `{"vision": false}`), `media_marker` and `build_info`. Clients are told to check `/v1/models` for the `multimodal` capability. | server README |
+| L12 | Flags the example manifest uses besides the above: `--webui/--no-webui`, `--api-key`, `--alias`, `-np/--parallel`, `--jinja`, `--reasoning`, `--embedding`, `--rerank`, `--pooling`, `-hf/--hf-repo`, `--hf-file`, `--offline`. | `--help` |
+| L13 | **Removed flags stay in `--help` as tombstones.** b11007 lists five: `--draft, --draft-n, --draft-max N` ("the argument has been removed. use --spec-draft-n-max or …"), `--draft-min, --draft-n-min N`, `--spec-ngram-size-n N`, `--spec-ngram-size-m N`, `--spec-ngram-min-hits N`. The tombstones keep their old environment names (`LLAMA_ARG_DRAFT_MAX`). So flags do drift between releases, and a flag parser that counts every column-0 option as available would wrongly report the removed ones. It must skip entries whose description says the argument has been removed. | `--help`, grepped for "has been removed" |
+
+## Ollama
+
+Checked on 2026-10-06 against the GitHub API, Ollama's docs and **source at the v0.35.1 tag**, a read of the
+Windows zip's central directory over HTTP Range requests, and a **real v0.35.1 binary** (the Linux archive,
+verified against its published sha256 and run under an isolated `HOME` on an AMD RX 6700 XT). The docs pages were
+first read through a page summarizer; O6 to O8 were then re-checked against the source and the binary (see A14), and
+where the two disagreed the source and the binary won (O7 and O12).
+
+| # | Fact | Checked by |
+|---|---|---|
+| O1 | Release v0.35.1, published 2026-09-29. Assets and sizes below; each asset has a sha256 `digest` in the API. | GitHub API |
+| O2 | The Linux archive is `.tar.zst`. First entries: `bin/ollama` (28.6 MB), `lib/ollama/*_LICENSE`, `lib/ollama/cuda_v12/libggml-cuda.so` (424 MB). | decoded the first 64 MB |
+| O3 | The Windows zip has `ollama.exe` at the root and `lib/ollama/` (87 entries, 1.94 GB extracted): `cuda_v12` 1.16 GB, `cuda_v13` 0.67 GB, `vulkan/ggml-vulkan.dll`, and a `llama-server.exe`. Range requests work on GitHub's CDN (3 requests, 10 KB). | central directory read |
+| O4 | Docs: `OLLAMA_HOST` (default `127.0.0.1:11434`), `OLLAMA_MODELS`, `OLLAMA_CONTEXT_LENGTH` (default 4096), `OLLAMA_KEEP_ALIVE` (default 5 m), `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NO_CLOUD`. Vulkan is "enabled by default when the backend is installed"; `OLLAMA_VULKAN=0` or `GGML_VK_VISIBLE_DEVICES=-1` turn it off; `CUDA_VISIBLE_DEVICES=-1` and `ROCR_VISIBLE_DEVICES=-1` force CPU. Linux base and ROCm archives extract over one prefix; the Windows standalone zips extract into one directory and are meant for embedding. The RX 6700 XT is not in the ROCm list. | docs |
+| O5 | API: `GET /api/version`, `GET /api/tags`, `GET /api/ps`, `POST /api/pull` (NDJSON: `status`, `digest`, `total`, `completed`), `DELETE /api/delete`, `POST /api/show`, `POST /api/create`, `POST /api/blobs/:digest`, `/api/chat` and `/api/generate` (NDJSON). Preload with `/api/generate` and no prompt; unload with `"keep_alive": 0`. | docs |
+| O6 | `POST /api/show` returns `capabilities` (e.g. `["completion", "vision"]`), `details` and `model_info`. | docs |
+| O7 | `POST /api/create` takes `files` (filename to sha256 of a blob pushed with `POST /api/blobs/:digest`), `draft_files`, `from`, `template`, `system`, `parameters`, `messages`, `capabilities`, `requires`, `renderer`, `parser` and `info`. The reply is a stream of status objects. **LoRA is refused in v0.35.1**: `adapters` answers 400 "LoRA adapters are no longer supported", and so does a GGUF of kind `adapter` in `files` (the first reading of the docs said `files` also carries LoRA adapters; the source says otherwise). A projector GGUF in `files` is stored as a projector layer (media type `application/vnd.ollama.image.projector`), recognised by GGUF kind `projector` or `mmproj`, by `vision.block_count` without `block_count`, or by architecture `clip` with a vision or audio encoder flag. A GGUF in `draft_files` is stored as a draft layer. | `server/create.go` and `api/types.go` at the tag |
+| O8 | The Modelfile reference of the tag documents FROM, PARAMETER, TEMPLATE, SYSTEM, LICENSE, MESSAGE, REQUIRES and CAPABILITY. It documents no projector, adapter or draft instruction; `draft_num_predict` is a PARAMETER (separate draft models default to 4, 0 disables drafting). | `docs/modelfile.mdx` at the tag |
+| O9 | `hf.co/<user>/<repo>[:quant]` pulls a GGUF from Hugging Face; the default quantisation is Q4_K_M when present. | several guides, not Ollama's own page |
+| O10 | No public JSON endpoint for the library listing turned up (the searches found scrapers only). Absence is not proven. | searches |
+| O11 | `OLLAMA_CONTEXT_LENGTH` exists from **v0.5.13**: commit `314573bf` (2025-02-24, "config: allow setting context length through env var", #8938) is contained in v0.5.13 and not in v0.5.12. | GitHub compare API, that commit against both tags |
+| O12 | In v0.35.1 the default context is **tiered by total VRAM**, not 4096 (commit `0334ffa6`, 2026-01-28): under 23 GiB 4096, from 23 GiB 32768, from 47 GiB 262144 (the docs page of the tag says 24 and 48 GiB; the code takes 23 and 47). The variable's own default is 0, meaning auto, and the server logs `vram-based default context` with `total_vram` and `default_num_ctx`. In `modelOptions` the order is that default (or `OLLAMA_CONTEXT_LENGTH`), then the model's own `PARAMETER`s, then the request's `options`. A summary of the live docs site still said 4096, so quote the tag, not the site. | `envconfig/config.go`, `server/routes.go` and `docs/context-length.mdx` at the tag |
+| O13 | The capability names are `completion`, `tools`, `insert`, `vision`, `embedding`, `thinking`, `image`, `audio` and `decision`. `CAPABILITY` in a Modelfile, or `capabilities` in `/api/create`, adds to the inherited or inferred ones for a GGUF or MLX model. | `types/model/capability.go` and `docs/modelfile.mdx` at the tag |
+| O14 | On Windows Ollama starts its own runner with `CREATE_DEFAULT_ERROR_MODE`, `ABOVE_NORMAL_PRIORITY_CLASS` and `CREATE_NO_WINDOW`. `OLLAMA_VULKAN` is a tri-state (`BoolWithDefault`), `OLLAMA_NO_CLOUD` disables "remote inference and web search", and an `OLLAMA_AUTH` setting exists. | `llm/llm_windows.go` and `envconfig/config.go` at the tag |
+| O15 | **The runner is llama.cpp's own `llama-server`**, shipped as `lib/ollama/llama-server` (a 16 KB launcher over `libllama-server-impl.so`; `lib/ollama` also holds `llama-quantize`, `libllama.so`, `libmtmd.so` and the ggml backends). It is started per model load as a child of `ollama serve`, in the same process group: `llama-server --model <blob> --port N --host 127.0.0.1 --no-webui --offline -c <num_ctx> -np 1 --log-verbosity 4 --no-log-prefix --no-log-timestamps --flash-attn auto -b 512 -ub 512 --context-shift --keep 4`. With `OLLAMA_MAX_LOADED_MODELS=1` a second model replaces the first. | the `serve` log and `ps` of the spike |
+| O16 | Start-up log lines worth knowing: `Couldn't find '<HOME>/.ollama/id_ed25519'. Generating new private key.` (first start only, on the log's first lines, with the public key); `Ollama cloud disabled: true`; `total blobs: N` and `total unused blobs removed: M` (blobs that no manifest uses are pruned at every start; `OLLAMA_NOPRUNE` turns it off, so create a model right after uploading its blob); `vram-based default context total_vram="12.0 GiB" default_num_ctx=4096`; `inference compute ... library=Vulkan ... description="AMD Radeon RX 6700 XT (RADV NAVI22)"`. The logged server config shows `OLLAMA_VULKAN:true` (on by default), `OLLAMA_CONTEXT_LENGTH:0` and `OLLAMA_KEEP_ALIVE` as 2562047h47m (the value for -1). | `serve` log of the spike |
+
+Release assets of v0.35.1:
+
+| Platform | Asset | Size | sha256 |
+|---|---|---|---|
+| Linux x86-64 | `ollama-linux-amd64.tar.zst` | 1.44 GB | `9fcd79ac4575b2bd31b992eee18b1000c8ad126b451627c8f8cd091714cfbb10` |
+| Linux arm64 | `ollama-linux-arm64.tar.zst` | 1.56 GB | `b1b1c85d25136b256d3740f6ecd2f7c0105e8ca71642fd6ff2fc199f3cefd69d` |
+| Linux AMD ROCm (overlay) | `ollama-linux-amd64-rocm.tar.zst` | 1.05 GB | `786e1ba2ed7877b48aa948315ab704da2ea54a4b636e0ca18c3d328c84ff22cf` |
+| Windows x86-64 | `ollama-windows-amd64.zip` | 1.47 GB | `dc50b9ca7f9023c86525012632cd1615b093d0407987444a7f62ecab617e8e93` |
+| Windows arm64 | `ollama-windows-arm64.zip` | 0.21 GB | `1aced40f0654eae8ef1ba07fa101be4b48225308288b0f54c5681ccf1e4199db` |
+| Windows ROCm (overlay) | `ollama-windows-amd64-rocm.zip` | 0.26 GB | `00e1d52a38479aa88954e01c969228fa98a07f433e639a6ba9fcd80b8d0993ca` |
+| macOS | `ollama-darwin.tgz` | 0.16 GB | `3137dbf28948ee844e0fb3e584d9b5de6879d73d9f0cb7eff3ad64930601d307` |
+
+Ignored: the `-mlx` variants, `jetpack5` and `jetpack6`, `OllamaSetup.exe`, `Ollama.dmg`, `Ollama-darwin.zip`,
+`install.sh`, `install.ps1`, `sha256sum.txt`.
+
+## Sidecar runners (modalities that need their own process)
+
+Not verified; from third-party guides only.
+
+| # | Fact |
+|---|---|
+| S1 | whisper.cpp ships `whisper-server`, started with options such as `--model`, `--host`, `--port`, `--inference-path "/v1/audio/transcriptions"`, `--threads`. |
+| S2 | stable-diffusion.cpp ships `sd-server` with OpenAI-compatible (`/v1/images/generations`) and AUTOMATIC1111-compatible endpoints. |
+
+## Assumptions and what the spike found
+
+Run on 2026-10-06 with the unmodified v0.35.1 Linux archive (sha256 checked), an isolated `HOME`, a scratch models
+directory and a free loopback port, never touching the real `~/.ollama`. Server and runner were started with
+`setsid` so that `ps -s` lists everything they ever started, and the privacy checks ran under
+`strace --seccomp-bpf -f -e trace=connect`. Models: Qwen3 1.7B Q8_0 and Bonsai 1.7B Q1_0. Machine: AMD RX 6700 XT
+(RADV, 12 GiB), 20 threads. The scripts and logs are scratch files under `target/spike/` (git-ignored).
+
+| # | Assumption | Status | What was found |
+|---|---|---|---|
+| A1 | A `bin/ollama` extracted to an arbitrary prefix finds `../lib/ollama`. | **Settled: yes** | Run from `<prefix>/bin/ollama` under `env -i` (no `LD_LIBRARY_PATH`): the Vulkan backend loaded from `<prefix>/lib/ollama/vulkan/libggml-vulkan.so` and the runner `<prefix>/lib/ollama/llama-server` started. The archive's layout is just `bin/ollama` (28.6 MB) and `lib/ollama/` (2.23 GB); 45 files, 3 directories, 17 symlinks. |
+| A2 | The Linux base archive contains `lib/ollama/vulkan/`. | **Settled: yes** | `libggml-vulkan.so`, 42 MB. On this machine the server picked `library=Vulkan` unprompted and ran both models fully on the GPU (`size_vram` equals `size`). The install is 2.2 GB, of which `cuda_v12` is 1.3 GB and `cuda_v13` 0.8 GB; **skipping both leaves 102 MB** (`bin/ollama` 28 MB, `vulkan` 42 MB, the CPU backends), which is what `install.archive`'s skip globs are for. |
+| A3 | `SIGTERM` makes `ollama serve` unload its runners and exit; `SIGKILL` may orphan runner subprocesses. | **Settled: both** | With a model loaded, SIGTERM to the server: server and runner gone in 0.1 s, exit status 0. SIGKILL to the server alone: the `llama-server` runner was **orphaned** (470 MB resident, reparented) and still alive 36 s later. `kill -KILL` to the whole process group: both gone in 0.1 s (the runner stays in the server's group). Consequences for §11.2: stop with SIGTERM to the group, SIGKILL the group after the grace; and `PR_SET_PDEATHSIG` must be **SIGTERM**, because the flag is not inherited by the runner and only a graceful server stop cleans it up. |
+| A4 | The first `ollama serve` writes a key pair under `~/.ollama` even when `OLLAMA_MODELS` is set. | **Settled: yes** | With `OLLAMA_MODELS` elsewhere, an empty `HOME` gained `.ollama/id_ed25519` (mode 600) and `.ollama/id_ed25519.pub` at the first start; the log says "Generating new private key". The models directory received only `blobs/` until a model was created. The GPU driver also wrote Mesa and RADV shader caches (about 2 MB each) under `~/.cache`. The privacy text should say so. |
+| A5 | Whether Ollama v0.35 can run the Bonsai Q1_0 GGUFs through `/api/create`. | **Settled: yes** | `Bonsai-1.7B-Q1_0.gguf` imported and answered "Hello!" in 1.3 s on the GPU (`family qwen3`, `quantization_level Q1_0`). The runner is llama.cpp's `llama-server` (O15), which is why. |
+| A6 | `OLLAMA_NO_CLOUD=1` keeps a standalone `serve` free of any outbound call other than a pull. | **Settled, and stronger than assumed** | With it set, a session of start, 10 s idle, two imports, two chats and SIGTERM made 21 `connect()` calls: 19 to loopback, 2 to nscd's unix socket, **no DNS lookup and nothing off the machine**. **Without it (the default)** an idle `serve` resolved `ollama.com` and connected to 34.36.133.15:443 within 40 ms of starting: the model-recommendations refresh, signed with the user's key and repeated about every 4 hours (the source returns before any request when `NoCloud()` is true). So `OLLAMA_NO_CLOUD=1` is **required** in the spawn environment and should be protected from the free-text environment lines; an attached daemon's own settings are its owner's. A pull's own traffic was not exercised. |
+| A7 | The minimum Ollama version that honours `OLLAMA_CONTEXT_LENGTH`. | **Settled: v0.5.13** (O11) | And honoured by 0.35.1: the runner is started with `-c 4096` by default on this 12 GiB card (O12), `-c 2048` and `-c 1536` when the variable says so, and `/api/ps` `context_length` agrees. A request's `options.num_ctx` reloads the runner at that size, and **the next request without it reloads it back** to the variable's value (or the tier default). So the variable is the only durable setting: a warm-up call's `num_ctx` does not stick on an attached daemon, where it only moves the reload to the next request. `/api/ps` `size` follows the context (2.35 GB at 4096, 2.11 GB at 2048, 2.05 GB at 1536 for the 1.7B Q8). |
+| A8 | Windows: whether a console window appears for `llama-server.exe` or `ollama.exe` spawned from the release GUI build. | **Open: needs a Windows run** | Ollama starts its own runner with `CREATE_NO_WINDOW` (O14), so a window can only come from our spawn of `ollama.exe`. QuickAI sets no creation flags on any child, and did not before this work either (`git grep` at the baseline commit): the release build is a GUI-subsystem program, so a console program it starts without the flag is expected to get a console window. This also covers today's `llama-server.exe` and the PowerShell GPU query. Unverified; WP3.5 sets `CREATE_NO_WINDOW` on every spawn. |
+| A9 | `ruzstd` throughput on a 1.4 GB archive. | **Settled: acceptable** | `ruzstd` 0.8 with `tar` 0.4, release build, run at lowest priority while another project's test suite was running: decode and unpack of 1.44 GB into 2.26 GB in **6.3 s** (357 MB/s decoded). The `zstd` command with `tar` took 1.8 s. The two trees are identical in names, sizes, modes and contents. The download takes minutes, so this does not matter. |
+| A10 | How much llama.cpp flags drift between releases. | **Open** | The two local builds (b11007 pinned, b11026 fetched by the app) are 19 builds apart. Compare an old release's `--help` when Phase 4 starts. |
+| A11 | How `--lora-scaled FNAME:SCALE` copes with a Windows path (`C:\…`). | **Open: needs Windows** | |
+| A12 | The error text when a projector does not match its model. | **Settled** | llama.cpp b11007 exits with status 1 after `mtmd_init_from_file: error: mismatch between text model (n_embd = 2048) and mmproj (n_embd = 5120)`, `hint: you may be using wrong mmproj` and `srv load_model: failed to load multimodal model, '<path>'`. Ollama relays the same text: `{"error":"llama-server process has terminated: exit status 1: error: mismatch between text model (n_embd = 2048) and mmproj (n_embd = 5120)"}`. One diagnostic rule matches both: `mismatch between text model \(n_embd = (\d+)\) and mmproj \(n_embd = (\d+)\)`. |
+| A13 | Which keys `/props` `modalities` uses for audio and video. | **Open** | No matching model and projector pair here: both projectors on this machine belong to 27B models. |
+| A14 | Ollama: `capabilities` values; how `files` carries LoRA adapters; whether a projector can be attached to an imported GGUF. | **Settled** | Values: O13. Imported text GGUFs report `["tools","thinking","completion"]`. With a projector GGUF in `files` the stored layers are `application/vnd.ollama.image.projector` and `application/vnd.ollama.image.model`, `capabilities` gains `vision`, `/api/show` gains `projector_info`, and the server passes the projector on (the mismatch above comes from the runner). **LoRA is refused**: HTTP 400 `{"error":"LoRA adapters are no longer supported"}`, as the source says (O7). A GGUF import streams only `parsing GGUF`, `using existing layer sha256:…`, `writing manifest`, `success`: no byte counts, so the only progress is the upload to `/api/blobs` (1.8 GB in 6.4 s over loopback), and the blob is used in place, not copied. |
+| A15 | llama-server router mode: how to load and unload a model on demand, and what the per-model endpoints are. | **Open** | Phase 6. |
+| A16 | Sidecar flags and endpoints (S1, S2). | **Open** | Phase 6. |
+| A17 | The exact output of `ollama --version`, for version detection. | **Settled** | With no server, on **stdout**, exit 0: `Warning: could not connect to a running Ollama instance` then `Warning: client version is 0.35.1`. With a server: `ollama version is 0.35.1`. `GET /api/version` gives `{"version":"0.35.1"}`. The pattern `version is (\S+)` reads both CLI forms; the endpoint is the cleaner source once a server answers. |

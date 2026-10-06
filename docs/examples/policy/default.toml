@@ -1,0 +1,65 @@
+# ILLUSTRATIVE. Policy: paths, the network allow-list, limits, timeouts and the hardware heuristics.
+# Every number below is a constant that is hard-coded in the app today (the file is named in each comment);
+# in the data-driven design they are values with a home. Privileged tier: a user document may tighten the
+# network allow-list, never widen it without the user's explicit click.
+schema = 1
+kind = "policy"
+id = "default"
+
+[paths]                         # variables usable as ${data}, ${config}, ${exe_dir}, ${home}
+data = "~/.quickai"             # paths.rs: models, llama-bin; ollama and catalogs join them
+
+[network]
+mode = "on_click"               # nothing is fetched unless the user triggered it
+bind = "127.0.0.1"              # engines and the gateway listen on loopback only
+allow = [
+  "api.github.com",
+  "github.com",
+  "*.githubusercontent.com",    # release assets redirect here
+  "huggingface.co",
+  "*.huggingface.co",
+  "*.hf.co",
+]
+
+[limits]
+log_lines = 2000                # app.rs MAX_LOG_LINES
+traffic_turns = 200             # app.rs MAX_TRAFFIC_TURNS
+request_body = "8MiB"           # proxy.rs MAX_REQUEST_BODY: larger bodies are relayed, not sniffed
+sniff_buffer = "4MiB"           # proxy.rs MAX_SNIFF_BUFFER
+
+[timeouts]
+http = "15s"                    # remote.rs, llama_releases.rs CALL_TIMEOUT
+ready = "120s"                  # server_manager.rs HEALTH_TIMEOUT (an engine document may override)
+ready_interval = "500ms"        # server_manager.rs HEALTH_POLL_INTERVAL
+
+# Hardware heuristics (hardware.rs): the functions stay in Rust, the thresholds are data.
+[heuristics.speed_tier]
+fast_ratio = 8.0                # total RAM / model size
+medium_ratio = 3.0
+gpu_off_demotes_fast = true
+
+[heuristics.recommend]
+overhead_factor = 1.2
+ram_fraction = 0.5
+cpu_only_cap = "6GiB"
+gpu_cap = "12GiB"
+
+[heuristics.recommend_ctx]
+min = 512
+max = 131072
+default = 4096
+ceilings = [
+  { min_size = "15GiB", ctx = 4096 },
+  { min_size = "4GiB", ctx = 8192 },
+  { ctx = 16384 },
+]
+ratio_full = 8.0                # at least this much RAM per model byte: the full ceiling
+ratio_half = 3.0                # at least this: half; below: a quarter
+
+[gpu]                           # gpu.rs: how a vendor is recognised
+vendors = [
+  { id = "nvidia", match = ["nvidia"] },
+  { id = "amd", match = ["amd", "radeon", "advanced micro devices"] },
+  { id = "intel", match = ["intel"] },
+  { id = "apple", match = ["apple"] },
+]

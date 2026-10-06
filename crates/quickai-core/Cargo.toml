@@ -1,0 +1,16 @@
+[package]
+name = "quickai-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "QuickAI's pure kernel: documents, expressions, configuration loading, the registry and the planner. No processes, no network, no filesystem, no UI."
+
+[dependencies]
+regex = "1.13.1"
+semver = "1.0.28"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_ignored = "0.1.14"
+serde_json = "1.0.151"
+serde_path_to_error = "0.1.20"
+toml = "1.1.6"
+toml_edit = "0.25.15"

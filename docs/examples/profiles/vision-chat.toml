@@ -1,0 +1,20 @@
+# ILLUSTRATIVE. A profile is a saved selection: which engine, which model, which components, which values.
+# Start runs a profile. The last-used selection is an implicit profile, so nothing changes for a user who
+# never saves one. Data-tier: it can pick things the registry already knows, nothing more.
+schema = 1
+kind = "profile"
+id = "vision-chat"
+name = "Vision chat (llama.cpp)"
+
+engine = "llamacpp"
+model = "example-vl-7b"                 # from catalog/starter.toml (fictional)
+
+# Component settings belong to the attached component, not to the engine: the fields come from the
+# adapter kind in vocab/core.toml, and the engine document says how each becomes a flag.
+[components.mmproj]
+source = "recipe"                       # the projector the recipe names; or a file path, or "none"
+offload = true
+
+[values]                                # engine and app fields, by id; anything not listed keeps its default
+"llamacpp.ctx_size" = 8192
+"llamacpp.n_gpu_layers" = 999

@@ -1,0 +1,161 @@
+# llama.cpp as a document: how QuickAI finds, starts and talks to llama-server
+# (docs/architecture.md, section 6.1).
+#
+# This is what the application ships and what its behaviour comes from; a document of the same id in
+# the user's configuration directory patches it (docs/architecture.md, section 5.2). This version
+# interprets the sections below. The rest of the design (runtime, models, components, traffic,
+# api_info, diagnostics) is in docs/examples/engines/llamacpp.toml and joins this file as the phases
+# of docs/implementation-plan.md bring them to life.
+schema = 1
+kind = "engine"
+id = "llamacpp"
+requires = { primitives = ["locate.setting@1", "locate.next_to_exe@1", "locate.dev_tree@1", "spawn@1", "probe.http@1", "feed.github_release@1", "install.archive@1"] }
+
+[engine]
+name = "llama.cpp"
+server_name = "llama-server"
+summary = "One llama-server process serves one GGUF model."
+license = "MIT"
+bundled = true
+homepage = "https://github.com/ggml-org/llama.cpp"
+egress = []                     # QuickAI never passes -hf or --model-url, so the server itself contacts no host
+
+[provides]
+apis = ["openai.chat", "openai.completions", "llamacpp.completion", "openai.embeddings"]
+web_ui = { path = "/", label = "Open Chat UI" }
+model_name_matters = false
+default_port = 8080
+
+# Where the binary is. No network; the first strategy that yields a path wins. File names get the
+# platform's executable suffix (.exe on Windows) on their own.
+[locate]
+strategies = [
+  { use = "setting", field = "bin_override" },
+  { use = "next_to_exe", file = "llama-server" },
+  { use = "dev_tree", path = "llama.cpp/build/bin/llama-server" },
+]
+
+[launch]
+strategies = ["spawn"]
+
+[launch.spawn]
+program = "${runtime.binary}"
+# The fields below append their own arguments after these, in their `order`; `extra_args` is last.
+args = ["--model", "${model.main.path}", "--host", "127.0.0.1", "--port", "${listen_port}"]
+# llama-server's RUNPATH points at the directory it was built in; a package keeps its shared
+# libraries beside the binary, so the loader is pointed there.
+env = [ { name = "LD_LIBRARY_PATH", prepend = "${runtime.dir}", sep = ":" } ]
+group = false
+stop = { policy = "kill" }
+
+[launch.ready]
+probe = { use = "http", path = "/health", expect = 200 }
+timeout = "120s"
+interval = "500ms"
+
+# ---- builds ----------------------------------------------------------------------------------------
+# What the runtime manager in Settings works from: the list of builds (llama.cpp's own GitHub
+# releases), which file of a release is for this machine, how an archive becomes an installed build
+# and where those are kept.
+
+[acquire]
+root = "${data}/llama-bin"
+# Every CI build is a GitHub prerelease: there is no separate stable release with binaries attached.
+feed = { use = "github_release", repo = "ggml-org/llama.cpp", per_page = 10, show = 5, prereleases = true }
+# A `cudart-*` file is the CUDA runtime alone, with no llama-server inside it.
+assets = { by = "keywords", ext = [".zip", ".tar.gz"], exclude = ["cudart"], os = { windows = ["win"], macos = ["macos", "osx"], linux = ["ubuntu", "linux"] }, arch = { x86_64 = ["x64", "x86_64", "amd64"], aarch64 = ["arm64", "aarch64"] }, label = "${tag}-${stem}" }
+install = { use = "archive", binary = { name = "llama-server", search_depth = 4 }, chmod = true }
+filter_hint = "e.g. vulkan, rocm, b110..."
+backends = [
+  { match = "cuda", label = "CUDA", needs_gpu = "nvidia" },
+  { match = "vulkan", label = "Vulkan" },
+  { match = "sycl", label = "SYCL" },
+  { match = "hip", label = "ROCm/HIP", needs_gpu = "amd" },
+  { match = "rocm", label = "ROCm/HIP", needs_gpu = "amd" },
+  { match = "cpu", label = "CPU" },
+]
+
+# ---- settings -------------------------------------------------------------------------------------
+# `legacy_key` is the name the value has always had in settings.json. Labels and help are the texts
+# the window has always shown, word for word (a test compares them with the golden file). The window
+# adds the colon after a label that sits in front of its control.
+
+[[field]]
+id = "port"
+label = "Port"
+help = '''TCP port llama-server listens on, on this machine only (127.0.0.1) — never exposed to your network. The default 8080 is fine unless something else on your system is already using it; any free port from 1-65535 works.'''
+type = "port"
+default = 8080
+legacy_key = "port"
+bind.port = "public"
+enabled_when = "not session.running"
+ui = { section = "primary", order = 10 }
+
+[[field]]
+id = "ctx_size"
+label = "Context size"
+help = '''Maximum number of tokens (roughly, word-pieces) of conversation llama.cpp keeps in memory at once — prompt plus reply combined. Bigger means it remembers more of a long chat/document, but uses more RAM/VRAM and can respond slower. Typical values: 2048-4096 for short chats, 8192-16384 for longer ones, 32768+ only for large documents on machines with memory to spare.'''
+type = "int"
+range = [256, 131072]
+step = 64
+default = { fn = "recommend_ctx_size", args = ["model.size_bytes", "sys.ram_bytes"] }
+recompute_on = ["model"]        # picking another model resets the value to the recommendation
+legacy_key = "ctx_size"
+bind.arg = ["--ctx-size", "${value}"]
+enabled_when = "not session.running"
+ui = { section = "primary", order = 20 }
+
+[[field]]
+id = "n_gpu_layers"
+label = "GPU layers"
+help = '''How many of the model's layers to run on the GPU instead of the CPU. 999 (default) offloads every layer llama.cpp can — fastest, if the model fits in your GPU's VRAM. 0 = CPU only. If Start crashes or the log shows an out-of-memory error, the model likely doesn't fit in VRAM — try a smaller number (e.g. 20-40) to offload only part of it, or 0 to fall back to CPU entirely.'''
+type = "int"
+range = [0, 999]
+default = 999
+legacy_key = "n_gpu_layers"
+bind.arg = ["--n-gpu-layers", "${value}"]
+derive = { gpu_offload = "value > 0" }
+enabled_when = "not session.running"
+ui = { section = "primary", order = 30 }
+
+[[field]]
+id = "extra_args"
+label = "Extra command-line arguments"
+help = '''
+Appended verbatim to the llama-server command, after the built-in options (port/context size/GPU layers). Space-separated; wrap a value containing spaces in "double quotes". An invalid or unsupported flag will make the server fail to start — check the log pane at the bottom of the main window if Start doesn't work.
+
+Examples:
+--threads 8         number of CPU threads to use
+--flash-attn on     enable flash attention (faster; needs support)
+--batch-size 512    tokens processed per batch
+--no-mmap           disable memory-mapping the model file
+--rope-freq-base 0  override RoPE frequency base (long-context models)'''
+type = "text"
+default = ""
+legacy_key = "extra_args"
+bind.arg_split = true           # a shell-like split with quotes; nothing is added when it is empty
+ui = { section = "advanced", order = 90, hint = "e.g. --threads 8 --flash-attn on" }
+
+[[field]]
+id = "bin_override"
+label = "llama-server binary"
+help = '''Override the auto-detected llama-server executable — point this at a custom build (e.g. a different backend, or a newer version), or paste a direct download URL to a release archive (.zip/.tar.gz) to fetch and install it automatically. Leave blank to use the bundled/auto-detected one.'''
+type = "runtime_path"
+legacy_key = "llama_bin_override"
+ui = { section = "advanced", widget = "runtime_manager", order = 1, hint = "Local binary path or a download URL..." }
+
+# Where downloaded models are kept. No default: with no value the application uses its own folder,
+# worked out afresh on every start (a settings file copied to another machine must not carry a path).
+[[field]]
+id = "models_dir"
+label = "Downloaded models folder"
+help = '''Where models fetched via the "Model" box (download/import/search) or "Look up online" are saved and read back from. The models bundled with the app itself live in their own read-only folder regardless of this.'''
+type = "dir"
+legacy_key = "models_dir_override"
+ui = { section = "app", order = 1 }
+
+# The model that was selected when the application last saved.
+[[field]]
+id = "last_model"
+type = "hidden"
+legacy_key = "last_model_filename"

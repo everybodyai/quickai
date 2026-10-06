@@ -34,5 +34,8 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+      - name: Check the embedded configuration
+        run: cargo run -p quickai -- config check --strict --embedded
+
       - name: Build (release)
         run: cargo build --release -p quickai

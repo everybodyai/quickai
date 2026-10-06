@@ -1,0 +1,212 @@
+# ILLUSTRATIVE. Nothing loads this file yet; the grammar is frozen in Phase 1 of docs/architecture.md.
+#
+# Ollama as data, with no Ollama-specific Rust. Facts behind it: docs/engine-facts.md (O1 to O10, A1 to A17).
+# Compare with llamacpp.toml: the same sections, different values. The only differences are in the
+# data: an installed build is a bin/ + lib/ tree, the server is a daemon (attach or spawn), the model is
+# loaded by a warm-up call, and models are named references listed and pulled over HTTP.
+schema = 1
+kind = "engine"
+id = "ollama"
+requires = { primitives = ["locate@1", "exec.probe@1", "feed.github_release@1", "install.archive@1", "spawn@1", "attach@1", "probe.http@1", "http_call@1", "decode@1"] }
+
+[engine]
+name = "Ollama"
+server_name = "Ollama"
+summary = "A daemon that loads models on demand."
+license = "MIT"
+bundled = false                 # downloaded on request, never shipped in a package
+homepage = "https://ollama.com"
+egress = ["registry.ollama.ai", "huggingface.co"]    # contacted by the daemon itself when a model is pulled
+
+[provides]
+apis = ["openai.chat", "openai.completions", "openai.embeddings", "ollama.chat", "ollama.generate"]
+web_ui = false                  # `ollama serve` has no chat page: no "Open Chat UI"
+accepts = { formats = [], refs = ["ollama"] }       # models are named references, not files
+model_name_matters = true       # a request naming another model loads (and with MAX_LOADED_MODELS=1 evicts) ours
+default_port = 11434
+
+[runtime]
+version = { exec = ["${binary}", "--version"], regex = '(\d+\.\d+\.\d+)', as = "version" }
+
+[locate]
+strategies = [
+  { use = "setting", field = "bin_override" },
+  { use = "installed", root = "${data}/ollama", pick = "setting:install_tag|newest", binary = { linux = "bin/ollama", macos = "bin/ollama", windows = "ollama.exe" } },
+  { use = "path_search", name = "ollama" },
+  { use = "known_paths", linux = ["/usr/local/bin/ollama", "/usr/bin/ollama"], windows = ['%LOCALAPPDATA%\Programs\Ollama\ollama.exe'] },
+]
+
+[acquire]
+root = "${data}/ollama"
+feed = { use = "github_release", repo = "ollama/ollama", per_page = 10, show = 5, prereleases = false, digest = true }
+tested = { tag = "v0.35.1" }    # offered first; the digests below are the pins
+assets = { by = "names", rules = [
+  { when = "os == 'linux' and arch == 'x86_64'", name = "ollama-linux-amd64.tar.zst" },
+  { when = "os == 'linux' and arch == 'aarch64'", name = "ollama-linux-arm64.tar.zst" },
+  { when = "os == 'windows' and arch == 'x86_64'", name = "ollama-windows-amd64.zip" },
+  { when = "os == 'windows' and arch == 'aarch64'", name = "ollama-windows-arm64.zip" },
+  { when = "os == 'macos'", name = "ollama-darwin.tgz" },
+] }
+overlays = [
+  { id = "rocm", optional = true, label = "AMD ROCm (adds about 1 GB)", rules = [
+    { when = "os == 'linux' and arch == 'x86_64'", name = "ollama-linux-amd64-rocm.tar.zst" },
+    { when = "os == 'windows' and arch == 'x86_64'", name = "ollama-windows-amd64-rocm.zip" },
+  ] },
+]
+# atomic: extract to <tag>.partial, smoke-test, rename. `skip`: Vulkan in the base covers AMD and Intel, and CUDA is
+# 1.83 GB of the Windows zip's 1.94 GB, so skip it when the GPU is positively known not to be NVIDIA.
+install = { use = "archive", verify = "digest", atomic = true, smoke = ["${binary}", "--version"], skip = [ { when = "gpu.known and not gpu.has('nvidia')", glob = "lib/ollama/cuda_*" } ] }
+
+[acquire.pins]                  # recorded 2026-10-06 from the GitHub API (v0.35.1)
+"ollama-linux-amd64.tar.zst" = "sha256:9fcd79ac4575b2bd31b992eee18b1000c8ad126b451627c8f8cd091714cfbb10"
+"ollama-linux-arm64.tar.zst" = "sha256:b1b1c85d25136b256d3740f6ecd2f7c0105e8ca71642fd6ff2fc199f3cefd69d"
+"ollama-linux-amd64-rocm.tar.zst" = "sha256:786e1ba2ed7877b48aa948315ab704da2ea54a4b636e0ca18c3d328c84ff22cf"
+"ollama-windows-amd64.zip" = "sha256:dc50b9ca7f9023c86525012632cd1615b093d0407987444a7f62ecab617e8e93"
+"ollama-windows-arm64.zip" = "sha256:1aced40f0654eae8ef1ba07fa101be4b48225308288b0f54c5681ccf1e4199db"
+"ollama-windows-amd64-rocm.zip" = "sha256:00e1d52a38479aa88954e01c969228fa98a07f433e639a6ba9fcd80b8d0993ca"
+"ollama-darwin.tgz" = "sha256:3137dbf28948ee844e0fb3e584d9b5de6879d73d9f0cb7eff3ad64930601d307"
+
+[launch]
+strategies = ["attach_if_running", "spawn"]     # the `mode` field (auto, attach, spawn) can force one
+
+[launch.attach]
+endpoint = "127.0.0.1:${listen_port}"
+liveness = { probe = "http", path = "/api/version", every = "5s" }     # no child to watch, so poll
+
+[launch.spawn]
+program = "${runtime.binary}"
+args = ["serve"]
+env = [
+  { name = "OLLAMA_HOST", value = "127.0.0.1:${listen_port}", locked = true },
+  { name = "OLLAMA_MODELS", value = "${field.models_dir}", when = "not field.use_default_store" },
+  { name = "OLLAMA_KEEP_ALIVE", value = "-1" },
+  { name = "OLLAMA_MAX_LOADED_MODELS", value = "1" },
+  { name = "OLLAMA_NO_CLOUD", value = "1", locked = true },     # without it a plain serve calls ollama.com at start-up and every ~4 h (A6)
+]
+group = true                    # own process group (Unix) or job object (Windows): the runners are children
+stop = { policy = "graceful", grace = "10s", exit_grace = "2s" }
+
+[launch.ready]
+probe = { use = "http", path = "/api/version", expect = 200 }
+timeout = "120s"
+interval = "500ms"
+
+[[launch.warm]]                 # after ready, only when a model is selected (otherwise: management mode)
+when = "model"
+call = { method = "POST", path = "/api/generate", body = { model = "${model.ref}", keep_alive = -1 }, timeout = "600s" }     # no num_ctx: the next request without one would reload the model at the default (A7)
+
+[[launch.unload]]
+when = "model"
+call = { method = "POST", path = "/api/generate", body = { model = "${model.ref}", keep_alive = 0 }, timeout = "5s", best_effort = true }
+
+# ---- settings form ---------------------------------------------------------------------------------------
+[[field]]
+id = "mode"
+label = "When Ollama is already running"
+type = "choice"
+options = ["auto", "attach", "spawn"]
+default = "auto"
+help = "auto: use the Ollama that answers on this port, otherwise start one. attach: never start one. spawn: always start our own."
+ui = { section = "advanced", order = 1 }
+
+[[field]]
+id = "port"
+label = "Port"
+type = "port"
+default = 11434
+bind.port = "public"
+ui = { section = "primary", order = 10 }
+
+[[field]]
+id = "ctx_size"
+label = "Context size"
+type = "int"
+range = [256, 131072]
+step = 64
+default = { fn = "recommend_ctx_size", args = ["model.size_bytes", "sys.ram_bytes"] }
+recompute_on = ["model"]
+bind.env = [ { name = "OLLAMA_CONTEXT_LENGTH", value = "${value}" } ]
+applies = "spawn_only"          # an attached daemon's environment belongs to its owner, and a per-request num_ctx does not stick (A7)
+ui = { section = "primary", order = 20 }
+
+[[field]]
+id = "gpu"
+label = "GPU"
+type = "choice"
+options = ["auto", "off"]
+default = "auto"
+bind.env = [
+  { name = "OLLAMA_VULKAN", value = "0", when = "value == 'off'" },
+  { name = "CUDA_VISIBLE_DEVICES", value = "-1", when = "value == 'off'" },
+  { name = "ROCR_VISIBLE_DEVICES", value = "-1", when = "value == 'off'" },
+]
+derive = { gpu_offload = "value != 'off'" }
+applies = "spawn_only"
+ui = { section = "primary", order = 30 }
+
+[[field]]
+id = "models_dir"
+label = "Model store"
+type = "dir"
+default = "${data}/ollama/models"
+ui = { section = "advanced", order = 10 }
+
+[[field]]
+id = "use_default_store"
+label = "Use Ollama's own model store instead"
+type = "bool"
+default = false
+ui = { section = "advanced", order = 11 }
+
+[[field]]
+id = "extra_env"
+label = "Extra environment (KEY=VALUE per line)"
+type = "kv_lines"
+default = ""
+bind.env_lines = { protect = ["OLLAMA_HOST", "OLLAMA_MODELS", "OLLAMA_NO_CLOUD"] }
+ui = { section = "advanced", order = 90 }
+
+[[field]]
+id = "bin_override"
+label = "ollama binary"
+type = "runtime_path"
+ui = { section = "advanced", widget = "runtime_manager", order = 2 }
+
+# ---- models: listed, pulled and removed over HTTP -------------------------------------------------------
+[models]
+needs_server = true             # these calls need a daemon, so management mode may start one
+list = { call = { method = "GET", path = "/api/tags" }, items = "/models", map = { id = "/name", display = "/name", size_bytes = "/size", digest = "/digest" }, cache = "${data}/ollama/catalog-cache.json" }
+pull = { call = { method = "POST", path = "/api/pull", body = { model = "${ref}" }, stream = "ndjson" }, progress = { key = "/digest", completed = "/completed", total = "/total", status = "/status" } }
+remove = { call = { method = "DELETE", path = "/api/delete", body = { model = "${ref}" } } }
+capabilities = { call = { method = "POST", path = "/api/show", body = { model = "${ref}" } }, pointer = "/capabilities" }   # discovered modalities: "vision" and so on
+input_rules = [
+  { when = 'matches(input, "^hf\.co/")', do = "pull", ref = "${input}" },
+  { when = 'matches(input, "^https://huggingface\.co/")', do = "pull", ref = "hf.co/${path_after_host(input)}" },
+  { when = "is_url(input)", do = "reject", message = "Ollama pulls by name. Use an hf.co/... reference, or switch the engine to llama.cpp." },
+  { when = "is_file(input)", do = "reject", message = "Importing a local file is not supported for Ollama yet." },
+  { when = 'matches(input, "^[a-z0-9._/-]+(:[A-Za-z0-9._-]+)?$")', do = "pull", ref = "${input}" },
+  { do = "search", providers = ["curated", "hf_gguf"], as_ref = "hf.co/${repo}:${quant}" },
+]
+
+[traffic]
+apis = ["openai.chat", "openai.completions", "ollama.chat", "ollama.generate"]
+
+[api_info]
+base_url = "http://127.0.0.1:${public_port}/v1"
+extra_urls = [ { label = "Ollama API", url = "http://127.0.0.1:${public_port}" } ]
+api_key = { value = "none", note = "Ollama doesn't require one." }
+model = { value = "${session.model_ref}", note = "Use exactly this name: a request that names another model loads that one instead and unloads this one." }
+example = "openai.chat"
+
+[[diagnostic]]
+when = { log_matches = 'address already in use' }
+hint = "Another program is using port ${field.port}. Pick another port."
+action = "focus_field:port"
+
+[[diagnostic]]
+when = { log_matches = '(?i)requires more system memory' }
+hint = "The model does not fit in memory. Pick a smaller model or a smaller context size."
+
+[[diagnostic]]
+when = { log_matches = '(?i)no (compatible|usable) gpus?' }
+hint = "Ollama found no usable GPU and will run on the CPU. On Linux, AMD and Intel GPUs need Vulkan drivers (Mesa) installed."

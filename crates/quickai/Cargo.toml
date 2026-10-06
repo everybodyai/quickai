@@ -9,6 +9,7 @@ name = "quickai"
 path = "src/main.rs"
 
 [dependencies]
+quickai-core = { path = "../quickai-core" }
 crossbeam-channel = "0.5.16"
 directories = "6"
 eframe = "=0.36.1"
@@ -23,6 +24,7 @@ tiny_http = "0.12.0"
 ureq = { version = "3", features = ["json"] }
 webbrowser = "1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+include_dir = "0.7.4"
 
 [build-dependencies]
 winresource = "0.1.31"

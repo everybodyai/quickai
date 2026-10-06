@@ -1,0 +1,31 @@
+# SKETCH, NOT PLANNED FOR THE FIRST RELEASES. A stack: several units run side by side, behind one gateway.
+# The run plan (docs/architecture.md section 6.6) already has `units`, so this needs no new core concept,
+# only the supervisor starting more than one unit and the gateway routing by path.
+#
+# whisper-server and its flags come from third-party guides (docs/engine-facts.md S1); no `whispercpp`
+# engine document exists in these examples.
+schema = 1
+kind = "profile"
+id = "voice-chat"
+name = "Voice chat (speech in, text out)"
+
+[[unit]]
+id = "llm"
+engine = "llamacpp"
+model = "bonsai-8b"
+role = "chat"
+
+[[unit]]
+id = "stt"
+engine = "whispercpp"                   # hypothetical engine document
+model = "whisper-small"                 # hypothetical recipe
+role = "transcribe"
+optional = true                         # the stack runs without it
+
+[gateway]
+port = 8080
+routes = [
+  { path = "/v1/audio/transcriptions", unit = "stt" },
+  { path = "/v1/", unit = "llm" },
+]
+tap = true                              # the Live tab sees every unit's traffic

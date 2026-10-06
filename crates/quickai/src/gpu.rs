@@ -15,6 +15,8 @@
 
 use std::process::Command;
 
+use quickai_core::doc::engine::Backend;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum GpuVendor {
     Nvidia,
@@ -30,6 +32,17 @@ impl GpuVendor {
             GpuVendor::Amd => "AMD",
             GpuVendor::Intel => "Intel",
             GpuVendor::Apple => "Apple",
+        }
+    }
+
+    /// The vendor an engine document names (`nvidia`, `amd`, `intel`, `apple`).
+    pub fn from_key(key: &str) -> Option<GpuVendor> {
+        match key {
+            "nvidia" => Some(GpuVendor::Nvidia),
+            "amd" => Some(GpuVendor::Amd),
+            "intel" => Some(GpuVendor::Intel),
+            "apple" => Some(GpuVendor::Apple),
+            _ => None,
         }
     }
 }
@@ -125,17 +138,12 @@ pub fn detect() -> Vec<GpuVendor> {
     vendors
 }
 
-/// If `backend_label` (see `llama_releases::backend_label`) names a vendor-
-/// locked backend that doesn't match any of `vendors`, a short warning
-/// explaining the mismatch — `None` if the backend is vendor-agnostic
-/// (Vulkan/SYCL/CPU/unknown) or `vendors` is empty (nothing detected, so
-/// nothing to contradict).
-pub fn mismatch_warning(vendors: &[GpuVendor], backend_label: &str) -> Option<String> {
-    let required = match backend_label {
-        "CUDA" => GpuVendor::Nvidia,
-        "ROCm/HIP" => GpuVendor::Amd,
-        _ => return None,
-    };
+/// If `backend` (a rule of the engine document's `backends`, see `acquire::backend`) needs a GPU
+/// vendor that is not among `vendors`, a short warning explaining the mismatch, with `label` as the
+/// backend's name. `None` if the backend is vendor-agnostic (Vulkan, SYCL, CPU) or `vendors` is
+/// empty (nothing detected, so nothing to contradict).
+pub fn mismatch_warning(vendors: &[GpuVendor], backend: &Backend, label: &str) -> Option<String> {
+    let required = GpuVendor::from_key(backend.needs_gpu.as_deref()?)?;
     if vendors.is_empty() || vendors.contains(&required) {
         return None;
     }
@@ -145,7 +153,7 @@ pub fn mismatch_warning(vendors: &[GpuVendor], backend_label: &str) -> Option<St
         .collect::<Vec<_>>()
         .join(", ");
     Some(format!(
-        "⚠ Targets {} GPUs via {backend_label}, but this machine looks like it has {found} — \
+        "⚠ Targets {} GPUs via {label}, but this machine looks like it has {found} — \
          it likely won't use your GPU. A Vulkan build works across AMD/NVIDIA/Intel instead.",
         required.label()
     ))
@@ -171,34 +179,150 @@ mod tests {
         assert_eq!(classify("Some Unknown Adapter"), None);
     }
 
+    fn backend(label: &str, needs_gpu: Option<&str>) -> Backend {
+        Backend {
+            needle: label.to_ascii_lowercase(),
+            label: label.to_string(),
+            needs_gpu: needs_gpu.map(str::to_string),
+        }
+    }
+
     #[test]
     fn mismatch_warning_flags_cuda_without_nvidia() {
-        let warning = mismatch_warning(&[GpuVendor::Amd], "CUDA");
+        let warning = mismatch_warning(&[GpuVendor::Amd], &backend("CUDA", Some("nvidia")), "CUDA");
         assert!(warning.is_some());
         assert!(warning.unwrap().contains("NVIDIA"));
     }
 
     #[test]
     fn mismatch_warning_flags_hip_without_amd() {
-        let warning = mismatch_warning(&[GpuVendor::Nvidia], "ROCm/HIP");
+        let warning = mismatch_warning(
+            &[GpuVendor::Nvidia],
+            &backend("ROCm/HIP", Some("amd")),
+            "ROCm/HIP",
+        );
         assert!(warning.is_some());
     }
 
     #[test]
     fn mismatch_warning_silent_when_vendor_matches() {
-        assert_eq!(mismatch_warning(&[GpuVendor::Nvidia], "CUDA"), None);
-        assert_eq!(mismatch_warning(&[GpuVendor::Amd], "ROCm/HIP"), None);
+        let cuda = backend("CUDA", Some("nvidia"));
+        let hip = backend("ROCm/HIP", Some("amd"));
+        assert_eq!(mismatch_warning(&[GpuVendor::Nvidia], &cuda, "CUDA"), None);
+        assert_eq!(mismatch_warning(&[GpuVendor::Amd], &hip, "ROCm/HIP"), None);
+        assert_eq!(
+            mismatch_warning(&[GpuVendor::Amd, GpuVendor::Nvidia], &cuda, "CUDA"),
+            None,
+            "any detected card of the vendor is enough"
+        );
     }
 
     #[test]
     fn mismatch_warning_silent_for_vendor_agnostic_backends() {
-        assert_eq!(mismatch_warning(&[GpuVendor::Amd], "Vulkan"), None);
-        assert_eq!(mismatch_warning(&[GpuVendor::Amd], "CPU"), None);
-        assert_eq!(mismatch_warning(&[GpuVendor::Amd], "default"), None);
+        for label in ["Vulkan", "CPU", "SYCL"] {
+            assert_eq!(
+                mismatch_warning(&[GpuVendor::Amd], &backend(label, None), label),
+                None,
+                "{label}"
+            );
+        }
     }
 
     #[test]
     fn mismatch_warning_silent_when_nothing_detected() {
-        assert_eq!(mismatch_warning(&[], "CUDA"), None);
+        assert_eq!(
+            mismatch_warning(&[], &backend("CUDA", Some("nvidia")), "CUDA"),
+            None
+        );
+    }
+
+    #[test]
+    fn mismatch_warning_names_both_sides() {
+        let warning = mismatch_warning(
+            &[GpuVendor::Amd, GpuVendor::Intel],
+            &backend("CUDA", Some("nvidia")),
+            "CUDA",
+        )
+        .unwrap();
+        assert!(warning.starts_with(
+            "⚠ Targets NVIDIA GPUs via CUDA, but this machine looks like it has AMD, Intel"
+        ));
+        assert!(warning.ends_with("A Vulkan build works across AMD/NVIDIA/Intel instead."));
+    }
+
+    #[test]
+    fn a_vendor_the_document_names_wrongly_flags_nothing() {
+        assert_eq!(GpuVendor::from_key("nvidlia"), None);
+        assert_eq!(
+            mismatch_warning(&[GpuVendor::Amd], &backend("X", Some("nvidlia")), "X"),
+            None
+        );
+        for (key, vendor) in [
+            ("nvidia", GpuVendor::Nvidia),
+            ("amd", GpuVendor::Amd),
+            ("intel", GpuVendor::Intel),
+            ("apple", GpuVendor::Apple),
+        ] {
+            assert_eq!(GpuVendor::from_key(key), Some(vendor));
+            assert_eq!(
+                vendor.label().to_ascii_lowercase(),
+                key,
+                "the key is the lower-case label"
+            );
+        }
+    }
+
+    /// The old functions decided by the file name's words; the embedded document must decide the same
+    /// way for the names llama.cpp publishes.
+    #[test]
+    fn the_embedded_documents_backends_decide_as_the_old_code_did() {
+        let registry = crate::config::build_registry(&crate::config::ConfigDirs::default());
+        let engine = registry.engine("llamacpp").unwrap();
+        // (file name, label, warns with only an AMD card, warns with only an NVIDIA card)
+        for (name, label, amd_warns, nvidia_warns) in [
+            (
+                "llama-b11007-bin-win-cuda-cu12.4-x64.zip",
+                "CUDA",
+                true,
+                false,
+            ),
+            (
+                "llama-b11007-bin-win-vulkan-x64.zip",
+                "Vulkan",
+                false,
+                false,
+            ),
+            ("llama-b11007-bin-win-sycl-x64.zip", "SYCL", false, false),
+            ("llama-b11007-bin-win-hip-x64.zip", "ROCm/HIP", false, true),
+            (
+                "llama-b11007-bin-ubuntu-rocm-7.0-x64.tar.gz",
+                "ROCm/HIP",
+                false,
+                true,
+            ),
+            ("llama-b11007-bin-win-cpu-x64.zip", "CPU", false, false),
+            ("llama-b11007-bin-macos-arm64.zip", "default", false, false),
+        ] {
+            assert_eq!(
+                quickai_core::acquire::backend_label(engine, name),
+                label,
+                "{name}"
+            );
+            let backend = quickai_core::acquire::backend(engine, name);
+            let warns = |vendors: &[GpuVendor]| {
+                backend.is_some_and(|b| mismatch_warning(vendors, b, label).is_some())
+            };
+            assert_eq!(
+                warns(&[GpuVendor::Amd]),
+                amd_warns,
+                "{name} with an AMD card"
+            );
+            assert_eq!(
+                warns(&[GpuVendor::Nvidia]),
+                nvidia_warns,
+                "{name} with an NVIDIA card"
+            );
+            assert!(!warns(&[]), "{name} with nothing detected");
+        }
     }
 }

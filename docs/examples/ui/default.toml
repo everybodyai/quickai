@@ -1,0 +1,70 @@
+# ILLUSTRATIVE. The window, the screens and their panels, the settings sections, the strings and the theme.
+# This is today's UI (app.rs, main.rs) as data. It is the LAST thing to become data (Phase 5 of
+# docs/architecture.md): until then the shell stays code, and the default layout below must reproduce the
+# current one exactly, because the GUI suite's OCR crops are calibrated to it.
+schema = 1
+kind = "ui"
+id = "default"
+
+[window]
+title = "QuickAI"
+app_id = "quickai"              # must match the AppImage's StartupWMClass
+size = [760, 560]
+min_size = [520, 380]
+
+[theme]
+dark_default = true
+state_colors = { idle = "gray", starting = "#d4a017", stopping = "#d4a017", running = "#2e8b32", crashed = "#c0392b" }
+
+# Panels are Rust widgets from the panel registry; the document chooses which, in what order, and when.
+[[screen]]
+id = "main"
+panels = [
+  { panel = "header", tabs = [ { id = "main", label = "Main" }, { id = "live", label = "📡 Live", when = "app.traffic_proxy" } ], actions = ["speed_tier", "theme", "settings", "about"] },
+  { panel = "model_bar" },
+  { panel = "acquire" },
+  { panel = "adapters", when = "model.components" },        # new: appears only for a model that has components
+  { panel = "controls", section = "primary" },
+  { panel = "run_bar" },
+  { panel = "api_info", when = "session.running and ui.show_api" },
+  { panel = "diagnostics", when = "session.crashed" },
+  { panel = "log" },
+]
+
+[[screen]]
+id = "settings"
+title = "⚙ Settings"
+panels = [
+  { panel = "engine_selector" },                            # new: chooses which engine document is active
+  { panel = "form", section = "app" },
+  { panel = "installed_models" },
+  { panel = "form", section = "app.privacy" },
+  { panel = "form", section = "advanced", title = "Advanced: ${engine.name}", collapsible = true },
+  { panel = "diagnostics_config" },                         # new: configuration problems and "view plan"
+]
+
+# App-level settings are fields too, so every key of today's settings.json has a home.
+[[field]]
+id = "dark_mode"
+label = "Dark theme"
+type = "bool"
+default = true
+legacy_key = "dark_mode"
+ui = { section = "app", widget = "theme_toggle" }
+
+[[field]]
+id = "traffic_proxy"
+label = "Show live conversation traffic"
+type = "bool"
+default = false
+legacy_key = "enable_traffic_proxy"
+applies = "on_start"
+help = 'Adds a small local proxy in front of the engine so the Live tab can show chat requests and replies. Takes effect on the next Start.'
+ui = { section = "app.privacy", order = 10 }
+
+[strings]                       # keyed from day one, so a translation is a second document later
+"button.start" = "Start"
+"button.stop" = "Stop"
+"button.chat_ui" = "Open Chat UI"
+"status.stopped" = "Stopped"
+"status.running" = "Running: ${session.model_display} (port ${public_port})"

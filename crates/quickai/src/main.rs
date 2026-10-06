@@ -4,16 +4,22 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod cli;
+mod config;
 mod downloader;
+mod events;
+#[cfg(test)]
+mod golden;
 mod gpu;
 mod hardware;
-mod llama_install;
-mod llama_releases;
+mod jobs;
+mod launch;
 mod models;
 mod paths;
+mod prims;
 mod proxy;
 mod remote;
-mod server_manager;
+mod runtime;
 mod settings;
 
 /// Must match the AppImage's `.desktop` file (`StartupWMClass=quickai`, made
@@ -23,6 +29,12 @@ mod settings;
 const APP_ID: &str = "quickai";
 
 fn main() -> eframe::Result {
+    // `quickai config check` and `quickai plan` are headless: they run and exit before any window.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(code) = cli::run(&args) {
+        std::process::exit(code);
+    }
+
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/icon.png"))
         .expect("bundled icon should be a valid PNG");
 
