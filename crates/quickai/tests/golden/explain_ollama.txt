@@ -1,0 +1,47 @@
+== a model, defaults ==
+plan: qwen3:4b on ollama
+ start   attach  127.0.0.1:11434 when GET /api/version answers with a version   engine launch.attach
+           watched by GET /api/version every 5000 ms, gone after 3 misses       engine launch.attach.liveness
+ start   spawn   /opt/quickai/ollama/bin/ollama                                 engine launch.spawn.program
+           serve                                                                engine launch.spawn.args
+         env OLLAMA_HOST=127.0.0.1:11434                                        engine launch.spawn.env
+         env OLLAMA_MODELS=/data/ollama/models                                  engine launch.spawn.env
+         env OLLAMA_KEEP_ALIVE=-1                                               engine launch.spawn.env
+         env OLLAMA_MAX_LOADED_MODELS=1                                         engine launch.spawn.env
+         env OLLAMA_NO_CLOUD=1                                                  engine launch.spawn.env
+ ready   GET /api/version == 200   (120 s, every 500 ms)
+ warm    POST /api/generate {"keep_alive":-1,"model":"qwen3:4b"}                engine launch.warm
+ unload  POST /api/generate {"keep_alive":0,"model":"qwen3:4b"}                 engine launch.unload
+ stop    graceful (10000 ms to leave, 2000 ms when closing)
+
+== a model, the proxy on ==
+plan: qwen3:4b on ollama
+ gateway proxy :11434 -> engine :41234                                          app traffic proxy
+         reads openai.chat, openai.completions, ollama.chat, ollama.generate    vocabulary
+ start   attach  127.0.0.1:11434 when GET /api/version answers with a version   engine launch.attach
+           watched by GET /api/version every 5000 ms, gone after 3 misses       engine launch.attach.liveness
+ start   spawn   /opt/quickai/ollama/bin/ollama                                 engine launch.spawn.program
+           serve                                                                engine launch.spawn.args
+         env OLLAMA_HOST=127.0.0.1:41234                                        engine launch.spawn.env
+         env OLLAMA_MODELS=/data/ollama/models                                  engine launch.spawn.env
+         env OLLAMA_KEEP_ALIVE=-1                                               engine launch.spawn.env
+         env OLLAMA_MAX_LOADED_MODELS=1                                         engine launch.spawn.env
+         env OLLAMA_NO_CLOUD=1                                                  engine launch.spawn.env
+ ready   GET /api/version == 200   (120 s, every 500 ms)
+ warm    POST /api/generate {"keep_alive":-1,"model":"qwen3:4b"}                engine launch.warm
+ unload  POST /api/generate {"keep_alive":0,"model":"qwen3:4b"}                 engine launch.unload
+ stop    graceful (10000 ms to leave, 2000 ms when closing)
+
+== no model ==
+plan: (no model) on ollama
+ start   attach  127.0.0.1:11434 when GET /api/version answers with a version   engine launch.attach
+           watched by GET /api/version every 5000 ms, gone after 3 misses       engine launch.attach.liveness
+ start   spawn   /opt/quickai/ollama/bin/ollama                                 engine launch.spawn.program
+           serve                                                                engine launch.spawn.args
+         env OLLAMA_HOST=127.0.0.1:11434                                        engine launch.spawn.env
+         env OLLAMA_MODELS=/data/ollama/models                                  engine launch.spawn.env
+         env OLLAMA_KEEP_ALIVE=-1                                               engine launch.spawn.env
+         env OLLAMA_MAX_LOADED_MODELS=1                                         engine launch.spawn.env
+         env OLLAMA_NO_CLOUD=1                                                  engine launch.spawn.env
+ ready   GET /api/version == 200   (120 s, every 500 ms)
+ stop    graceful (10000 ms to leave, 2000 ms when closing)

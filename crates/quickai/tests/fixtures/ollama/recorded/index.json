@@ -1,0 +1,428 @@
+{
+  "ollama_version": "0.35.1",
+  "recorded": "2026-10-06",
+  "model_file": "Bonsai-1.7B-Q1_0.gguf",
+  "responses": [
+    {
+      "name": "root",
+      "method": "GET",
+      "path": "/",
+      "request": null,
+      "status": 200,
+      "content_type": "text/plain; charset=utf-8",
+      "file": "root.body"
+    },
+    {
+      "name": "route_unknown",
+      "method": "GET",
+      "path": "/no/such/route",
+      "request": null,
+      "status": 404,
+      "content_type": "text/plain",
+      "file": "route_unknown.body"
+    },
+    {
+      "name": "version",
+      "method": "GET",
+      "path": "/api/version",
+      "request": null,
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "version.body"
+    },
+    {
+      "name": "tags_empty",
+      "method": "GET",
+      "path": "/api/tags",
+      "request": null,
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "tags_empty.body"
+    },
+    {
+      "name": "ps_empty",
+      "method": "GET",
+      "path": "/api/ps",
+      "request": null,
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "ps_empty.body"
+    },
+    {
+      "name": "create",
+      "method": "POST",
+      "path": "/api/create",
+      "request": {
+        "model": "bonsai-q1",
+        "files": {
+          "Bonsai-1.7B-Q1_0.gguf": "sha256:3d7c6c90dd98717a203adb22d5eacd2581850e40aa5327e144b97766cae5f7e3"
+        }
+      },
+      "status": 200,
+      "content_type": "application/x-ndjson",
+      "file": "create.body"
+    },
+    {
+      "name": "tags_one",
+      "method": "GET",
+      "path": "/api/tags",
+      "request": null,
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "tags_one.body"
+    },
+    {
+      "name": "show",
+      "method": "POST",
+      "path": "/api/show",
+      "request": {
+        "model": "bonsai-q1"
+      },
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "show.body"
+    },
+    {
+      "name": "copy",
+      "method": "POST",
+      "path": "/api/copy",
+      "request": {
+        "source": "bonsai-q1",
+        "destination": "bonsai-copy"
+      },
+      "status": 200,
+      "content_type": "",
+      "file": "copy.body"
+    },
+    {
+      "name": "delete_ok",
+      "method": "DELETE",
+      "path": "/api/delete",
+      "request": {
+        "model": "bonsai-copy"
+      },
+      "status": 200,
+      "content_type": "",
+      "file": "delete_ok.body"
+    },
+    {
+      "name": "generate_unknown",
+      "method": "POST",
+      "path": "/api/generate",
+      "request": {
+        "model": "no-such-model",
+        "prompt": "hi"
+      },
+      "status": 404,
+      "content_type": "application/json; charset=utf-8",
+      "file": "generate_unknown.body"
+    },
+    {
+      "name": "chat_unknown",
+      "method": "POST",
+      "path": "/api/chat",
+      "request": {
+        "model": "no-such-model",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hi"
+          }
+        ]
+      },
+      "status": 404,
+      "content_type": "application/json; charset=utf-8",
+      "file": "chat_unknown.body"
+    },
+    {
+      "name": "show_unknown",
+      "method": "POST",
+      "path": "/api/show",
+      "request": {
+        "model": "no-such-model"
+      },
+      "status": 404,
+      "content_type": "application/json; charset=utf-8",
+      "file": "show_unknown.body"
+    },
+    {
+      "name": "delete_unknown",
+      "method": "DELETE",
+      "path": "/api/delete",
+      "request": {
+        "model": "no-such-model"
+      },
+      "status": 404,
+      "content_type": "application/json; charset=utf-8",
+      "file": "delete_unknown.body"
+    },
+    {
+      "name": "generate_bad_json",
+      "method": "POST",
+      "path": "/api/generate",
+      "request": "{\"model\":",
+      "status": 400,
+      "content_type": "application/json; charset=utf-8",
+      "file": "generate_bad_json.body"
+    },
+    {
+      "name": "pull_empty",
+      "method": "POST",
+      "path": "/api/pull",
+      "request": {
+        "model": ""
+      },
+      "status": 400,
+      "content_type": "application/json; charset=utf-8",
+      "file": "pull_empty.body"
+    },
+    {
+      "name": "generate_load",
+      "method": "POST",
+      "path": "/api/generate",
+      "request": {
+        "model": "bonsai-q1",
+        "keep_alive": -1
+      },
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "generate_load.body"
+    },
+    {
+      "name": "ps_loaded",
+      "method": "GET",
+      "path": "/api/ps",
+      "request": null,
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "ps_loaded.body"
+    },
+    {
+      "name": "generate_stream",
+      "method": "POST",
+      "path": "/api/generate",
+      "request": {
+        "model": "bonsai-q1",
+        "prompt": "Say hello.",
+        "stream": true,
+        "think": false,
+        "options": {
+          "num_predict": 12,
+          "temperature": 0
+        }
+      },
+      "status": 200,
+      "content_type": "application/x-ndjson",
+      "file": "generate_stream.body"
+    },
+    {
+      "name": "generate_nostream",
+      "method": "POST",
+      "path": "/api/generate",
+      "request": {
+        "model": "bonsai-q1",
+        "prompt": "Say hello.",
+        "stream": false,
+        "think": false,
+        "options": {
+          "num_predict": 12,
+          "temperature": 0
+        }
+      },
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "generate_nostream.body"
+    },
+    {
+      "name": "chat_stream",
+      "method": "POST",
+      "path": "/api/chat",
+      "request": {
+        "model": "bonsai-q1",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "think": false,
+        "options": {
+          "num_predict": 12,
+          "temperature": 0
+        }
+      },
+      "status": 200,
+      "content_type": "application/x-ndjson",
+      "file": "chat_stream.body"
+    },
+    {
+      "name": "chat_stream_thinking",
+      "method": "POST",
+      "path": "/api/chat",
+      "request": {
+        "model": "bonsai-q1",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "options": {
+          "num_predict": 24,
+          "temperature": 0
+        }
+      },
+      "status": 200,
+      "content_type": "application/x-ndjson",
+      "file": "chat_stream_thinking.body"
+    },
+    {
+      "name": "chat_nostream",
+      "method": "POST",
+      "path": "/api/chat",
+      "request": {
+        "model": "bonsai-q1",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": false,
+        "think": false,
+        "options": {
+          "num_predict": 12,
+          "temperature": 0
+        }
+      },
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "chat_nostream.body"
+    },
+    {
+      "name": "v1_chat_stream",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "request": {
+        "model": "bonsai-q1",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "max_tokens": 12,
+        "temperature": 0
+      },
+      "status": 200,
+      "content_type": "text/event-stream",
+      "file": "v1_chat_stream.body"
+    },
+    {
+      "name": "v1_chat",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "request": {
+        "model": "bonsai-q1",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": false,
+        "max_tokens": 12,
+        "temperature": 0
+      },
+      "status": 200,
+      "content_type": "application/json",
+      "file": "v1_chat.body"
+    },
+    {
+      "name": "v1_models",
+      "method": "GET",
+      "path": "/v1/models",
+      "request": null,
+      "status": 200,
+      "content_type": "application/json",
+      "file": "v1_models.body"
+    },
+    {
+      "name": "generate_unload",
+      "method": "POST",
+      "path": "/api/generate",
+      "request": {
+        "model": "bonsai-q1",
+        "keep_alive": 0
+      },
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "generate_unload.body"
+    },
+    {
+      "name": "ps_unloaded",
+      "method": "GET",
+      "path": "/api/ps",
+      "request": null,
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "ps_unloaded.body"
+    },
+    {
+      "name": "pull_unreachable",
+      "method": "POST",
+      "path": "/api/pull",
+      "request": {
+        "model": "library/no-such-model"
+      },
+      "status": 200,
+      "content_type": "application/x-ndjson",
+      "file": "pull_unreachable.body"
+    },
+    {
+      "name": "pull_real",
+      "method": "POST",
+      "path": "/api/pull",
+      "request": {
+        "model": "all-minilm"
+      },
+      "status": 200,
+      "content_type": "application/x-ndjson",
+      "file": "pull_real.body"
+    },
+    {
+      "name": "tags_pulled",
+      "method": "GET",
+      "path": "/api/tags",
+      "request": null,
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "tags_pulled.body"
+    },
+    {
+      "name": "pull_again",
+      "method": "POST",
+      "path": "/api/pull",
+      "request": {
+        "model": "all-minilm"
+      },
+      "status": 200,
+      "content_type": "application/x-ndjson",
+      "file": "pull_again.body"
+    },
+    {
+      "name": "delete_pulled",
+      "method": "DELETE",
+      "path": "/api/delete",
+      "request": {
+        "model": "all-minilm"
+      },
+      "status": 200,
+      "content_type": "",
+      "file": "delete_pulled.body"
+    }
+  ]
+}

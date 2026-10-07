@@ -1,0 +1,1 @@
+registry.ollama.ai:443

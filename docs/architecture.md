@@ -360,14 +360,14 @@ the context table, so a typo is a diagnostic with a file and line, not a runtime
 | Operators | `==  !=  <  <=  >  >=  and  or  not  in` and parentheses |
 | Paths | dotted names resolved against the context |
 | Functions (pure) | `has(list, x)`, `len`, `lower`, `matches(s, re)`, `starts_with`, `is_url`, `semver_ge`, `min`, `max`, `clamp`, `recommend_ctx_size(size, ram)`, `speed_tier(…)` |
-| Functions (reads the filesystem) | `is_file(path)`, allowed only in `input_rules` |
+| Functions (the machine, asked through the caller) | `is_file(path)`: whether the typed string names a file on this machine, answered by the caller for the one string the rules are about (the context carries the answer as `input_is_file`); any other text is not a file. `path_after_host(url)`: what follows the host, without the slashes around it |
 | Interpolation | `${path}` inside strings. A string that is exactly one `${…}` keeps the value's type (a number stays a number in a JSON body); otherwise the result is a string |
 
 | Context | Meaning |
 |---|---|
 | `os`, `arch` | `linux`, `windows`, `macos`; `x86_64`, `aarch64` |
 | `sys.ram_bytes`, `sys.cpus` | detected hardware |
-| `gpu.known`, `gpu.has('nvidia')` | from GPU detection; `known` is false when nothing could be detected |
+| `gpu.known`, `gpu.vendors` | from GPU detection; `known` is false when nothing could be detected; a vendor is asked for with `has(gpu.vendors, 'nvidia')` |
 | `runtime.binary`, `runtime.dir`, `runtime.build` or `.version`, `runtime.has_flag('--x')` | the located build and what it reported about itself |
 | `model.id`, `.ref`, `.size_bytes`, `.modalities.input`, `.main.path`, `.components.*` | the selected recipe |
 | `component.path`, `component.<field>`; `components.<kind>` | inside a component binding; the attached components of a kind with their values (for `each` and `live` bindings) |
@@ -386,7 +386,7 @@ setting is one block.
 | Sink | Writes | Notes |
 |---|---|---|
 | `arg` | argv fragments | `arg_when_false`; `arg_split` (shell-like split of a text field, nothing when empty); `each` plus `sep` joins per-component items (`--lora-scaled a:1.0,b:0.5`); `emit = "always"` or `"when_set"` |
-| `env` | environment variables | `prepend` with `sep`; `locked = true` stops a user's extra environment overriding it; `env_lines` for a `KEY=VALUE` text field |
+| `env` | environment variables | a field's `bind.env` sets named variables from its value (a `when` over `value`; nothing while the field has no value), after the document's own; `prepend` with `sep`. `locked = true` (on the document's own entries) and the names listed in `env_lines.protect` keep the person's own lines from overriding them, and so does every variable the document adds to with `prepend`; a protected name is refused in any spelling. `env_lines` turns a `kv_lines` field into the person's own `KEY=VALUE` lines: they come last, a later line for a name replaces an earlier one in place (and a document's variable that is not protected where it stood), blank lines and `#` comments are skipped, a bad or protected line is a message under the field and the text stays as typed. The log's second line shows them, secrets hidden |
 | `file` | a rendered config file | for engines configured by file: llama.cpp router presets (L10), a Modelfile |
 | `http` | a field of a named HTTP call | a field of the warm-up body (not `num_ctx`: Ollama undoes a per-request value on the next request without one, so the context travels as `OLLAMA_CONTEXT_LENGTH`, A7); `live` calls run while serving |
 | `port` | the engine's listen address | `public` marks the port clients use |
@@ -480,10 +480,13 @@ primitive: code, documentation and a snapshot test.
   Built in Phase 2: its sentences are fixed in the widget with the engine's names put in (its name, its
   server's name, the repository, where builds are kept, the backends), and the engine document supplies only the
   placeholder of the filter box. The widgets built so far are integer and float drag boxes, port, checkbox,
-  combo, one-line text and the runtime manager; key-value lines, a path picker with a browse button, a progress
-  bar and a button arrive with the first form that needs them.
+  combo, one-line text and the runtime manager, and (Phase 3) key-value lines, a path picker with a browse
+  button, a progress bar and a button. A widget hands back a value (`set`) or an action (`invoke`); the names a
+  document may give `ui.widget` are the ones the interface declares, and the loader refuses another. A button is
+  a field that holds nothing, with `ui.action`.
 - The keys of an engine document are described in [reference/engine-fields.md](reference/engine-fields.md),
-  generated from the types (`quickai config docs`).
+  generated from the types (`quickai config docs`); those of a vocabulary document in
+  [reference/vocab-fields.md](reference/vocab-fields.md) (`quickai config docs vocab`).
 
 ### 9.3 What appears when
 
@@ -493,7 +496,7 @@ primitive: code, documentation and a snapshot test.
 | The recipe has an `mmproj` component and the engine can attach it | An Adapters panel appears: a projector slot, "Offload projector to GPU", and (advanced) image-token limits | `model.components`, `[components.mmproj]`, the adapter kind's `fields` |
 | The installed `llama-server` lacks a flag | The field or component is hidden, with a reason on hover | `requires_flag`, `runtime.has_flag` |
 | A LoRA is attached | A Scale slider per adapter; changes apply live | the adapter kind's `fields`; `[components.lora].live` (L6) |
-| The engine has no web UI (Ollama) | No "Open Chat UI" button | `provides.web_ui = false` |
+| The engine has no web UI (Ollama) | No "Open Chat UI" button | `provides.web_ui` is absent |
 | Attached to a daemon QuickAI did not start | Environment-bound fields are disabled: "owned by the running Ollama" | `applies = "spawn_only"` |
 | The GPU is positively known not to be NVIDIA | The installer card says the CUDA files (about 1.8 GB) will be skipped | `install.skip` with `gpu.known` |
 | A `mmproj*.gguf` sits next to a model with no recipe | The Adapters panel suggests it | the adapter kind's `discover` glob |
@@ -577,31 +580,41 @@ and `poll()` once per frame. The health poller becomes a bring-up step (probe, t
 
 | Moment | llama.cpp | Ollama, spawned | Ollama, attached |
 |---|---|---|---|
-| Start | spawn, probe `/health`, Running | spawn `serve`, probe `/api/version`, warm up, Running | probe, warm up, Running |
+| Start | spawn, probe `/health`, Running | spawn `serve`, probe `/api/version`, warm up, Running | probe (the port must answer *as Ollama*: JSON with a `version`), warm up, Running |
 | Stop | kill, Idle | unload, stop the process group (SIGTERM, grace, kill), Idle | unload, Idle; the daemon is untouched |
-| Process exits unasked | Crashed | Crashed | no child; a liveness probe every 5 s reports Crashed |
+| Process exits unasked | Crashed | Crashed | no child; a liveness probe every 5 s reports Crashed after three misses in a row (one slow answer while a model loads is not a crash) |
 | Warm-up fails (out of memory, unsupported model) | not applicable | log the engine's error, stop what QuickAI started, Crashed | log the error, Crashed |
 | App exit | `stop_blocking` | the same, with a 2 s grace so closing the window is not held up | unload, detach |
 
+A start that is not answered within the ready timeout is, by default, a failure: the log says so, what QuickAI started is stopped (with the plan's grace) and the state is Crashed. An engine whose program may simply be slow says `on_timeout = "wait"` (llama.cpp does): the log says so and the run goes on being watched, in Starting, until the process exits or Stop is pressed.
+
 *Management mode* starts the plan with no model so a daemon can list, pull and delete: state Running, status
-"Ollama ready, no model loaded". Choosing a model and pressing Start then only runs the warm phase.
+"Ollama ready, no model loaded". Choosing a model and pressing Start then only runs the warm phase (`Session::load`; Start is available again exactly while the engine runs with nothing loaded and the picker has a model, and not while a load is under way, `Session::loading()`); a load that fails there is logged and leaves the daemon running with nothing loaded, where a warm-up that fails *during* Start stops what QuickAI started and ends in Crashed. A first run is therefore two steps, because nothing is listed before a daemon runs: Start brings it up, and Start again loads the model the picker then shows.
+
+A port that answers is attached to only if it answers like Ollama (`GET /api/version` returns JSON with a string `version`): a llama-server, a web server or anything else on the port is "something else is using the port", neither attached to nor a reason to start a second daemon on it. With `mode = spawn` a port where an Ollama already answers is refused. The plan carries both strategies in order (`mode = auto`) and the session chooses at the moment of the start, because the planner cannot know what answers (docs/phase3-test-plan.md, section 3). The place that is asked is the port the settings give (`${public_port}` in the document), not the internal one a gateway would use: a daemon that was already there is never behind a gateway of ours.
 
 ### 11.2 Process hygiene
 
-- **Unix:** spawn in its own process group. Stop sends SIGTERM to the group, waits the grace period, then SIGKILLs
-  the group. On Linux, `PR_SET_PDEATHSIG` makes the child follow QuickAI if QuickAI dies (it fires when the
-  spawning thread exits, so the spawn stays on the UI thread, as today). It matters more for Ollama, whose child
+- **Unix:** a program whose document says `group = true` is spawned in its own process group. Stop sends SIGTERM
+  to the group, waits the grace period, then SIGKILLs the group (and once more after the leader has gone, for
+  what it left behind). On Linux, `PR_SET_PDEATHSIG` makes every child, with a group or without, follow QuickAI if
+  QuickAI dies (it fires when the spawning *thread* exits, so each run has one supervisor thread that starts the
+  program and stays until it is gone; `runtime/supervisor.rs`). It matters more for Ollama, whose child
   owns GPU memory and runner subprocesses. The signal is **SIGTERM**, not SIGKILL: the flag is not inherited by the
   runner, and only a graceful stop of `ollama serve` takes its `llama-server` runner down (A3: after a SIGKILL of
   the server alone the runner was still alive 36 s later; SIGTERM or a group kill removed both in 0.1 s).
-- **Windows:** assign the child to a Job Object with `KILL_ON_JOB_CLOSE`; Stop terminates the job. A GUI process
+- **Windows:** assign every child to a Job Object with `KILL_ON_JOB_CLOSE`; Stop terminates the job. A GUI process
   has no practical way to deliver a console Ctrl event, so there is no graceful signal. Spawn with
   `CREATE_NO_WINDOW`: a console child of a GUI-subsystem release build otherwise opens a console window (A8; it
   may already happen with `llama-server.exe`).
 - CI builds Linux, Windows and macOS, so every `cfg` branch must compile.
-- Do not leak the AppImage or snap loader environment into a downloaded runtime: drop `LD_LIBRARY_PATH` entries
-  under `$APPDIR` before spawning. llama.cpp keeps today's behaviour of prepending its own directory.
-- The first log line is the whole plan: the command and the environment variables QuickAI set.
+- Do not leak the AppImage or snap loader environment into a downloaded runtime: drop the `LD_LIBRARY_PATH` and
+  `LD_PRELOAD` entries under `$APPDIR` or `$SNAP` before spawning, and only for an engine that is not `bundled`
+  (a llama-server in a snap needs the snap's own libraries). The plan's operations then apply to what is left;
+  llama.cpp keeps today's behaviour of prepending its own directory to what it inherited.
+- The first log lines are the plan: the command (`$ program args`, unchanged) and, when the plan sets any, a second
+  line `env NAME=value ...` of the variables it *sets* (a loader path it only prepends to is not shown), with the
+  value of anything named like a secret (KEY, TOKEN, SECRET, PASSWORD) written as `***`.
 
 ### 11.3 Gateway and traffic
 
@@ -609,9 +622,16 @@ and `poll()` once per frame. The health poller becomes a bring-up step (probe, t
 - The proxy takes its decoders from the vocabulary: framing (SSE or NDJSON, `application/x-ndjson`, one JSON
   object per line) and JSON pointers for the text. Relaying stays byte-for-byte; sniffing stays best-effort.
   Message-content summarising (text parts, attachments) is a primitive with pointer parameters
-  (`images = "/images"` for Ollama's native chat).
-- **Attach plus proxy.** The proxy must bind a port other than the attached daemon's (both default to 11434), so in
-  attach mode it takes the next free port and the API panel shows that URL. v1 may disable the toggle there.
+  (`images = "/images"` for Ollama's native chat). The decoders travel in the run plan (`RunPlan.decode`, with the
+  gateway), each API claims exact paths, the content type the engine sends chooses among an API's framings, a
+  request with no prompt or no messages (a load or an unload) is not shown, an `error` in a reply or a stream is
+  shown as an error, and an error status is relayed to the client as it is. A client of an engine that dies
+  mid-reply waits for its own timeout (the server library cannot reset a connection); the Live entry is closed
+  at once.
+- **Attach plus proxy.** The proxy must bind a port other than the attached daemon's (both default to 11434), and a
+  second port would show a URL nobody configured, so in v1 **no gateway is started in front of a daemon that was
+  already there**: the public port is the daemon's own, the log says that live traffic needs an Ollama QuickAI started,
+  and the toggle's hover text says so.
 - With several units, the same component routes by path (§10.5).
 
 ### 11.4 Jobs
@@ -627,10 +647,10 @@ is its first user.
 
 ```
 click "Download"                              the only trigger
-  ├─ preflight   free space ≥ archive + extracted + margin; target not already complete
-  ├─ download    <root>/<tag>.part, with progress
-  ├─ verify      sha256 equals the pin, or GitHub's `digest` for the asset
-  ├─ extract     into <root>/<tag>.partial/ through the entry filter
+  ├─ preflight   free space ≥ archive + 1.6 × archive + 256 MB, from the size the host lists; target not already complete
+  ├─ download    <root>/<tag>.<ext>.part, with progress, its sha256 worked out on the way in
+  ├─ verify      sha256 equals the pin, or GitHub's `digest` for the asset (before anything is unpacked)
+  ├─ extract     into <root>/<tag>.partial/ through the entry filter; `.zip`, `.tar.gz`, `.tgz`, `.tar.zst`
   ├─ locate      the binary; run `<binary> --version` as a smoke test
   └─ rename      <tag>.partial → <tag>          atomic
 ```
@@ -640,9 +660,14 @@ click "Download"                              the only trigger
   call it installed. With Ollama the binary is extracted first and 1.4 GB of libraries after it, so
   extract-then-rename is a requirement.
 - **Verification.** A digest from the host catches truncation and corruption but not a tampered release, so the
-  tested tag's digests are also pinned in the document.
-- **Entry filter.** It must keep refusing paths that escape the target (`tar::Entry::unpack_in`,
-  `zip::ZipFile::enclosed_name`). Default policy: skip `lib/ollama/cuda_*` only when `gpu.known` and the GPU is
+  tested tag's digests are also pinned in the document. When both exist they must agree, or the file is refused (it
+  changed after it was tested); a build with neither (an address the person pasted) is installed because they asked for
+  exactly that file, and is shown as unverified. A digest that does not match is found **before** extraction starts.
+- **Entry filter.** A path must be relative and stay inside the target, a symbolic link must be relative and stay
+  inside it, and an entry that is not a file, a directory or such a link (a hard link, a device) is refused; **any
+  unsafe entry refuses the whole install**, where the `tar` reader on its own skips an entry that climbs out and goes
+  on (found while preparing the tests, Z10). The checks are QuickAI's own, and `tar::Entry::unpack_in` and
+  `zip::ZipFile::enclosed_name` stay underneath them. Default policy: skip `lib/ollama/cuda_*` only when `gpu.known` and the GPU is
   not NVIDIA; unknown means nothing is skipped. Of the Windows zip's 1.94 GB extracted, 1.83 GB is CUDA (O3).
 - **Overlays.** A build may have several assets: Ollama's ROCm archive extracts over the base. Off by default,
   because Vulkan in the base covers AMD and Intel.
@@ -661,8 +686,10 @@ click "Download"                              the only trigger
 | Data | vocab, catalog, profile | names, sources, selections, text | embedded, user, later remote |
 
 A data document cannot introduce a program or a host: sources are checked against the policy's allow-list. A
-user-layer privileged document is the user's own business, with one guard: an engine that names a program the app
-did not install or locate asks for confirmation once.
+user-layer privileged document is the user's own business, with one guard: an engine whose document has a layer above
+the app's own and that starts a program the app did not install or locate (by the strategies of its own document) asks
+for confirmation before it starts. A yes is remembered by the hash of what the merged document says, not by how it is
+written, so the question is asked once for each version of the document (`quickai-core::guard`; implementation-plan C49).
 
 ### 12.2 Enforcement
 
@@ -684,7 +711,9 @@ changes in the policy text when Ollama arrives:
 
 - New requests QuickAI itself makes: GitHub's releases API and the release asset download, both on a click.
 - Requests *Ollama* makes when the user clicks Pull (its registry, or Hugging Face for `hf.co/…` names): QuickAI
-  does not make them but triggers them, and the text says so.
+  does not make them but triggers them, and the text says so. Measured through a forwarding proxy: a pull of a 46 MB
+  model contacted `registry.ollama.ai:443` and nothing else (O21); a large model and a Hugging Face reference are not
+  yet observed, and `egress` says only what was seen.
 - The daemon is started with `OLLAMA_NO_CLOUD=1`, locked against the user's extra environment: measured, without it an idle `serve` contacts `ollama.com` within 40 ms of starting and again about every 4 hours, and with it a whole session made no non-loopback connection and no DNS lookup (A6). Ollama writes its own key pair under `~/.ollama` at the first start (A4), and the GPU driver writes shader caches under `~/.cache`; the privacy text says so.
 - New on-disk data: `~/.quickai/ollama/` (runtime, models, catalog cache).
 - "Bundled software" gains a line: Ollama is not bundled; it is downloaded on request, MIT-licensed, and its

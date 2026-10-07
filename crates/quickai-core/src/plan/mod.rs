@@ -6,6 +6,7 @@
 //! always give the same plan, so plans can be snapshot-tested and shown to the user.
 
 pub mod args;
+pub mod env;
 pub mod explain;
 pub(crate) mod resolve;
 pub mod types;
@@ -14,7 +15,9 @@ use std::collections::BTreeMap;
 
 use crate::diag::{Diagnostic, Severity};
 use crate::docpath::DocPath;
-use crate::registry::engine::{CompiledField, CompiledSpawn};
+use crate::registry::engine::{
+    CompiledAttach, CompiledEnv, CompiledField, CompiledSpawn, CompiledStep, LaunchStrategy,
+};
 use crate::registry::{Engine, Registry};
 use crate::value::Value;
 
@@ -22,8 +25,8 @@ pub use resolve::Origin;
 use resolve::{port_value, public_port, resolve_fields, Resolved};
 
 pub use types::{
-    apply_env, Endpoint, EnvMode, EnvOp, Gateway, ReadyPlan, RunPlan, SpawnPlan, Start, Traced,
-    Unit,
+    apply_env, is_secret_name, AttachPlan, CallPlan, Endpoint, EnvMode, EnvOp, Gateway,
+    IdentityPlan, LivenessPlan, ReadyPlan, RunPlan, SpawnPlan, Start, StopPlan, Traced, Unit,
 };
 
 /// The model a run is about.
@@ -92,6 +95,9 @@ pub struct HostFacts {
     /// plan is made to start an engine, so it leaves both false.
     pub session_running: bool,
     pub session_crashed: bool,
+    /// The running engine is one QuickAI did not start (it attached to it): its environment belongs
+    /// to whoever started it, so what only a spawn can set cannot be changed from here.
+    pub session_attached: bool,
 }
 
 /// The app-level value that puts the live-traffic proxy in front of the engine.
@@ -151,13 +157,42 @@ pub fn plan(
     context.set_path(&["public_port"], port_value(public_port));
     context.set_path(&["listen_port"], port_value(listen_port));
 
-    // ---- spawn ----
+    // ---- how to bring it up ----
     let mut start = Vec::new();
-    if let Some(spawn) = &engine.spawn {
-        if let Some(plan) = plan_spawn(engine, spawn, &resolved, &context, selection, &mut errors) {
-            start.push(Start::Spawn(plan));
+    for strategy in chosen_strategies(engine, &resolved, &mut errors) {
+        match strategy {
+            LaunchStrategy::AttachIfRunning => {
+                if let Some(attach) = &engine.launch.attach {
+                    if let Some(plan) = plan_attach(engine, attach, &context, &mut errors) {
+                        start.push(Start::Attach(plan));
+                    }
+                }
+            }
+            LaunchStrategy::Spawn => {
+                if let Some(spawn) = &engine.spawn {
+                    if let Some(mut plan) =
+                        plan_spawn(engine, spawn, &resolved, &context, selection, &mut errors)
+                    {
+                        // where an engine of this kind already answers, a second is not started
+                        plan.identity = engine.launch.attach.as_ref().map(|a| IdentityPlan {
+                            path: a.identity_path.clone(),
+                            pointer: a.identity_pointer.clone(),
+                        });
+                        start.push(Start::Spawn(plan));
+                    }
+                }
+            }
         }
     }
+    if start.is_empty() && errors.is_empty() {
+        errors.push(Diagnostic::error(
+            "this engine has no way to be started with these settings",
+        ));
+    }
+
+    // ---- loading and unloading the model ----
+    let warm = plan_calls(engine, &engine.launch.warm, &context, &mut errors);
+    let unload = plan_calls(engine, &engine.launch.unload, &context, &mut errors);
 
     if !errors.is_empty() {
         return Err(errors);
@@ -168,12 +203,32 @@ pub fn plan(
         expect_status: r.expect_status,
         timeout_ms: r.timeout.as_millis() as u64,
         interval_ms: r.interval.as_millis() as u64,
+        on_timeout: r.on_timeout,
     });
+    let stop = engine
+        .spawn
+        .as_ref()
+        .map(|s| StopPlan {
+            policy: s.stop.policy,
+            grace_ms: s.stop.grace.as_millis() as u64,
+            exit_grace_ms: s.stop.exit_grace.as_millis() as u64,
+        })
+        .unwrap_or_default();
     Ok(RunPlan {
         engine: engine.id.clone(),
         model: selection.model.as_ref().map(|m| m.display.clone()),
         public_port,
         gateway,
+        decode: if gateway.is_some() {
+            // the APIs the document says the Live tab reads, else every one it serves
+            let read = match &engine.doc.traffic {
+                Some(traffic) => &traffic.apis,
+                None => &engine.doc.provides.apis,
+            };
+            registry.decoders_for(read)
+        } else {
+            Vec::new()
+        },
         units: vec![Unit {
             id: engine.id.clone(),
             engine: engine.id.clone(),
@@ -182,15 +237,252 @@ pub fn plan(
                 port: listen_port,
             },
             apis: engine.doc.provides.apis.clone(),
+            server_name: engine
+                .doc
+                .engine
+                .server_name
+                .clone()
+                .unwrap_or_else(|| engine.doc.engine.name.clone()),
             start,
             ready,
-            stop: engine.spawn.as_ref().map(|s| s.stop).unwrap_or_default(),
+            warm,
+            unload,
+            stop,
         }],
     })
 }
 
+/// The launch strategies this selection uses: all the document lists, in its order, unless a
+/// strategy field narrows them (`auto` keeps both, `attach` and `spawn` one each).
+fn chosen_strategies(
+    engine: &Engine,
+    resolved: &[Resolved],
+    errors: &mut Vec<Diagnostic>,
+) -> Vec<LaunchStrategy> {
+    let all = engine.launch.strategies.clone();
+    let Some(field) = &engine.launch.strategy_field else {
+        return all;
+    };
+    let value = engine
+        .fields
+        .iter()
+        .position(|f| &f.id == field)
+        .map(|i| resolved[i].value.to_string())
+        .unwrap_or_default();
+    let only = |wanted: LaunchStrategy, errors: &mut Vec<Diagnostic>| {
+        if all.contains(&wanted) {
+            vec![wanted]
+        } else {
+            errors.push(engine_error(
+                engine,
+                DocPath::default().key("launch").key("strategies"),
+                format!("`{value}` was chosen, but this engine cannot be launched that way"),
+            ));
+            Vec::new()
+        }
+    };
+    match value.as_str() {
+        "attach" => only(LaunchStrategy::AttachIfRunning, errors),
+        "spawn" => only(LaunchStrategy::Spawn, errors),
+        _ => all,
+    }
+}
+
+/// An endpoint written `host:port` once its template is filled in.
+fn plan_attach(
+    engine: &Engine,
+    attach: &CompiledAttach,
+    context: &Value,
+    errors: &mut Vec<Diagnostic>,
+) -> Option<AttachPlan> {
+    let at = DocPath::default().key("launch").key("attach");
+    let text = match attach.endpoint.render_string(context) {
+        Ok(text) => text,
+        Err(e) => {
+            errors.push(engine_error(engine, at.key("endpoint"), e.message));
+            return None;
+        }
+    };
+    let Some((host, port)) = text.rsplit_once(':') else {
+        errors.push(engine_error(
+            engine,
+            at.key("endpoint"),
+            format!("`{text}` is not host:port"),
+        ));
+        return None;
+    };
+    let Ok(port) = port.parse::<u16>() else {
+        errors.push(engine_error(
+            engine,
+            at.key("endpoint"),
+            format!("`{text}` has no usable port (the engine has no port field, or it is empty)"),
+        ));
+        return None;
+    };
+    let liveness = attach
+        .liveness
+        .unwrap_or(crate::registry::engine::CompiledLiveness {
+            every: crate::registry::engine::DEFAULT_LIVENESS_EVERY,
+            failures: crate::registry::engine::DEFAULT_LIVENESS_FAILURES,
+        });
+    Some(AttachPlan {
+        endpoint: Endpoint {
+            host: host.to_string(),
+            port: Some(port),
+        },
+        identity: IdentityPlan {
+            path: attach.identity_path.clone(),
+            pointer: attach.identity_pointer.clone(),
+        },
+        liveness: LivenessPlan {
+            path: engine
+                .doc
+                .launch
+                .attach
+                .as_ref()
+                .and_then(|a| a.liveness.as_ref())
+                .map_or_else(|| attach.identity_path.clone(), |l| l.path.clone()),
+            every_ms: liveness.every.as_millis() as u64,
+            failures: liveness.failures,
+        },
+    })
+}
+
+/// The calls of a phase whose condition holds, with their paths and bodies filled in.
+fn plan_calls(
+    engine: &Engine,
+    steps: &[CompiledStep],
+    context: &Value,
+    errors: &mut Vec<Diagnostic>,
+) -> Vec<CallPlan> {
+    let mut calls = Vec::new();
+    for (i, step) in steps.iter().enumerate() {
+        let at = DocPath::default().key("launch").index(i);
+        if let Some(when) = &step.when {
+            match crate::expr::eval(when, context) {
+                Ok(v) if v.truthy() => {}
+                Ok(_) => continue,
+                Err(e) => {
+                    errors.push(engine_error(engine, at.key("when"), e.message));
+                    continue;
+                }
+            }
+        }
+        let path = match step.path.render_string(context) {
+            Ok(p) => p,
+            Err(e) => {
+                errors.push(engine_error(
+                    engine,
+                    at.clone().key("call").key("path"),
+                    e.message,
+                ));
+                continue;
+            }
+        };
+        let body = match &step.body {
+            None => serde_json::Value::Null,
+            Some(body) => match body.render(context) {
+                Ok(v) => v,
+                Err(message) => {
+                    errors.push(engine_error(
+                        engine,
+                        at.clone().key("call").key("body"),
+                        message,
+                    ));
+                    continue;
+                }
+            },
+        };
+        calls.push(CallPlan {
+            method: step.method.clone(),
+            path,
+            body,
+            timeout_ms: step.timeout.as_millis() as u64,
+            best_effort: step.best_effort,
+        });
+    }
+    calls
+}
+
 fn engine_error(engine: &Engine, path: DocPath, message: impl Into<String>) -> Diagnostic {
     engine.merged.diagnostic(Severity::Error, &path, message)
+}
+
+/// Where a field's contribution to the plan comes from, as `--explain` says it.
+fn field_origin(engine: &Engine, field: &CompiledField, resolved: &Resolved) -> String {
+    match resolved.origin.note() {
+        Some(note) => format!("field {}.{} ({note})", engine.id, field.id),
+        None => format!("field {}.{}", engine.id, field.id),
+    }
+}
+
+/// A template filled in. A hole that is all of an argument and has no value (no model chosen, no
+/// port) would become an empty argument; that is a mistake to report, not to pass on.
+fn render_text(
+    engine: &Engine,
+    template: &crate::expr::Template,
+    path: DocPath,
+    ctx: &Value,
+    errors: &mut Vec<Diagnostic>,
+) -> Option<String> {
+    match template.render(ctx) {
+        Ok(Value::Null) if template.lone_hole().is_some() => {
+            errors.push(engine_error(
+                engine,
+                path,
+                format!(
+                    "`${{{}}}` has no value here",
+                    template.lone_hole().unwrap_or_default()
+                ),
+            ));
+            None
+        }
+        Ok(v) => Some(v.to_string()),
+        Err(e) => {
+            errors.push(engine_error(engine, path, e.message));
+            None
+        }
+    }
+}
+
+/// One entry of an `env` list as an operation, when its condition holds. `ctx` has what the
+/// entry's templates may name (for a field's entry, `value`).
+fn plan_env_entry(
+    engine: &Engine,
+    entry: &CompiledEnv,
+    path: DocPath,
+    ctx: &Value,
+    origin: String,
+    errors: &mut Vec<Diagnostic>,
+) -> Option<EnvOp> {
+    if let Some(when) = &entry.when {
+        match crate::expr::eval(when, ctx) {
+            Ok(v) if v.truthy() => {}
+            Ok(_) => return None,
+            Err(e) => {
+                errors.push(engine_error(engine, path, e.message));
+                return None;
+            }
+        }
+    }
+    if let Some(value) = &entry.value {
+        let text = render_text(engine, value, path, ctx, errors)?;
+        return Some(EnvOp {
+            name: entry.name.clone(),
+            mode: EnvMode::Set { value: text },
+            origin,
+        });
+    }
+    let prepend = entry.prepend.as_ref()?;
+    let text = render_text(engine, prepend, path, ctx, errors)?;
+    (!text.is_empty()).then(|| EnvOp {
+        name: entry.name.clone(),
+        mode: EnvMode::Prepend {
+            value: text,
+            sep: entry.sep.clone(),
+        },
+        origin,
+    })
 }
 
 fn plan_spawn(
@@ -201,31 +493,11 @@ fn plan_spawn(
     selection: &Selection,
     errors: &mut Vec<Diagnostic>,
 ) -> Option<SpawnPlan> {
-    let render = |template: &crate::expr::Template,
-                  path: DocPath,
-                  ctx: &Value,
-                  errors: &mut Vec<Diagnostic>| {
-        match template.render(ctx) {
-            // An argument that is exactly one hole with nothing in it (no model chosen, no port)
-            // would become an empty argument; that is a mistake to report, not to pass on.
-            Ok(Value::Null) if template.lone_hole().is_some() => {
-                errors.push(engine_error(
-                    engine,
-                    path,
-                    format!(
-                        "`${{{}}}` has no value here",
-                        template.lone_hole().unwrap_or_default()
-                    ),
-                ));
-                None
-            }
-            Ok(v) => Some(v.to_string()),
-            Err(e) => {
-                errors.push(engine_error(engine, path, e.message));
-                None
-            }
-        }
-    };
+    let render =
+        |template: &crate::expr::Template,
+         path: DocPath,
+         ctx: &Value,
+         errors: &mut Vec<Diagnostic>| { render_text(engine, template, path, ctx, errors) };
     let spawn_path = DocPath::default().key("launch").key("spawn");
 
     // The program has its own message: a missing executable is the commonest way to get here.
@@ -280,10 +552,7 @@ fn plan_spawn(
         if r.value.is_null() {
             continue; // a field with no value adds no arguments
         }
-        let origin = match r.origin.note() {
-            Some(note) => format!("field {}.{} ({note})", engine.id, field.id),
-            None => format!("field {}.{}", engine.id, field.id),
-        };
+        let origin = field_origin(engine, field, r);
         let mut ctx = context.clone();
         ctx.set_path(&["value"], r.value.clone());
         if let Some(templates) = &field.arg {
@@ -314,37 +583,72 @@ fn plan_spawn(
     let mut env = Vec::new();
     for (i, entry) in spawn.env.iter().enumerate() {
         let path = spawn_path.clone().key("env").index(i);
-        if let Some(when) = &entry.when {
-            match crate::expr::eval(when, context) {
-                Ok(v) if v.truthy() => {}
-                Ok(_) => continue,
-                Err(e) => {
-                    errors.push(engine_error(engine, path, e.message));
-                    continue;
-                }
-            }
-        }
         let origin = "engine launch.spawn.env".to_string();
-        if let Some(value) = &entry.value {
-            if let Some(text) = render(value, path.clone(), context, errors) {
-                env.push(EnvOp {
-                    name: entry.name.clone(),
-                    mode: EnvMode::Set { value: text },
-                    origin: origin.clone(),
-                });
-            }
-        } else if let Some(prepend) = &entry.prepend {
-            if let Some(text) = render(prepend, path.clone(), context, errors) {
-                if !text.is_empty() {
-                    env.push(EnvOp {
-                        name: entry.name.clone(),
-                        mode: EnvMode::Prepend {
-                            value: text,
-                            sep: entry.sep.clone(),
-                        },
-                        origin,
-                    });
+        env.extend(plan_env_entry(engine, entry, path, context, origin, errors));
+    }
+
+    // What the fields decide, in the order of their other bindings; a field with no value decides
+    // nothing (an optional context size left empty sets no variable).
+    let mut decided: Vec<(usize, &CompiledField)> = engine
+        .fields
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| !f.env.is_empty())
+        .collect();
+    decided.sort_by_key(|(i, f)| (f.order, *i));
+    for (i, field) in decided {
+        let r = &resolved[i];
+        if r.value.is_null() {
+            continue;
+        }
+        let mut ctx = context.clone();
+        ctx.set_path(&["value"], r.value.clone());
+        let origin = field_origin(engine, field, r);
+        for (k, entry) in field.env.iter().enumerate() {
+            let path = DocPath::default()
+                .key("field")
+                .id(&field.id)
+                .key("bind")
+                .key("env")
+                .index(k);
+            env.extend(plan_env_entry(
+                engine,
+                entry,
+                path,
+                &ctx,
+                origin.clone(),
+                errors,
+            ));
+        }
+    }
+
+    // The person's own lines come last. A line for a variable that something earlier set (not
+    // locked: those were refused) replaces it where it stood; the rest follow.
+    let windows = context.lookup(&["os"]).and_then(Value::as_str) == Some("windows");
+    for (i, field) in engine.fields.iter().enumerate() {
+        let Some(protect) = &field.env_lines else {
+            continue;
+        };
+        let text = resolved[i].value.to_string();
+        for (name, value) in env::user_lines(engine, protect, &text, windows).entries {
+            let op = EnvOp {
+                name,
+                mode: EnvMode::Set { value },
+                origin: field_origin(engine, field, &resolved[i]),
+            };
+            let same = |a: &str, b: &str| {
+                if windows {
+                    a.eq_ignore_ascii_case(b)
+                } else {
+                    a == b
                 }
+            };
+            match env
+                .iter_mut()
+                .find(|e| same(&e.name, &op.name) && matches!(e.mode, EnvMode::Set { .. }))
+            {
+                Some(earlier) => *earlier = op,
+                None => env.push(op),
             }
         }
     }
@@ -357,6 +661,9 @@ fn plan_spawn(
         args: arguments,
         env,
         group: spawn.group,
+        // A program QuickAI does not ship is a downloaded one, with libraries of its own.
+        scrub_loader_env: !engine.doc.engine.bundled,
+        identity: None,
     })
 }
 
@@ -395,7 +702,9 @@ mod tests {
     }
 
     fn spawn_of(plan: &RunPlan) -> &SpawnPlan {
-        let Start::Spawn(s) = &plan.units[0].start[0];
+        let Start::Spawn(s) = &plan.units[0].start[0] else {
+            panic!("a spawn plan")
+        };
         s
     }
 
@@ -529,10 +838,11 @@ mod tests {
                 path: "/health".into(),
                 expect_status: 200,
                 timeout_ms: 120_000,
-                interval_ms: 500
+                interval_ms: 500,
+                on_timeout: crate::doc::engine::OnTimeout::Fail,
             }
         );
-        assert_eq!(plan.units[0].stop, crate::doc::engine::StopPolicy::Kill);
+        assert_eq!(plan.units[0].stop, StopPlan::default());
         assert_eq!(plan.units[0].engine, "llamacpp");
     }
 

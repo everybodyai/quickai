@@ -8,6 +8,7 @@
 pub mod duration;
 pub mod engine;
 pub mod reference;
+pub mod vocab;
 
 use std::collections::BTreeMap;
 

@@ -21,8 +21,9 @@ use quickai_core::plan::explain::render_explain;
 use quickai_core::plan::Selection;
 
 use crate::config::{build_registry, ConfigDirs};
-use crate::launch::{self, MachineFacts, ENGINE_ID};
+use crate::launch::{self, MachineFacts};
 use crate::models::ModelEntry;
+use crate::settings::DEFAULT_ENGINE;
 
 const USAGE: &str = "\
 QuickAI headless commands
@@ -32,13 +33,16 @@ QuickAI headless commands
       --strict      warnings (for example keys this version does not know) fail too
       --embedded    check only the documents compiled into the application
 
-  quickai config docs
-      Print the reference page for engine documents (docs/reference/engine-fields.md), generated
-      from the types the loader reads.
+  quickai config docs [vocab]
+      Print the reference page for engine documents (docs/reference/engine-fields.md), or with
+      `vocab` the one for vocabulary documents (docs/reference/vocab-fields.md), generated from the
+      types the loader reads.
 
-  quickai plan [--explain | --json] [--model FILE] [--binary FILE] [--port N]
+  quickai plan [--explain | --json] [--engine ID] [--model FILE|NAME] [--binary FILE] [--port N]
                [--ctx-size N] [--gpu-layers N] [--extra-args TEXT] [--proxy]
       Print the run plan for a selection. Values not given come from the engine's field defaults.
+      --engine ID   the engine (default llamacpp); for one that lists its models by name, such as
+                    ollama, --model is a name and may be left out
       --explain     (default) the plan as text, with the origin of every argument
       --json        the plan as JSON
 
@@ -79,7 +83,11 @@ pub fn run_with(
                 let _ = write!(out, "{}", quickai_core::doc::reference::render());
                 0
             }
-            _ => usage_error(err, "expected `config check` or `config docs`"),
+            Some("docs") if args.len() == 3 && args[2] == "vocab" => {
+                let _ = write!(out, "{}", quickai_core::doc::reference::render_vocab());
+                0
+            }
+            _ => usage_error(err, "expected `config check` or `config docs [vocab]`"),
         },
         Some("plan") => plan_command(&args[1..], dirs, out, err),
         _ => usage_error(err, "unknown command"),
@@ -144,6 +152,7 @@ struct PlanArgs {
     gpu_layers: Option<u32>,
     extra_args: Option<String>,
     proxy: bool,
+    engine: Option<String>,
 }
 
 fn parse_plan_args(args: &[String]) -> Result<PlanArgs, String> {
@@ -156,6 +165,7 @@ fn parse_plan_args(args: &[String]) -> Result<PlanArgs, String> {
         gpu_layers: None,
         extra_args: None,
         proxy: false,
+        engine: None,
     };
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -168,6 +178,7 @@ fn parse_plan_args(args: &[String]) -> Result<PlanArgs, String> {
             "--explain" => parsed.json = false,
             "--json" => parsed.json = true,
             "--proxy" => parsed.proxy = true,
+            "--engine" => parsed.engine = Some(value("--engine")?),
             "--model" => parsed.model = Some(PathBuf::from(value("--model")?)),
             "--binary" => parsed.binary = Some(value("--binary")?),
             "--extra-args" => parsed.extra_args = Some(value("--extra-args")?),
@@ -232,50 +243,70 @@ fn plan_command(
         let _ = writeln!(err, "{d}");
     }
 
-    let model = match &parsed.model {
-        Some(path) => model_entry(path),
-        None => {
-            let bundled = crate::paths::bundled_models_dir();
-            let user = crate::paths::user_models_dir();
-            match crate::models::discover_all(&bundled, &user)
-                .into_iter()
-                .next()
-            {
-                Some(m) => m,
-                None => {
-                    let _ = writeln!(err, "quickai: no model found; pass --model FILE");
-                    return 1;
+    let engine = parsed
+        .engine
+        .clone()
+        .unwrap_or_else(|| DEFAULT_ENGINE.to_string());
+    let Some(engine_doc) = registry.engine(&engine) else {
+        let _ = writeln!(err, "quickai: there is no engine called `{engine}`");
+        return 1;
+    };
+    // an engine that lists its models by name is given one by name (or none: it runs empty)
+    let lists_models = engine_doc.models.as_ref().is_some_and(|m| m.list.is_some());
+    let model = if lists_models {
+        parsed.model.as_ref().map(|name| {
+            let name = name.to_string_lossy().into_owned();
+            quickai_core::plan::ModelInfo {
+                id: name.clone(),
+                display: name,
+                path: String::new(),
+                size_bytes: 0,
+            }
+        })
+    } else {
+        let entry = match &parsed.model {
+            Some(path) => model_entry(path),
+            None => {
+                let bundled = crate::paths::bundled_models_dir();
+                let user = crate::paths::user_models_dir();
+                match crate::models::discover_all(&bundled, &user)
+                    .into_iter()
+                    .next()
+                {
+                    Some(m) => m,
+                    None => {
+                        let _ = writeln!(err, "quickai: no model found; pass --model FILE");
+                        return 1;
+                    }
                 }
             }
-        }
+        };
+        Some(entry.info())
     };
 
-    let mut selection = Selection::new(ENGINE_ID).with_model(quickai_core::plan::ModelInfo {
-        id: model.filename.clone(),
-        display: model.display.clone(),
-        path: model.path.display().to_string(),
-        size_bytes: model.size_bytes,
-    });
+    let mut selection = Selection::new(&engine);
+    selection.model = model;
+    let key = |field: &str| format!("{engine}.{field}");
     if let Some(port) = parsed.port {
-        selection = selection.set("llamacpp.port", port);
+        selection = selection.set(&key("port"), port);
     }
     if let Some(ctx) = parsed.ctx_size {
-        selection = selection.set("llamacpp.ctx_size", ctx);
+        selection = selection.set(&key("ctx_size"), ctx);
     }
     if let Some(layers) = parsed.gpu_layers {
-        selection = selection.set("llamacpp.n_gpu_layers", layers);
+        selection = selection.set(&key("n_gpu_layers"), layers);
     }
     if let Some(extra) = &parsed.extra_args {
-        selection = selection.set("llamacpp.extra_args", extra.as_str());
+        selection = selection.set(&key("extra_args"), extra.as_str());
     }
     if let Some(binary) = &parsed.binary {
-        selection = selection.set("llamacpp.bin_override", binary.as_str());
+        selection = selection.set(&key("bin_override"), binary.as_str());
     }
     if parsed.proxy {
         selection = selection.set(quickai_core::plan::TRAFFIC_PROXY_KEY, true);
     }
 
-    let binary = launch::locate_binary(&registry, parsed.binary.as_deref());
+    let binary = launch::locate_binary(&registry, &engine, parsed.binary.as_deref());
     let internal_port = if parsed.proxy {
         match crate::runtime::process::ephemeral_port() {
             Ok(port) => Some(port),
@@ -354,13 +385,16 @@ mod tests {
     }
 
     #[test]
-    fn config_check_on_the_embedded_documents_is_clean() {
+    fn p3_e16_config_check_strict_on_the_embedded_documents_is_clean_with_ollama_in_the_set() {
         let (code, out, err) = run_capture(
             &["config", "check", "--strict", "--embedded"],
             &ConfigDirs::default(),
         );
         assert_eq!(code, 0, "{out}{err}");
-        assert_eq!(out, "config: 0 errors, 0 warnings; engines: llamacpp\n");
+        assert_eq!(
+            out,
+            "config: 0 errors, 0 warnings; engines: llamacpp, ollama\n"
+        );
     }
 
     #[test]
@@ -385,6 +419,30 @@ mod tests {
     }
 
     #[test]
+    fn p3_w05c_config_check_holds_documents_to_the_widgets_the_interface_draws() {
+        // a field of the person's own, naming a widget that nothing draws
+        let document = |widget: &str| {
+            format!("schema = 1\nkind = \"engine\"\nid = \"llamacpp\"\n\n[[field]]\nid = \"extra\"\ntype = \"text\"\nui = {{ widget = \"{widget}\" }}\n")
+        };
+        let (dir, dirs) = user_dir_with("widget", &document("runtime_managr"));
+        let (code, out, _) = run_capture(&["config", "check"], &dirs);
+        assert_eq!(code, 1, "{out}");
+        assert!(out.contains("llamacpp.toml:8"), "{out}");
+        assert!(
+            out.contains("`runtime_managr` is not a widget this version of QuickAI has"),
+            "{out}"
+        );
+        assert!(out.contains("did you mean `runtime_manager`?"), "{out}");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // one that is drawn loads
+        let (dir, dirs) = user_dir_with("widget-ok", &document("runtime_manager"));
+        let (code, out, _) = run_capture(&["config", "check", "--strict"], &dirs);
+        assert_eq!(code, 0, "{out}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn config_docs_prints_the_checked_in_reference_page() {
         let (code, out, _) = run_capture(&["config", "docs"], &ConfigDirs::default());
         assert_eq!(code, 0);
@@ -398,16 +456,34 @@ mod tests {
             page.replace("\r\n", "\n"),
             "regenerate it with `quickai config docs`"
         );
-        // it takes no arguments
+        // it takes no arguments but the name of the other page
         let (code, _, err) = run_capture(&["config", "docs", "extra"], &ConfigDirs::default());
         assert_eq!(code, 2, "{err}");
+        let (code, _, err) = run_capture(&["config", "docs", "vocab", "x"], &ConfigDirs::default());
+        assert_eq!(code, 2, "{err}");
+    }
+
+    #[test]
+    fn config_docs_vocab_prints_the_checked_in_page_for_vocabulary_documents() {
+        let (code, out, _) = run_capture(&["config", "docs", "vocab"], &ConfigDirs::default());
+        assert_eq!(code, 0);
+        let page = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../docs/reference/vocab-fields.md"),
+        )
+        .expect("the reference page is checked in");
+        assert_eq!(
+            out,
+            page.replace("\r\n", "\n"),
+            "regenerate it with `quickai config docs vocab`"
+        );
     }
 
     #[test]
     fn warnings_fail_only_under_strict() {
         let (dir, dirs) = user_dir_with(
             "warn",
-            "schema = 1\nkind = \"engine\"\nid = \"llamacpp\"\n[models]\nneeds_server = true\n",
+            "schema = 1\nkind = \"engine\"\nid = \"llamacpp\"\n[components.mmproj]\nflag = \"--mmproj\"\n",
         );
         let (code, out, _) = run_capture(&["config", "check"], &dirs);
         assert_eq!(code, 0, "{out}");
@@ -415,6 +491,50 @@ mod tests {
         let (code, _, _) = run_capture(&["config", "check", "--strict"], &dirs);
         assert_eq!(code, 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn p3_e27_plan_explains_an_ollama_run_by_name_and_runs_empty_without_one() {
+        let (code, out, err) = run_capture(
+            &[
+                "plan",
+                "--explain",
+                "--engine",
+                "ollama",
+                "--model",
+                "qwen3:4b",
+                "--binary",
+                "/opt/ollama/bin/ollama",
+                "--port",
+                "9999",
+            ],
+            &ConfigDirs::default(),
+        );
+        assert_eq!(code, 0, "{out}{err}");
+        assert!(out.contains("plan: qwen3:4b on ollama"), "{out}");
+        assert!(out.contains("env OLLAMA_HOST=127.0.0.1:9999"), "{out}");
+        assert!(
+            out.contains(r#"POST /api/generate {"keep_alive":-1,"model":"qwen3:4b"}"#),
+            "{out}"
+        );
+        let (code, out, _) = run_capture(
+            &[
+                "plan",
+                "--engine",
+                "ollama",
+                "--binary",
+                "/opt/ollama/bin/ollama",
+            ],
+            &ConfigDirs::default(),
+        );
+        assert_eq!(code, 0, "{out}");
+        assert!(
+            out.contains("plan: (no model) on ollama") && !out.contains("warm"),
+            "{out}"
+        );
+        let (code, _, err) = run_capture(&["plan", "--engine", "nosuch"], &ConfigDirs::default());
+        assert_eq!(code, 1, "{err}");
+        assert!(err.contains("there is no engine called `nosuch`"), "{err}");
     }
 
     #[test]

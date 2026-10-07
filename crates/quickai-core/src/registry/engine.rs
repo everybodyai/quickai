@@ -11,21 +11,29 @@ use std::time::Duration;
 use regex::Regex;
 
 use crate::config::MergedDoc;
+use crate::decode::Framing;
 use crate::diag::{Diagnostic, Severity};
 use crate::doc::duration::parse_duration;
 use crate::doc::engine::{
-    Acquire, Assets, EngineDoc, FieldDefault, FieldType, Install, LocateStrategy, PortRole, Probe,
-    StopPolicy,
+    Acquire, ApiInfo, Assets, CallSpec, DiagnosticRule, EngineDoc, EnvEntry, FieldDefault,
+    FieldType, InputRule, Install, LocateStrategy, Models, OnTimeout, PortRole, Probe, Step,
+    StopPolicy, StopSpec,
 };
 use crate::docpath::DocPath;
 use crate::expr::{self, funcs, Expr, Template, Type};
 use crate::value::Value;
 
 use super::context::{schema, Site};
+use super::KnownPrimitives;
 
 /// How long to wait for an engine to answer, and how often to ask, when a document does not say.
 pub const DEFAULT_READY_TIMEOUT: Duration = Duration::from_secs(120);
 pub const DEFAULT_READY_INTERVAL: Duration = Duration::from_millis(500);
+
+/// How long a graceful stop waits for the program to leave before it is killed, and the shorter
+/// wait while the application itself is closing.
+pub const DEFAULT_STOP_GRACE: Duration = Duration::from_secs(10);
+pub const DEFAULT_EXIT_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Debug)]
 pub struct Engine {
@@ -36,10 +44,85 @@ pub struct Engine {
     pub locate: Vec<LocateStrategy>,
     pub spawn: Option<CompiledSpawn>,
     pub ready: Option<CompiledReady>,
+    /// How the engine is brought up and taken down besides `spawn` and `ready`.
+    pub launch: CompiledLaunch,
     /// The parsed templates and conditions of `[acquire]`; its plain data is in `doc.acquire`.
     pub acquire: Option<CompiledAcquire>,
     /// In document order, one per `[[field]]`.
     pub fields: Vec<CompiledField>,
+    /// The calls and rules of `[models]`, for an engine that keeps its own models.
+    pub models: Option<CompiledModels>,
+    /// What the API panel says, its templates parsed and checked.
+    pub api_info: Option<CompiledApiInfo>,
+    /// The advice of `[[diagnostic]]`, its patterns compiled.
+    pub diagnostics: Vec<CompiledDiagnostic>,
+}
+
+/// `[api_info]` with its templates parsed.
+#[derive(Clone, Debug)]
+pub struct CompiledApiInfo {
+    pub base_url: Template,
+    pub extra_urls: Vec<(String, Template)>,
+    pub api_key: Option<(Template, Option<String>)>,
+    pub model: Option<(Template, Option<String>)>,
+    /// The id of the API whose curl example is shown.
+    pub example: Option<String>,
+}
+
+/// One piece of advice: it applies when every condition it names holds.
+#[derive(Clone, Debug)]
+pub struct CompiledDiagnostic {
+    pub log_matches: Option<Regex>,
+    /// `starting` or `running`: the run ended in that state.
+    pub exited_during: Option<String>,
+    pub hint: Template,
+    pub action: Option<String>,
+}
+
+/// What `[models]` holds that is a call, an expression or a template, parsed and checked at load.
+#[derive(Clone, Debug)]
+pub struct CompiledModels {
+    pub needs_server: bool,
+    pub list: Option<CompiledList>,
+    pub pull: Option<CompiledPull>,
+    /// The call that removes a model: `${ref}` is its name.
+    pub remove: Option<CompiledStep>,
+    pub input_rules: Vec<CompiledInputRule>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CompiledList {
+    pub call: CompiledStep,
+    pub items: String,
+    pub id: String,
+    pub display: Option<String>,
+    pub size_bytes: Option<String>,
+    pub digest: Option<String>,
+    pub capabilities: Option<String>,
+    /// Where the last reply is kept.
+    pub cache: Option<Template>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CompiledPull {
+    /// The call, `${ref}` the name to pull; `call.stream` says how its reply is read.
+    pub call: CompiledStep,
+    pub progress: Option<crate::doc::engine::PullProgressSpec>,
+}
+
+/// One rule of the model box.
+#[derive(Clone, Debug)]
+pub struct CompiledInputRule {
+    /// `None`: it matches whatever is left.
+    pub when: Option<Expr>,
+    pub action: CompiledInputAction,
+}
+
+#[derive(Clone, Debug)]
+pub enum CompiledInputAction {
+    /// Pull this name: a template over `input`.
+    Pull(Template),
+    Reject(String),
 }
 
 /// What `[acquire]` holds that is an expression or a template, parsed and checked at load.
@@ -51,6 +134,18 @@ pub struct CompiledAcquire {
     pub label: Template,
     /// For `by = "names"`: each rule's condition with the file name it selects.
     pub name_rules: Vec<(Expr, String)>,
+    /// What an install leaves out: the condition (always, when `None`) and the glob.
+    pub skip_rules: Vec<(Option<Expr>, String)>,
+    /// Each overlay with its rules: the condition and the file name it selects.
+    pub overlay_rules: Vec<CompiledOverlay>,
+}
+
+/// An overlay of `[acquire]`, its conditions parsed.
+#[derive(Clone, Debug)]
+pub struct CompiledOverlay {
+    pub id: String,
+    pub label: String,
+    pub rules: Vec<(Expr, String)>,
 }
 
 #[derive(Clone, Debug)]
@@ -59,7 +154,25 @@ pub struct CompiledSpawn {
     pub args: Vec<Template>,
     pub env: Vec<CompiledEnv>,
     pub group: bool,
-    pub stop: StopPolicy,
+    pub stop: CompiledStop,
+}
+
+/// How to stop what was started, with its waits resolved.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CompiledStop {
+    pub policy: StopPolicy,
+    pub grace: Duration,
+    pub exit_grace: Duration,
+}
+
+impl Default for CompiledStop {
+    fn default() -> Self {
+        CompiledStop {
+            policy: StopPolicy::Kill,
+            grace: Duration::ZERO,
+            exit_grace: Duration::ZERO,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -78,7 +191,97 @@ pub struct CompiledReady {
     pub expect_status: u16,
     pub timeout: Duration,
     pub interval: Duration,
+    pub on_timeout: OnTimeout,
 }
+
+/// The ways to bring an engine up, as the document lists them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LaunchStrategy {
+    /// Use an engine that already answers on its port.
+    AttachIfRunning,
+    Spawn,
+}
+
+/// `[launch]` beyond `spawn` and `ready`.
+#[derive(Clone, Debug, Default)]
+pub struct CompiledLaunch {
+    pub strategies: Vec<LaunchStrategy>,
+    /// The field that picks among the strategies (`mode`).
+    pub strategy_field: Option<String>,
+    pub attach: Option<CompiledAttach>,
+    pub warm: Vec<CompiledStep>,
+    pub unload: Vec<CompiledStep>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CompiledAttach {
+    /// `127.0.0.1:${public_port}`.
+    pub endpoint: Template,
+    pub identity_path: String,
+    pub identity_pointer: String,
+    pub liveness: Option<CompiledLiveness>,
+}
+
+/// How often an attached engine is asked whether it is still there, and how many misses in a row
+/// mean it is gone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CompiledLiveness {
+    pub every: Duration,
+    pub failures: u32,
+}
+
+/// One call of the warm or unload phase.
+#[derive(Clone, Debug)]
+pub struct CompiledStep {
+    pub when: Option<Expr>,
+    pub method: String,
+    pub path: Template,
+    pub body: Option<CompiledBody>,
+    pub timeout: Duration,
+    pub best_effort: bool,
+    /// How the reply is read: a warm-up or an unload is `Json`; a pull may stream.
+    pub stream: Framing,
+}
+
+/// A JSON body whose texts are templates: filled in with the context when a plan is made.
+#[derive(Clone, Debug)]
+pub enum CompiledBody {
+    Literal(serde_json::Value),
+    Template(Template),
+    List(Vec<CompiledBody>),
+    Map(Vec<(String, CompiledBody)>),
+}
+
+impl CompiledBody {
+    /// The body with every hole filled in from `context`.
+    pub fn render(&self, context: &Value) -> Result<serde_json::Value, String> {
+        Ok(match self {
+            CompiledBody::Literal(v) => v.clone(),
+            CompiledBody::Template(t) => t.render(context).map_err(|e| e.message)?.to_json(),
+            CompiledBody::List(items) => serde_json::Value::Array(
+                items
+                    .iter()
+                    .map(|i| i.render(context))
+                    .collect::<Result<_, _>>()?,
+            ),
+            CompiledBody::Map(entries) => serde_json::Value::Object(
+                entries
+                    .iter()
+                    .map(|(k, v)| Ok((k.clone(), v.render(context)?)))
+                    .collect::<Result<_, String>>()?,
+            ),
+        })
+    }
+}
+
+/// How long a warm-up call may take when the document does not say (a big model on a slow disk),
+/// and an unload.
+pub const DEFAULT_WARM_TIMEOUT: Duration = Duration::from_secs(600);
+pub const DEFAULT_UNLOAD_TIMEOUT: Duration = Duration::from_secs(5);
+/// How often an attached engine is asked whether it is still there, and how many misses in a row
+/// mean it is gone (decision C20).
+pub const DEFAULT_LIVENESS_EVERY: Duration = Duration::from_secs(5);
+pub const DEFAULT_LIVENESS_FAILURES: u32 = 3;
 
 #[derive(Clone, Debug)]
 pub struct CompiledField {
@@ -87,6 +290,11 @@ pub struct CompiledField {
     pub default: Option<CompiledDefault>,
     pub arg: Option<Vec<Template>>,
     pub arg_split: bool,
+    /// Variables of the engine this field decides (`bind.env`).
+    pub env: Vec<CompiledEnv>,
+    /// For a field of the person's own lines of environment (`bind.env_lines`): the names those
+    /// lines may not set, besides the ones the document locks.
+    pub env_lines: Option<Vec<String>>,
     /// This field is the port clients connect to.
     pub public_port: bool,
     /// Where its bindings go among the arguments.
@@ -109,6 +317,8 @@ pub struct CompiledRule {
 #[derive(Clone, Debug)]
 pub enum CompiledDefault {
     Literal(Value),
+    /// A text with `${...}` holes over the engine's context (`${data}/ollama/models`).
+    Template(Template),
     /// A call such as `recommend_ctx_size(model.size_bytes, sys.ram_bytes)`.
     Computed(Expr),
 }
@@ -212,7 +422,11 @@ impl<'a> Checker<'a> {
 
 /// Checks and compiles one engine document. Warnings and errors are appended to the returned list;
 /// the engine is `None` when there is any error.
-pub fn compile(merged: &MergedDoc, doc: EngineDoc) -> (Option<Engine>, Vec<Diagnostic>) {
+pub fn compile(
+    merged: &MergedDoc,
+    doc: EngineDoc,
+    known: &KnownPrimitives,
+) -> (Option<Engine>, Vec<Diagnostic>) {
     let mut c = Checker {
         merged,
         out: Vec::new(),
@@ -234,13 +448,20 @@ pub fn compile(merged: &MergedDoc, doc: EngineDoc) -> (Option<Engine>, Vec<Diagn
         }
     }
 
-    let fields = compile_fields(&mut c, &doc);
+    let fields = compile_fields(&mut c, &doc, known);
     let locate = check_locate(&mut c, &doc);
     let (spawn, ready) = compile_launch(&mut c, &doc);
+    let launch = compile_launch_extras(&mut c, &doc);
     let acquire = doc
         .acquire
         .as_ref()
         .map(|a| compile_acquire(&mut c, &doc, a));
+    let models = doc.models.as_ref().map(|m| compile_models(&mut c, &doc, m));
+    let api_info = doc
+        .api_info
+        .as_ref()
+        .and_then(|a| compile_api_info(&mut c, &doc, a));
+    let diagnostics = compile_diagnostics(&mut c, &doc, &doc.diagnostics);
 
     let failed = c.failed();
     let out = c.out;
@@ -255,14 +476,62 @@ pub fn compile(merged: &MergedDoc, doc: EngineDoc) -> (Option<Engine>, Vec<Diagn
             locate,
             spawn,
             ready,
+            launch,
             acquire,
             fields,
+            models,
+            api_info,
+            diagnostics,
         }),
         out,
     )
 }
 
-fn compile_fields(c: &mut Checker, doc: &EngineDoc) -> Vec<CompiledField> {
+/// One entry of an `env` list (`[[launch.spawn.env]]` or a field's `bind.env`): a name, and what
+/// becomes of it. `schema` is what its templates and its `when` may name.
+fn compile_env_entry(
+    c: &mut Checker,
+    at: &DocPath,
+    entry: &EnvEntry,
+    schema: &Type,
+) -> CompiledEnv {
+    if entry.name.is_empty() || entry.name.contains('=') {
+        c.error(
+            at,
+            format!("`{}` is not a valid environment variable name", entry.name),
+        );
+    }
+    match (&entry.value, &entry.prepend) {
+        (Some(_), Some(_)) => c.error(
+            at,
+            "an environment entry has `value` or `prepend`, not both",
+        ),
+        (None, None) => c.error(at, "an environment entry needs `value` or `prepend`"),
+        _ => {}
+    }
+    let value = entry
+        .value
+        .as_deref()
+        .and_then(|t| c.template(at, t, schema));
+    let prepend = entry
+        .prepend
+        .as_deref()
+        .and_then(|t| c.template(at, t, schema));
+    let when = entry
+        .when
+        .as_deref()
+        .and_then(|t| c.expr(at, t, schema, true));
+    CompiledEnv {
+        name: entry.name.clone(),
+        value,
+        prepend,
+        sep: entry.sep.clone().unwrap_or_else(|| ":".to_string()),
+        when,
+        locked: entry.locked,
+    }
+}
+
+fn compile_fields(c: &mut Checker, doc: &EngineDoc, known: &KnownPrimitives) -> Vec<CompiledField> {
     let mut compiled = Vec::new();
     let mut seen_ids: BTreeMap<&str, usize> = BTreeMap::new();
     let mut seen_keys: BTreeMap<&str, &str> = BTreeMap::new();
@@ -298,6 +567,8 @@ fn compile_fields(c: &mut Checker, doc: &EngineDoc) -> Vec<CompiledField> {
             }
         }
 
+        check_widget(c, &at, field, known);
+
         if let Some((lo, hi)) = field.range {
             if lo > hi {
                 c.error(
@@ -312,6 +583,28 @@ fn compile_fields(c: &mut Checker, doc: &EngineDoc) -> Vec<CompiledField> {
 
         let default = match &field.default {
             None => None,
+            Some(FieldDefault::Literal(toml::Value::String(text))) if text.contains("${") => {
+                // a text with holes is a template over the engine's context
+                let path = at.clone().key("default");
+                if !matches!(
+                    field.ty,
+                    FieldType::Text
+                        | FieldType::Dir
+                        | FieldType::File
+                        | FieldType::Url
+                        | FieldType::KvLines
+                ) {
+                    c.error(
+                        &path,
+                        format!(
+                            "a default with `${{...}}` in it is a text, but the field is {:?}",
+                            field.ty
+                        ),
+                    );
+                }
+                c.template(&path, text, &engine_schema)
+                    .map(CompiledDefault::Template)
+            }
             Some(FieldDefault::Literal(v)) => {
                 let value = Value::from_toml(v);
                 check_literal(c, &at.clone().key("default"), field.ty, field.range, &value);
@@ -375,6 +668,43 @@ fn compile_fields(c: &mut Checker, doc: &EngineDoc) -> Vec<CompiledField> {
                 "`arg_split` needs a text field",
             );
         }
+
+        let env: Vec<CompiledEnv> = field
+            .bind
+            .env
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| {
+                let env_at = at.clone().key("bind").key("env").index(i);
+                if entry.locked {
+                    c.error_hint(
+                        &env_at.clone().key("locked"),
+                        "`locked` is for the document's own variables, not for one a field decides",
+                        "what a field sets is the person's to change; to keep a name out of their extra environment, list it in `bind.env_lines.protect`",
+                    );
+                }
+                compile_env_entry(c, &env_at, entry, &value_schema)
+            })
+            .collect();
+
+        let env_lines = field.bind.env_lines.as_ref().map(|lines| {
+            let lines_at = at.clone().key("bind").key("env_lines");
+            if field.ty != FieldType::KvLines {
+                c.error(
+                    &lines_at,
+                    "`bind.env_lines` needs a field of type `kv_lines`",
+                );
+            }
+            for name in &lines.protect {
+                if !crate::kvlines::is_name(name) {
+                    c.error(
+                        &lines_at.clone().key("protect"),
+                        format!("`{name}` is not an environment variable name"),
+                    );
+                }
+            }
+            lines.protect.clone()
+        });
 
         let is_public = field.bind.port == Some(PortRole::Public);
         if field.bind.port.is_some() {
@@ -477,6 +807,8 @@ fn compile_fields(c: &mut Checker, doc: &EngineDoc) -> Vec<CompiledField> {
             default,
             arg,
             arg_split: field.bind.arg_split,
+            env,
+            env_lines,
             public_port: is_public,
             order: field.arg_order(),
             derive,
@@ -488,6 +820,63 @@ fn compile_fields(c: &mut Checker, doc: &EngineDoc) -> Vec<CompiledField> {
         });
     }
     compiled
+}
+
+/// `ui.widget` names a widget the interface has (when the application said which), a `button` says
+/// what a click does, and nothing else has an `action`.
+fn check_widget(
+    c: &mut Checker,
+    at: &DocPath,
+    field: &crate::doc::engine::Field,
+    known: &KnownPrimitives,
+) {
+    let ui = at.clone().key("ui");
+    if let (Some(name), Some(widgets)) = (&field.ui.widget, known.widget_names()) {
+        if !widgets.contains(name) {
+            let hint = match crate::expr::types::suggest(name, widgets.iter().map(String::as_str)) {
+                Some(near) => format!("did you mean `{near}`?"),
+                None => format!(
+                    "the widgets are {}",
+                    widgets.iter().cloned().collect::<Vec<_>>().join(", ")
+                ),
+            };
+            c.error_hint(
+                &ui.clone().key("widget"),
+                format!("`{name}` is not a widget this version of QuickAI has"),
+                hint,
+            );
+        }
+    }
+    match (field.ui.widget.as_deref(), field.ui.action.as_deref()) {
+        (Some("button"), None) => c.error_hint(
+            &ui.clone().key("widget"),
+            format!("the button `{}` does not say what a click does", field.id),
+            "add `action`: ui = { widget = \"button\", action = \"open:settings\" }",
+        ),
+        (Some("button"), Some(action)) if !is_action(action) => c.error_hint(
+            &ui.clone().key("action"),
+            format!("`{action}` is not an action id"),
+            "an action is a lower case word, then optionally `:` and what it applies to: open:settings",
+        ),
+        (Some("button"), Some(_)) | (_, None) => {}
+        (_, Some(_)) => c.error_hint(
+            &ui.clone().key("action"),
+            "`action` belongs to a button",
+            "set `widget = \"button\"`, or take `action` out",
+        ),
+    }
+}
+
+/// An action id: `verb` or `verb:what`, the verb lower case letters and `_`, the rest without
+/// spaces.
+fn is_action(text: &str) -> bool {
+    let (verb, rest) = match text.split_once(':') {
+        Some((verb, rest)) => (verb, Some(rest)),
+        None => (text, None),
+    };
+    !verb.is_empty()
+        && verb.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_')
+        && rest.is_none_or(|r| !r.is_empty() && !r.contains(char::is_whitespace))
 }
 
 /// A `choice` field needs its options, and a default that is one of them; other types have no use
@@ -559,10 +948,20 @@ fn compile_acquire(c: &mut Checker, doc: &EngineDoc, acquire: &Acquire) -> Compi
         repo,
         per_page,
         show,
+        api,
         ..
     }) = &acquire.feed
     {
         let feed_at = at.clone().key("feed");
+        if let Some(api) = api {
+            if !is_http_root(api) {
+                c.error_hint(
+                    &feed_at.clone().key("api"),
+                    format!("`{api}` is not an http or https address"),
+                    "write the root of the API, such as https://api.github.com",
+                );
+            }
+        }
         let mut parts = repo.split('/');
         let well_formed = matches!(
             (parts.next(), parts.next(), parts.next()),
@@ -661,22 +1060,131 @@ fn compile_acquire(c: &mut Checker, doc: &EngineDoc, acquire: &Acquire) -> Compi
         .template(&assets_at.key("label"), label, &label_schema())
         .unwrap_or_else(|| Template::parse(DEFAULT_LABEL).expect("the default label parses"));
 
-    if let Some(Install::Archive { binary, .. }) = &acquire.install {
-        let install_at = at.clone().key("install").key("binary");
-        if binary.name.trim().is_empty() {
+    if let Some(tested) = &acquire.tested {
+        if tested.tag.trim().is_empty() {
             c.error(
-                &install_at.clone().key("name"),
-                "the executable needs a name",
+                &at.clone().key("tested").key("tag"),
+                "the tested release needs a tag",
             );
         }
-        if binary.search_depth > 16 {
-            c.error(
-                &install_at.key("search_depth"),
-                format!(
-                    "looking {} levels down is too deep (16 at most)",
-                    binary.search_depth
-                ),
+    }
+    for (name, pin) in &acquire.pins {
+        let pin_at = at.clone().key("pins").key(name);
+        if name.trim().is_empty() {
+            c.error(&pin_at, "a pin needs the name of the file it is for");
+        }
+        let digest = pin.trim().strip_prefix("sha256:").unwrap_or(pin.trim());
+        if digest.len() != 64 || !digest.chars().all(|ch| ch.is_ascii_hexdigit()) {
+            c.error_hint(
+                &pin_at,
+                format!("`{pin}` is not a sha256 digest"),
+                "write it as sha256: and 64 hexadecimal digits",
             );
+        }
+    }
+    let mut overlay_rules = Vec::new();
+    let mut overlay_ids: Vec<&str> = Vec::new();
+    for (i, overlay) in acquire.overlays.iter().enumerate() {
+        let overlay_at = at.clone().key("overlays").index(i);
+        if overlay.id.is_empty()
+            || !overlay
+                .id
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        {
+            c.error_hint(
+                &overlay_at.clone().key("id"),
+                format!("`{}` is not a valid overlay id", overlay.id),
+                "use letters, digits and `_`",
+            );
+        }
+        if overlay_ids.contains(&overlay.id.as_str()) {
+            c.error(
+                &overlay_at.clone().key("id"),
+                format!("the overlay id `{}` is used twice", overlay.id),
+            );
+        }
+        overlay_ids.push(&overlay.id);
+        if overlay.rules.is_empty() {
+            c.error(
+                &overlay_at.clone().key("rules"),
+                "an overlay with no rules is offered on no platform",
+            );
+        }
+        let mut rules = Vec::new();
+        for (j, rule) in overlay.rules.iter().enumerate() {
+            let rule_at = overlay_at.clone().key("rules").index(j);
+            if rule.name.trim().is_empty() {
+                c.error(
+                    &rule_at.clone().key("name"),
+                    "a rule needs the file name it selects",
+                );
+            }
+            if let Some(when) = c.expr(&rule_at.key("when"), &rule.when, &engine_schema, true) {
+                rules.push((when, rule.name.clone()));
+            }
+        }
+        overlay_rules.push(CompiledOverlay {
+            id: overlay.id.clone(),
+            label: overlay.label.clone().unwrap_or_else(|| overlay.id.clone()),
+            rules,
+        });
+    }
+
+    let mut skip_rules = Vec::new();
+    if let Some(Install::Archive {
+        binary,
+        smoke,
+        skip,
+        ..
+    }) = &acquire.install
+    {
+        let install_at = at.clone().key("install");
+        if let Some(binary) = binary {
+            let binary_at = install_at.clone().key("binary");
+            if binary.name.trim().is_empty() {
+                c.error(
+                    &binary_at.clone().key("name"),
+                    "the executable needs a name",
+                );
+            }
+            if binary.search_depth > 16 {
+                c.error(
+                    &binary_at.key("search_depth"),
+                    format!(
+                        "looking {} levels down is too deep (16 at most)",
+                        binary.search_depth
+                    ),
+                );
+            }
+        }
+        if let Some(smoke) = smoke {
+            if smoke.first().map(String::as_str) != Some("${binary}") {
+                c.error_hint(
+                    &install_at.clone().key("smoke"),
+                    "a smoke test runs the executable that was just unpacked, so it starts with it",
+                    "write it as smoke = [\"${binary}\", \"--version\"]",
+                );
+            }
+        }
+        for (i, rule) in skip.iter().enumerate() {
+            let rule_at = install_at.clone().key("skip").index(i);
+            let glob = rule.glob.trim();
+            if glob.is_empty() || glob.starts_with('/') || glob.split('/').any(|part| part == "..")
+            {
+                c.error_hint(
+                    &rule_at.clone().key("glob"),
+                    format!("`{}` is not a path inside a build", rule.glob),
+                    "write it relative to the build's directory, such as lib/cuda_*",
+                );
+            }
+            let when = match &rule.when {
+                Some(text) => c.expr(&rule_at.key("when"), text, &engine_schema, true),
+                None => None,
+            };
+            if rule.when.is_none() || when.is_some() {
+                skip_rules.push((when, glob.to_string()));
+            }
         }
     }
 
@@ -708,7 +1216,19 @@ fn compile_acquire(c: &mut Checker, doc: &EngineDoc, acquire: &Acquire) -> Compi
         root,
         label,
         name_rules,
+        skip_rules,
+        overlay_rules,
     }
+}
+
+/// The root of an HTTP API: `http://` or `https://` and a host, nothing else.
+fn is_http_root(text: &str) -> bool {
+    let rest = text
+        .strip_prefix("https://")
+        .or_else(|| text.strip_prefix("http://"));
+    rest.is_some_and(|rest| {
+        !rest.is_empty() && !rest.starts_with('/') && !rest.contains(char::is_whitespace)
+    })
 }
 
 fn check_literal(
@@ -753,20 +1273,120 @@ fn check_literal(
 }
 
 fn check_locate(c: &mut Checker, doc: &EngineDoc) -> Vec<LocateStrategy> {
+    let engine_schema = schema(doc, Site::Engine);
     for (i, strategy) in doc.locate.strategies.iter().enumerate() {
-        if let LocateStrategy::Setting { field } = strategy {
-            if !doc.fields.iter().any(|f| &f.id == field) {
-                c.error(
-                    &DocPath::default()
-                        .key("locate")
-                        .key("strategies")
-                        .index(i),
-                    format!("the `setting` strategy names the field `{field}`, which this engine does not have"),
-                );
+        let at = DocPath::default().key("locate").key("strategies").index(i);
+        match strategy {
+            LocateStrategy::Setting { field } => {
+                if !doc.fields.iter().any(|f| &f.id == field) {
+                    c.error(
+                        &at,
+                        format!("the `setting` strategy names the field `{field}`, which this engine does not have"),
+                    );
+                }
             }
+            LocateStrategy::Installed { root, binary, .. } => {
+                c.template(&at.clone().key("root"), root, &engine_schema);
+                if binary.is_empty() {
+                    c.error_hint(
+                        &at.clone().key("binary"),
+                        "an installed build needs the path of its executable",
+                        "write it per system: binary = { linux = \"bin/tool\", windows = \"tool.exe\" }",
+                    );
+                }
+                for (os, relative) in binary {
+                    let here = at.clone().key("binary").key(os);
+                    if !KNOWN_OS.contains(&os.as_str()) {
+                        c.warn(
+                            &here,
+                            format!("`{os}` is not a system QuickAI knows ({}); the entry is never used", KNOWN_OS.join(", ")),
+                        );
+                    }
+                    if relative.trim().is_empty()
+                        || relative.starts_with('/')
+                        || relative.starts_with('\\')
+                        || relative.contains(':')
+                        || relative.split(['/', '\\']).any(|part| part == "..")
+                    {
+                        c.error_hint(
+                            &here,
+                            format!("`{relative}` is not a path inside a build"),
+                            "write it relative to the build's directory, such as bin/tool",
+                        );
+                    }
+                }
+            }
+            LocateStrategy::PathSearch { name } => {
+                if name.trim().is_empty() || name.contains(['/', '\\']) {
+                    c.error_hint(
+                        &at.key("name"),
+                        format!("`{name}` is not a program name"),
+                        "write the file's name only, such as ollama: the search looks in each directory of the PATH",
+                    );
+                }
+            }
+            LocateStrategy::KnownPaths {
+                linux,
+                macos,
+                windows,
+            } => {
+                if linux.is_empty() && macos.is_empty() && windows.is_empty() {
+                    c.error(&at.clone(), "`known_paths` lists no place at all");
+                }
+                for (os, paths) in [("linux", linux), ("macos", macos), ("windows", windows)] {
+                    for (j, path) in paths.iter().enumerate() {
+                        if path.trim().is_empty() {
+                            c.error(
+                                &at.clone().key(os).index(j),
+                                "a known place cannot be empty",
+                            );
+                        }
+                    }
+                }
+            }
+            LocateStrategy::NextToExe { .. } | LocateStrategy::DevTree { .. } => {}
         }
     }
+    check_runtime(c, doc);
     doc.locate.strategies.clone()
+}
+
+/// `[runtime] version`: the command starts with the executable, the pattern compiles and has a
+/// group to read, and it fills a value this build has.
+fn check_runtime(c: &mut Checker, doc: &EngineDoc) {
+    let Some(probe) = doc.runtime.as_ref().and_then(|r| r.version.as_ref()) else {
+        return;
+    };
+    let at = DocPath::default().key("runtime").key("version");
+    if probe.exec.first().map(String::as_str) != Some("${binary}") {
+        c.error_hint(
+            &at.clone().key("exec"),
+            "the version is read by running the executable, so the command starts with it",
+            "write it as exec = [\"${binary}\", \"--version\"]",
+        );
+    }
+    match Regex::new(&probe.regex) {
+        Ok(re) if re.captures_len() < 2 => c.error_hint(
+            &at.clone().key("regex"),
+            format!("`{}` has no group to read the version from", probe.regex),
+            "put the version in parentheses, such as version is (\\S+)",
+        ),
+        Ok(_) => {}
+        Err(e) => c.error(
+            &at.clone().key("regex"),
+            format!("`{}` is not a valid pattern: {e}", probe.regex),
+        ),
+    }
+    if probe.name != "version" {
+        c.error_hint(
+            &at.key("as"),
+            format!(
+                "`{}` is not something this version of QuickAI reads",
+                probe.name
+            ),
+            "the one it knows is version",
+        );
+    }
 }
 
 fn compile_launch(
@@ -784,11 +1404,11 @@ fn compile_launch(
         doc.launch.strategies.iter().map(String::as_str).collect()
     };
     for s in &strategies {
-        if *s != "spawn" {
+        if !["spawn", "attach_if_running"].contains(s) {
             c.error_hint(
                 &launch_path.clone().key("strategies"),
                 format!("this version of QuickAI cannot launch an engine by `{s}`"),
-                "the strategies it knows are: spawn",
+                "the strategies it knows are: attach_if_running, spawn",
             );
         }
     }
@@ -811,54 +1431,25 @@ fn compile_launch(
                 .iter()
                 .map(|a| c.template(&at.clone().key("args"), a, &engine_schema))
                 .collect();
-            let mut env = Vec::new();
-            for (i, entry) in spawn.env.iter().enumerate() {
-                let env_at = at.clone().key("env").index(i);
-                if entry.name.is_empty() || entry.name.contains('=') {
-                    c.error(
-                        &env_at,
-                        format!("`{}` is not a valid environment variable name", entry.name),
-                    );
+            let env: Vec<CompiledEnv> = spawn
+                .env
+                .iter()
+                .enumerate()
+                .map(|(i, entry)| {
+                    compile_env_entry(c, &at.clone().key("env").index(i), entry, &engine_schema)
+                })
+                .collect();
+            let stop = compile_stop(c, &at.clone().key("stop"), &spawn.stop);
+            match (program, stop) {
+                (Some(program), Some(stop)) if args.iter().all(Option::is_some) => {
+                    Some(CompiledSpawn {
+                        program,
+                        args: args.into_iter().flatten().collect(),
+                        env,
+                        group: spawn.group,
+                        stop,
+                    })
                 }
-                match (&entry.value, &entry.prepend) {
-                    (Some(_), Some(_)) => c.error(
-                        &env_at,
-                        "an environment entry has `value` or `prepend`, not both",
-                    ),
-                    (None, None) => {
-                        c.error(&env_at, "an environment entry needs `value` or `prepend`")
-                    }
-                    _ => {}
-                }
-                let value = entry
-                    .value
-                    .as_deref()
-                    .and_then(|t| c.template(&env_at, t, &engine_schema));
-                let prepend = entry
-                    .prepend
-                    .as_deref()
-                    .and_then(|t| c.template(&env_at, t, &engine_schema));
-                let when = entry
-                    .when
-                    .as_deref()
-                    .and_then(|t| c.expr(&env_at, t, &engine_schema, true));
-                env.push(CompiledEnv {
-                    name: entry.name.clone(),
-                    value,
-                    prepend,
-                    sep: entry.sep.clone().unwrap_or_else(|| ":".to_string()),
-                    when,
-                    locked: entry.locked,
-                });
-            }
-            match program {
-                Some(program) if args.iter().all(Option::is_some) => Some(CompiledSpawn {
-                    program,
-                    args: args.into_iter().flatten().collect(),
-                    env,
-                    group: spawn.group,
-                    stop: spawn.stop.policy,
-                }),
                 _ => None,
             }
         }
@@ -886,7 +1477,668 @@ fn compile_launch(
             expect_status: expect.unwrap_or(200),
             timeout: timeout?,
             interval: interval?,
+            on_timeout: ready.on_timeout,
         })
     });
     (spawn, ready)
+}
+
+/// `[launch]` beyond `spawn` and `ready`: the strategies and what chooses among them, attaching to an
+/// engine that is already running, and the calls that load and unload a model.
+fn compile_launch_extras(c: &mut Checker, doc: &EngineDoc) -> CompiledLaunch {
+    let launch_path = DocPath::default().key("launch");
+    let engine_schema = schema(doc, Site::Engine);
+    let mut launch = CompiledLaunch::default();
+
+    // the strategies, in the document's order (a document that lists none has `spawn` if it has one)
+    let named: Vec<&str> = if doc.launch.strategies.is_empty() {
+        if doc.launch.spawn.is_some() {
+            vec!["spawn"]
+        } else {
+            Vec::new()
+        }
+    } else {
+        doc.launch.strategies.iter().map(String::as_str).collect()
+    };
+    for name in named {
+        match name {
+            "spawn" => launch.strategies.push(LaunchStrategy::Spawn),
+            "attach_if_running" => launch.strategies.push(LaunchStrategy::AttachIfRunning),
+            _ => {} // reported by `compile_launch`
+        }
+    }
+
+    // attach
+    let attach_at = launch_path.clone().key("attach");
+    match (
+        &doc.launch.attach,
+        launch.strategies.contains(&LaunchStrategy::AttachIfRunning),
+    ) {
+        (None, true) => c.error(
+            &attach_at,
+            "the launch strategy `attach_if_running` needs a `[launch.attach]` table",
+        ),
+        (Some(attach), _) => {
+            let endpoint = c.template(
+                &attach_at.clone().key("endpoint"),
+                &attach.endpoint,
+                &engine_schema,
+            );
+            for (key, path) in [
+                ("identity", &attach.identity.path),
+                (
+                    "liveness",
+                    attach
+                        .liveness
+                        .as_ref()
+                        .map_or(&attach.identity.path, |l| &l.path),
+                ),
+            ] {
+                if !path.starts_with('/') {
+                    c.error(
+                        &attach_at.clone().key(key).key("path"),
+                        format!("the path `{path}` must start with `/`"),
+                    );
+                }
+            }
+            if !attach.identity.pointer.starts_with('/') {
+                c.error_hint(
+                    &attach_at.clone().key("identity").key("pointer"),
+                    format!("`{}` is not a JSON pointer", attach.identity.pointer),
+                    "write it as /version: a pointer starts with a slash",
+                );
+            }
+            let liveness = match &attach.liveness {
+                None => None,
+                Some(l) => {
+                    let every = match &l.every {
+                        Some(text) => {
+                            c.duration(&attach_at.clone().key("liveness").key("every"), text)
+                        }
+                        None => Some(DEFAULT_LIVENESS_EVERY),
+                    };
+                    let failures = l.failures.unwrap_or(DEFAULT_LIVENESS_FAILURES);
+                    if failures == 0 {
+                        c.error(
+                            &attach_at.clone().key("liveness").key("failures"),
+                            "`failures` is how many misses in a row mean the engine is gone, and it must be at least 1",
+                        );
+                    }
+                    every.map(|every| CompiledLiveness {
+                        every,
+                        failures: failures.max(1),
+                    })
+                }
+            };
+            if let Some(endpoint) = endpoint {
+                launch.attach = Some(CompiledAttach {
+                    endpoint,
+                    identity_path: attach.identity.path.clone(),
+                    identity_pointer: attach.identity.pointer.clone(),
+                    liveness,
+                });
+            }
+        }
+        (None, false) => {}
+    }
+
+    // the field that chooses
+    if let Some(field_id) = &doc.launch.strategy_field {
+        let at = launch_path.clone().key("strategy_field");
+        match doc.fields.iter().find(|f| &f.id == field_id) {
+            None => c.error(
+                &at,
+                format!("`strategy_field` names the field `{field_id}`, which this engine does not have"),
+            ),
+            Some(field) if field.ty != FieldType::Choice => c.error(
+                &at,
+                format!("the field `{field_id}` is not a `choice`, so it cannot pick among the strategies"),
+            ),
+            Some(field) => {
+                for option in &field.options {
+                    let wanted = match option.as_str() {
+                        "auto" => None,
+                        "attach" => Some(LaunchStrategy::AttachIfRunning),
+                        "spawn" => Some(LaunchStrategy::Spawn),
+                        other => {
+                            c.error_hint(
+                                &at,
+                                format!("the option `{other}` of `{field_id}` is not one of the ways to launch"),
+                                "the options of a strategy field are auto, attach and spawn",
+                            );
+                            continue;
+                        }
+                    };
+                    if let Some(wanted) = wanted {
+                        if !launch.strategies.contains(&wanted) {
+                            c.error(
+                                &at,
+                                format!("the option `{option}` of `{field_id}` needs the strategy {wanted:?}, which `[launch] strategies` does not list"),
+                            );
+                        }
+                    }
+                }
+                launch.strategy_field = Some(field_id.clone());
+            }
+        }
+    }
+
+    // warm and unload
+    for (phase, steps, default_timeout) in [
+        ("warm", &doc.launch.warm, DEFAULT_WARM_TIMEOUT),
+        ("unload", &doc.launch.unload, DEFAULT_UNLOAD_TIMEOUT),
+    ] {
+        for (i, step) in steps.iter().enumerate() {
+            let at = launch_path.clone().key(phase).index(i);
+            if let Some(compiled) = compile_step(c, &at, step, default_timeout, &engine_schema) {
+                if phase == "warm" {
+                    launch.warm.push(compiled);
+                } else {
+                    launch.unload.push(compiled);
+                }
+            }
+        }
+    }
+    launch
+}
+
+fn compile_step(
+    c: &mut Checker,
+    at: &DocPath,
+    step: &Step,
+    default_timeout: Duration,
+    schema: &Type,
+) -> Option<CompiledStep> {
+    // a `when` that is a map (`model`) is true when it is there
+    let when = step
+        .when
+        .as_deref()
+        .map(|text| c.expr(&at.clone().key("when"), text, schema, true));
+    let call = compile_call(
+        c,
+        &at.clone().key("call"),
+        &step.call,
+        default_timeout,
+        schema,
+        false,
+    );
+    Some(CompiledStep {
+        when: when.map_or(Some(None), |w| w.map(Some))?,
+        ..call?
+    })
+}
+
+/// One call: its method, its path and body as templates over `schema`, how long it may take and
+/// how its reply is read. `streams` says whether the reply may be a stream (the calls of
+/// `[models]`) or is always one body (a warm-up, an unload).
+fn compile_call(
+    c: &mut Checker,
+    call_at: &DocPath,
+    call: &CallSpec,
+    default_timeout: Duration,
+    schema: &Type,
+    streams: bool,
+) -> Option<CompiledStep> {
+    let CallSpec {
+        method,
+        path,
+        body,
+        timeout,
+        best_effort,
+        stream,
+    } = call;
+    let method = method
+        .clone()
+        .unwrap_or_else(|| "POST".to_string())
+        .to_ascii_uppercase();
+    if !["GET", "POST", "PUT", "DELETE", "PATCH"].contains(&method.as_str()) {
+        c.error(
+            &call_at.clone().key("method"),
+            format!("`{method}` is not a method a call uses (GET, POST, PUT, DELETE or PATCH)"),
+        );
+    }
+    if !path.starts_with('/') {
+        c.error(
+            &call_at.clone().key("path"),
+            format!("the path `{path}` must start with `/`"),
+        );
+    }
+    let path_template = c.template(&call_at.clone().key("path"), path, schema);
+    let body = body
+        .as_ref()
+        .map(|b| compile_body(c, &call_at.clone().key("body"), b, schema));
+    let timeout = match timeout {
+        Some(text) => c.duration(&call_at.clone().key("timeout"), text),
+        None => Some(default_timeout),
+    };
+    let framing = match (stream.as_deref(), streams) {
+        (None | Some("json"), _) => Some(Framing::Json),
+        (Some("ndjson"), true) => Some(Framing::Ndjson),
+        (Some("sse"), true) => Some(Framing::Sse),
+        (Some("ndjson" | "sse"), false) => {
+            c.error_hint(
+                &call_at.clone().key("stream"),
+                "a warm-up or an unload is read whole",
+                "`stream` is for the calls of `[models]`",
+            );
+            None
+        }
+        (Some(other), _) => {
+            c.error_hint(
+                &call_at.clone().key("stream"),
+                format!("`{other}` is not a way to read a reply"),
+                "the ways are json, ndjson and sse",
+            );
+            None
+        }
+    };
+    Some(CompiledStep {
+        when: None,
+        method,
+        path: path_template?,
+        body: match body {
+            Some(b) => Some(b?),
+            None => None,
+        },
+        timeout: timeout?,
+        best_effort: *best_effort,
+        stream: framing?,
+    })
+}
+
+fn compile_api_info(c: &mut Checker, doc: &EngineDoc, info: &ApiInfo) -> Option<CompiledApiInfo> {
+    let at = DocPath::default().key("api_info");
+    let engine_schema = schema(doc, Site::Engine);
+    let base_url = c.template(&at.clone().key("base_url"), &info.base_url, &engine_schema);
+    let extra_urls: Vec<Option<(String, Template)>> = info
+        .extra_urls
+        .iter()
+        .enumerate()
+        .map(|(i, extra)| {
+            let url_at = at.clone().key("extra_urls").index(i).key("url");
+            c.template(&url_at, &extra.url, &engine_schema)
+                .map(|t| (extra.label.clone(), t))
+        })
+        .collect();
+    let note = |c: &mut Checker, key: &str, note: &Option<crate::doc::engine::ApiNote>| {
+        note.as_ref().map(|n| {
+            c.template(&at.clone().key(key).key("value"), &n.value, &engine_schema)
+                .map(|t| (t, n.note.clone()))
+        })
+    };
+    let api_key = note(c, "api_key", &info.api_key);
+    let model = note(c, "model", &info.model);
+    Some(CompiledApiInfo {
+        base_url: base_url?,
+        extra_urls: extra_urls.into_iter().collect::<Option<Vec<_>>>()?,
+        api_key: match api_key {
+            Some(k) => Some(k?),
+            None => None,
+        },
+        model: match model {
+            Some(m) => Some(m?),
+            None => None,
+        },
+        example: info.example.clone(),
+    })
+}
+
+fn compile_diagnostics(
+    c: &mut Checker,
+    doc: &EngineDoc,
+    rules: &[DiagnosticRule],
+) -> Vec<CompiledDiagnostic> {
+    let engine_schema = schema(doc, Site::Engine);
+    let mut compiled = Vec::new();
+    for (i, rule) in rules.iter().enumerate() {
+        let at = DocPath::default().key("diagnostic").index(i);
+        let when_at = at.clone().key("when");
+        if rule.when.log_matches.is_none() && rule.when.exited_during.is_none() {
+            c.error_hint(
+                &when_at,
+                "a diagnostic says when it applies",
+                "`when = { log_matches = '...' }` or `when = { exited_during = \"starting\" }`",
+            );
+        }
+        let log_matches = rule.when.log_matches.as_deref().map(|pattern| {
+            Regex::new(pattern).map_err(|e| {
+                c.error(
+                    &when_at.clone().key("log_matches"),
+                    format!("`{pattern}` is not a valid pattern: {e}"),
+                );
+            })
+        });
+        let exited_during = rule.when.exited_during.as_deref().map(|state| {
+            if ["starting", "running"].contains(&state) {
+                Ok(state.to_string())
+            } else {
+                c.error_hint(
+                    &when_at.clone().key("exited_during"),
+                    format!("`{state}` is not a state a run ends in"),
+                    "the states are starting and running",
+                );
+                Err(())
+            }
+        });
+        if let Some(action) = &rule.action {
+            if !is_action(action) {
+                c.error_hint(
+                    &at.clone().key("action"),
+                    format!("`{action}` is not an action id"),
+                    "an action is a lower case word, then optionally `:` and what it applies to: focus_field:port",
+                );
+            }
+        }
+        let hint = c.template(&at.clone().key("hint"), &rule.hint, &engine_schema);
+        if let (Some(hint), Some(log_matches), Some(exited_during)) = (
+            hint,
+            log_matches.map_or(Some(None), |r| r.ok().map(Some)),
+            exited_during.map_or(Some(None), |r| r.ok().map(Some)),
+        ) {
+            compiled.push(CompiledDiagnostic {
+                log_matches,
+                exited_during,
+                hint,
+                action: rule.action.clone(),
+            });
+        }
+    }
+    compiled
+}
+
+/// How long the calls of `[models]` may take when the document does not say.
+const DEFAULT_MODEL_CALL_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn compile_models(c: &mut Checker, doc: &EngineDoc, models: &Models) -> CompiledModels {
+    let at = DocPath::default().key("models");
+    let engine_schema = schema(doc, Site::Engine);
+    // `${ref}` is the name of the model a call is about
+    let ref_schema = Type::object([("ref", Type::Str)]);
+    let pointer = |c: &mut Checker, path: DocPath, text: &str| {
+        let ok = text.starts_with('/');
+        if !ok {
+            c.error_hint(
+                &path,
+                format!("`{text}` is not a JSON pointer"),
+                "a pointer starts with a slash: /models",
+            );
+        }
+        ok
+    };
+
+    let list = models.list.as_ref().map(|list| {
+        let at = at.clone().key("list");
+        let call = compile_call(
+            c,
+            &at.clone().key("call"),
+            &list.call,
+            DEFAULT_MODEL_CALL_TIMEOUT,
+            &engine_schema,
+            false,
+        );
+        let map_at = at.clone().key("map");
+        let mut ok = pointer(c, at.clone().key("items"), &list.items);
+        ok &= pointer(c, map_at.clone().key("id"), &list.map.id);
+        for (key, value) in [
+            ("display", &list.map.display),
+            ("size_bytes", &list.map.size_bytes),
+            ("digest", &list.map.digest),
+            ("capabilities", &list.map.capabilities),
+        ] {
+            if let Some(p) = value {
+                ok &= pointer(c, map_at.clone().key(key), p);
+            }
+        }
+        let cache = list
+            .cache
+            .as_deref()
+            .map(|t| c.template(&at.clone().key("cache"), t, &engine_schema));
+        if !ok {
+            return None;
+        }
+        Some(CompiledList {
+            call: call?,
+            items: list.items.clone(),
+            id: list.map.id.clone(),
+            display: list.map.display.clone(),
+            size_bytes: list.map.size_bytes.clone(),
+            digest: list.map.digest.clone(),
+            capabilities: list.map.capabilities.clone(),
+            cache: match cache {
+                Some(t) => Some(t?),
+                None => None,
+            },
+        })
+    });
+
+    let pull = models.pull.as_ref().map(|pull| {
+        let at = at.clone().key("pull");
+        let call = compile_call(
+            c,
+            &at.clone().key("call"),
+            &pull.call,
+            // the stream's own silence limit is what bounds a pull
+            Duration::from_secs(120),
+            &ref_schema,
+            true,
+        );
+        let mut ok = true;
+        if let Some(p) = &pull.progress {
+            let progress_at = at.clone().key("progress");
+            for (key, value) in [
+                ("key", &p.key),
+                ("completed", &p.completed),
+                ("total", &p.total),
+                ("status", &p.status),
+            ] {
+                ok &= pointer(c, progress_at.clone().key(key), value);
+            }
+            if let Some(error) = &p.error {
+                ok &= pointer(c, progress_at.clone().key("error"), error);
+            }
+        }
+        if !ok {
+            return None;
+        }
+        Some(CompiledPull {
+            call: call?,
+            progress: pull.progress.clone(),
+        })
+    });
+
+    let remove = models.remove.as_ref().and_then(|remove| {
+        compile_call(
+            c,
+            &at.clone().key("remove").key("call"),
+            &remove.call,
+            DEFAULT_MODEL_CALL_TIMEOUT,
+            &ref_schema,
+            false,
+        )
+    });
+
+    if let Some(capabilities) = &models.capabilities {
+        let at = at.clone().key("capabilities");
+        compile_call(
+            c,
+            &at.clone().key("call"),
+            &capabilities.call,
+            DEFAULT_MODEL_CALL_TIMEOUT,
+            &ref_schema,
+            false,
+        );
+        pointer(c, at.key("pointer"), &capabilities.pointer);
+    }
+
+    CompiledModels {
+        needs_server: models.needs_server,
+        list: list.flatten(),
+        pull: pull.flatten(),
+        remove,
+        input_rules: compile_input_rules(c, &at, &models.input_rules),
+    }
+}
+
+/// The rules of the model box. A rule with no `when` takes whatever is left, so a rule after it
+/// can never be reached.
+fn compile_input_rules(
+    c: &mut Checker,
+    at: &DocPath,
+    rules: &[InputRule],
+) -> Vec<CompiledInputRule> {
+    let schema = Type::object([("input", Type::Str)]);
+    let mut compiled = Vec::new();
+    let mut catch_all: Option<usize> = None;
+    for (i, rule) in rules.iter().enumerate() {
+        let at = at.clone().key("input_rules").index(i);
+        if let Some(first) = catch_all {
+            c.warn(
+                &at,
+                format!(
+                    "this rule is never reached: rule {} has no `when` and takes everything",
+                    first + 1
+                ),
+            );
+        }
+        let when = match rule.when.as_deref() {
+            Some(text) => c
+                .expr(&at.clone().key("when"), text, &schema, true)
+                .map(Some),
+            None => {
+                catch_all.get_or_insert(i);
+                Some(None)
+            }
+        };
+        let action = match (rule.action.as_str(), &rule.reference, &rule.message) {
+            ("pull", Some(reference), message) => {
+                if message.is_some() {
+                    c.warn(
+                        &at.clone().key("message"),
+                        "`message` is for a `reject` rule and is not used here",
+                    );
+                }
+                c.template(&at.clone().key("ref"), reference, &schema)
+                    .map(CompiledInputAction::Pull)
+            }
+            ("pull", None, _) => {
+                c.error_hint(
+                    &at,
+                    "a `pull` rule says what to pull",
+                    "add `ref = \"${input}\"`",
+                );
+                None
+            }
+            ("reject", reference, Some(message)) if !message.trim().is_empty() => {
+                if reference.is_some() {
+                    c.warn(
+                        &at.clone().key("ref"),
+                        "`ref` is for a `pull` rule and is not used here",
+                    );
+                }
+                Some(CompiledInputAction::Reject(message.clone()))
+            }
+            ("reject", _, _) => {
+                c.error_hint(
+                    &at,
+                    "a `reject` rule says why: it is what the person reads",
+                    "add `message = \"...\"`",
+                );
+                None
+            }
+            (other, _, _) => {
+                c.error_hint(
+                    &at.clone().key("do"),
+                    format!("`{other}` is not something a rule does"),
+                    "a rule does `pull` or `reject`",
+                );
+                None
+            }
+        };
+        if let (Some(when), Some(action)) = (when, action) {
+            compiled.push(CompiledInputRule { when, action });
+        }
+    }
+    compiled
+}
+
+/// A body of a call: tables and lists are kept, numbers and booleans are literal, every text is
+/// a template (and a text with no hole is the same text).
+fn compile_body(
+    c: &mut Checker,
+    at: &DocPath,
+    value: &toml::Value,
+    schema: &Type,
+) -> Option<CompiledBody> {
+    Some(match value {
+        toml::Value::String(text) => {
+            if text.contains("${") {
+                CompiledBody::Template(c.template(at, text, schema)?)
+            } else {
+                CompiledBody::Literal(serde_json::Value::String(text.clone()))
+            }
+        }
+        toml::Value::Integer(n) => CompiledBody::Literal((*n).into()),
+        toml::Value::Float(f) => CompiledBody::Literal(serde_json::json!(f)),
+        toml::Value::Boolean(b) => CompiledBody::Literal((*b).into()),
+        toml::Value::Datetime(d) => CompiledBody::Literal(d.to_string().into()),
+        toml::Value::Array(items) => {
+            let compiled: Vec<Option<CompiledBody>> = items
+                .iter()
+                .enumerate()
+                .map(|(i, v)| compile_body(c, &at.clone().index(i), v, schema))
+                .collect();
+            CompiledBody::List(compiled.into_iter().collect::<Option<Vec<_>>>()?)
+        }
+        toml::Value::Table(table) => {
+            let compiled: Vec<Option<(String, CompiledBody)>> = table
+                .iter()
+                .map(|(k, v)| {
+                    compile_body(c, &at.clone().key(k), v, schema).map(|b| (k.clone(), b))
+                })
+                .collect();
+            CompiledBody::Map(compiled.into_iter().collect::<Option<Vec<_>>>()?)
+        }
+    })
+}
+
+/// Reads `stop = { policy, grace, exit_grace }`. The waits belong to a graceful stop; given with
+/// `kill` they would never be used, which is worth a warning.
+fn compile_stop(c: &mut Checker, at: &DocPath, stop: &StopSpec) -> Option<CompiledStop> {
+    let mut ok = true;
+    let mut wait = |c: &mut Checker, key: &str, text: &Option<String>, default: Duration| match text
+    {
+        None => default,
+        Some(text) => {
+            if stop.policy == StopPolicy::Kill {
+                c.warn(
+                    &at.clone().key(key),
+                    format!(
+                        "`{key}` belongs to `policy = \"graceful\"`; a `kill` stop never waits"
+                    ),
+                );
+            }
+            match c.duration(&at.clone().key(key), text) {
+                Some(d) => d,
+                None => {
+                    ok = false;
+                    default
+                }
+            }
+        }
+    };
+    let (grace, exit_grace) = match stop.policy {
+        StopPolicy::Kill => (
+            wait(c, "grace", &stop.grace, Duration::ZERO),
+            wait(c, "exit_grace", &stop.exit_grace, Duration::ZERO),
+        ),
+        StopPolicy::Graceful => (
+            wait(c, "grace", &stop.grace, DEFAULT_STOP_GRACE),
+            wait(c, "exit_grace", &stop.exit_grace, DEFAULT_EXIT_GRACE),
+        ),
+    };
+    ok.then_some(CompiledStop {
+        policy: stop.policy,
+        grace,
+        exit_grace,
+    })
 }

@@ -1,7 +1,7 @@
 //! The functions an expression may call. All are pure: the same arguments (and context) always give
-//! the same answer, nothing is read from the machine. A function that has to look at the filesystem
-//! (`is_file`) is not here; it arrives with the first document that needs it (Phase 4), through a
-//! hook the caller supplies.
+//! the same answer, nothing is read from the machine. `is_file` is the one question about the
+//! machine a document can ask, and the caller answers it: for the text of the model box, before the
+//! rules are read, as `input_is_file` in the context (docs/phase3-test-plan.md, M01b).
 //!
 //! Arguments are coerced so that a value that is "not there yet" does not make an expression fail:
 //! `null` reads as `false`, `0`, `""` or `[]` according to the parameter. (`model.size_bytes` is
@@ -115,6 +115,18 @@ pub static FUNCS: &[Func] = &[
         params: &[Param::Str],
         ret: Ret::Bool,
         call: is_url,
+    },
+    Func {
+        name: "is_file",
+        params: &[Param::Str],
+        ret: Ret::Bool,
+        call: is_file,
+    },
+    Func {
+        name: "path_after_host",
+        params: &[Param::Str],
+        ret: Ret::Str,
+        call: path_after_host,
     },
     Func {
         name: "semver_ge",
@@ -282,6 +294,33 @@ fn is_url(_: &Value, args: &[Value]) -> Result<Value, String> {
     Ok(Value::Bool(looks_like_url(text(&args[0])?)))
 }
 
+/// Whether the text names a file on this machine. The caller works that out for the one text a
+/// rule is about (the model box's input) and says so in the context as `input_is_file`; of any
+/// other text nothing is known and the answer is no.
+fn is_file(ctx: &Value, args: &[Value]) -> Result<Value, String> {
+    let asked = text(&args[0])?;
+    let about = ctx.lookup(&["input"]).and_then(Value::as_str);
+    let is_file = ctx
+        .lookup(&["input_is_file"])
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    Ok(Value::Bool(is_file && about.is_some_and(|a| a == asked)))
+}
+
+/// The part of an address after its host, without the slashes around it: `https://huggingface.co/a/b/`
+/// is `a/b`. A text that is not an address, or has nothing after the host, is `""`.
+pub fn path_after_host(_: &Value, args: &[Value]) -> Result<Value, String> {
+    let address = text(&args[0])?.trim();
+    let rest = address
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .and_then(|rest| rest.split_once('/'))
+        .map(|(_, path)| path)
+        .unwrap_or("");
+    let path = rest.split(['?', '#']).next().unwrap_or("");
+    Ok(Value::Str(path.trim_matches('/').to_string()))
+}
+
 /// Reads `0.35.1`, `v0.35` or `12` as a version, padding what is missing with zeros.
 pub fn parse_version(text: &str) -> Result<semver::Version, String> {
     let trimmed = text.trim().trim_start_matches(['v', 'V']);
@@ -418,6 +457,53 @@ mod tests {
         );
         let e = call("matches", &["x".into(), "(".into()]).unwrap_err();
         assert!(e.contains("invalid regular expression"), "{e}");
+    }
+
+    #[test]
+    fn path_after_host_is_what_follows_the_host_without_the_slashes_around_it() {
+        for (address, want) in [
+            (
+                "https://huggingface.co/Qwen/Qwen3-4B-GGUF",
+                "Qwen/Qwen3-4B-GGUF",
+            ),
+            (
+                "https://huggingface.co/Qwen/Qwen3-4B-GGUF/",
+                "Qwen/Qwen3-4B-GGUF",
+            ),
+            ("  http://h.example/a/b?x=1#frag ", "a/b"),
+            ("https://huggingface.co", ""),
+            ("https://huggingface.co/", ""),
+            ("not an address", ""),
+            ("", ""),
+        ] {
+            assert_eq!(
+                call("path_after_host", &[address.into()]),
+                Ok(Value::Str(want.into())),
+                "{address}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_file_is_answered_by_the_caller_for_the_text_it_is_about_and_no_other() {
+        let about = |input: &str, yes: bool| {
+            map([("input", input.into()), ("input_is_file", Value::Bool(yes))])
+        };
+        let ask = |ctx: &Value, text: &str| (find("is_file").unwrap().call)(ctx, &[text.into()]);
+        assert_eq!(
+            ask(&about("/m.gguf", true), "/m.gguf"),
+            Ok(Value::Bool(true))
+        );
+        assert_eq!(
+            ask(&about("/m.gguf", false), "/m.gguf"),
+            Ok(Value::Bool(false))
+        );
+        assert_eq!(
+            ask(&about("/m.gguf", true), "/other"),
+            Ok(Value::Bool(false)),
+            "nothing is known of any other text"
+        );
+        assert_eq!(ask(&Value::Null, "/m.gguf"), Ok(Value::Bool(false)));
     }
 
     #[test]

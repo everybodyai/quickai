@@ -4,45 +4,51 @@
 //!
 //! What to run, with which arguments and environment, on which ports and how to tell it is ready
 //! all come from the `RunPlan` the planner built from the engine's document; this file only
-//! carries it out.
+//! carries it out. A run lives on a thread of its own (`supervisor.rs`); the session is the
+//! interface's side of it: it hands the thread its plan, tells it to stop, and drains what the
+//! thread reports once per frame.
 
-use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::thread::JoinHandle;
 
 use crossbeam_channel::{Receiver, Sender};
-use quickai_core::plan::{apply_env, RunPlan, Start};
+use quickai_core::plan::{RunPlan, Start};
 
-use super::probe::spawn_http_ready;
-use super::process::{send, spawn_reader, spawn_waiter};
+use super::process::{send, Wake};
+use super::supervisor::{self, Command, Run};
 use crate::events::{Event, ServerState, TrafficEvent};
-use crate::proxy;
 
 pub struct Session {
-    child: Arc<Mutex<Option<Child>>>,
-    intentional_stop: Arc<AtomicBool>,
     evt_tx: Sender<Event>,
     pub evt_rx: Receiver<Event>,
     state: ServerState,
     port: Option<u16>,
     model_name: Option<String>,
-    /// Only `Some` while "Show live conversation traffic" was on for the
-    /// current run — see `proxy.rs`.
-    proxy: Option<proxy::ProxyHandle>,
+    /// The model a load into the running engine is under way for.
+    loading: Option<String>,
+    /// The run is using an engine that was already running.
+    attached: bool,
+    /// The thread of the current (or last) run.
+    run: Option<RunHandle>,
+}
+
+struct RunHandle {
+    commands: Sender<Command>,
+    thread: JoinHandle<()>,
 }
 
 impl Session {
     pub fn new() -> Self {
         let (evt_tx, evt_rx) = crossbeam_channel::unbounded();
         Self {
-            child: Arc::new(Mutex::new(None)),
-            intentional_stop: Arc::new(AtomicBool::new(false)),
             evt_tx,
             evt_rx,
             state: ServerState::Idle,
             port: None,
             model_name: None,
-            proxy: None,
+            loading: None,
+            attached: false,
+            run: None,
         }
     }
 
@@ -56,6 +62,16 @@ impl Session {
 
     pub fn model_name(&self) -> Option<&str> {
         self.model_name.as_deref()
+    }
+
+    /// The model that is being loaded into the running engine, until the engine says how it went.
+    pub fn loading(&self) -> Option<&str> {
+        self.loading.as_deref()
+    }
+
+    /// Whether the engine in use is one that was already running when the run began.
+    pub fn attached(&self) -> bool {
+        self.attached
     }
 
     pub fn is_active(&self) -> bool {
@@ -78,16 +94,21 @@ impl Session {
             changed = true;
             match event {
                 Event::Log(line) => log(line),
+                Event::Model(name) => {
+                    self.model_name = name;
+                    self.loading = None;
+                }
+                Event::Attached(attached) => self.attached = attached,
                 Event::StateChanged(s) => {
                     self.state = s;
                     if matches!(s, ServerState::Idle | ServerState::Crashed) {
                         self.port = None;
                         self.model_name = None;
-                        // Free the public port so a later Start (proxy on
-                        // or off, on any port) can bind cleanly.
-                        if let Some(proxy) = self.proxy.take() {
-                            proxy.stop();
-                        }
+                        self.loading = None;
+                        self.attached = false;
+                        // the run's thread is ending (it sent this last, after freeing the
+                        // public port); nothing is left to tell it
+                        self.run = None;
                     }
                 }
                 Event::Traffic(t) => traffic(t),
@@ -106,103 +127,46 @@ impl Session {
         if self.is_active() {
             return;
         }
-        let wake = Arc::new(wake);
+        let wake: Wake = Arc::new(wake);
         self.port = plan.public_port;
-        self.model_name = Some(model_name.to_string());
-        self.intentional_stop.store(false, Ordering::SeqCst);
+        // a plan with no model runs the engine with nothing loaded (management mode)
+        let model = plan
+            .model
+            .is_some()
+            .then(|| model_name.to_string())
+            .filter(|name| !name.is_empty());
+        self.model_name = model.clone();
 
         let Some(unit) = plan.units.first() else {
             self.crash("The run plan has nothing to start.".into(), &wake);
             return;
         };
-        let Some(Start::Spawn(spawn)) = unit.start.first() else {
+        if !unit
+            .start
+            .iter()
+            .any(|s| matches!(s, Start::Attach(_) | Start::Spawn(_)))
+        {
             self.crash("The run plan has no way to start the server.".into(), &wake);
             return;
-        };
-
-        // With the proxy on, the engine itself listens on an internal-only port that only the
-        // proxy talks to; the proxy binds the public port (what the GUI and clients actually
-        // connect to). With it off there is no gateway and the engine binds the public port
-        // directly, exactly as before the proxy existed.
-        if let Some(gateway) = plan.gateway {
-            match proxy::spawn(
-                gateway.public_port,
-                gateway.upstream_port,
-                self.evt_tx.clone(),
-                wake.clone(),
-            ) {
-                Ok(handle) => self.proxy = Some(handle),
-                Err(e) => {
-                    self.crash(
-                        format!(
-                            "Could not start the live-traffic proxy on port {}: {e}. Is something else already using that port?",
-                            gateway.public_port
-                        ),
-                        &wake,
-                    );
-                    return;
-                }
-            }
         }
+
         self.state = ServerState::Starting;
-
-        send(&self.evt_tx, Event::Log(spawn.command_line()), &wake);
-
-        let env = apply_env(&spawn.env, |name| std::env::var(name).ok());
-        let mut cmd = Command::new(&spawn.program.value);
-        cmd.args(spawn.args.iter().map(|a| &a.value))
-            .envs(env.iter().map(|(k, v)| (k, v)))
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        let mut child = match cmd.spawn() {
-            Ok(c) => c,
-            Err(e) => {
-                send(
-                    &self.evt_tx,
-                    Event::Log(format!("Failed to launch server process: {e}")),
-                    &wake,
-                );
-                send(
-                    &self.evt_tx,
-                    Event::StateChanged(ServerState::Crashed),
-                    &wake,
-                );
-                if let Some(proxy) = self.proxy.take() {
-                    proxy.stop();
-                }
-                return;
-            }
+        let (commands, receiver) = crossbeam_channel::unbounded();
+        let run = Run {
+            unit: unit.clone(),
+            gateway: plan.gateway,
+            decode: plan.decode.clone(),
+            model,
+            events: self.evt_tx.clone(),
+            wake: wake.clone(),
+            commands: receiver,
         };
-
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
-        spawn_reader(stdout, self.evt_tx.clone(), wake.clone());
-        spawn_reader(stderr, self.evt_tx.clone(), wake.clone());
-
-        *self.child.lock().unwrap() = Some(child);
-
-        spawn_waiter(
-            self.child.clone(),
-            self.intentional_stop.clone(),
-            self.evt_tx.clone(),
-            wake.clone(),
-        );
-        match (&unit.ready, unit.endpoint.port) {
-            (Some(ready), Some(port)) => spawn_http_ready(
-                unit.endpoint.host.clone(),
-                port,
-                ready.clone(),
-                self.intentional_stop.clone(),
-                self.evt_tx.clone(),
-                wake,
-            ),
-            // An engine with nothing to ask is as ready as it will get.
-            _ => send(
-                &self.evt_tx,
-                Event::StateChanged(ServerState::Running),
-                &wake,
-            ),
+        match std::thread::Builder::new()
+            .name("quickai-run".into())
+            .spawn(move || supervisor::run(run))
+        {
+            Ok(thread) => self.run = Some(RunHandle { commands, thread }),
+            Err(e) => self.crash(format!("Could not start a thread for the run: {e}"), &wake),
         }
     }
 
@@ -221,11 +185,11 @@ impl Session {
         }
         self.port = Some(port);
         self.model_name = Some(model_name.to_string());
-        self.intentional_stop.store(false, Ordering::SeqCst);
-        self.crash(message, &Arc::new(wake));
+        let wake: Wake = Arc::new(wake);
+        self.crash(message, &wake);
     }
 
-    fn crash(&mut self, message: String, wake: &Arc<impl Fn() + Send + Sync + 'static>) {
+    fn crash(&mut self, message: String, wake: &Wake) {
         send(&self.evt_tx, Event::Log(message), wake);
         send(
             &self.evt_tx,
@@ -234,28 +198,64 @@ impl Session {
         );
     }
 
+    /// Asks the run to end. It does not wait: the thread reports `Idle` when it is over.
     pub fn stop(&mut self) {
         if !self.is_active() {
             return;
         }
-        self.intentional_stop.store(true, Ordering::SeqCst);
         self.state = ServerState::Stopping;
-        if let Some(child) = self.child.lock().unwrap().as_mut() {
-            let _ = child.kill();
-        }
-        // Stop accepting new connections right away rather than waiting for
-        // the child-exit event to reach `poll()` — that still runs as a
-        // safety net (e.g. if the engine crashes on its own).
-        if let Some(proxy) = self.proxy.take() {
-            proxy.stop();
+        if let Some(run) = &self.run {
+            let _ = run.commands.send(Command::Stop { closing: false });
         }
     }
 
-    /// Best-effort synchronous stop, for use on app exit.
+    /// Loads a model into an engine that is running without one (management mode, plan decision
+    /// C22): runs the plan's warm step. The model's name is reported when it is loaded; a failure is
+    /// logged and leaves the engine running with nothing loaded. The run's own wake-up is used.
+    /// Start calls it for an engine that is running with no model and has one chosen; a second
+    /// call while the first is under way does nothing.
+    pub fn load(
+        &mut self,
+        plan: &RunPlan,
+        model_name: &str,
+        _wake: impl Fn() + Send + Sync + 'static,
+    ) {
+        if self.state != ServerState::Running || self.loading.is_some() {
+            return;
+        }
+        let Some(unit) = plan.units.first() else {
+            return;
+        };
+        if let Some(run) = &self.run {
+            self.loading = Some(model_name.to_string());
+            let _ = run.commands.send(Command::Load {
+                warm: unit.warm.clone(),
+                unload: unit.unload.clone(),
+                name: model_name.to_string(),
+            });
+        }
+    }
+
+    /// Unloads the model but keeps the engine running.
+    #[allow(dead_code)]
+    pub fn unload(&mut self) {
+        if self.state != ServerState::Running {
+            return;
+        }
+        if let Some(run) = &self.run {
+            let _ = run.commands.send(Command::Unload);
+        }
+    }
+
+    /// Stops the run and waits until it is over, for use on app exit. The program is given the plan's
+    /// short exit grace, so closing the window is not held up by a daemon that will not leave.
     pub fn stop_blocking(&mut self) {
-        self.stop();
-        if let Some(mut child) = self.child.lock().unwrap().take() {
-            let _ = child.wait();
+        if let Some(run) = self.run.take() {
+            let _ = run.commands.send(Command::Stop { closing: true });
+            let _ = run.thread.join();
+        }
+        if self.is_active() {
+            self.state = ServerState::Stopping;
         }
     }
 }
@@ -267,10 +267,11 @@ mod tests {
     use crate::launch::{self, RunSettings};
     use crate::models::ModelEntry;
     use quickai_core::plan::{
-        Endpoint, EnvMode, EnvOp, Gateway, ReadyPlan, SpawnPlan, Traced, Unit,
+        apply_env, Endpoint, EnvMode, EnvOp, Gateway, ReadyPlan, SpawnPlan, Traced, Unit,
     };
     use std::path::{Path, PathBuf};
-    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
     fn traced(value: &str) -> Traced<String> {
@@ -337,7 +338,9 @@ mod tests {
                 internal,
             )
             .unwrap_or_else(|e| panic!("row {name}: {e:?}"));
-            let Start::Spawn(spawn) = &plan.units[0].start[0];
+            let Start::Spawn(spawn) = &plan.units[0].start[0] else {
+                panic!("a spawn plan")
+            };
 
             assert_eq!(
                 spawn.program.value,
@@ -528,9 +531,13 @@ mod tests {
             model: Some("m".into()),
             public_port: gateway.map(|g| g.public_port).or(host_port),
             gateway,
+            decode: Vec::new(),
             units: vec![Unit {
                 id: "test".into(),
                 engine: "test".into(),
+                server_name: "test".into(),
+                warm: vec![],
+                unload: vec![],
                 endpoint: Endpoint {
                     host: "127.0.0.1".into(),
                     port: host_port,
@@ -545,14 +552,17 @@ mod tests {
                         origin: "test".into(),
                     }],
                     group: false,
+                    scrub_loader_env: false,
+                    identity: None,
                 })],
                 ready: ready_path.map(|path| ReadyPlan {
                     path: path.to_string(),
                     expect_status: 200,
                     timeout_ms: 10_000,
                     interval_ms: 25,
+                    on_timeout: quickai_core::doc::engine::OnTimeout::Fail,
                 }),
-                stop: quickai_core::doc::engine::StopPolicy::Kill,
+                stop: quickai_core::plan::StopPlan::default(),
             }],
         }
     }
@@ -638,7 +648,9 @@ mod tests {
     #[test]
     fn an_exit_nobody_asked_for_is_a_crash() {
         let mut plan = sleep_plan(Some(1), Some("/health"), None);
-        let Start::Spawn(spawn) = &mut plan.units[0].start[0];
+        let Start::Spawn(spawn) = &mut plan.units[0].start[0] else {
+            panic!("a spawn plan")
+        };
         spawn.program = traced("sh");
         spawn.args = vec![traced("-c"), traced("echo boom; exit 3")];
         let mut session = Session::new();
@@ -655,7 +667,9 @@ mod tests {
     #[test]
     fn a_program_that_cannot_start_is_a_crash() {
         let mut plan = sleep_plan(Some(1), None, None);
-        let Start::Spawn(spawn) = &mut plan.units[0].start[0];
+        let Start::Spawn(spawn) = &mut plan.units[0].start[0] else {
+            panic!("a spawn plan")
+        };
         spawn.program = traced("/nonexistent/quickai-test-program");
         let mut session = Session::new();
         session.start(&plan, "m", || {});
@@ -702,7 +716,7 @@ mod tests {
         let (server, upstream) = health_server();
         // A port found by binding 0 can still be held when the proxy binds it (a child that another
         // test has just forked keeps the listener until it execs), and a start that cannot bind its
-        // port crashes at once, before anything is spawned: ask for another port.
+        // port crashes before anything is spawned: ask for another port.
         let (mut session, public) = (0..5)
             .find_map(|_| {
                 let public = crate::runtime::process::ephemeral_port().unwrap();
@@ -716,11 +730,17 @@ mod tests {
                     "m",
                     || {},
                 );
-                session.poll(&mut |_| {}, &mut |_| {});
-                (session.state() != ServerState::Crashed).then_some((session, public))
+                // the run binds the port on its own thread: wait for it to settle either way
+                let deadline = Instant::now() + Duration::from_secs(15);
+                while !matches!(session.state(), ServerState::Running | ServerState::Crashed)
+                    && Instant::now() < deadline
+                {
+                    session.poll(&mut |_| {}, &mut |_| {});
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                (session.state() == ServerState::Running).then_some((session, public))
             })
             .expect("five free ports in a row were all taken");
-        wait_for(&mut session, ServerState::Running, 15);
         // reachable on the public port, which is the proxy
         let resp = ureq::get(format!("http://127.0.0.1:{public}/health")).call();
         assert!(resp.is_ok_and(|r| r.status() == 200));
@@ -781,7 +801,7 @@ mod tests {
         proxy: bool,
     ) -> Option<(quickai_core::plan::RunPlan, ModelEntry, PathBuf)> {
         let registry = embedded_registry();
-        let binary = crate::launch::default_binary(&registry);
+        let binary = crate::launch::default_binary(&registry, "llamacpp");
         let model_path = crate::paths::bundled_models_dir().join("Bonsai-8B-Q1_0.gguf");
         assert!(binary.is_file(), "llama-server not built at {binary:?}");
         assert!(model_path.is_file(), "test model missing at {model_path:?}");

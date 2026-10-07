@@ -1,0 +1,13 @@
+{"model":"bonsai-q1","created_at":"2026-10-06T14:03:46.770602965Z","message":{"role":"assistant","content":"Hello"},"done":false}
+{"model":"bonsai-q1","created_at":"2026-10-06T14:03:46.781414014Z","message":{"role":"assistant","content":"!"},"done":false}
+{"model":"bonsai-q1","created_at":"2026-10-06T14:03:46.786072202Z","message":{"role":"assistant","content":" I"},"done":false}
+{"model":"bonsai-q1","created_at":"2026-10-06T14:03:46.789828927Z","message":{"role":"assistant","content":"'m"},"done":false}
+{"model":"bonsai-q1","created_at":"2026-10-06T14:03:46.793291696Z","message":{"role":"assistant","content":" B"},"done":false}
+{"model":"bonsai-q1","created_at":"2026-10-06T14:03:46.796665486Z","message":{"role":"assistant","content":"ons"},"done":false}
+{"model":"bonsai-q1","created_at":"2026-10-06T14:03:46.799954162Z","message":{"role":"assistant","content":"ai"},"done":false}
+{"model":"bonsai-q1","created_at":"2026-10-06T14:03:46.803323424Z","message":{"role":"assistant","content":","},"done":false}
+{"model":"bonsai-q1","created_at":"2026-10-06T14:03:46.806674527Z","message":{"role":"assistant","content":" your"},"done":false}
+{"model":"bonsai-q1","created_at":"2026-10-06T14:03:46.810046527Z","message":{"role":"assistant","content":" AI"},"done":false}
+{"model":"bonsai-q1","created_at":"2026-10-06T14:03:46.813364592Z","message":{"role":"assistant","content":" assistant"},"done":false}
+{"model":"bonsai-q1","created_at":"2026-10-06T14:03:46.816707787Z","message":{"role":"assistant","content":"."},"done":false}
+{"model":"bonsai-q1","created_at":"2026-10-06T14:03:46.816807079Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"length","total_duration":67290584,"load_duration":603880,"prompt_eval_count":15,"prompt_eval_cached_count":14,"prompt_eval_duration":13400000,"eval_count":12,"eval_duration":46370000}

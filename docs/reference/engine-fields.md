@@ -16,7 +16,7 @@ Who the engine is.
 | `license` | text | Its licence, for the About window. |
 | `bundled` | bool | Whether packages ship it. Default false. |
 | `homepage` | text | Where to read about it. |
-| `egress` | list of text | The hosts the engine itself contacts, which the privacy table lists. |
+| `egress` | list of text | The hosts the engine itself contacts, which the privacy table lists; a name that begins `*.` stands for every host under it. |
 
 ## `[provides]`
 
@@ -26,7 +26,7 @@ What a running engine offers.
 |---|---|---|
 | `apis` | list of text | The ids of the APIs it serves. |
 | `web_ui` | `{ path, label }` | Its built-in web page, if it has one; the button that opens it carries `label`. |
-| `accepts` | `{ formats }` | The model file formats it loads. |
+| `accepts` | `{ formats, refs }` | What a model is for it: the file formats it loads (`gguf`), or the kinds of named reference it takes (`ollama`). |
 | `model_name_matters` | bool | Whether a request naming another model loads that one. |
 | `default_port` | whole number | The port it uses when nothing says otherwise. |
 
@@ -36,7 +36,36 @@ Finding the executable without touching the network. `strategies` is a list, tri
 
 | Key | Value | Meaning |
 |---|---|---|
-| `strategies` | list of tables | `{ use = "setting", field }` takes the path a field holds; `{ use = "next_to_exe", file }` looks beside the application's executable; `{ use = "dev_tree", path }` looks below the source checkout the application was built in. |
+| `strategies` | list of tables | `{ use = "setting", field }` takes the path a field holds; `{ use = "next_to_exe", file }` looks beside the application's executable; `{ use = "dev_tree", path }` looks below the source checkout the application was built in; `{ use = "installed", root, pick, binary }` takes the newest build QuickAI installed under `root` (a template such as `${data}/ollama`) and the executable at `binary` inside it, a table by system (`{ linux = "bin/tool", windows = "tool.exe" }`); `{ use = "path_search", name }` looks for a program of that name in the directories of the `PATH`; `{ use = "known_paths", linux, macos, windows }` looks in the places listed for this system, with `~` and `%NAME%` filled in from the environment. |
+
+## `[runtime]`
+
+Facts read from the program itself, once it is found.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `version` | table, below | How to learn its version. |
+| `flags` | table, below | How to learn which command-line flags it supports (`runtime.has_flag`): read from its help text. Read since Phase 3 and used by the adapters of Phase 4. |
+
+## `[runtime]` `flags`
+
+Runs the program and finds the flags it supports in what it prints.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `exec` | list of text | The command: the executable (`${binary}`) and its arguments (`--help`). |
+| `parse` | text | How the output is read (`help_flags`: the words that start with `--`). |
+| `skip` | text | Lines that contain this are left out: the tombstones of flags that were removed. |
+
+## `[runtime]` `version`
+
+Runs the program and reads the version from what it prints. The answer is remembered per executable and modification time, so asking again does not start the program again.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `exec` | list of text | The command: the executable (`${binary}`) and its arguments (`--version`). |
+| `regex` | regular expression | Its first group is the version; standard output is searched, then standard error. The exit status does not matter. |
+| `as` | `version` | The value it becomes (`runtime.version`). |
 
 ## `[launch]`
 
@@ -44,9 +73,45 @@ How the engine is started.
 
 | Key | Value | Meaning |
 |---|---|---|
-| `strategies` | list of text | The ways to bring it up, in order. This version knows `spawn`. |
+| `strategies` | list of text | The ways to bring it up, in order: `attach_if_running` (use one that already answers on its port, if it is the engine) and `spawn` (start one). |
+| `strategy_field` | text | The id of a `choice` field whose options are `auto` (try the strategies in order), `attach` (only the first) and `spawn` (only the second). |
+| `attach` | table, below | Using an engine that is already running. |
 | `spawn` | table | The program to start, below. |
 | `ready` | table | How to tell it is up, below. |
+| `warm` | list of tables, below | Calls made once it answers, to load the model; they are left out when no model is selected, and the engine then runs with nothing loaded. |
+| `unload` | list of tables, below | Calls made before it is stopped or left, to free the model. |
+
+## `[launch.attach]`
+
+An engine that may already be running (a person's own Ollama). A port that answers is used only if it answers like the engine.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `endpoint` | template | Where it would be: `127.0.0.1:${public_port}`, the port its settings give. |
+| `identity` | `{ path, pointer }` | A request only this engine answers in a known way: the answer is JSON with a text at `pointer` (`/version`). Anything else on the port is something else using it. |
+| `liveness` | `{ path, every, failures }` | How to notice that it has gone, since QuickAI has no process of its own to watch: `path` is asked every `every` (default `5s`), and `failures` misses in a row (default 3) mean it is gone. |
+
+## `[[launch.warm]]` and `[[launch.unload]]`
+
+One call of a phase.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `when` | condition | Make the call only while this holds (`model`: when a model is selected). |
+| `call` | table, below | The request. |
+
+## `call`
+
+A request to the engine. Texts in `path` and `body` are templates; the body is JSON written as TOML.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `method` | text | `GET`, `POST`, `PUT`, `DELETE` or `PATCH`. Default `POST`. |
+| `path` | template | A plain path on the engine, starting with `/`. |
+| `body` | table | The JSON body: tables, lists, numbers, booleans and texts. |
+| `timeout` | duration | How long it may take (`600s` for a warm-up, `5s` for an unload, by default). |
+| `best_effort` | bool | A failure is logged and nothing is done about it (an unload that does not answer must not hold up a stop). Default false. |
+| `stream` | `json`, `ndjson` or `sse` | How the reply is read: `json` (the default) is one body, the others a stream of events. Only the calls of `[models]` may stream; a warm-up or an unload is read whole. |
 
 ## `[launch.spawn]`
 
@@ -57,12 +122,12 @@ Starting the program. Every text is a template: `${...}` holes are filled from t
 | `program` | template | The program to start (`${runtime.binary}`). |
 | `args` | list of templates | Its first arguments, one each. The fields' `bind.arg` follow, by `order`. |
 | `env` | list of tables | Environment variables to set, below. |
-| `group` | bool | Start it in its own process group (not used yet). |
-| `stop` | table | How to stop it: `{ policy = "kill" }`. |
+| `group` | bool | Start it in a process group of its own (a job on Windows), so that stopping it takes the processes it started with it, and, on Linux, so that it follows QuickAI if QuickAI is killed. Default false. |
+| `stop` | table | How to stop it: `{ policy = "kill" }` (the default: at once), or `{ policy = "graceful", grace = "10s", exit_grace = "2s" }`: ask it to leave (SIGTERM to its group; Windows has no such signal), wait `grace` (`exit_grace` while the application is closing), then kill what is left. |
 
-## `[[launch.spawn.env]]`
+## `[[launch.spawn.env]]` and `[[field]]` `bind.env`
 
-One environment variable: `value` or `prepend`, not both.
+One environment variable: `value` or `prepend`, not both. In `[[launch.spawn.env]]` the document sets it for every start; in a field's `bind.env` the field's value does (`${value}`), after the document's own variables, in the order of the field's other bindings, and only while the field has a value.
 
 | Key | Value | Meaning |
 |---|---|---|
@@ -71,7 +136,7 @@ One environment variable: `value` or `prepend`, not both.
 | `prepend` | template | Put this in front of what the variable already holds, joined with `sep`. |
 | `sep` | text | The joiner for `prepend`. Default `:`. |
 | `when` | condition | Only while this holds. |
-| `locked` | bool | A user's own environment may not override it. |
+| `locked` | bool | The person's own lines may not override it (`[[launch.spawn.env]]` only: what a field decides is theirs to change). |
 
 ## `[launch.ready]`
 
@@ -82,6 +147,7 @@ Waiting for the engine to answer.
 | `probe` | `{ use = "http", path, expect }` | A request to make; `expect` is the status that means ready (default 200). |
 | `timeout` | duration | How long to wait before giving up (`120s`). |
 | `interval` | duration | How often to ask (`500ms`). |
+| `on_timeout` | `fail` or `wait` | What the timeout means. `fail` (the default): say so, stop what was started and end in Crashed. `wait`: say so and go on waiting, because the program may still be loading; only its exit or a Stop ends the wait. |
 
 ## `[[field]]`
 
@@ -95,7 +161,7 @@ One setting. Fields build the settings the window shows, and each says how its v
 | `type` | a type, below | What kind of value it holds. Required. |
 | `range` | `[low, high]` | The numbers it may hold; the number box stops there. |
 | `step` | number | How far one pixel of dragging moves a number. |
-| `default` | value or `{ fn, args }` | The value when nothing was chosen: a literal, or a named function over context values (`recommend_ctx_size`). |
+| `default` | value or `{ fn, args }` | The value when nothing was chosen: a literal, a text with `${...}` holes filled in from the engine's context (`${data}/ollama/models`), or a named function over context values (`recommend_ctx_size`). |
 | `optional` | bool | The field may stay empty. |
 | `recompute_on` | list of text | What re-derives the default. `model`: picking another model. |
 | `legacy_key` | text | The key it has always had in `settings.json`; its value is stored there, not under `values`. |
@@ -121,6 +187,16 @@ Turning a value into engine configuration. In an argument template, `${value}` i
 | `arg` | list of templates | Arguments to add to the command line. |
 | `arg_split` | bool | The value is a text of arguments, split like a shell does (quotes group words); nothing is added when it is empty. |
 | `order` | whole number | Where among the field arguments these go. Default: the field's `ui.order`. |
+| `env` | list of tables, below | Environment variables of the engine that this field decides, each with an optional condition on `value`. |
+| `env_lines` | table, below | For a `kv_lines` field: its lines are environment variables of the engine. |
+
+## `[[field]]` `bind.env_lines`
+
+What a field of `KEY=VALUE` lines may set.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `protect` | list of text | Names the person's lines may not set (`OLLAMA_MODELS`), besides every variable the document locks or adds to (`prepend`): the document's value stands. A name is protected in any spelling. |
 
 ## `[[field]]` `ui`
 
@@ -130,8 +206,176 @@ How the window shows a field.
 |---|---|---|
 | `section` | text | Where it goes: `primary` (the row under the model), `advanced` (inside Settings), or a section of your own. Default `advanced`. |
 | `order` | whole number | Its place in the section, lowest first; those without come last. |
-| `widget` | text | A widget other than the type's usual one (`runtime_manager`). |
-| `hint` | text | Greyed text shown in an empty text box. |
+| `widget` | text | A widget other than the type's usual one: `runtime_manager` (for a `runtime_path`) or `button` (a field that holds nothing, usually of type `hidden`: it is drawn as a button with the field's `label`, pressed only while `enabled_when` holds). Another name is an error when the document loads. |
+| `hint` | text | Greyed text shown in an empty text box. A number with a hint is a box that can be empty (the hint says what empty means), not a drag box. |
+| `action` | text | What a click on a `button` makes the application do, as `verb` or `verb:what` (`open:settings`). A button needs one and nothing else has one. |
+
+## `[models]`
+
+For an engine that keeps its own models, named references it lists, pulls and removes (Ollama): each model is a name, not a file. An engine without this section has files in a folder.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `needs_server` | bool | The calls need the engine running. Stopped, only what it listed last time can be shown, and nothing is asked or started until the person presses a button. Default false. |
+| `list` | table, below | The call that lists the models, and where each one is in the reply. |
+| `pull` | table, below | The call that fetches a model by name, with its progress. |
+| `remove` | table, below | The call that removes a model. |
+| `capabilities` | table, below | The call that asks what one model can do. |
+| `input_rules` | list of tables, below | What the model box makes of what was typed: the first rule whose `when` holds. Nothing typed is nothing; text no rule takes is refused. |
+| `sources` | list of tables, below | For an engine whose models are files: where they are kept (read by Phase 4). |
+| `acquire` | table, below | For an engine whose models are files: how one gets into the folder (read by Phase 4). |
+| `lookup` | list of tables, below | Looking models up online (read by Phase 4). |
+
+## `[[models.sources]]`
+
+A place models are found. Read from Phase 4; until then an engine with files keeps what the window has always done.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `use` | text | `bundle_dir` (a folder shipped with the application) or `scan_dir` (one the person can write to). Required. |
+| `path` | template | The folder (`${exe_dir}/models`, `${field.models_dir}`). Required. |
+| `ext` | list of text | The file endings that are models (`.gguf`). |
+| `writable` | bool | Whether downloads and imports may go here. Default false. |
+
+## `[models]` `acquire`
+
+How a model gets into the folder (read from Phase 4).
+
+| Key | Value | Meaning |
+|---|---|---|
+| `use` | text | `file`: it is downloaded or linked as a file. Required. |
+| `dir` | template | Where it goes. |
+
+## `[[models.lookup]]`
+
+One way of looking models up online (read from Phase 4): the primitive that does it and what it is told. Every key besides `id` and `use` is the primitive's own and is checked by it.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `id` | text | What `input_rules` call it (`provider = "hf_popular"`). Required. |
+| `use` | text | The primitive (`catalog.hf_gguf`). Required. |
+
+## `[models]` `list`
+
+The names of the models the engine has, in the order it gives them.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `call` | table | The request (`GET /api/tags`); `${data}` and the other names of the engine's context are available in its path. |
+| `items` | pointer | The array of models in the reply (`/models`). Required. |
+| `map` | table, below | Where the parts of one model are. Required. |
+| `cache` | template | Where the last reply is kept (`${data}/ollama/catalog-cache.json`), written whole or not at all, so that a list can be shown while the engine is not running. |
+
+## `[models]` `list.map`
+
+JSON pointers into one model of the list.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `id` | pointer | The name the engine knows it by, which is what a request names (`/name`). Required; a model with none is skipped, with a word in the log. |
+| `display` | pointer | What the picker shows. Default: the name. |
+| `size_bytes` | pointer | How big it is: what the context size and the speed estimate are worked out from. |
+| `digest` | pointer | Its checksum. |
+| `capabilities` | pointer | A list of what it can do (`completion`, `vision`). |
+
+## `[models]` `pull`
+
+Fetching a model by name. A pull is the one time the engine reaches the internet, and only on a click.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `call` | table | The request, with `${ref}` the name to fetch (`body = { model = "${ref}" }`) and `stream = "ndjson"` when the engine reports progress as it goes. |
+| `progress` | table, below | Where the progress is in the events of the stream; without it the usual Ollama shape is assumed. |
+
+## `[models]` `pull.progress`
+
+JSON pointers into one event of a pull. A pull adds layers up as the engine announces them, so a layer is told apart by `key`; the bar never goes back, and stays short of full until the engine says it is done.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `key` | pointer | What tells one layer from another (`/digest`). |
+| `completed` | pointer | Bytes of the layer done (`/completed`). |
+| `total` | pointer | Bytes the layer needs (`/total`). |
+| `status` | pointer | The engine's own words (`/status`), for the log. |
+| `error` | pointer | Where an event says the pull failed, whatever the HTTP status was. Default `/error`. |
+| `done` | text | The `status` that ends the pull. Default `success`. |
+
+## `[models]` `remove`
+
+Removing a model, once the person has confirmed it. The model that is loaded is never removed: the person stops the server first.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `call` | table | The request, with `${ref}` the name as the engine lists it (`DELETE /api/delete`). |
+
+## `[models]` `capabilities`
+
+What one model can take as input, asked of the engine.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `call` | table | The request, with `${ref}` the model. |
+| `pointer` | pointer | Where the list of what it can do is in the reply (`/capabilities`). Required. |
+
+## `[[models.input_rules]]`
+
+One rule of the model box. The text is trimmed first; a rule with no `when` takes whatever is left, and a rule after it is never reached (a warning).
+
+| Key | Value | Meaning |
+|---|---|---|
+| `when` | condition | A condition over `input`, with `matches(input, "regex")`, `starts_with`, `is_url(input)`, `is_file(input)` (whether it names a file on this machine) and `path_after_host(input)`. |
+| `do` | `pull` or `reject` | What to do with it. Required. |
+| `ref` | template | For `pull`: the name to fetch, over `input` (`${input}`, or `hf.co/${path_after_host(input)}` for a link to a page). Required for `pull`. |
+| `message` | text | For `reject`: what the person is told. Required for `reject`. |
+| `provider` | text | For `search` (read by Phase 4): the lookup that answers it. |
+
+## `[traffic]`
+
+Which of the engine's APIs the Live tab reads.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `apis` | list of text | Ids from a vocabulary; each must be defined there, and one with a `decode` is read. Without this table every API in `[provides]` `apis` is. |
+
+## `[api_info]`
+
+What the 🔌 API panel says to a person who connects an app. Every text is a template over the engine's context (`${public_port}`, `${session.model_display}`).
+
+| Key | Value | Meaning |
+|---|---|---|
+| `base_url` | template | The address of the OpenAI-compatible API (`http://127.0.0.1:${public_port}/v1`). Required. |
+| `extra_urls` | list of tables, below | More addresses worth showing: the engine's own API. |
+| `api_key` | `{ value, note }` | What to put in the key box and a note under it. |
+| `model` | `{ value, note }` | The name a client should give for the model and a note under it. With no model selected the panel shows `local-model`. |
+| `example` | text | The id of the API whose curl example is shown (`openai.chat`): the first example of the vocabulary whose `when` holds. |
+
+## `[[api_info.extra_urls]]`
+
+One more address.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `label` | text | What it is (`Ollama API`). Required. |
+| `url` | template | The address. Required. |
+
+## `[[diagnostic]]`
+
+Advice for a run that went wrong. It is shown under the log when every condition of `when` holds.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `when` | table, below | What has to be so. Required. |
+| `hint` | template | What to tell the person, over the engine's context (`${field.port}`). Required. |
+| `action` | text | A button under the hint, as `verb` or `verb:what` (`focus_field:port`). |
+
+## `[[diagnostic]]` `when`
+
+Both keys may be given; then both must hold. One at least is needed.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `log_matches` | regular expression | Looked for in the lines of the log; a pattern that does not compile is an error when the document loads. |
+| `exited_during` | `starting` or `running` | The run ended while it was in this state. |
 
 ## `[acquire]`
 
@@ -145,6 +389,9 @@ Where builds of the engine come from and where they are kept. It configures the 
 | `install` | table, below | How a downloaded file becomes an installed build. |
 | `backends` | list of tables, below | What a file name says about the GPU it was made for. |
 | `filter_hint` | text | The placeholder of the box that narrows the list of builds. |
+| `tested` | `{ tag }` | The release this document was tested with: it is offered first, marked, and `pins` are for it. |
+| `overlays` | list of tables, below | Archives unpacked over a build on request, by platform (ROCm's libraries): never a build of their own, and off until chosen. |
+| `pins` | table of text | The sha256 of each file of the tested release by file name, as `sha256:` and 64 hexadecimal digits. A download of that release must have it, and must agree with the digest the host lists. |
 
 ## `[acquire]` `feed`
 
@@ -157,6 +404,8 @@ Where builds of the engine come from and where they are kept. It configures the 
 | `per_page` | 1 to 100 | How many releases to ask for. Default 10. |
 | `show` | whole number | How many releases that have a build for this machine to show. Default 5. |
 | `prereleases` | bool | Whether a release GitHub marks as a prerelease counts. Default false. |
+| `api` | address | The root of the API (`https://api.github.com`, the default). Another root, `http` or `https`, is how a test points the feed at a fake; only documents QuickAI trusts may name one. |
+| `digest` | bool | The feed lists a sha256 for each file (GitHub's `digest`) and a build carries it, for the installer to check. Default false. |
 
 ## `[acquire]` `assets`, `by = "keywords"`
 
@@ -183,13 +432,26 @@ The file is chosen by exact name: the first rule whose condition holds names it.
 
 ## `[acquire]` `install`
 
-`use = "archive"`: unpack a `.zip` or `.tar.gz` and find the executable inside.
+`use = "archive"`: unpack a `.zip`, `.tar.gz` or `.tar.zst`, safely, into a directory of its own that is renamed into place when it is whole, and find the executable inside.
 
 | Key | Value | Meaning |
 |---|---|---|
 | `use` | `archive` | The kind of install. |
 | `binary` | `{ name, search_depth }` | The executable's file name without a platform suffix, and how many directory levels below the build's directory to look for it (default 4, at most 16). |
 | `chmod` | bool | Mark the executable as executable (Unix). |
+| `verify` | `none` or `digest` | `digest`: compare the download with the sha256 the host lists for the file and the one this document pins before anything is unpacked; a build with neither is installed and said to be unchecked. Default `none`. |
+| `smoke` | list of text | A command that must succeed on the unpacked build before it counts as installed, starting with the executable: `["${binary}", "--version"]`. |
+| `skip` | list of `{ when, glob }` | Entries of the archive to leave out: `glob` is a path inside the build (`lib/ollama/cuda_*`, `*` for a run of characters inside one name), `when` a condition on this machine. What is below a directory that matches goes with it. |
+
+## `[[acquire.overlays]]`
+
+One archive that can be added to a build.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `id` | text | Letters, digits and `_`; names the choice. |
+| `label` | text | What the window says about it (`AMD ROCm (adds about 1 GB)`). |
+| `rules` | list of `{ when, name }` | The file for this machine, by exact name; the first rule whose condition holds names it. A platform no rule matches has no such overlay. |
 
 ## `[acquire]` `backends`
 
@@ -211,13 +473,13 @@ Each entry names a GPU backend by a word in a file name. The first entry whose w
 | `text` | text | a one-line box |
 | `choice` | text, one of `options` | a drop-down |
 | `port` | whole number, 1 to 65535 | a drag box |
-| `dir` | text, a directory | a one-line box |
-| `file` | text, a file | a one-line box |
+| `dir` | text, a directory | a one-line box with a Browse button |
+| `file` | text, a file | a one-line box with a Browse button |
 | `url` | text, an address | a one-line box |
 | `runtime_path` | text, a file or a download address | the runtime manager when `ui.widget` says so, else a one-line box |
-| `kv_lines` | text, one `KEY=VALUE` per line | a one-line box (a multi-line one is not built yet) |
+| `kv_lines` | text, one `KEY=VALUE` per line | a box of several rows, with what is wrong with a line under it |
 | `model_ref` | text, a model | a one-line box |
-| `hidden` | any | not drawn: the value is only stored |
+| `hidden` | any | not drawn: the value is only stored (unless `ui.widget` names a widget) |
 
 ## The context
 
@@ -249,6 +511,7 @@ Conditions, defaults and templates are written in one small language (docs/archi
 | `runtime.dir` | a string |
 | `runtime.flags` | a list of string |
 | `runtime.version` | a string |
+| `session.attached` | a bool |
 | `session.crashed` | a bool |
 | `session.model_display` | a string |
 | `session.model_ref` | a string |

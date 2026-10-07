@@ -9,12 +9,13 @@ use crate::events::{ServerState, TrafficEvent};
 use crate::gpu::{self, GpuVendor};
 use crate::hardware;
 use crate::jobs::Job;
-use crate::launch::{self, MachineFacts, RunSettings, ENGINE_ID};
+use crate::launch::MachineFacts;
 use crate::models::{discover_all, ModelEntry};
 use crate::paths;
 use crate::remote::{LookupEvent, RemoteModel};
 use crate::runtime::Session;
 use crate::settings::Settings;
+use engine::NamedModels;
 use quickai_core::form::{self, FormModel};
 use quickai_core::plan::{HostFacts, ModelInfo, Selection};
 use quickai_core::registry::Registry;
@@ -28,15 +29,21 @@ mod api_info;
 mod confirm_delete;
 mod controls;
 mod diagnostics;
+mod engine;
+mod foreign_program;
 mod header;
 mod live_traffic;
 mod log_pane;
 mod model_bar;
+mod named_models;
 mod run_bar;
 mod runtime_manager;
 mod settings_window;
 mod values;
 mod widgets;
+
+/// The widgets a document may name, for the loader (`prims::known`).
+pub(crate) use widgets::NAMED as NAMED_WIDGETS;
 
 const MAX_LOG_LINES: usize = 2000;
 
@@ -60,21 +67,38 @@ pub struct App {
     session: Session,
     /// The loaded documents: what engines exist and how they run.
     registry: Registry,
+    /// The application's own documents, without the person's: what the engine's own strategies find is
+    /// judged against these (see `foreign_program.rs`).
+    embedded: Registry,
+    /// A program the person has not yet said may run, which Start is waiting on.
+    pending_foreign: Option<quickai_core::guard::Foreign>,
+    /// The engine in use: the one the settings name, or llama.cpp when there is no document for it.
+    engine: String,
+    /// What the window holds for an engine whose models the daemon lists (Ollama).
+    named: NamedModels,
     /// What is known about this machine, for planning a run.
     machine: MachineFacts,
     /// What the file held when it was loaded: the keys this version does not know are saved back.
     stored: Settings,
+    /// Where settings are written; `None` is where `settings.json` is kept (a test names a file of
+    /// its own).
+    settings_path: Option<PathBuf>,
     /// The values of the engine's fields (`llamacpp.port`, ...): what the controls show and a run uses.
     values: FieldValues,
     /// The machine, as planning and the form see it; the parts that change are set at each use.
     host_facts: HostFacts,
+    /// Where the application keeps its data (`~/.quickai`), when a test says another place.
+    data_dir_override: Option<String>,
     models: Vec<ModelEntry>,
     selected: usize,
     log_lines: VecDeque<String>,
     bundled_models_dir: PathBuf,
     models_dir: PathBuf,
-    llama_server_bin: PathBuf,
+    /// The engine's executable, wherever its document says it is (or the user chose).
+    binary: PathBuf,
     missing_binary_warned: bool,
+    /// The run that is going or went reached Running (so a crash was not at the start).
+    run_reached_running: bool,
     /// Scratch text-edit buffer for the combined URL/path/search box — not
     /// persisted. What it means depends on its shape: a `http(s)://` URL is
     /// downloaded, an existing local file path is imported, anything else
@@ -147,67 +171,77 @@ const MAX_TRAFFIC_TURNS: usize = 200;
 /// and perform the delete means the modal doesn't need to re-derive it
 /// (or risk acting on a stale index) once the user confirms.
 enum PendingDelete {
-    Model { filename: String, path: PathBuf },
-    Build { label: String, install_dir: PathBuf },
+    Model {
+        filename: String,
+        path: PathBuf,
+    },
+    Build {
+        label: String,
+        install_dir: PathBuf,
+    },
+    /// A model an engine keeps and lists by name, removed by asking the engine.
+    Listed {
+        name: String,
+    },
 }
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let settings = Settings::load();
-
         let registry = config::build_registry(&config::ConfigDirs::from_environment());
-        let log_lines = config_log_lines(&registry);
-        let values = FieldValues::from_settings(&settings, registry.engine(ENGINE_ID));
-
-        let bundled_models_dir = paths::bundled_models_dir();
-        let models_dir_override = values.text("models_dir").map(PathBuf::from);
-        let models_dir = models_dir_override
-            .clone()
-            .unwrap_or_else(paths::user_models_dir);
-        let _ = std::fs::create_dir_all(&models_dir);
-        let runtime = RuntimeManager {
-            input: values
-                .text("bin_override")
-                .map(str::to_string)
-                .unwrap_or_default(),
-            ..Default::default()
-        };
-        let llama_server_bin = launch::locate_binary(&registry, values.text("bin_override"));
-        let models = discover_all(&bundled_models_dir, &models_dir);
-
-        let selected = values
-            .text("last_model")
-            .and_then(|name| models.iter().position(|m| m.filename == name))
-            .unwrap_or(0);
-
-        let total_ram_bytes = hardware::total_ram_bytes();
-        let gpu_vendors = gpu::detect();
-        let machine = MachineFacts::detect(total_ram_bytes, &gpu_vendors);
-
         cc.egui_ctx.set_visuals(if settings.dark_mode {
             egui::Visuals::dark()
         } else {
             egui::Visuals::light()
         });
+        Self::build(
+            settings,
+            registry,
+            hardware::total_ram_bytes(),
+            gpu::detect(),
+            None,
+        )
+    }
 
-        let models_dir_input = models_dir.display().to_string();
+    /// The application's state for these settings and documents. `settings_path` is where they are
+    /// written (`None`: where `settings.json` is kept); the machine is what the caller found out
+    /// about it.
+    pub(crate) fn build(
+        settings: Settings,
+        registry: Registry,
+        total_ram_bytes: u64,
+        gpu_vendors: Vec<GpuVendor>,
+        settings_path: Option<PathBuf>,
+    ) -> Self {
+        let mut log_lines = config_log_lines(&registry);
+        let (engine, note) = config::engine_in_use(&registry, &settings);
+        log_lines.extend(note);
+        let values = FieldValues::from_settings(&settings, registry.engine(&engine));
+        let machine = MachineFacts::detect(total_ram_bytes, &gpu_vendors);
 
         let mut app = Self {
             session: Session::new(),
+            embedded: config::build_registry(&config::ConfigDirs::default()),
+            pending_foreign: None,
             registry,
-            host_facts: launch::host_facts(&llama_server_bin, machine.clone(), None),
+            engine,
+            named: NamedModels::default(),
+            host_facts: HostFacts::default(),
+            data_dir_override: None,
             machine,
             values,
             dark_mode: settings.dark_mode,
             enable_traffic_proxy: settings.enable_traffic_proxy,
             stored: settings,
-            models,
-            selected,
+            settings_path,
+            models: Vec::new(),
+            selected: 0,
             log_lines,
-            bundled_models_dir,
-            models_dir,
-            llama_server_bin,
+            bundled_models_dir: paths::bundled_models_dir(),
+            models_dir: PathBuf::new(),
+            binary: PathBuf::new(),
             missing_binary_warned: false,
+            run_reached_running: false,
             model_input: String::new(),
             download: None,
             show_lookup: false,
@@ -219,33 +253,29 @@ impl App {
             show_api_info: false,
             show_settings: false,
             show_about: false,
-            models_dir_override,
-            models_dir_input,
+            models_dir_override: None,
+            models_dir_input: String::new(),
             settings_error: None,
             active_tab: Tab::Main,
             traffic: VecDeque::new(),
             selected_session: None,
             gpu_vendors,
-            runtime,
+            runtime: RuntimeManager::default(),
             pending_delete: None,
         };
-        app.refresh_recommendation();
+        // the executable, the models and the panels' state of the engine in use
+        app.load_engine_state();
         app
     }
 
     /// The model the picker has selected, as the form and the planner know a model.
     fn selected_model_info(&self) -> Option<ModelInfo> {
-        self.models.get(self.selected).map(|m| ModelInfo {
-            id: m.filename.clone(),
-            display: m.display.clone(),
-            path: m.path.display().to_string(),
-            size_bytes: m.size_bytes,
-        })
+        self.models.get(self.selected).map(|m| m.info())
     }
 
     /// What the form and the planner are asked about: the engine, the model and the field values.
     fn form_selection(&self) -> Selection {
-        let mut selection = Selection::new(ENGINE_ID);
+        let mut selection = Selection::new(&self.engine);
         selection.model = self.selected_model_info();
         selection.values = self.values.map().clone();
         selection
@@ -255,8 +285,9 @@ impl App {
     /// server is running (starting, running or stopping).
     fn form_facts(&self) -> HostFacts {
         let mut facts = self.host_facts.clone();
-        facts.binary = Some(self.llama_server_bin.display().to_string());
+        facts.binary = Some(self.binary.display().to_string());
         facts.session_running = self.session.is_active();
+        facts.session_attached = self.session.attached();
         facts
     }
 
@@ -294,10 +325,13 @@ impl App {
             hardware::recommend(&self.models, self.total_ram_bytes, self.gpu_offload());
     }
 
+    /// The port the engine is on: the field the document marks as the public one, else the engine's
+    /// own default.
     fn port(&self) -> u16 {
         self.values
             .int("port")
             .and_then(|n| u16::try_from(n).ok())
+            .or_else(|| self.engine_doc().and_then(|e| e.doc.provides.default_port))
             .unwrap_or(8080)
     }
 
@@ -310,30 +344,6 @@ impl App {
         match path {
             Some(path) => self.values.set("bin_override", path.display().to_string()),
             None => self.values.clear("bin_override"),
-        }
-    }
-
-    /// What a run needs from the controls, read from the field values.
-    fn run_settings(&self) -> RunSettings {
-        RunSettings {
-            port: self.port(),
-            ctx_size: self
-                .values
-                .int("ctx_size")
-                .and_then(|n| u32::try_from(n).ok())
-                .unwrap_or(4096),
-            n_gpu_layers: self
-                .values
-                .int("n_gpu_layers")
-                .and_then(|n| u32::try_from(n).ok())
-                .unwrap_or(999),
-            extra_args: self
-                .values
-                .text("extra_args")
-                .unwrap_or_default()
-                .to_string(),
-            bin_override: self.values.text("bin_override").map(str::to_string),
-            traffic_proxy: self.enable_traffic_proxy,
         }
     }
 
@@ -356,28 +366,69 @@ impl App {
         }
     }
 
-    /// Writes `settings.json`: the keys this version does not know come back from the file as it was
-    /// loaded, the application's own two settings from here, and the engine's fields through their
-    /// `legacy_key`s (or under `values`).
-    fn save_settings(&self) {
+    /// What a button of a form asked for, by the id its document gave it. An id this version does
+    /// not know is said in the log, and nothing is guessed.
+    fn invoke(&mut self, action: &str) {
+        match action {
+            "open:settings" => self.show_settings = true,
+            other if other.starts_with("open:settings.") => self.show_settings = true,
+            other if other.starts_with("focus_field:") => {
+                // the field is where its section puts it: Settings for an advanced one, the row of
+                // controls above for a primary one, which is already on screen
+                let id = &other["focus_field:".len()..];
+                let section = self
+                    .engine_doc()
+                    .and_then(|e| e.doc.fields.iter().find(|f| f.id == id))
+                    .and_then(|f| f.ui.section.clone());
+                if section.as_deref().unwrap_or("advanced") != "primary" {
+                    self.show_settings = true;
+                }
+                self.push_log(format!("[quickai] Look at the `{id}` setting."));
+            }
+            other => self.push_log(format!(
+                "[quickai] A button asked for `{other}`, which this version of QuickAI does not do"
+            )),
+        }
+    }
+
+    /// The settings as they are now: the keys this version does not know come back from the file as it
+    /// was loaded, the application's own two settings from here, and the fields of the engine in use
+    /// through their `legacy_key`s (or under `values`). The settings of the engines that are not in
+    /// use, and the choice of engine, are as they were.
+    fn settings_now(&self) -> Settings {
         let mut settings = self.stored.clone();
         settings.dark_mode = self.dark_mode;
         settings.enable_traffic_proxy = self.enable_traffic_proxy;
-        if let Some(engine) = self.registry.engine(ENGINE_ID) {
+        if let Some(engine) = self.registry.engine(&self.engine) {
             let mut values = self.values.clone();
             match self.models.get(self.selected) {
                 Some(m) => values.set("last_model", m.filename.clone()),
                 None => values.clear("last_model"),
             }
-            match &self.models_dir_override {
-                Some(dir) => values.set("models_dir", dir.display().to_string()),
-                None => values.clear("models_dir"),
+            // the models folder is the setting of an engine whose models are files
+            if !self.lists_models() {
+                match &self.models_dir_override {
+                    Some(dir) => values.set("models_dir", dir.display().to_string()),
+                    None => values.clear("models_dir"),
+                }
             }
             // Every value the controls can produce fits its key; if one somehow does not, the
             // engine's keys keep what the file had rather than a half-written file.
             let _ = settings.set_engine_values(engine, values.map());
         }
-        settings.save();
+        settings
+    }
+
+    /// Writes `settings.json`.
+    fn save_settings(&self) {
+        self.write_settings(&self.settings_now());
+    }
+
+    fn write_settings(&self, settings: &Settings) {
+        match &self.settings_path {
+            Some(path) => settings.save_to(path),
+            None => settings.save(),
+        }
     }
 
     /// Applies one proxy `TrafficEvent` to the 📡 Live tab's turn list.
@@ -508,9 +559,13 @@ impl eframe::App for App {
         self.poll_download();
         self.poll_lookup();
         self.poll_runtime_manager();
+        self.poll_named_models(ui.ctx());
 
         let active = self.session.is_active();
         let state = self.session.state();
+        if state == ServerState::Running {
+            self.run_reached_running = true;
+        }
 
         egui::CentralPanel::default().show(ui, |ui| {
             self.show_header(ui);
@@ -539,6 +594,7 @@ impl eframe::App for App {
         self.show_settings_window(ui.ctx());
         self.show_about_window(ui.ctx());
         self.show_confirm_delete_modal(ui.ctx());
+        self.show_foreign_program_modal(ui.ctx());
     }
 
     fn on_exit(&mut self) {

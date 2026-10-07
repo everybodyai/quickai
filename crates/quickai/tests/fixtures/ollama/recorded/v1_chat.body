@@ -1,0 +1,1 @@
+{"id":"chatcmpl-539","object":"chat.completion","created":1791295427,"model":"bonsai-q1","system_fingerprint":"fp_ollama","choices":[{"index":0,"message":{"role":"assistant","content":"Hello! I'm Bonsai, your AI assistant."},"finish_reason":"length"}],"usage":{"prompt_tokens":15,"prompt_tokens_details":{"cached_tokens":14},"completion_tokens":12,"total_tokens":27}}

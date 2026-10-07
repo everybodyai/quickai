@@ -4,7 +4,8 @@
 use eframe::egui;
 use quickai_core::form::{Edit, FormField};
 
-use super::{widgets, App};
+use super::widgets::{self, Reply};
+use super::App;
 
 impl App {
     /// The row of labelled controls. It is one group, disabled as a whole while the server runs
@@ -18,6 +19,7 @@ impl App {
         let fields: Vec<&FormField> = section.fields.iter().filter(|f| f.visible).collect();
         let enabled = fields.iter().all(|f| f.enabled);
         let mut edits = Vec::new();
+        let mut actions = Vec::new();
         ui.group(|ui| {
             ui.add_enabled_ui(enabled, |ui| {
                 ui.horizontal(|ui| {
@@ -29,16 +31,21 @@ impl App {
                         if let Some(help) = &field.help {
                             label.on_hover_text(help);
                         }
-                        if let Some(value) = widgets::show(ui, field) {
-                            edits.push(Edit {
+                        match widgets::show(ui, field) {
+                            Some(Reply::Set(value)) => edits.push(Edit {
                                 key: field.key.clone(),
                                 value,
-                            });
+                            }),
+                            Some(Reply::Invoke(action)) => actions.push(action),
+                            None => {}
                         }
                     }
                 });
             });
         });
         self.values.apply(edits);
+        for action in actions {
+            self.invoke(&action);
+        }
     }
 }

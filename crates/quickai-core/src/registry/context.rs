@@ -89,6 +89,7 @@ pub fn schema(engine: &EngineDoc, site: Site) -> Type {
             Type::object([
                 ("running", Type::Bool),
                 ("crashed", Type::Bool),
+                ("attached", Type::Bool),
                 ("model_display", Type::Str),
                 ("model_ref", Type::Str),
             ]),

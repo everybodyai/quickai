@@ -5,7 +5,10 @@
 //! `locate.*` lives here; `spawn` and `probe.http` are in `runtime`, next to the supervisor that
 //! drives them. `PROVIDED` is the one list of what exists.
 
+pub mod engine_models;
+pub mod exec_probe;
 pub mod feed;
+pub mod http_call;
 pub mod install;
 pub mod locate;
 
@@ -16,12 +19,21 @@ pub const PROVIDED: &[&str] = &[
     "locate.setting@1",
     "locate.next_to_exe@1",
     "locate.dev_tree@1",
+    "locate.installed@1",
+    "locate.path_search@1",
+    "locate.known_paths@1",
+    "exec.probe@1",
     "feed.github_release@1",
     "install.archive@1",
     "spawn@1",
+    "attach@1",
     "probe.http@1",
+    "http_call@1",
+    "decode@1",
 ];
 
+/// The primitives this build provides and the widgets its interface draws, which is what documents
+/// are held to when they load.
 pub fn known() -> KnownPrimitives {
-    KnownPrimitives::new(PROVIDED)
+    KnownPrimitives::new(PROVIDED).with_widgets(crate::app::NAMED_WIDGETS)
 }

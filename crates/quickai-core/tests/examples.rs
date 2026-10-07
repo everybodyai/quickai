@@ -66,7 +66,9 @@ fn every_example_is_valid_toml_with_a_valid_envelope_in_the_right_directory() {
 }
 
 #[test]
-fn the_llamacpp_example_fits_the_typed_engine_schema() {
+fn p3_e20_the_llamacpp_example_fits_the_typed_engine_schema_and_nothing_asserts_sections_are_ignored(
+) {
+    // what is left over is p3_schema's to say (E18): only `components`, which wait for Phase 4
     let path = examples_dir().join("engines").join("llamacpp.toml");
     let (envelope, body) = Envelope::split(read(&path)).unwrap();
     assert_eq!(envelope.kind, Kind::Engine);
@@ -74,34 +76,4 @@ fn the_llamacpp_example_fits_the_typed_engine_schema() {
         .unwrap_or_else(|e| panic!("{}: {}: {}", path.display(), e.path, e.message));
     assert_eq!(typed.value.engine.name, "llama.cpp");
     assert!(typed.value.fields.len() >= 7);
-
-    // what this version does not interpret yet, as the unknown keys it would report
-    let mut unknown: Vec<String> = typed
-        .unknown
-        .iter()
-        .map(|p| p.to_string())
-        .filter(|p| !p.contains('[')) // top-level sections only
-        .collect();
-    unknown.sort();
-    unknown.dedup();
-    // `acquire` is interpreted since Phase 2: the example's section fits the typed schema
-    assert!(
-        !unknown
-            .iter()
-            .any(|u| u.split('.').next() == Some("acquire")),
-        "the example's [acquire] has keys the typed schema does not know: {unknown:?}"
-    );
-    for section in [
-        "runtime",
-        "models",
-        "components",
-        "traffic",
-        "api_info",
-        "diagnostic",
-    ] {
-        assert!(
-            unknown.iter().any(|u| u.split('.').next() == Some(section)),
-            "expected `{section}` among the sections this version ignores: {unknown:?}"
-        );
-    }
 }

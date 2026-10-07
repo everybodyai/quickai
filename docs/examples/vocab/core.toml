@@ -61,16 +61,20 @@ fields = [
 ]
 
 # ---- APIs: what a client can call, and how the proxy reads it ------------------------------------------
-# `decode` drives the Live tab: framing, and JSON pointers to the text. Relaying is never affected.
+# `decode` drives the Live tab: framing, and JSON pointers to the text of a request and of a reply
+# (`error` says where the engine reports what went wrong). Relaying is never affected. The embedded
+# copy (crates/quickai/manifests/vocab/core.toml) has the same APIs; `adapter_kind` and the curl examples
+# join it when the interface uses them.
 [[api]]
 id = "openai.chat"
-paths = ["/v1/chat/completions"]
+paths = ["/v1/chat/completions", "/chat/completions"]
 capabilities = ["chat"]
 
 [api.decode]
 framing = ["sse", "json"]
 delta = ["/choices/0/delta/content"]
 final = ["/choices/0/message/content"]
+error = ["/error"]
 
 [api.decode.chat]
 messages = "/messages"
@@ -99,7 +103,7 @@ curl ${api.base_url}/chat/completions \
 
 [[api]]
 id = "openai.completions"
-paths = ["/v1/completions"]
+paths = ["/v1/completions", "/completions"]
 capabilities = ["completion"]
 
 [api.decode]
@@ -107,6 +111,7 @@ framing = ["sse", "json"]
 prompt = "/prompt"
 delta = ["/choices/0/text"]
 final = ["/choices/0/text"]
+error = ["/error"]
 
 [[api]]
 id = "openai.embeddings"
@@ -123,6 +128,7 @@ framing = ["sse", "json"]
 prompt = "/prompt"
 delta = ["/content"]
 final = ["/content"]
+error = ["/error"]
 
 [[api]]
 id = "ollama.chat"
@@ -133,6 +139,7 @@ capabilities = ["chat"]
 framing = ["ndjson", "json"]
 delta = ["/message/content"]
 final = ["/message/content"]
+error = ["/error"]
 
 [api.decode.chat]
 messages = "/messages"
@@ -151,3 +158,4 @@ framing = ["ndjson", "json"]
 prompt = "/prompt"
 delta = ["/response"]
 final = ["/response"]
+error = ["/error"]

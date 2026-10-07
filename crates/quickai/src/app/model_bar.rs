@@ -8,6 +8,10 @@ use crate::hardware;
 impl App {
     /// The model picker, its Refresh button, the model's note and the recommendation line.
     pub(super) fn show_model_bar(&mut self, ui: &mut egui::Ui, active: bool) {
+        if self.lists_models() {
+            self.show_named_model_bar(ui, active);
+            return;
+        }
         ui.group(|ui| {
             ui.horizontal(|ui| {
                 ui.label("Model:").on_hover_text(

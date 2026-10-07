@@ -3,13 +3,18 @@
 //! whether prereleases count and which of a release's files is a build for this machine; this module
 //! asks GitHub and reports what the document's rule lets through.
 //!
-//! Two quirks of release feeds that the document's settings are there for:
+//! Quirks of release feeds that the document's settings are there for:
 //! - llama.cpp tags every CI build as a GitHub *prerelease*: there is no separate stable release
 //!   with binaries attached, so its document says `prereleases = true`.
 //! - A file that merely looks compatible may hold no executable (llama.cpp's `cudart-*` packages
 //!   are CUDA runtimes only), which the document's `exclude` words rule out.
+//! - A feed does not list the newest *stable* release first: Ollama's lists a release candidate
+//!   above it (decision C29), so what is offered is chosen by the document and never by position.
+//! - The release the document was tested with (`tested`) is offered first and marked, with the
+//!   digests the document pins for it; a pin that disagrees with the digest the host lists means the
+//!   file changed after it was tested (decision C34).
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crossbeam_channel::{Receiver, Sender};
 use quickai_core::acquire;
@@ -18,12 +23,15 @@ use quickai_core::plan::HostFacts;
 use quickai_core::registry::Engine;
 use serde::Deserialize;
 
-/// Where GitHub's API lives; a test points the lookup somewhere else.
+use super::install::{InstallRequest, Source};
+
+/// Where GitHub's API lives; a document may name another root (a test points the lookup at a fake).
 pub const GITHUB_API: &str = "https://api.github.com";
 
 const CALL_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// One build a release offers for this machine.
+#[derive(Clone, Debug)]
 pub struct Build {
     pub tag: String,
     pub asset_name: String,
@@ -31,11 +39,64 @@ pub struct Build {
     pub size_bytes: Option<u64>,
     /// The directory it is installed under (the document's label rule).
     pub label: String,
+    /// The sha256 (hex) the feed lists for the file; only for a feed the document says lists them.
+    pub sha256: Option<String>,
+    /// The sha256 (hex) the document pins for the file, when this is the release it was tested with.
+    pub pin: Option<String>,
+    /// This is the release the document was tested with.
+    pub tested: bool,
+    /// The pin and the feed's digest differ: the file changed after it was tested.
+    pub conflict: bool,
+    /// What can be added to it on this machine (other files of the same release), off until chosen.
+    pub overlays: Vec<OverlayOffer>,
+}
+
+/// One more archive a build can have unpacked over it.
+#[derive(Clone, Debug)]
+pub struct OverlayOffer {
+    pub id: String,
+    pub label: String,
+    pub asset_name: String,
+    pub url: String,
+    pub size_bytes: Option<u64>,
+    pub sha256: Option<String>,
+    pub pin: Option<String>,
+}
+
+impl Build {
+    /// What installing this build asks of the installer, with the overlays that were chosen (by id).
+    pub fn install_request(&self, chosen_overlays: &[&str]) -> InstallRequest {
+        let overlay = |o: &OverlayOffer| Source {
+            url: o.url.clone(),
+            host_digest: o.sha256.clone(),
+            pin: o.pin.clone(),
+            size: o.size_bytes,
+        };
+        InstallRequest {
+            label: self.label.clone(),
+            base: Source {
+                url: self.url.clone(),
+                host_digest: self.sha256.clone(),
+                pin: self.pin.clone(),
+                size: self.size_bytes,
+            },
+            overlays: self
+                .overlays
+                .iter()
+                .filter(|o| chosen_overlays.contains(&o.id.as_str()))
+                .map(overlay)
+                .collect(),
+        }
+    }
 }
 
 pub enum BuildLookupEvent {
     Found(Build),
     Status(String),
+    /// The look-up could not be made: the status line before it says why (the rate limit's sentence,
+    /// `Lookup failed: ...`), and an interface must keep it rather than say that nothing was found.
+    /// `Done` follows.
+    Failed,
     Done,
 }
 
@@ -48,13 +109,15 @@ pub struct LookupSpec {
 }
 
 impl LookupSpec {
-    /// A lookup of the engine's own feed; `None` when its document has none.
+    /// A lookup of the engine's own feed; `None` when its document has none. The API is GitHub's
+    /// unless the document names another root.
     pub fn from_engine(engine: &Engine, facts: &HostFacts) -> Option<LookupSpec> {
-        engine.doc.acquire.as_ref()?.feed.as_ref()?;
+        let feed = engine.doc.acquire.as_ref()?.feed.as_ref()?;
+        let Feed::GithubRelease { api, .. } = feed;
         Some(LookupSpec {
             engine: engine.clone(),
             facts: facts.clone(),
-            api_base: GITHUB_API.to_string(),
+            api_base: api.clone().unwrap_or_else(|| GITHUB_API.to_string()),
         })
     }
 
@@ -81,19 +144,87 @@ struct GhAsset {
     browser_download_url: String,
     #[serde(default)]
     size: Option<u64>,
+    /// `sha256:<hex>`, on releases made since GitHub began to list one.
+    #[serde(default)]
+    digest: Option<String>,
 }
 
-fn get_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T, String> {
-    // GitHub's API rejects requests with no User-Agent header at all.
-    let resp = ureq::get(url)
-        .header("User-Agent", "quickai")
-        .config()
+/// Why a lookup did not get a release list.
+enum LookupError {
+    /// GitHub's allowance for this address is used up; `reset` is when it comes back.
+    RateLimited {
+        reset: Option<u64>,
+    },
+    Other(String),
+}
+
+fn now_epoch() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+fn get_releases(url: &str) -> Result<Vec<GhRelease>, LookupError> {
+    // a status is an answer here: the headers of a 403 say whether it is the rate limit
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
         .timeout_global(Some(CALL_TIMEOUT))
         .build()
+        .into();
+    // GitHub's API rejects requests with no User-Agent header at all.
+    let resp = agent
+        .get(url)
+        .header("User-Agent", "quickai")
         .call()
-        .map_err(|e| e.to_string())?;
-    let mut body = resp.into_body();
-    body.read_json::<T>().map_err(|e| e.to_string())
+        .map_err(|e| LookupError::Other(e.to_string()))?;
+    let status = resp.status().as_u16();
+    let header = |name: &str| {
+        resp.headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+    };
+    if status == 403 || status == 429 {
+        let used_up = header("x-ratelimit-remaining").as_deref() == Some("0");
+        let retry_after = header("retry-after").and_then(|v| v.trim().parse::<u64>().ok());
+        if used_up || status == 429 || retry_after.is_some() {
+            let reset = header("x-ratelimit-reset")
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .or_else(|| retry_after.map(|seconds| now_epoch() + seconds));
+            return Err(LookupError::RateLimited { reset });
+        }
+    }
+    if !(200..300).contains(&status) {
+        return Err(LookupError::Other(format!("http status: {status}")));
+    }
+    resp.into_body()
+        .read_json::<Vec<GhRelease>>()
+        .map_err(|e| LookupError::Other(e.to_string()))
+}
+
+/// The sentence for a used-up allowance, with when it comes back.
+fn rate_limit_message(reset: Option<u64>, now: u64) -> String {
+    let start =
+        "GitHub's rate limit is used up for this network (60 requests an hour without signing in)";
+    match reset {
+        Some(reset) if reset > now => {
+            let minutes = (reset - now).div_ceil(60);
+            format!(
+                "{start}; it resets in about {minutes} minute{}.",
+                if minutes == 1 { "" } else { "s" }
+            )
+        }
+        Some(_) => format!("{start}; it should be over by now, so try again."),
+        None => format!("{start}; try again in a while."),
+    }
+}
+
+/// `sha256:<hex>` as the bare lower-case hex.
+fn bare_digest(digest: &str) -> String {
+    digest
+        .trim()
+        .trim_start_matches("sha256:")
+        .to_ascii_lowercase()
 }
 
 /// Starts the lookup in a background thread and returns at once with the receiving end of the
@@ -117,6 +248,8 @@ fn run(spec: LookupSpec, tx: Sender<BuildLookupEvent>, wake: impl Fn() + Send + 
         per_page,
         show,
         prereleases,
+        digest,
+        ..
     }) = spec
         .engine
         .doc
@@ -127,6 +260,7 @@ fn run(spec: LookupSpec, tx: Sender<BuildLookupEvent>, wake: impl Fn() + Send + 
         send(BuildLookupEvent::Status(
             "This engine has no list of builds.".into(),
         ));
+        send(BuildLookupEvent::Failed);
         send(BuildLookupEvent::Done);
         return;
     };
@@ -139,20 +273,30 @@ fn run(spec: LookupSpec, tx: Sender<BuildLookupEvent>, wake: impl Fn() + Send + 
         "{}/repos/{repo}/releases?per_page={per_page}",
         spec.api_base
     );
-    let releases: Vec<GhRelease> = match get_json(&url) {
+    let releases = match get_releases(&url) {
         Ok(r) => r,
-        Err(e) => {
+        Err(LookupError::RateLimited { reset }) => {
+            send(BuildLookupEvent::Status(rate_limit_message(
+                reset,
+                now_epoch(),
+            )));
+            send(BuildLookupEvent::Failed);
+            send(BuildLookupEvent::Done);
+            return;
+        }
+        Err(LookupError::Other(e)) => {
             send(BuildLookupEvent::Status(format!("Lookup failed: {e}")));
+            send(BuildLookupEvent::Failed);
             send(BuildLookupEvent::Done);
             return;
         }
     };
 
-    let mut shown = 0;
+    let tested_tag = acquire::tested_tag(&spec.engine);
+    let overlay_choices = acquire::overlay_choices(&spec.engine, &spec.facts);
+    // one group of builds per release, in the feed's order; the tested release goes first
+    let mut groups: Vec<(bool, Vec<Build>)> = Vec::new();
     for release in releases {
-        if shown >= *show {
-            break;
-        }
         if release.draft || (release.prerelease && !prereleases) {
             continue;
         }
@@ -161,17 +305,62 @@ fn run(spec: LookupSpec, tx: Sender<BuildLookupEvent>, wake: impl Fn() + Send + 
         if picked.is_empty() {
             continue;
         }
-        for i in picked {
-            let asset = &release.assets[i];
-            send(BuildLookupEvent::Found(Build {
-                tag: release.tag_name.clone(),
-                asset_name: asset.name.clone(),
-                url: asset.browser_download_url.clone(),
-                size_bytes: asset.size,
-                label: acquire::install_label(&spec.engine, &release.tag_name, &asset.name),
-            }));
+        let tested = tested_tag == Some(release.tag_name.as_str());
+        let host_digest = |asset: &GhAsset| {
+            digest
+                .then(|| asset.digest.as_deref().map(bare_digest))
+                .flatten()
+        };
+        let pin_of = |name: &str| {
+            tested
+                .then(|| acquire::pin_for(&spec.engine, name))
+                .flatten()
+        };
+        let overlays: Vec<OverlayOffer> = overlay_choices
+            .iter()
+            .filter_map(|choice| {
+                let asset = release
+                    .assets
+                    .iter()
+                    .find(|a| a.name == choice.asset_name)?;
+                Some(OverlayOffer {
+                    id: choice.id.clone(),
+                    label: choice.label.clone(),
+                    asset_name: asset.name.clone(),
+                    url: asset.browser_download_url.clone(),
+                    size_bytes: asset.size,
+                    sha256: host_digest(asset),
+                    pin: pin_of(&asset.name),
+                })
+            })
+            .collect();
+        let builds: Vec<Build> = picked
+            .into_iter()
+            .map(|i| {
+                let asset = &release.assets[i];
+                let (sha256, pin) = (host_digest(asset), pin_of(&asset.name));
+                Build {
+                    tag: release.tag_name.clone(),
+                    asset_name: asset.name.clone(),
+                    url: asset.browser_download_url.clone(),
+                    size_bytes: asset.size,
+                    label: acquire::install_label(&spec.engine, &release.tag_name, &asset.name),
+                    conflict: matches!((&sha256, &pin), (Some(a), Some(b)) if a != b),
+                    sha256,
+                    pin,
+                    tested,
+                    overlays: overlays.clone(),
+                }
+            })
+            .collect();
+        groups.push((tested, builds));
+    }
+    // the tested release first, whatever its place in the feed, and the rest as the feed has them
+    let (tested_groups, others): (Vec<_>, Vec<_>) = groups.into_iter().partition(|(t, _)| *t);
+    for (_, builds) in tested_groups.into_iter().chain(others).take(*show) {
+        for build in builds {
+            send(BuildLookupEvent::Found(build));
         }
-        shown += 1;
     }
     send(BuildLookupEvent::Done);
 }
@@ -303,6 +492,7 @@ install = { use = "archive", binary = { name = "demo-server" } }
             match rx.recv_timeout(Duration::from_millis(200)) {
                 Ok(BuildLookupEvent::Status(s)) => statuses.push(s),
                 Ok(BuildLookupEvent::Found(b)) => builds.push(b),
+                Ok(BuildLookupEvent::Failed) => {}
                 Ok(BuildLookupEvent::Done) => {
                     done = true;
                     break;
@@ -502,8 +692,20 @@ install = { use = "archive", binary = { name = "demo-server" } }
         let Some(spec) = LookupSpec::from_engine(engine, &facts) else {
             panic!("the embedded llama.cpp document has no feed");
         };
-        let (_, found, done) = lookup(spec);
+        let (statuses, found, done) = lookup(spec);
         assert!(done);
+        // GitHub lets an address ask 60 times an hour without signing in. When that is used up (a
+        // test run, or another project's on the same machine) the answer is "unknown", not "the
+        // document no longer matches the project's file names".
+        if found.is_empty()
+            && statuses.last().is_some_and(|s| {
+                let s = s.to_lowercase();
+                s.contains("rate limit") || s.contains("403") || s.contains("429")
+            })
+        {
+            eprintln!("GitHub's anonymous allowance is used up: not a verdict ({statuses:?})");
+            return;
+        }
         // Every recent release has a compatible archive for every desktop OS (Windows as .zip,
         // Linux and macOS as .tar.gz), so this should never come back empty on a supported platform.
         assert!(

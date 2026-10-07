@@ -4,21 +4,24 @@
 //! this machine, and the engine's document. Nothing here decides *what* a command line looks like
 //! (the document does) or *how* it is carried out (`runtime::Session` does).
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use quickai_core::diag::Diagnostic;
 use quickai_core::plan::{plan, HostFacts, ModelInfo, RunPlan, Selection, TRAFFIC_PROXY_KEY};
 use quickai_core::registry::Registry;
+use quickai_core::value::Value;
 
 use crate::gpu::GpuVendor;
+#[cfg(test)]
 use crate::models::ModelEntry;
 use crate::paths;
 use crate::prims::locate::{locate, LocateEnv};
+#[cfg(test)]
+use crate::settings::DEFAULT_ENGINE;
 
-/// The one engine this version of the interface offers. Choosing an engine arrives with the second.
-pub const ENGINE_ID: &str = "llamacpp";
-
-/// What the settings controls hold for a run.
+/// What the settings controls hold for a run (the way the tests of the session describe llama.cpp's).
+#[cfg(test)]
 #[derive(Clone, Debug)]
 pub struct RunSettings {
     pub port: u16,
@@ -53,14 +56,28 @@ impl MachineFacts {
     }
 }
 
+/// What the window asks the planner about: the engine, the model (if one is selected), the values of
+/// the engine's fields as the window holds them, and whether the live-traffic proxy is wanted.
+pub fn selection_from_values(
+    engine: &str,
+    model: Option<ModelInfo>,
+    values: &BTreeMap<String, Value>,
+    traffic_proxy: bool,
+) -> Selection {
+    let mut selection = Selection::new(engine);
+    selection.model = model;
+    selection.values = values.clone();
+    selection
+        .values
+        .insert(TRAFFIC_PROXY_KEY.to_string(), Value::Bool(traffic_proxy));
+    selection
+}
+
+/// The selection the tests of the session have always built for llama.cpp from `RunSettings`.
+#[cfg(test)]
 pub fn selection(model: &ModelEntry, settings: &RunSettings) -> Selection {
-    let mut selection = Selection::new(ENGINE_ID)
-        .with_model(ModelInfo {
-            id: model.filename.clone(),
-            display: model.display.clone(),
-            path: model.path.display().to_string(),
-            size_bytes: model.size_bytes,
-        })
+    let mut selection = Selection::new(DEFAULT_ENGINE)
+        .with_model(model.info())
         .set("llamacpp.port", settings.port)
         .set("llamacpp.ctx_size", settings.ctx_size)
         .set("llamacpp.n_gpu_layers", settings.n_gpu_layers)
@@ -98,9 +115,8 @@ pub fn host_facts(binary: &Path, machine: MachineFacts, internal_port: Option<u1
     }
 }
 
-/// The run plan for starting `model` with `settings`. `internal_port` is a free port for the engine
-/// to listen on when the live-traffic proxy is on (the caller allocates it, and reports a failure to
-/// do so); it is ignored otherwise.
+/// The run plan for starting `model` with `settings`: llama.cpp, as the session's tests describe it.
+#[cfg(test)]
 pub fn plan_run(
     registry: &Registry,
     model: &ModelEntry,
@@ -137,10 +153,11 @@ pub fn plan_selection(
 /// Where the engine's executable is: the user's choice if there is one, otherwise the first of the
 /// document's other strategies that finds it. When nothing exists the last candidate is returned
 /// anyway, so there is a path to name in "not found at ...".
-pub fn locate_binary(registry: &Registry, bin_override: Option<&str>) -> PathBuf {
-    let Some(engine) = registry.engine(ENGINE_ID) else {
-        return PathBuf::from("llama-server");
+pub fn locate_binary(registry: &Registry, engine_id: &str, bin_override: Option<&str>) -> PathBuf {
+    let Some(engine) = registry.engine(engine_id) else {
+        return PathBuf::from(DEFAULT_PROGRAM);
     };
+    let program = program_name(engine);
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|e| e.parent().map(Path::to_path_buf));
@@ -150,21 +167,52 @@ pub fn locate_binary(registry: &Registry, bin_override: Option<&str>) -> PathBuf
             .then(|| bin_override.map(str::to_string))
             .flatten()
     };
+    let facts = host_facts(Path::new(""), MachineFacts::default(), None);
     locate(
         &engine.locate,
         &LocateEnv {
             exe_dir: exe_dir.as_deref(),
             dev_root: &dev_root,
             setting: &setting,
+            facts: &facts,
+            var: &|name| std::env::var(name).ok(),
         },
     )
     .map(|found| found.path)
-    .unwrap_or_else(|| PathBuf::from("llama-server"))
+    .unwrap_or_else(|| PathBuf::from(program))
+}
+
+/// The program a missing engine is named by when nothing else says.
+const DEFAULT_PROGRAM: &str = "llama-server";
+
+/// What the engine's program is called, for "not found at ...": the name the document looks for on
+/// the `PATH` or beside the application, else its server's name in lower case.
+fn program_name(engine: &quickai_core::registry::Engine) -> String {
+    use quickai_core::doc::engine::LocateStrategy;
+    engine
+        .doc
+        .locate
+        .strategies
+        .iter()
+        .find_map(|strategy| match strategy {
+            LocateStrategy::PathSearch { name } => Some(name.clone()),
+            LocateStrategy::NextToExe { file } => Some(file.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| {
+            engine
+                .doc
+                .engine
+                .server_name
+                .clone()
+                .unwrap_or_else(|| engine.doc.engine.name.clone())
+                .to_ascii_lowercase()
+        })
 }
 
 /// The executable ignoring any override: what "Reset to default" returns to.
-pub fn default_binary(registry: &Registry) -> PathBuf {
-    locate_binary(registry, None)
+pub fn default_binary(registry: &Registry, engine_id: &str) -> PathBuf {
+    locate_binary(registry, engine_id, None)
 }
 
 #[cfg(test)]
@@ -221,7 +269,7 @@ mod tests {
     #[test]
     fn every_selection_key_is_a_field_of_the_embedded_engine() {
         let registry = build_registry(&ConfigDirs::default());
-        let engine = registry.engine(ENGINE_ID).unwrap();
+        let engine = registry.engine(DEFAULT_ENGINE).unwrap();
         let mut with_override = settings();
         with_override.bin_override = Some("/x".into());
         for key in selection(&model(), &with_override).values.keys() {
@@ -238,16 +286,83 @@ mod tests {
     fn a_user_chosen_binary_wins_even_when_missing_and_default_ignores_it() {
         let registry = build_registry(&ConfigDirs::default());
         assert_eq!(
-            locate_binary(&registry, Some("/nowhere/llama-server")),
+            locate_binary(&registry, "llamacpp", Some("/nowhere/llama-server")),
             PathBuf::from("/nowhere/llama-server")
         );
         assert_eq!(
-            locate_binary(&registry, Some("  ")),
-            default_binary(&registry)
+            locate_binary(&registry, "llamacpp", Some("  ")),
+            default_binary(&registry, "llamacpp")
         );
-        let default = default_binary(&registry);
+        let default = default_binary(&registry, "llamacpp");
         let name = default.file_name().unwrap().to_string_lossy().into_owned();
         assert!(name.starts_with("llama-server"), "{name}");
+    }
+
+    /// The window asks the planner with the values it holds (`selection_from_values`); the tests of the
+    /// session have always asked with `RunSettings`. Both must give llama.cpp the same plan, whatever
+    /// the settings, which is the guarantee that choosing an engine did not change llama.cpp's run.
+    #[test]
+    fn what_the_window_asks_the_planner_is_what_the_tests_of_the_session_always_asked() {
+        use crate::settings::Settings;
+        let registry = build_registry(&ConfigDirs::default());
+        let engine = registry.engine("llamacpp").unwrap();
+        let cases = [
+            settings(),
+            RunSettings {
+                port: 9000,
+                ctx_size: 2048,
+                n_gpu_layers: 0,
+                extra_args: String::new(),
+                bin_override: None,
+                traffic_proxy: false,
+            },
+            RunSettings {
+                port: 8080,
+                ctx_size: 131072,
+                n_gpu_layers: 20,
+                extra_args: "--threads 8 --flash-attn on --foo \"a b\"".into(),
+                bin_override: Some("/opt/llama/llama-server".into()),
+                traffic_proxy: true,
+            },
+        ];
+        for run in cases {
+            // the file as the window would have saved these settings, read back as the window holds them
+            let file = Settings {
+                port: run.port,
+                ctx_size: run.ctx_size,
+                n_gpu_layers: run.n_gpu_layers,
+                extra_args: run.extra_args.clone(),
+                llama_bin_override: run.bin_override.clone(),
+                last_model_filename: Some("m.gguf".into()),
+                models_dir_override: Some("/data/models".into()),
+                ..Settings::default()
+            };
+            let held = file.engine_values(engine);
+            let from_values =
+                selection_from_values("llamacpp", Some(model().info()), &held, run.traffic_proxy);
+            let binary = Path::new("/opt/quickai/llama-server");
+            let internal = run.traffic_proxy.then_some(41234);
+            let one = plan_selection(
+                &registry,
+                &from_values,
+                binary,
+                MachineFacts::default(),
+                internal,
+            );
+            let other = plan_run(
+                &registry,
+                &model(),
+                &run,
+                binary,
+                MachineFacts::default(),
+                internal,
+            );
+            assert_eq!(
+                serde_json::to_value(one.unwrap()).unwrap(),
+                serde_json::to_value(other.unwrap()).unwrap(),
+                "{run:?}"
+            );
+        }
     }
 
     #[test]

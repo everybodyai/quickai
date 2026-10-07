@@ -63,10 +63,13 @@ pub struct FormField {
     pub ty: FieldType,
     /// The widget the document asks for, when it asks for one.
     pub widget: Option<String>,
+    /// For a `button`: what a click makes the application do (`open:settings`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
     /// The value in force: the selection's, else the default. `null` when there is none.
     pub value: Value,
     pub origin: Origin,
-    /// Whether to show it at all (`visible_when`; a `hidden` field is never shown).
+    /// Whether to show it at all (`visible_when`; a `hidden` field is not shown unless a widget is named).
     pub visible: bool,
     /// Whether it can be edited now (`enabled_when`).
     pub enabled: bool,
@@ -135,7 +138,7 @@ impl FormModel {
                     }
                 }
             };
-            let visible = doc.ty != FieldType::Hidden
+            let visible = (doc.ty != FieldType::Hidden || doc.ui.widget.is_some())
                 && holds(
                     &compiled.visible_when,
                     &doc.visible_when,
@@ -143,13 +146,16 @@ impl FormModel {
                     true,
                     "hidden",
                 );
-            let enabled = holds(
-                &compiled.enabled_when,
-                &doc.enabled_when,
-                "enabled_when",
-                true,
-                "disabled",
-            );
+            // what only a spawn can set belongs to the owner of an engine QuickAI attached to
+            let owned_by_another = doc.applies == Applies::SpawnOnly && facts.session_attached;
+            let enabled = !owned_by_another
+                && holds(
+                    &compiled.enabled_when,
+                    &doc.enabled_when,
+                    "enabled_when",
+                    true,
+                    "disabled",
+                );
             let required = holds(
                 &compiled.required_when,
                 &doc.required_when,
@@ -196,6 +202,7 @@ impl FormModel {
                     hint: doc.ui.hint.clone(),
                     ty: doc.ty,
                     widget: doc.ui.widget.clone(),
+                    action: doc.ui.action.clone(),
                     value: r.value.clone(),
                     origin: r.origin.clone(),
                     visible,

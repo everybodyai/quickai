@@ -20,15 +20,47 @@ pub fn render_explain(plan: &RunPlan) -> String {
     };
 
     if let Some(g) = &plan.gateway {
+        let reads: Vec<&str> = plan.decode.iter().map(|d| d.id.as_str()).collect();
         push(
             "gateway",
             format!("proxy :{} -> engine :{}", g.public_port, g.upstream_port),
             "app traffic proxy",
         );
+        if !reads.is_empty() {
+            push("", format!("reads {}", reads.join(", ")), "vocabulary");
+        }
     }
     for unit in &plan.units {
         for start in &unit.start {
-            let Start::Spawn(spawn) = start;
+            let spawn = match start {
+                Start::Attach(attach) => {
+                    push(
+                        "start",
+                        format!(
+                            "attach  {}:{} when GET {} answers with a version",
+                            attach.endpoint.host,
+                            attach
+                                .endpoint
+                                .port
+                                .map_or_else(String::new, |p| p.to_string()),
+                            attach.identity.path
+                        ),
+                        "engine launch.attach",
+                    );
+                    push(
+                        "",
+                        format!(
+                            "  watched by GET {} every {} ms, gone after {} misses",
+                            attach.liveness.path,
+                            attach.liveness.every_ms,
+                            attach.liveness.failures
+                        ),
+                        "engine launch.attach.liveness",
+                    );
+                    continue;
+                }
+                Start::Spawn(spawn) => spawn,
+            };
             push(
                 "start",
                 format!("spawn   {}", spawn.program.value),
@@ -60,7 +92,16 @@ pub fn render_explain(plan: &RunPlan) -> String {
                 "",
             );
         }
-        push("stop", format!("{:?}", unit.stop).to_lowercase(), "");
+        for (label, calls) in [("warm", &unit.warm), ("unload", &unit.unload)] {
+            for call in calls {
+                push(
+                    label,
+                    format!("{} {} {}", call.method, call.path, call.body),
+                    &format!("engine launch.{label}"),
+                );
+            }
+        }
+        push("stop", unit.stop.describe(), "");
     }
 
     let width = lines

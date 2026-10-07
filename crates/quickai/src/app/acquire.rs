@@ -13,6 +13,10 @@ impl App {
     /// The "Model:" box (download, import or search), "Look up online", the running download's
     /// progress and the look-up results.
     pub(super) fn show_acquire(&mut self, ui: &mut egui::Ui, active: bool) {
+        if self.lists_models() {
+            self.show_named_acquire(ui, active);
+            return;
+        }
         ui.group(|ui| {
             ui.horizontal(|ui| {
                 ui.add_enabled_ui(!active && self.download.is_none(), |ui| {
@@ -133,7 +137,7 @@ impl App {
                 ui.add_space(4.0);
                 ui.colored_label(egui::Color32::from_rgb(212, 160, 23), job.progress_line());
                 if let Some(fraction) = job.fraction() {
-                    ui.add(egui::ProgressBar::new(fraction));
+                    super::widgets::progress_bar(ui, Some(fraction));
                 }
             }
 

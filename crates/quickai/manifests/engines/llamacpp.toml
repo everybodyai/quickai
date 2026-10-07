@@ -52,6 +52,9 @@ stop = { policy = "kill" }
 probe = { use = "http", path = "/health", expect = 200 }
 timeout = "120s"
 interval = "500ms"
+# a big model on a slow disk can take longer: say so and go on waiting, as it always has (the default,
+# `fail`, gives up on a program that never answers and stops it)
+on_timeout = "wait"
 
 # ---- builds ----------------------------------------------------------------------------------------
 # What the runtime manager in Settings works from: the list of builds (llama.cpp's own GitHub
@@ -74,6 +77,14 @@ backends = [
   { match = "rocm", label = "ROCm/HIP", needs_gpu = "amd" },
   { match = "cpu", label = "CPU" },
 ]
+
+# ---- what the API panel says ---------------------------------------------------------------------------
+# The texts are the ones the window always had, word for word (the curl example is the vocabulary's).
+[api_info]
+base_url = "http://127.0.0.1:${public_port}/v1"
+api_key = { value = "none", note = "llama.cpp doesn't require one by default — leave it blank, or use any placeholder value if your client insists on a non-empty string." }
+model = { value = "${session.model_display}", note = "Only one model is ever loaded at a time, so most OpenAI-compatible clients work with any value here." }
+example = "openai.chat"
 
 # ---- settings -------------------------------------------------------------------------------------
 # `legacy_key` is the name the value has always had in settings.json. Labels and help are the texts

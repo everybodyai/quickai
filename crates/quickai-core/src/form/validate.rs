@@ -36,6 +36,15 @@ pub(super) fn problem(
         return required.then(|| "A value is required.".to_string());
     }
 
+    // The person's own lines of environment: what the planner will leave out is what is said here,
+    // and the text stays as it was typed.
+    if let Some(protect) = &compiled.env_lines {
+        let windows = context.lookup(&["os"]).and_then(Value::as_str) == Some("windows");
+        let lines = crate::plan::env::user_lines(engine, protect, &value.to_string(), windows);
+        if !lines.problems.is_empty() {
+            return Some(lines.problems_text());
+        }
+    }
     if let (Some((lo, hi)), Some(n)) = (doc.range, value.as_f64()) {
         if matches!(doc.ty, FieldType::Int | FieldType::Float | FieldType::Port)
             && (n < lo || n > hi)

@@ -9,13 +9,21 @@
 #![forbid(unsafe_code)]
 
 pub mod acquire;
+pub mod advice;
+pub mod api_info;
 pub mod config;
+pub mod decode;
 pub mod diag;
 pub mod doc;
 pub mod docpath;
 pub mod expr;
 pub mod form;
+pub mod guard;
 pub mod heuristics;
+pub mod kvlines;
+pub mod loaderenv;
+pub mod models;
 pub mod plan;
 pub mod registry;
+pub mod stream;
 pub mod value;
