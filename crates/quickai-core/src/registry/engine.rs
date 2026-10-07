@@ -16,11 +16,14 @@ use crate::diag::{Diagnostic, Severity};
 use crate::doc::duration::parse_duration;
 use crate::doc::engine::{
     Acquire, ApiInfo, Assets, CallSpec, DiagnosticRule, EngineDoc, EnvEntry, FieldDefault,
-    FieldType, InputRule, Install, LocateStrategy, Models, OnTimeout, PortRole, Probe, Step,
-    StopPolicy, StopSpec,
+    FieldType, InputRule, Install, LocateStrategy, ModelBundle, ModelLookup, ModelMode, Models,
+    OnTimeout, PortRole, Probe, Step, StopPolicy, StopSpec,
 };
 use crate::docpath::DocPath;
 use crate::expr::{self, funcs, Expr, Template, Type};
+use crate::lookup::bundle::{Bundle, Part};
+use crate::lookup::present::Settings as ReadSettings;
+use crate::lookup::{huggingface, ollama_library};
 use crate::value::Value;
 
 use super::context::{schema, Site};
@@ -56,6 +59,31 @@ pub struct Engine {
     pub api_info: Option<CompiledApiInfo>,
     /// The advice of `[[diagnostic]]`, its patterns compiled.
     pub diagnostics: Vec<CompiledDiagnostic>,
+    /// How each kind of companion file is attached, by kind.
+    pub components: Vec<CompiledComponent>,
+}
+
+/// Where a component's arguments stand when its document does not say: after the fields of a lower
+/// `order`, before the person's own extra arguments (90).
+pub const DEFAULT_COMPONENT_ORDER: i32 = 80;
+
+/// `[components.<kind>]`: the arguments a companion file adds, templates over `${component.path}`.
+#[derive(Clone, Debug)]
+pub struct CompiledComponent {
+    pub kind: String,
+    pub order: i32,
+    pub arg: Vec<Template>,
+}
+
+/// `[[models.mode]]`: a way the engine is started for a kind of model, checked.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Mode {
+    pub id: String,
+    /// What the model picker says of a model that runs so.
+    pub label: String,
+    pub help: String,
+    /// The words added to the command line.
+    pub arg: Vec<String>,
 }
 
 /// `[api_info]` with its templates parsed.
@@ -88,7 +116,54 @@ pub struct CompiledModels {
     /// The call that removes a model: `${ref}` is its name.
     pub remove: Option<CompiledStep>,
     pub input_rules: Vec<CompiledInputRule>,
+    /// The ways the window can look models up online, in the order the document gives them.
+    pub lookups: Vec<CompiledLookup>,
+    /// What is fetched together with a model's weights, in the order the document gives them.
+    pub bundles: Vec<Bundle>,
+    /// The ways the engine is started for a kind of model, in the order the document gives them.
+    pub modes: Vec<Mode>,
 }
+
+/// One way of looking models up online (`[[models.lookup]]`), checked.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledLookup {
+    pub id: String,
+    pub kind: LookupKind,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum LookupKind {
+    /// `use = "ollama_library"` (`lookup.ollama_library@1`): a search of the library at `site`,
+    /// which has no trailing slash.
+    OllamaLibrary { site: String, read: ReadSettings },
+    /// `use = "huggingface_gguf"` (`lookup.huggingface_gguf@1`): GGUF repositories of the hub at
+    /// `site`: how many are looked into for the plain list, for words and for each of their words.
+    HuggingFace {
+        site: String,
+        popular: usize,
+        keyword: usize,
+        similar: usize,
+        read: ReadSettings,
+    },
+}
+
+impl LookupKind {
+    pub fn site(&self) -> &str {
+        match self {
+            LookupKind::OllamaLibrary { site, .. } | LookupKind::HuggingFace { site, .. } => site,
+        }
+    }
+
+    /// How what it found is read into entries.
+    pub fn read(&self) -> &ReadSettings {
+        match self {
+            LookupKind::OllamaLibrary { read, .. } | LookupKind::HuggingFace { read, .. } => read,
+        }
+    }
+}
+
+/// The look-ups this version has, by the name `use` gives them.
+pub const LOOKUP_KINDS: &[&str] = &["ollama_library", "huggingface_gguf"];
 
 #[derive(Clone, Debug)]
 pub struct CompiledList {
@@ -456,7 +531,11 @@ pub fn compile(
         .acquire
         .as_ref()
         .map(|a| compile_acquire(&mut c, &doc, a));
-    let models = doc.models.as_ref().map(|m| compile_models(&mut c, &doc, m));
+    let components = compile_components(&mut c, &doc);
+    let models = doc
+        .models
+        .as_ref()
+        .map(|m| compile_models(&mut c, &doc, m, &components));
     let api_info = doc
         .api_info
         .as_ref()
@@ -482,6 +561,7 @@ pub fn compile(
             models,
             api_info,
             diagnostics,
+            components,
         }),
         out,
     )
@@ -1849,7 +1929,12 @@ fn compile_diagnostics(
 /// How long the calls of `[models]` may take when the document does not say.
 const DEFAULT_MODEL_CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
-fn compile_models(c: &mut Checker, doc: &EngineDoc, models: &Models) -> CompiledModels {
+fn compile_models(
+    c: &mut Checker,
+    doc: &EngineDoc,
+    models: &Models,
+    components: &[CompiledComponent],
+) -> CompiledModels {
     let at = DocPath::default().key("models");
     let engine_schema = schema(doc, Site::Engine);
     // `${ref}` is the name of the model a call is about
@@ -1976,7 +2061,429 @@ fn compile_models(c: &mut Checker, doc: &EngineDoc, models: &Models) -> Compiled
         pull: pull.flatten(),
         remove,
         input_rules: compile_input_rules(c, &at, &models.input_rules),
+        lookups: compile_lookups(c, &at, &models.lookup),
+        bundles: compile_bundles(c, &at, &models.bundle, components),
+        modes: compile_modes(c, &at, &models.mode),
     }
+}
+
+/// `[components.<kind>]`: each kind is a name, and says which arguments it adds, with templates that
+/// only name the file (`${component.path}`).
+fn compile_components(c: &mut Checker, doc: &EngineDoc) -> Vec<CompiledComponent> {
+    let schema = Type::object([("component", Type::object([("path", Type::Str)]))]);
+    let mut compiled = Vec::new();
+    for (kind, component) in &doc.components {
+        let at = DocPath::default().key("components").key(kind);
+        if kind.is_empty()
+            || !kind
+                .chars()
+                .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || "._-".contains(ch))
+        {
+            c.error_hint(
+                &at,
+                format!("`{kind}` is not a name for a kind of component"),
+                "lower case letters, digits and . _ -, such as `mmproj`",
+            );
+            continue;
+        }
+        if component.bind.arg.is_empty() {
+            c.error_hint(
+                &at.clone().key("bind"),
+                format!("the component `{kind}` does not say how it reaches the program"),
+                "bind.arg = [\"--mmproj\", \"${component.path}\"]",
+            );
+            continue;
+        }
+        let arg: Vec<Template> = component
+            .bind
+            .arg
+            .iter()
+            .enumerate()
+            .filter_map(|(i, text)| {
+                c.template(&at.clone().key("bind").key("arg").index(i), text, &schema)
+            })
+            .collect();
+        if arg.len() == component.bind.arg.len() {
+            compiled.push(CompiledComponent {
+                kind: kind.clone(),
+                order: component.order.unwrap_or(DEFAULT_COMPONENT_ORDER),
+                arg,
+            });
+        }
+    }
+    compiled
+}
+
+/// `[[models.bundle]]`: each is named, has parts, and every part is a kind of component the engine
+/// can attach, with patterns that say which files it is. A bundle that cannot be attached would
+/// download files the program is never told about, so it is an error.
+/// `[[models.mode]]`: each is a name with the words it adds to the command line.
+fn compile_modes(c: &mut Checker, at: &DocPath, modes: &[ModelMode]) -> Vec<Mode> {
+    let mut compiled: Vec<Mode> = Vec::new();
+    for (i, mode) in modes.iter().enumerate() {
+        let at = at.clone().key("mode").index(i);
+        if mode.id.is_empty()
+            || !mode
+                .id
+                .chars()
+                .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || "._-".contains(ch))
+        {
+            c.error_hint(
+                &at.clone().key("id"),
+                format!("`{}` is not a name for a mode", mode.id),
+                "lower case letters, digits and . _ -, such as `embedding`",
+            );
+            continue;
+        }
+        if compiled.iter().any(|m| m.id == mode.id) {
+            c.error(
+                &at.clone().key("id"),
+                format!("two modes are called `{}`", mode.id),
+            );
+            continue;
+        }
+        if mode.arg.is_empty() {
+            c.error_hint(
+                &at.clone().key("arg"),
+                format!("the mode `{}` adds nothing to the command line", mode.id),
+                "arg = [\"--embeddings\"]",
+            );
+            continue;
+        }
+        if let Some(n) = mode.arg.iter().position(|a| a.trim().is_empty()) {
+            c.error(
+                &at.clone().key("arg").index(n),
+                "an empty word is not an argument".to_string(),
+            );
+            continue;
+        }
+        compiled.push(Mode {
+            id: mode.id.clone(),
+            label: mode
+                .label
+                .clone()
+                .filter(|l| !l.trim().is_empty())
+                .unwrap_or_else(|| mode.id.clone()),
+            help: mode.help.clone().unwrap_or_default(),
+            arg: mode.arg.clone(),
+        });
+    }
+    compiled
+}
+
+fn compile_bundles(
+    c: &mut Checker,
+    at: &DocPath,
+    bundles: &[ModelBundle],
+    components: &[CompiledComponent],
+) -> Vec<Bundle> {
+    let kinds: Vec<&str> = components.iter().map(|k| k.kind.as_str()).collect();
+    let mut compiled: Vec<Bundle> = Vec::new();
+    for (i, bundle) in bundles.iter().enumerate() {
+        let at = at.clone().key("bundle").index(i);
+        if bundle.id.is_empty() || bundle.id.contains(char::is_whitespace) {
+            c.error_hint(
+                &at.clone().key("id"),
+                format!("`{}` is not a name for a bundle", bundle.id),
+                "a name has no spaces, such as `vision`",
+            );
+            continue;
+        }
+        if compiled.iter().any(|b| b.id == bundle.id) {
+            c.error(
+                &at.clone().key("id"),
+                format!("two bundles are called `{}`", bundle.id),
+            );
+            continue;
+        }
+        if bundle.parts.is_empty() {
+            c.error_hint(
+                &at.clone().key("parts"),
+                format!("the bundle `{}` has no parts", bundle.id),
+                "parts = [ { kind = \"mmproj\", match = [\"mmproj*.gguf\"] } ]",
+            );
+            continue;
+        }
+        let mut parts = Vec::new();
+        let mut ok = true;
+        for (k, part) in bundle.parts.iter().enumerate() {
+            let at = at.clone().key("parts").index(k);
+            if !kinds.contains(&part.kind.as_str()) {
+                c.error_hint(
+                    &at.clone().key("kind"),
+                    format!("this engine has no component called `{}`", part.kind),
+                    if kinds.is_empty() {
+                        "the engine document needs a [components.<kind>] with bind.arg for it"
+                            .to_string()
+                    } else {
+                        format!("the components it has: {}", kinds.join(", "))
+                    },
+                );
+                ok = false;
+            }
+            if part.matches.is_empty() {
+                c.error_hint(
+                    &at.clone().key("match"),
+                    "a part says which files it is".to_string(),
+                    "match = [\"mmproj*.gguf\"]",
+                );
+                ok = false;
+            }
+            for (list_key, list) in [("match", &part.matches), ("prefer", &part.prefer)] {
+                for (n, entry) in list.iter().enumerate() {
+                    if entry.trim().is_empty() {
+                        c.error(
+                            &at.clone().key(list_key).index(n),
+                            format!("an empty entry in `{list_key}` matches nothing"),
+                        );
+                        ok = false;
+                    }
+                }
+            }
+            parts.push(Part {
+                kind: part.kind.clone(),
+                label: part
+                    .label
+                    .clone()
+                    .filter(|l| !l.trim().is_empty())
+                    .unwrap_or_else(|| part.kind.clone()),
+                matches: part.matches.iter().map(|m| m.trim().to_string()).collect(),
+                prefer: part.prefer.iter().map(|m| m.trim().to_string()).collect(),
+            });
+        }
+        if ok {
+            compiled.push(Bundle {
+                id: bundle.id.clone(),
+                label: bundle
+                    .label
+                    .clone()
+                    .filter(|l| !l.trim().is_empty())
+                    .unwrap_or_else(|| bundle.id.clone()),
+                help: bundle.help.clone().unwrap_or_default(),
+                parts,
+            });
+        }
+    }
+    compiled
+}
+
+/// The look-ups of `[[models.lookup]]`: each is named, is one this version has, and has the keys
+/// that look-up takes. A look-up that is wrong is an error (the document is refused, as for any
+/// other broken section), and a key it does not take is a warning, as everywhere in a document.
+fn compile_lookups(c: &mut Checker, at: &DocPath, lookups: &[ModelLookup]) -> Vec<CompiledLookup> {
+    let mut compiled: Vec<CompiledLookup> = Vec::new();
+    for (i, lookup) in lookups.iter().enumerate() {
+        let at = at.clone().key("lookup").index(i);
+        if lookup.id.is_empty() || lookup.id.contains(char::is_whitespace) {
+            c.error_hint(
+                &at.clone().key("id"),
+                format!("`{}` is not a name for a look-up", lookup.id),
+                "a name has no spaces, such as `library`",
+            );
+            continue;
+        }
+        if compiled.iter().any(|l| l.id == lookup.id) {
+            c.error(
+                &at.clone().key("id"),
+                format!("two look-ups are called `{}`", lookup.id),
+            );
+            continue;
+        }
+        let (default_site, keys, base): (&str, &[&str], ReadSettings) = match lookup.kind.as_str() {
+            "ollama_library" => (
+                ollama_library::SITE,
+                &["site", "bytes_per_parameter", "show_variants", "types"],
+                ReadSettings {
+                    show_variants: 16,
+                    ..ReadSettings::default()
+                },
+            ),
+            "huggingface_gguf" => (
+                huggingface::SITE,
+                &[
+                    "site",
+                    "popular",
+                    "keyword",
+                    "similar",
+                    "prefer",
+                    "skip",
+                    "show_variants",
+                    "types",
+                ],
+                ReadSettings {
+                    prefer: [
+                        "Q4_K_M", "Q4_K_S", "Q5_K_M", "Q4_0", "Q8_0", "Q6_K", "Q3_K_M",
+                    ]
+                    .map(String::from)
+                    .to_vec(),
+                    skip: ["*-?????-of-?????*", "mtp/*", "mtp-*", "imatrix*"]
+                        .map(String::from)
+                        .to_vec(),
+                    show_variants: 4,
+                    ..ReadSettings::default()
+                },
+            ),
+            other => {
+                c.error_hint(
+                    &at.clone().key("use"),
+                    format!("`{other}` is not a look-up this version has"),
+                    format!("the look-ups it has: {}", LOOKUP_KINDS.join(", ")),
+                );
+                continue;
+            }
+        };
+        for key in lookup.settings.keys() {
+            if !keys.contains(&key.as_str()) {
+                c.warn(
+                    &at.clone().key(key),
+                    format!(
+                        "`{key}` is not a key of the look-up `{}` ({}); it is ignored",
+                        lookup.kind,
+                        keys.join(", ")
+                    ),
+                );
+            }
+        }
+        let site = match lookup.settings.get("site") {
+            None => default_site.to_string(),
+            Some(toml::Value::String(text)) if is_http_root(text.trim()) => {
+                text.trim().trim_end_matches('/').to_string()
+            }
+            Some(other) => {
+                c.error_hint(
+                    &at.clone().key("site"),
+                    format!("`{other}` is not an http or https address"),
+                    format!("write the address of the site, such as {default_site}"),
+                );
+                continue;
+            }
+        };
+        let Some(read) = read_settings(c, &at, lookup, base) else {
+            continue;
+        };
+        let kind = match lookup.kind.as_str() {
+            "ollama_library" => LookupKind::OllamaLibrary { site, read },
+            _ => {
+                let count = |c: &mut Checker, key: &str, default: usize| -> Option<usize> {
+                    match lookup.settings.get(key) {
+                        None => Some(default),
+                        Some(toml::Value::Integer(n)) if (1..=50).contains(n) => Some(*n as usize),
+                        Some(other) => {
+                            c.error_hint(
+                                &at.clone().key(key),
+                                format!("`{other}` is not a number of repositories"),
+                                "a whole number from 1 to 50",
+                            );
+                            None
+                        }
+                    }
+                };
+                let (Some(popular), Some(keyword), Some(similar)) = (
+                    count(c, "popular", 30),
+                    count(c, "keyword", 20),
+                    count(c, "similar", 20),
+                ) else {
+                    continue;
+                };
+                LookupKind::HuggingFace {
+                    site,
+                    popular,
+                    keyword,
+                    similar,
+                    read,
+                }
+            }
+        };
+        compiled.push(CompiledLookup {
+            id: lookup.id.clone(),
+            kind,
+        });
+    }
+    compiled
+}
+
+/// How a look-up reads what it found, from the keys of its entry; `base` is what the kind says when
+/// the document says nothing. `None` (with the errors) when a key is wrong.
+fn read_settings(
+    c: &mut Checker,
+    at: &DocPath,
+    lookup: &ModelLookup,
+    base: ReadSettings,
+) -> Option<ReadSettings> {
+    let mut read = base;
+    let mut ok = true;
+    let words = |c: &mut Checker, key: &str| -> Option<Option<Vec<String>>> {
+        match lookup.settings.get(key) {
+            None => Some(None),
+            Some(toml::Value::Array(items)) => {
+                let mut out = Vec::new();
+                for (n, item) in items.iter().enumerate() {
+                    match item {
+                        toml::Value::String(s) if !s.trim().is_empty() => {
+                            out.push(s.trim().to_string())
+                        }
+                        other => {
+                            c.error(
+                                &at.clone().key(key).index(n),
+                                format!("`{other}` is not a word: `{key}` is a list of texts"),
+                            );
+                            return None;
+                        }
+                    }
+                }
+                Some(Some(out))
+            }
+            Some(other) => {
+                c.error_hint(
+                    &at.clone().key(key),
+                    format!("`{other}` is not a list"),
+                    format!("{key} = [\"...\"]"),
+                );
+                None
+            }
+        }
+    };
+    for key in ["prefer", "skip", "types"] {
+        if !lookup.settings.contains_key(key) {
+            continue;
+        }
+        match words(c, key) {
+            Some(Some(list)) => match key {
+                "prefer" => read.prefer = list,
+                "skip" => read.skip = list,
+                _ => read.types = list,
+            },
+            _ => ok = false,
+        }
+    }
+    match lookup.settings.get("show_variants") {
+        None => {}
+        Some(toml::Value::Integer(n)) if (1..=64).contains(n) => read.show_variants = *n as usize,
+        Some(other) => {
+            c.error_hint(
+                &at.clone().key("show_variants"),
+                format!("`{other}` is not a number of buttons"),
+                "a whole number from 1 to 64",
+            );
+            ok = false;
+        }
+    }
+    match lookup.settings.get("bytes_per_parameter") {
+        None => {}
+        Some(toml::Value::Float(f)) if (0.05..=4.0).contains(f) => read.bytes_per_parameter = *f,
+        Some(toml::Value::Integer(n)) if (1..=4).contains(n) => {
+            read.bytes_per_parameter = *n as f64
+        }
+        Some(other) => {
+            c.error_hint(
+                &at.clone().key("bytes_per_parameter"),
+                format!("`{other}` is not a size of a parameter"),
+                "bytes a parameter takes once quantized, from 0.05 to 4: 0.6 is about 4.8 bits",
+            );
+            ok = false;
+        }
+    }
+    ok.then_some(read)
 }
 
 /// The rules of the model box. A rule with no `when` takes whatever is left, so a rule after it

@@ -1,0 +1,155 @@
+{
+ "disabled": false,
+ "downloads": 6553039,
+ "gated": false,
+ "id": "unsloth/Qwen3.8-27B-GGUF",
+ "likes": 4910,
+ "modelId": "unsloth/Qwen3.8-27B-GGUF",
+ "private": false,
+ "siblings": [
+  {
+   "rfilename": ".gitattributes",
+   "size": 4175
+  },
+  {
+   "rfilename": "BF16/Qwen3.8-27B-BF16-00001-of-00002.gguf",
+   "size": 49986159616
+  },
+  {
+   "rfilename": "BF16/Qwen3.8-27B-BF16-00002-of-00002.gguf",
+   "size": 4671576000
+  },
+  {
+   "rfilename": "MTP/mtp-Qwen3.8-27B-Q4_0.gguf",
+   "size": 1369590656
+  },
+  {
+   "rfilename": "Qwen3.8-27B-Q4_0.gguf",
+   "size": 16056478688
+  },
+  {
+   "rfilename": "Qwen3.8-27B-Q4_1.gguf",
+   "size": 17540705248
+  },
+  {
+   "rfilename": "Qwen3.8-27B-Q8_0.gguf",
+   "size": 29047086048
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-IQ1_M.gguf",
+   "size": 6729166848
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-IQ1_S.gguf",
+   "size": 6192222208
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-IQ2_S.gguf",
+   "size": 8371970048
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-IQ2_XXS.gguf",
+   "size": 7266070528
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-IQ3_S.gguf",
+   "size": 12040883104
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-IQ3_XXS.gguf",
+   "size": 10934860704
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-IQ4_XS.gguf",
+   "size": 14252845984
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-Q2_K_XL.gguf",
+   "size": 9828981664
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-Q3_K_XL.gguf",
+   "size": 13146393504
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-Q4_K_M.gguf",
+   "size": 16464440224
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-Q4_K_S.gguf",
+   "size": 15358213024
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-Q4_K_XL.gguf",
+   "size": 17559178144
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-Q5_K_M.gguf",
+   "size": 19771509664
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-Q5_K_S.gguf",
+   "size": 18665753504
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-Q5_K_XL.gguf",
+   "size": 20876938144
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-Q6_K.gguf",
+   "size": 21983677344
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-Q6_K_L.gguf",
+   "size": 24193919904
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-Q6_K_M.gguf",
+   "size": 23088409504
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-Q6_K_XL.gguf",
+   "size": 25299061664
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-Q8_K_L.gguf",
+   "size": 28045695904
+  },
+  {
+   "rfilename": "Qwen3.8-27B-UD-Q8_K_XL.gguf",
+   "size": 31457991680
+  },
+  {
+   "rfilename": "README.md",
+   "size": 7455
+  },
+  {
+   "rfilename": "config.json",
+   "size": 3760
+  },
+  {
+   "rfilename": "imatrix_unsloth.gguf",
+   "size": 13642656
+  },
+  {
+   "rfilename": "mmproj-BF16.gguf",
+   "size": 931146432
+  },
+  {
+   "rfilename": "mmproj-F16.gguf",
+   "size": 927607488
+  }
+ ],
+ "tags": [
+  "gguf",
+  "qwen3_5",
+  "unsloth",
+  "base_model:Qwen/Qwen3.8-27B",
+  "base_model:quantized:Qwen/Qwen3.8-27B",
+  "license:apache-2.0",
+  "endpoints_compatible",
+  "region:us",
+  "imatrix",
+  "conversational"
+ ]
+}

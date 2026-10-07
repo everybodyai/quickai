@@ -42,13 +42,25 @@ fn p3_e17_the_ollama_example_fits_the_typed_engine_schema_with_nothing_ignored()
 }
 
 #[test]
-fn p3_e18_the_llamacpp_example_is_typed_but_for_the_components_that_wait_for_phase_4() {
+fn p3_e18_the_llamacpp_example_is_typed_but_for_the_keys_phase_4_adds_to_its_components() {
+    // a component is attached by its `bind.arg` from WP4.9; what is left is the rest of the design of
+    // Phase 4: a flag the build must have, the fields of a component (offload, scale), several
+    // attachments joined into one argument, and a change while running
     match leftovers("llamacpp.toml") {
         Ok(unknown) => assert_eq!(
             unknown,
-            ["components"],
-            "`runtime`, `models`, `traffic`, `api_info` and `diagnostic` are interpreted from Phase 3 on; \
-             `components` (adapters) is Phase 4"
+            [
+                "components.draft.fields",
+                "components.draft.requires_flag",
+                "components.lora.bind.each",
+                "components.lora.bind.sep",
+                "components.lora.live",
+                "components.lora.requires_flag",
+                "components.mmproj.fields",
+                "components.mmproj.requires_flag",
+            ],
+            "`runtime`, `models`, `traffic`, `api_info`, `diagnostic` and the `bind.arg` of a component are \
+             interpreted; the keys above are Phase 4"
         ),
         Err(e) => panic!("the example does not load: {e}"),
     }

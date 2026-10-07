@@ -6,13 +6,17 @@
 
 use std::path::{Path, PathBuf};
 
+use quickai_core::doc::catalog::CatalogDoc;
 use quickai_core::doc::engine::EngineDoc;
 use quickai_core::doc::read_body;
-use quickai_core::doc::reference::{render, render_vocab, type_name, GROUPS, TYPES, VOCAB_GROUPS};
+use quickai_core::doc::reference::{
+    render, render_catalog, render_vocab, type_name, CATALOG_GROUPS, GROUPS, TYPES, VOCAB_GROUPS,
+};
 use quickai_core::doc::vocab::VocabDoc;
 
 const ENGINE_RS: &str = include_str!("../src/doc/engine.rs");
 const VOCAB_RS: &str = include_str!("../src/doc/vocab.rs");
+const CATALOG_RS: &str = include_str!("../src/doc/catalog.rs");
 
 fn page_path(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -31,6 +35,11 @@ fn the_checked_in_page_is_the_generated_one() {
 #[test]
 fn the_checked_in_vocabulary_page_is_the_generated_one() {
     check_golden("vocab-fields.md", render_vocab());
+}
+
+#[test]
+fn the_checked_in_catalog_page_is_the_generated_one() {
+    check_golden("catalog-fields.md", render_catalog());
 }
 
 fn check_golden(name: &str, generated: String) {
@@ -92,7 +101,11 @@ fn struct_keys(source: &str, name: &str) -> Vec<String> {
 
 #[test]
 fn p3_e19_every_table_lists_exactly_the_fields_of_its_type_in_both_directions() {
-    for (types, groups) in [(ENGINE_RS, GROUPS), (VOCAB_RS, VOCAB_GROUPS)] {
+    for (types, groups) in [
+        (ENGINE_RS, GROUPS),
+        (VOCAB_RS, VOCAB_GROUPS),
+        (CATALOG_RS, CATALOG_GROUPS),
+    ] {
         for group in groups {
             let Some(source) = group.source else { continue };
             let mut documented: Vec<String> = group
@@ -175,6 +188,33 @@ paths = ["/complete"]
 [api.decode]
 framing = ["json"]
 prompt = "/prompt"
+
+[[model_type]]
+id = "vision"
+label = "Vision"
+help = "Reads pictures as well as text."
+order = 30
+default = false
+
+[model_type.match]
+capabilities = ["vision"]
+pipelines = ["image-text-to-text"]
+tags = ["multimodal"]
+words = ["vl"]
+companions = ["mmproj"]
+
+[[model_type]]
+id = "chat"
+default = true
+
+[[size_class]]
+id = "small"
+label = "Small (< 4 GB)"
+help = "Runs on most machines."
+below = "4GiB"
+
+[[size_class]]
+id = "large"
 "#;
 
 #[test]
@@ -206,6 +246,92 @@ fn every_key_the_vocabulary_page_lists_is_one_the_schema_accepts() {
     let table: toml::Table = toml::from_str("[[api]]\nid = \"x\"\npahts = []\n").unwrap();
     let typed = read_body::<VocabDoc>(&table).unwrap();
     assert_eq!(typed.unknown.len(), 1, "{:?}", typed.unknown);
+}
+
+/// A catalog document that says every key there is.
+const EVERY_CATALOG_KEY: &str = r#"
+title = "Chat"
+verified = "2026-10-07"
+
+[[model]]
+id = "alpha-4b"
+name = "Alpha 4B"
+by = "Acme"
+type = "chat"
+note = "A small chat model."
+license = "Apache-2.0"
+params = "4B"
+context = 131072
+input = ["text", "image"]
+features = ["thinking", "tools"]
+start = true
+bundled = false
+hidden = false
+
+[model.run.llamacpp]
+repo = "acme/Alpha-4B-GGUF"
+rev = "0123456789abcdef0123456789abcdef01234567"
+mode = "embedding"
+files = [ { file = "Alpha-4B-Q4_K_M.gguf", size = 2500000000, sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", label = "Q4_K_M", best = true } ]
+
+[model.run.llamacpp.companions]
+mmproj = { file = "mmproj-Alpha-4B-F16.gguf", size = 800000000, sha256 = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+
+[model.run.ollama]
+ref = "alpha:4b"
+size = 3300000000
+"#;
+
+#[test]
+fn every_key_the_catalog_page_lists_is_one_the_schema_accepts() {
+    let table: toml::Table = toml::from_str(EVERY_CATALOG_KEY).unwrap();
+    let typed =
+        read_body::<CatalogDoc>(&table).unwrap_or_else(|e| panic!("{}: {}", e.path, e.message));
+    assert!(
+        typed.unknown.is_empty(),
+        "keys the schema does not know: {:?}",
+        typed.unknown
+    );
+    for group in CATALOG_GROUPS {
+        for attribute in group.attributes {
+            // a key is said as `key = ...`, as a header ending in `.key]`, as the header `[[key]]` of a list, or inside a header (`[model.run.x]`)
+            let (as_value, as_table, as_list, as_inner) = (
+                format!("{} =", attribute.name),
+                format!(".{}]", attribute.name),
+                format!("[[{}]]", attribute.name),
+                format!(".{}.", attribute.name),
+            );
+            assert!(
+                EVERY_CATALOG_KEY.contains(&as_value)
+                    || EVERY_CATALOG_KEY.contains(&as_table)
+                    || EVERY_CATALOG_KEY.contains(&as_list)
+                    || EVERY_CATALOG_KEY.contains(&as_inner),
+                "`{}` of `{}` is not exercised by the document above",
+                attribute.name,
+                group.heading
+            );
+        }
+    }
+    // and a key that is not on the page is reported, not read
+    let table: toml::Table = toml::from_str("[[model]]\nid = \"x\"\nfeatures_ = []\n").unwrap();
+    let typed = read_body::<CatalogDoc>(&table).unwrap();
+    assert_eq!(typed.unknown.len(), 1, "{:?}", typed.unknown);
+}
+
+#[test]
+fn the_catalog_page_has_a_table_for_every_type_of_the_document() {
+    let types: Vec<&str> = CATALOG_RS
+        .lines()
+        .filter_map(|l| l.strip_prefix("pub struct "))
+        .filter_map(|rest| rest.split(' ').next())
+        .collect();
+    let described: Vec<&str> = CATALOG_GROUPS.iter().filter_map(|g| g.source).collect();
+    for ty in &types {
+        assert!(
+            described.contains(ty),
+            "`struct {ty}` of doc/catalog.rs has no table in CATALOG_GROUPS"
+        );
+    }
 }
 
 fn snake(camel: &str) -> String {
@@ -265,7 +391,21 @@ name = "x"
 [acquire]
 assets = { by = "names", rules = [ { when = "os == 'linux'", name = "n" } ], label = "${tag}" }
 "#;
-    for text in [keywords, names] {
+    let lookups = r#"
+[engine]
+name = "x"
+[models]
+lookup = [
+  { id = "library", use = "ollama_library", site = "https://ollama.example", bytes_per_parameter = 0.6, show_variants = 16, types = ["chat"] },
+  { id = "hub", use = "huggingface_gguf", site = "https://hub.example", popular = 30, keyword = 20, similar = 20, prefer = ["Q4_K_M"], skip = ["*-of-*"], show_variants = 4, types = ["chat", "vision"] },
+]
+bundle = [ { id = "vision", label = "with projector", help = "h", parts = [ { kind = "mmproj", label = "projector", match = ["mmproj*.gguf"], prefer = ["F16"] } ] } ]
+mode = [ { id = "embedding", label = "embedding server", help = "h", arg = ["--embeddings"] } ]
+[components.mmproj]
+order = 80
+bind = { arg = ["--mmproj", "${component.path}"] }
+"#;
+    for text in [keywords, names, lookups] {
         let table: toml::Table = toml::from_str(text).unwrap();
         let typed =
             read_body::<EngineDoc>(&table).unwrap_or_else(|e| panic!("{}: {}", e.path, e.message));
@@ -280,7 +420,7 @@ assets = { by = "names", rules = [ { when = "os == 'linux'", name = "n" } ], lab
         for attribute in group.attributes {
             let key = format!("{} =", attribute.name);
             assert!(
-                keywords.contains(&key) || names.contains(&key),
+                keywords.contains(&key) || names.contains(&key) || lookups.contains(&key),
                 "`{}` of `{}` is not exercised by the variant document above",
                 attribute.name,
                 group.heading

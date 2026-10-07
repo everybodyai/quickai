@@ -5,6 +5,7 @@
 //! Merging works on generic tables (docs/implementation-plan.md, C1); the typed bodies here are
 //! read from the merged table, and keys the build does not know are reported, not fatal (C3).
 
+pub mod catalog;
 pub mod duration;
 pub mod engine;
 pub mod reference;

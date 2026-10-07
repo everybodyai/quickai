@@ -1,8 +1,9 @@
 //! The typed form of a vocabulary document (`kind = "vocab"`): the shared nouns that engines and
 //! the interface refer to by id (docs/architecture.md, section 6.2). From work package 3.6 it holds
-//! the APIs an engine can serve and how the proxy reads each one; the adapter kinds of Phase 4 join
-//! it later. A vocabulary can name things and describe them; it cannot start a program or reach a
-//! host.
+//! the APIs an engine can serve and how the proxy reads each one; from WP4.9 the types of model a
+//! look-up sorts what it found into and the classes of size it filters by (docs/lookup-and-bundles.md);
+//! the adapter kinds of Phase 4 join it later. A vocabulary can name things and describe them; it
+//! cannot start a program or reach a host.
 
 use serde::Deserialize;
 
@@ -12,6 +13,62 @@ pub struct VocabDoc {
     pub modalities: Vec<Modality>,
     #[serde(default, rename = "api")]
     pub apis: Vec<ApiDef>,
+    /// What a look-up sorts models into: the first whose rule holds, in the order written.
+    #[serde(default, rename = "model_type")]
+    pub model_types: Vec<ModelTypeDef>,
+    /// The bands of size a look-up filters by, from the smallest up.
+    #[serde(default, rename = "size_class")]
+    pub size_classes: Vec<SizeClassDoc>,
+}
+
+/// A type of model: Chat, Code, Vision, Embedding, ...
+#[derive(Clone, Debug, Deserialize)]
+pub struct ModelTypeDef {
+    pub id: String,
+    /// The heading of its section (default: the id).
+    pub label: Option<String>,
+    pub help: Option<String>,
+    /// Where its section stands among the others: lower first (default: after the ones that say, in
+    /// the order written).
+    pub order: Option<i64>,
+    /// What a model is when no type's rule holds. At most one.
+    #[serde(default)]
+    pub default: bool,
+    /// What makes a model one of this type; any one hit is enough.
+    #[serde(default, rename = "match")]
+    pub rule: TypeRuleDef,
+}
+
+/// What a type's `match` may say, every list in lower or any case.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct TypeRuleDef {
+    /// What a source says the model can do (an Ollama card's `vision`).
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+    /// The pipeline tag of a Hugging Face repository (`image-text-to-text`).
+    #[serde(default)]
+    pub pipelines: Vec<String>,
+    /// Another tag of the repository.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// A word of the model's name; four letters or more also match the start of one.
+    #[serde(default)]
+    pub words: Vec<String>,
+    /// A kind of companion file found beside the model (`mmproj`).
+    #[serde(default)]
+    pub companions: Vec<String>,
+}
+
+/// A band of sizes.
+#[derive(Clone, Debug, Deserialize)]
+pub struct SizeClassDoc {
+    pub id: String,
+    /// What the filter says (`Small (< 4 GB)`; default: the id).
+    pub label: Option<String>,
+    pub help: Option<String>,
+    /// The size it ends below (`4GiB`, `500MB`); left out, the class takes every size beyond the
+    /// last bound and is written last.
+    pub below: Option<String>,
 }
 
 /// A kind of input or output a model can have.

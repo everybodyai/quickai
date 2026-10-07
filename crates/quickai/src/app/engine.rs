@@ -21,7 +21,7 @@ use super::App;
 use crate::events::ServerState;
 use crate::jobs::Job;
 use crate::launch;
-use crate::models::{discover_all, ModelEntry};
+use crate::models::ModelEntry;
 use crate::paths;
 use crate::prims::engine_models::{
     ask_to_remove, list_models, models_to_show, spawn_pull, ListSpec, Listing, PullHandle, PullSpec,
@@ -120,10 +120,8 @@ impl App {
             self.host_facts.data_dir = dir.clone();
         }
         self.missing_binary_warned = false;
-        self.show_lookup = false;
-        self.lookup_results.clear();
-        self.lookup_status.clear();
-        self.lookup_rx = None;
+        self.lookup = super::lookup_view::LookupView::default();
+        self.catalog = super::catalog_view::CatalogView::default();
         self.model_input.clear();
         self.show_api_info = false;
         self.named = NamedModels::default();
@@ -139,7 +137,7 @@ impl App {
                 .unwrap_or_else(paths::user_models_dir);
             let _ = std::fs::create_dir_all(&self.models_dir);
             self.models_dir_input = self.models_dir.display().to_string();
-            self.models = discover_all(&self.bundled_models_dir, &self.models_dir);
+            self.models = self.scan_models();
         }
         self.selected = self.remembered_model().unwrap_or(0);
         self.refresh_recommendation();
@@ -256,13 +254,27 @@ impl App {
 
     /// What was typed into the model box: pulled, or refused with the sentence the document gives.
     pub(super) fn submit_model_input(&mut self, ctx: &egui::Context) {
+        let text = self.model_input.clone();
+        if self.pull_named(&text, ctx) {
+            self.model_input.clear();
+        }
+    }
+
+    /// `text` as the model box takes it: the engine's own rules say whether it is a name to pull or
+    /// something to refuse, and a refusal is the sentence under the box. The box and a row of the
+    /// look-up come through here, so nothing is pulled that the box would not take. `true` when a
+    /// pull was started.
+    pub(super) fn pull_named(&mut self, text: &str, ctx: &egui::Context) -> bool {
         let Some(engine) = self.engine_doc() else {
-            return;
+            return false;
         };
-        let action = engine.classify_input(&self.model_input, &|path| Path::new(path).is_file());
+        let action = engine.classify_input(text, &|path| Path::new(path).is_file());
         match action {
-            InputAction::Nothing => {}
-            InputAction::Reject { message } => self.named.notice = Some(message),
+            InputAction::Nothing => false,
+            InputAction::Reject { message } => {
+                self.named.notice = Some(message);
+                false
+            }
             InputAction::Pull { reference } => {
                 let Some(endpoint) = self.endpoint() else {
                     self.named.notice = Some(format!(
@@ -270,7 +282,7 @@ impl App {
                         self.engine_name(),
                         self.server_name()
                     ));
-                    return;
+                    return false;
                 };
                 let call = self
                     .engine_doc()
@@ -281,10 +293,9 @@ impl App {
                         "{} has no way to pull a model.",
                         self.engine_name()
                     ));
-                    return;
+                    return false;
                 };
                 self.named.notice = None;
-                self.model_input.clear();
                 let ctx = ctx.clone();
                 self.named.pull = Some(spawn_pull(
                     endpoint,
@@ -292,6 +303,7 @@ impl App {
                     reference,
                     move || ctx.request_repaint(),
                 ));
+                true
             }
         }
     }
@@ -359,6 +371,7 @@ mod tests {
     use crate::launch;
     use crate::settings::Settings;
     use crate::testkit::fake_ollama::FakeOllama;
+    use quickai_core::lookup::present::Fetch;
 
     const GB: u64 = 1024 * 1024 * 1024;
 
@@ -583,6 +596,7 @@ mod tests {
                 app.show_log_pane(ui);
             });
             app.show_settings_window(ui.ctx());
+            app.show_catalog_window(ui.ctx());
             app.show_confirm_delete_modal(ui.ctx());
         });
         output.textures_delta.clear();
@@ -790,6 +804,7 @@ mod tests {
                 app.push_log(line);
             }
             app.poll_named_models(ctx);
+            app.poll_lookup();
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -1090,5 +1105,2082 @@ mod tests {
         let empty = FakeGithub::with_releases(json!([]));
         let nothing = lookup_status_against(&dir.join("e"), &empty.base());
         assert_eq!(nothing, "No compatible builds found.");
+    }
+
+    // ---- looking models up online (work package 3.15, group U; 4.9) -----------------------------------
+
+    /// An application on Ollama whose look-up is pointed at `site` by a document of the person's.
+    fn app_with_library(dir: &Path, site: &str) -> App {
+        let cfg = dir.join("cfg");
+        std::fs::create_dir_all(cfg.join("engines")).unwrap();
+        std::fs::write(
+            cfg.join("engines/ollama.toml"),
+            format!(
+                "schema = 1\nkind = \"engine\"\nid = \"ollama\"\n\n[[models.lookup]]\nid = \"library\"\nsite = \"{site}\"\n"
+            ),
+        )
+        .unwrap();
+        let mut settings = Settings::default();
+        settings.set_chosen_engine("ollama");
+        app_over(dir, settings)
+    }
+
+    /// Waits for the look-up that was started to say its last word.
+    fn until_looked_up(app: &mut App, ctx: &egui::Context) {
+        until(app, ctx, "the look-up to end", |a| !a.lookup.running());
+    }
+
+    /// The reference a button of the entry called `name` pulls, by the words on it.
+    fn reference_of(
+        app: &App,
+        name: &str,
+        label_starts: &str,
+    ) -> quickai_core::lookup::present::Fetch {
+        app.lookup
+            .entries
+            .iter()
+            .find(|e| e.name == name)
+            .unwrap_or_else(|| panic!("{name} is not among the results"))
+            .offers
+            .iter()
+            .find(|o| o.label.starts_with(label_starts))
+            .unwrap_or_else(|| panic!("{name} has no button that says {label_starts}"))
+            .fetch
+            .clone()
+    }
+
+    #[test]
+    fn p3_u21_nothing_is_asked_of_the_site_until_the_button_is_pressed_and_then_once() {
+        use crate::testkit::fake_library::FakeLibrary;
+        let dir = crate::testkit::scratch("u21");
+        let library = FakeLibrary::start();
+        let mut app = app_with_library(&dir, &library.base());
+        let ctx = egui::Context::default();
+        assert!(app.can_look_up());
+        assert_eq!(
+            quickai_core::models::lookups(app.engine_doc().unwrap())[0]
+                .kind
+                .site(),
+            library.base()
+        );
+
+        // the window drawn, the engine's panels polled, as often as a frame: the site hears nothing
+        for state in [ServerState::Idle, ServerState::Running, ServerState::Idle] {
+            draw_everything(&mut app, &ctx, state);
+            app.poll_named_models(&ctx);
+        }
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(library.requests().is_empty(), "{:?}", library.paths());
+        assert!(!app.lookup.open && app.lookup.entries.is_empty());
+
+        // the button, with the box empty: the site's own list of what is popular, once
+        app.start_lookup(&ctx, "");
+        assert!(app.lookup.open);
+        assert!(app.lookup.status.starts_with("Looking"));
+        until_looked_up(&mut app, &ctx);
+        assert_eq!(app.lookup.entries.len(), 20);
+        assert!(!app.lookup.failed);
+        assert!(
+            app.lookup
+                .status
+                .starts_with("Found 20 models in 127.0.0.1:"),
+            "{}",
+            app.lookup.status
+        );
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+        assert_eq!(library.paths(), ["/search?c=local"], "one request, no more");
+
+        // the words in the box, a tag among them not counting; the box itself is left as it was
+        app.model_input = "gpt:20b".into();
+        let words = app.model_input.clone();
+        app.start_lookup(&ctx, &words);
+        assert!(
+            app.lookup.entries.is_empty(),
+            "the old results are gone while it looks"
+        );
+        until_looked_up(&mut app, &ctx);
+        assert_eq!(app.lookup.entries.len(), 19);
+        assert_eq!(app.model_input, "gpt:20b");
+        assert_eq!(
+            library.paths(),
+            ["/search?c=local", "/search?q=gpt&c=local"]
+        );
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+
+        // closed with the X, they are not shown and not asked for again
+        app.lookup.open = false;
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+        assert_eq!(library.requests().len(), 2);
+    }
+
+    #[test]
+    fn p3_u22_a_look_up_that_fails_keeps_its_sentence_and_one_that_finds_nothing_says_so() {
+        use crate::testkit::fake_library::{Behaviour, FakeLibrary};
+        let dir = crate::testkit::scratch("u22");
+        let library = FakeLibrary::start();
+        let mut app = app_with_library(&dir, &library.base());
+        let ctx = egui::Context::default();
+
+        library.behave(Behaviour::Error(503));
+        app.start_lookup(&ctx, "");
+        until_looked_up(&mut app, &ctx);
+        assert!(app.lookup.entries.is_empty());
+        assert!(app.lookup.failed, "a failure is marked as one");
+        assert!(
+            app.lookup
+                .status
+                .contains("answered with an error (HTTP 503)"),
+            "the failure is the last word: {}",
+            app.lookup.status
+        );
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+
+        library.behave(Behaviour::Garbage);
+        app.start_lookup(&ctx, "");
+        until_looked_up(&mut app, &ctx);
+        assert!(
+            app.lookup
+                .status
+                .contains("not one this version of QuickAI can read"),
+            "{}",
+            app.lookup.status
+        );
+
+        library.behave(Behaviour::Normal);
+        app.start_lookup(&ctx, "zzzz");
+        until_looked_up(&mut app, &ctx);
+        assert!(
+            app.lookup.status.starts_with("No models found in"),
+            "{}",
+            app.lookup.status
+        );
+        assert!(!app.lookup.failed, "finding nothing is not a failure");
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+
+        // a site that is not there: told, and the window goes on
+        let mut gone = app_with_library(&crate::testkit::scratch("u22-gone"), "http://127.0.0.1:1");
+        gone.start_lookup(&ctx, "");
+        until_looked_up(&mut gone, &ctx);
+        assert!(
+            gone.lookup
+                .status
+                .starts_with("Could not reach 127.0.0.1:1:"),
+            "{}",
+            gone.lookup.status
+        );
+    }
+
+    #[test]
+    fn p3_u23_a_row_is_pulled_through_the_rules_of_the_box_and_waits_for_a_running_daemon() {
+        use crate::testkit::fake_library::FakeLibrary;
+        use quickai_core::lookup::present::Fetch;
+        let dir = crate::testkit::scratch("u23");
+        let library = FakeLibrary::start();
+        let fake = FakeOllama::start();
+        let mut settings = Settings::default();
+        settings.set_chosen_engine("ollama");
+        with_ollama_values(
+            &mut settings,
+            &[
+                ("port", Value::Int(fake.port() as i64)),
+                ("mode", Value::Str("attach".into())),
+            ],
+        );
+        let cfg = dir.join("cfg");
+        std::fs::create_dir_all(cfg.join("engines")).unwrap();
+        std::fs::write(
+            cfg.join("engines/ollama.toml"),
+            format!(
+                "schema = 1\nkind = \"engine\"\nid = \"ollama\"\n\n[[models.lookup]]\nid = \"library\"\nsite = \"{}\"\n",
+                library.base()
+            ),
+        )
+        .unwrap();
+        let mut app = app_over(&dir, settings);
+        let ctx = egui::Context::default();
+        app.start_lookup(&ctx, "");
+        until_looked_up(&mut app, &ctx);
+        let four = reference_of(&app, "tev1", "4b");
+        assert_eq!(four, Fetch::Reference("tev1:4b".into()));
+        let tev1 = app
+            .lookup
+            .entries
+            .iter()
+            .find(|e| e.name == "tev1")
+            .unwrap();
+        assert_eq!(
+            tev1.offers
+                .iter()
+                .map(|o| o.fetch.clone())
+                .collect::<Vec<_>>(),
+            [Fetch::Reference("tev1:0.8b".into()), four.clone()]
+        );
+        let bare = reference_of(&app, "laya", "latest");
+        assert_eq!(bare, Fetch::Reference("laya".into()));
+
+        // nothing is running: the sentence of the box, and nothing sent
+        app.model_input = "typed words".into();
+        app.fetch_offer(&four, &ctx);
+        let said = app.named.notice.clone().unwrap();
+        assert!(said.starts_with("Start Ollama first"), "{said}");
+        assert!(app.named.pull.is_none());
+        assert!(fake.requests_to("/api/pull").is_empty());
+        assert_eq!(
+            app.model_input, "typed words",
+            "a row does not take the box"
+        );
+
+        // the daemon that is already running is attached
+        let selection = launch::selection_from_values("ollama", None, app.values.map(), false);
+        let plan = launch::plan_selection(
+            &app.registry,
+            &selection,
+            Path::new("/nowhere/ollama"),
+            app.machine.clone(),
+            None,
+        )
+        .unwrap_or_else(|e| panic!("{e:#?}"));
+        app.session.start(&plan, "", || {});
+        until(&mut app, &ctx, "the engine to run", |a| {
+            a.session.state() == ServerState::Running
+        });
+
+        // a size is pulled as name:size, and the model it makes is in the list afterwards
+        app.fetch_offer(&four, &ctx);
+        assert!(app.named.pull.is_some());
+        assert_eq!(app.model_input, "typed words", "still the person's");
+        until(&mut app, &ctx, "the pull to end", |a| {
+            a.named.pull.is_none()
+        });
+        assert_eq!(app.named.notice, None);
+        until(&mut app, &ctx, "the new model in the list", |a| {
+            a.models.iter().any(|m| m.filename == "tev1:4b")
+        });
+        // a model with no size shown is pulled by its name
+        app.fetch_offer(&bare, &ctx);
+        assert!(app.named.pull.is_some());
+        until(&mut app, &ctx, "the pull to end", |a| {
+            a.named.pull.is_none()
+        });
+        assert_eq!(
+            fake.requests_to("/api/pull")
+                .iter()
+                .map(|r| r.body.clone())
+                .collect::<Vec<_>>(),
+            [
+                Some(json!({"model": "tev1:4b"})),
+                Some(json!({"model": "laya"}))
+            ]
+        );
+        // the box's own rules still apply to what a row says: nothing refused is sent
+        assert!(!app.pull_named("Not A Name", &ctx));
+        assert!(app
+            .named
+            .notice
+            .as_deref()
+            .is_some_and(|n| n.contains("does not look like a model name")));
+        assert_eq!(fake.requests_to("/api/pull").len(), 2);
+        app.session.stop();
+        until(&mut app, &ctx, "the session to end", |a| {
+            a.session.state() == ServerState::Idle
+        });
+    }
+
+    #[test]
+    fn p3_u24_choosing_another_engine_clears_the_results() {
+        use crate::testkit::fake_library::FakeLibrary;
+        let dir = crate::testkit::scratch("u24");
+        let library = FakeLibrary::start();
+        let mut app = app_with_library(&dir, &library.base());
+        let ctx = egui::Context::default();
+        app.start_lookup(&ctx, "");
+        until_looked_up(&mut app, &ctx);
+        assert_eq!(app.lookup.entries.len(), 20);
+
+        // llama.cpp has a look-up of its own; what Ollama found is not shown under it
+        app.switch_engine("llamacpp");
+        assert_eq!(app.engine, "llamacpp");
+        assert!(!app.lookup.open && app.lookup.entries.is_empty());
+        assert!(!app.lookup.running());
+        assert!(
+            app.can_look_up(),
+            "llama.cpp declares the Hugging Face look-up"
+        );
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+        assert_eq!(
+            library.requests().len(),
+            1,
+            "and nothing more was asked of it"
+        );
+
+        // back to Ollama: nothing is shown until it is asked for again
+        app.switch_engine("ollama");
+        assert!(!app.lookup.open && app.lookup.entries.is_empty());
+    }
+
+    #[test]
+    fn p3_u25_the_results_draw_whatever_the_look_up_said() {
+        use quickai_core::lookup::present::{Entry, Fetch, Offer};
+        let dir = crate::testkit::scratch("u25");
+        let mut app = app_on(&dir, {
+            let mut s = Settings::default();
+            s.set_chosen_engine("ollama");
+            s
+        });
+        let ctx = egui::Context::default();
+        let offer = |label: &str, bundle: Option<&str>, class: Option<&str>| Offer {
+            bundle: bundle.map(str::to_string),
+            label: label.to_string(),
+            hover: format!("Pull {label}"),
+            bytes: Some(1),
+            estimated: true,
+            class: class.map(str::to_string),
+            recommended: label.starts_with('4'),
+            fetch: Fetch::Reference(label.to_string()),
+        };
+        let entry = |name: &str, kind: Option<&str>, offers: Vec<Offer>, description: &str| Entry {
+            key: format!("k:{name}"),
+            name: name.into(),
+            description: description.into(),
+            downloads: Some(3_301_841),
+            likes: Some(12),
+            tags: vec!["tools".into(), "thinking".into()],
+            model_type: kind.map(str::to_string),
+            offers,
+            card: None,
+        };
+        app.lookup.open = true;
+        app.lookup.status = "Found 6 models in ollama.com's library.".into();
+        app.lookup.entries = vec![
+            entry("plain", Some("chat"), vec![offer("latest", None, None)], ""),
+            entry(
+                "sized",
+                Some("vision"),
+                vec![
+                    offer("1b", None, Some("small")),
+                    offer("2b", None, Some("small")),
+                ],
+                "A sentence.",
+            ),
+            entry(
+                "many",
+                Some("code"),
+                (1..60)
+                    .map(|i| offer(&format!("{i}b"), None, Some("large")))
+                    .collect(),
+                &"long ".repeat(400),
+            ),
+            Entry {
+                downloads: None,
+                likes: None,
+                tags: Vec::new(),
+                ..entry("bare", None, vec![offer("7b", None, Some("medium"))], "d")
+            },
+            entry(
+                "bundled",
+                Some("vision"),
+                vec![
+                    offer("Q4", None, Some("small")),
+                    offer("Q4", Some("vision"), Some("medium")),
+                ],
+                "",
+            ),
+            entry(
+                "odd",
+                Some("no-such-type"),
+                vec![offer("x", None, None)],
+                "",
+            ),
+        ];
+        for state in [ServerState::Idle, ServerState::Running] {
+            app.named.notice = (state == ServerState::Running).then(|| "a notice".to_string());
+            draw_everything(&mut app, &ctx, state);
+        }
+        // each size filter, and one no entry has anything in
+        for size in ["small", "medium", "large", "no-such-class"] {
+            app.lookup.size = Some(size.to_string());
+            draw_everything(&mut app, &ctx, ServerState::Idle);
+        }
+        app.lookup.size = None;
+        // only a status, and nothing at all
+        app.lookup.entries.clear();
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+        app.lookup.status.clear();
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+        app.lookup.open = false;
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+    }
+
+    // ---- the look-up of llama.cpp's window, and what a result is fetched as (work package 4.9) --------
+
+    /// llama.cpp's window with its look-up pointed at `site` by a document of the person's, which patches
+    /// the look-up of the application by its `id`: the rest of what that says stays.
+    fn llama_with_hub(dir: &Path, site: &str) -> App {
+        let cfg = dir.join("cfg");
+        std::fs::create_dir_all(cfg.join("engines")).unwrap();
+        std::fs::write(
+            cfg.join("engines/llamacpp.toml"),
+            format!(
+                "schema = 1\nkind = \"engine\"\nid = \"llamacpp\"\n\n[[models.lookup]]\nid = \"hub\"\nsite = \"{site}\"\n"
+            ),
+        )
+        .unwrap();
+        let settings = Settings {
+            models_dir_override: Some(dir.join("models").display().to_string()),
+            ..Settings::default()
+        };
+        let mut app = app_over(dir, settings);
+        // the models that ship beside the executable of a checkout are not this test's business
+        app.bundled_models_dir = dir.join("bundled");
+        app.load_engine_state();
+        app
+    }
+
+    /// Frames, until what is being downloaded has come.
+    fn until_downloaded(app: &mut App, _ctx: &egui::Context) {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while app.download.is_some() {
+            assert!(Instant::now() < deadline, "the download did not end");
+            app.poll_download();
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    const RECORDED: [&str; 6] = [
+        "mudler/locate-anything.cpp-gguf",
+        "unsloth/Qwen3.8-27B-GGUF",
+        "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+        "mixedbread-ai/mxbai-embed-large-v1",
+        "mudler/Laguna-XS-2.1-APEX-GGUF",
+        "ggml-org/gemma-3-4b-it-GGUF",
+    ];
+
+    #[test]
+    fn p3_v16_the_window_of_llamacpp_looks_up_the_hub_when_asked_and_draws_what_it_finds() {
+        use crate::testkit::fake_hub::{Behaviour, FakeHub};
+        let dir = crate::testkit::scratch("v16");
+        let hub = FakeHub::start();
+        hub.only(&RECORDED);
+        let mut app = llama_with_hub(&dir, &hub.base());
+        let ctx = egui::Context::default();
+        assert_eq!(app.engine, "llamacpp");
+        assert!(app.can_look_up());
+        // the look-up of the application, moved to the fake: the rest of what its document says stays
+        let declared = quickai_core::models::lookups(app.engine_doc().unwrap())[0]
+            .kind
+            .clone();
+        match &declared {
+            quickai_core::registry::engine::LookupKind::HuggingFace {
+                site,
+                popular,
+                read,
+                ..
+            } => {
+                assert_eq!(site, &hub.base());
+                assert_eq!(*popular, 30);
+                assert_eq!(read.show_variants, 4);
+            }
+            other => panic!("{other:?}"),
+        }
+
+        // drawn as often as a frame: the site hears nothing
+        for state in [ServerState::Idle, ServerState::Idle] {
+            draw_everything(&mut app, &ctx, state);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(hub.requests().is_empty());
+
+        // Look up online: the most downloaded; each model is of a type, with its buttons
+        app.start_lookup(&ctx, "");
+        until_looked_up(&mut app, &ctx);
+        assert_eq!(app.lookup.entries.len(), 6);
+        assert!(!app.lookup.failed);
+        assert!(
+            app.lookup
+                .status
+                .starts_with("Found 6 models on 127.0.0.1:"),
+            "{}",
+            app.lookup.status
+        );
+        let sections = quickai_core::lookup::view::arrange(
+            &app.lookup.entries,
+            app.registry.vocabulary().model_types(),
+            None,
+        );
+        assert_eq!(
+            sections
+                .iter()
+                .map(|s| (s.type_id.as_str(), s.entries.len()))
+                .collect::<Vec<_>>(),
+            [("code", 2), ("vision", 2), ("embedding", 1), ("other", 1)]
+        );
+        for size in [None, Some("small"), Some("medium"), Some("large")] {
+            app.lookup.size = size.map(str::to_string);
+            draw_everything(&mut app, &ctx, ServerState::Idle);
+        }
+        app.lookup.size = None;
+
+        // Search with words, as the box does: the phrase, and then its words
+        app.start_lookup(&ctx, "qwen coder");
+        until_looked_up(&mut app, &ctx);
+        assert!(hub
+            .paths()
+            .iter()
+            .any(|p| p.ends_with("&search=qwen%20coder")));
+        assert!(!app.lookup.entries.is_empty());
+
+        // a site that fails: the sentence stays, red, and nothing is said to be missing
+        hub.behave(Behaviour::Error(503));
+        app.start_lookup(&ctx, "");
+        until_looked_up(&mut app, &ctx);
+        assert!(app.lookup.failed && app.lookup.entries.is_empty());
+        assert!(
+            app.lookup
+                .status
+                .contains("answered with an error (HTTP 503)"),
+            "{}",
+            app.lookup.status
+        );
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+        // closed with the X, it is not shown and not asked for again
+        let asked = hub.requests().len();
+        app.lookup.open = false;
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+        assert_eq!(hub.requests().len(), asked);
+    }
+
+    /// The fake hub with one small vision repository (two quantizations and a projector), and an
+    /// application whose look-up reads it.
+    fn tiny_world(
+        name: &str,
+    ) -> (
+        crate::testkit::Scratch,
+        crate::testkit::fake_hub::FakeHub,
+        App,
+    ) {
+        let dir = crate::testkit::scratch(name);
+        let hub = crate::testkit::fake_hub::FakeHub::start();
+        hub.add_repo(
+            "me/tiny-vl-GGUF",
+            Some("image-text-to-text"),
+            &["gguf"],
+            &[
+                ("tiny-Q4_K_M.gguf", 3000),
+                ("tiny-Q8_0.gguf", 5000),
+                ("mmproj-f16.gguf", 1000),
+            ],
+        );
+        hub.only(&["me/tiny-vl-GGUF"]);
+        let app = llama_with_hub(&dir, &hub.base());
+        (dir, hub, app)
+    }
+
+    /// The button of the first result that says `label` and is in the bundle `bundle` (none: the weights).
+    fn button(
+        app: &App,
+        label: &str,
+        bundle: Option<&str>,
+    ) -> quickai_core::lookup::present::Fetch {
+        app.lookup.entries[0]
+            .offers
+            .iter()
+            .find(|o| o.label.starts_with(label) && o.bundle.as_deref() == bundle)
+            .unwrap_or_else(|| {
+                panic!(
+                    "no button `{label}` in {bundle:?}: {:?}",
+                    app.lookup.entries[0]
+                        .offers
+                        .iter()
+                        .map(|o| (&o.label, &o.bundle))
+                        .collect::<Vec<_>>()
+                )
+            })
+            .fetch
+            .clone()
+    }
+
+    fn model_names(app: &App) -> Vec<&str> {
+        app.models.iter().map(|m| m.filename.as_str()).collect()
+    }
+
+    #[test]
+    fn p3_b17_a_button_of_a_bundle_downloads_both_files_and_the_picker_lists_the_weights_alone() {
+        let (dir, hub, mut app) = tiny_world("b17");
+        let ctx = egui::Context::default();
+        app.start_lookup(&ctx, "");
+        until_looked_up(&mut app, &ctx);
+        assert_eq!(app.lookup.entries.len(), 1);
+        let entry = &app.lookup.entries[0];
+        assert_eq!(entry.model_type.as_deref(), Some("vision"));
+        assert_eq!(
+            entry.offers.iter().filter(|o| o.bundle.is_none()).count(),
+            2
+        );
+        assert_eq!(
+            entry
+                .offers
+                .iter()
+                .filter(|o| o.bundle.as_deref() == Some("vision"))
+                .count(),
+            2
+        );
+
+        // the quantization with its projector: one download, the weights selected afterwards
+        let both = button(&app, "Q4_K_M", Some("vision"));
+        app.fetch_offer(&both, &ctx);
+        assert!(app.download.is_some());
+        until_downloaded(&mut app, &ctx);
+        let models = dir.join("models");
+        assert!(models.join("tiny-Q4_K_M.gguf").is_file());
+        assert!(models.join("me--tiny-vl-GGUF--mmproj-f16.gguf").is_file());
+        assert_eq!(
+            model_names(&app),
+            ["tiny-Q4_K_M.gguf"],
+            "the projector is not a model"
+        );
+        assert_eq!(app.models[app.selected].filename, "tiny-Q4_K_M.gguf");
+        let selected = &app.models[app.selected];
+        assert_eq!(selected.companions.len(), 1);
+        assert!(selected.companions[0].exists());
+        assert!(
+            selected
+                .note
+                .contains("With its projector: mmproj-f16.gguf."),
+            "{}",
+            selected.note
+        );
+        let log: Vec<&String> = app.log_lines.iter().collect();
+        for said in [
+            "Downloading tiny-Q4_K_M.gguf (1 of 2)",
+            "Downloading mmproj-f16.gguf (2 of 2)",
+            "Download complete: tiny-Q4_K_M.gguf",
+        ] {
+            assert!(
+                log.iter().any(|l| l.as_str() == said),
+                "`{said}` is not in the log: {log:?}"
+            );
+        }
+        // the file is not fetched twice: the other quantization shares the projector
+        let other = button(&app, "Q8_0", Some("vision"));
+        app.fetch_offer(&other, &ctx);
+        until_downloaded(&mut app, &ctx);
+        assert_eq!(
+            hub.downloads(),
+            [
+                "me/tiny-vl-GGUF:tiny-Q4_K_M.gguf",
+                "me/tiny-vl-GGUF:mmproj-f16.gguf",
+                "me/tiny-vl-GGUF:tiny-Q8_0.gguf",
+            ]
+        );
+        assert_eq!(model_names(&app), ["tiny-Q4_K_M.gguf", "tiny-Q8_0.gguf"]);
+        assert_eq!(app.models[app.selected].filename, "tiny-Q8_0.gguf");
+        // only the weights: the same as ever, with no record and no companion
+        std::fs::remove_dir_all(&models).unwrap();
+        let alone = button(&app, "Q4_K_M", None);
+        app.fetch_offer(&alone, &ctx);
+        until_downloaded(&mut app, &ctx);
+        assert_eq!(model_names(&app), ["tiny-Q4_K_M.gguf"]);
+        assert!(app.models[0].companions.is_empty());
+        assert!(!models.join("tiny-Q4_K_M.gguf.bundle.json").exists());
+        // a second button is not taken while one download runs
+        let again = button(&app, "Q8_0", None);
+        app.fetch_offer(&again, &ctx);
+        let asked = hub.downloads().len();
+        app.fetch_offer(&again, &ctx);
+        until_downloaded(&mut app, &ctx);
+        assert_eq!(hub.downloads().len(), asked + 1, "one download, not two");
+        // a name to pull is not something llama.cpp does
+        app.fetch_offer(
+            &quickai_core::lookup::present::Fetch::Reference("qwen3:4b".into()),
+            &ctx,
+        );
+        assert!(
+            app.log_lines
+                .back()
+                .unwrap()
+                .contains("does not pull models by name"),
+            "{:?}",
+            app.log_lines.back()
+        );
+    }
+
+    #[test]
+    fn p3_b18_start_puts_the_projector_on_the_command_line_and_says_when_it_has_gone() {
+        let (dir, _hub, mut app) = tiny_world("b18");
+        let ctx = egui::Context::default();
+        app.start_lookup(&ctx, "");
+        until_looked_up(&mut app, &ctx);
+        let both = button(&app, "Q4_K_M", Some("vision"));
+        app.fetch_offer(&both, &ctx);
+        until_downloaded(&mut app, &ctx);
+        let args_of = |app: &mut App, model: &crate::models::ModelEntry| -> Vec<String> {
+            let selection = app.run_selection(Some(model));
+            let plan = launch::plan_selection(
+                &app.registry,
+                &selection,
+                Path::new("/opt/llama-server"),
+                app.machine.clone(),
+                None,
+            )
+            .unwrap_or_else(|e| panic!("{e:#?}"));
+            match &plan.units[0].start[0] {
+                quickai_core::plan::Start::Spawn(spawn) => spawn.arg_values(),
+                other => panic!("{other:?}"),
+            }
+        };
+
+        let model = app.models[app.selected].clone();
+        let projector = dir
+            .join("models/me--tiny-vl-GGUF--mmproj-f16.gguf")
+            .display()
+            .to_string();
+        let args = args_of(&mut app, &model);
+        let at = args
+            .iter()
+            .position(|a| a == "--mmproj")
+            .expect("--mmproj is on the command line");
+        assert_eq!(args[at + 1], projector);
+        assert_eq!(
+            args[0..2],
+            [
+                "--model".to_string(),
+                dir.join("models/tiny-Q4_K_M.gguf").display().to_string()
+            ]
+        );
+
+        // the file has gone: said in the log, and the model starts without it
+        std::fs::remove_file(&projector).unwrap();
+        app.rescan_models();
+        let model = app.models[app.selected].clone();
+        let args = args_of(&mut app, &model);
+        assert!(!args.iter().any(|a| a == "--mmproj"), "{args:?}");
+        assert!(
+            app.log_lines.back().unwrap().contains(
+                "mmproj-f16.gguf is not in the models folder any more: starting without it"
+            ),
+            "{:?}",
+            app.log_lines.back()
+        );
+        // a model that has no companion is started as it always was
+        let plain = crate::models::ModelEntry {
+            filename: "plain.gguf".into(),
+            path: dir.join("models/plain.gguf"),
+            display: "plain.gguf".into(),
+            note: String::new(),
+            bundled: false,
+            size_bytes: 1,
+            companions: Vec::new(),
+            mode: None,
+        };
+        let args = args_of(&mut app, &plain);
+        assert!(!args.iter().any(|a| a.contains("mmproj")), "{args:?}");
+    }
+
+    #[test]
+    fn p3_b19_deleting_a_model_deletes_its_record_and_the_projector_that_nothing_else_uses() {
+        let (dir, _hub, mut app) = tiny_world("b19");
+        let ctx = egui::Context::default();
+        app.start_lookup(&ctx, "");
+        until_looked_up(&mut app, &ctx);
+        for label in ["Q4_K_M", "Q8_0"] {
+            let both = button(&app, label, Some("vision"));
+            app.fetch_offer(&both, &ctx);
+            until_downloaded(&mut app, &ctx);
+        }
+        let models = dir.join("models");
+        assert_eq!(model_names(&app), ["tiny-Q4_K_M.gguf", "tiny-Q8_0.gguf"]);
+
+        // the modal says the projector goes with it, unless another model uses it
+        let first = app
+            .models
+            .iter()
+            .find(|m| m.filename == "tiny-Q4_K_M.gguf")
+            .unwrap()
+            .path
+            .clone();
+        app.pending_delete = Some(PendingDelete::Model {
+            filename: "tiny-Q4_K_M.gguf".into(),
+            path: first.clone(),
+        });
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+        app.pending_delete = None;
+
+        app.delete_model_files("tiny-Q4_K_M.gguf", &first);
+        assert_eq!(model_names(&app), ["tiny-Q8_0.gguf"]);
+        assert!(
+            models.join("me--tiny-vl-GGUF--mmproj-f16.gguf").exists(),
+            "the other quantization still uses it"
+        );
+        assert!(!models.join("tiny-Q4_K_M.gguf.bundle.json").exists());
+        let log: Vec<&String> = app.log_lines.iter().rev().take(3).collect();
+        assert!(
+            log.iter()
+                .any(|l| l.as_str()
+                    == "Kept me--tiny-vl-GGUF--mmproj-f16.gguf: another model uses it."),
+            "{log:?}"
+        );
+        assert!(
+            log.iter()
+                .any(|l| l.as_str() == "Deleted model: tiny-Q4_K_M.gguf"),
+            "{log:?}"
+        );
+
+        let last = app.models[0].path.clone();
+        app.delete_model_files("tiny-Q8_0.gguf", &last);
+        assert!(app.models.is_empty());
+        assert!(
+            !models.join("me--tiny-vl-GGUF--mmproj-f16.gguf").exists(),
+            "the last model that used it takes it"
+        );
+        let left: Vec<String> = std::fs::read_dir(&models)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+        assert!(
+            app.log_lines
+                .iter()
+                .any(|l| l.starts_with("Also deleted: ") && l.contains("mmproj-f16.gguf")),
+            "{:?}",
+            app.log_lines
+        );
+    }
+
+    #[test]
+    fn p3_b20_a_bundle_that_comes_in_part_still_lists_the_weights_and_says_what_is_missing() {
+        use quickai_core::lookup::huggingface::file_url;
+        use quickai_core::lookup::present::{Download, Fetch, Piece};
+        let (dir, hub, mut app) = tiny_world("b20");
+        let ctx = egui::Context::default();
+        let piece = |kind: Option<&str>, store_as: &str, name: &str, url: String| Piece {
+            kind: kind.map(str::to_string),
+            label: kind.map_or("model", |_| "projector").to_string(),
+            url,
+            store_as: store_as.to_string(),
+            name: name.to_string(),
+            size: Some(1000),
+            sha256: None,
+        };
+        let download = Download {
+            files: vec![
+                piece(
+                    None,
+                    "half-Q4_K_M.gguf",
+                    "half-Q4_K_M.gguf",
+                    file_url(&hub.base(), "me/tiny-vl-GGUF", "main", "tiny-Q4_K_M.gguf"),
+                ),
+                piece(
+                    Some("mmproj"),
+                    "me--x--mmproj.gguf",
+                    "mmproj.gguf",
+                    "http://127.0.0.1:1/gone".to_string(),
+                ),
+            ],
+            bundle: Some("vision".into()),
+            source: "huggingface:me/tiny-vl-GGUF".into(),
+            mode: None,
+        };
+        app.fetch_offer(&Fetch::Files(download), &ctx);
+        until_downloaded(&mut app, &ctx);
+        assert_eq!(
+            model_names(&app),
+            ["half-Q4_K_M.gguf"],
+            "the weights run alone, so they are listed"
+        );
+        assert!(
+            app.models[0].companions.is_empty(),
+            "and nothing says they have a pair"
+        );
+        assert!(dir.join("models/half-Q4_K_M.gguf").is_file());
+        let failed = app
+            .log_lines
+            .iter()
+            .find(|l| l.starts_with("Download failed:"))
+            .expect("the failure is in the log");
+        assert!(
+            failed.contains("could not fetch mmproj.gguf")
+                && failed.contains("half-Q4_K_M.gguf was fetched and runs without it"),
+            "{failed}"
+        );
+    }
+
+    /// Run by hand: the real thing, end to end. A real bundle (`ggml-org/SmolVLM-256M-Instruct-GGUF`, a repository with
+    /// no pipeline tag, 175 MB of weights and a projector of 190 MB) is looked up on the real hub, fetched by the button
+    /// of its row, listed by the picker as the weights alone and started by a real `llama-server` with its projector:
+    /// the server must say it takes pictures (`/props`, `modalities.vision`). When the look-up reads the hub wrongly,
+    /// when the projector is not the file the server wants, or when `--mmproj` is not what it is told, this is the
+    /// test that says so; it is the one thing the fakes cannot.
+    #[test]
+    #[ignore = "manual: needs the internet (about 365 MB) and a real llama-server (QUICKAI_REAL_LLAMA=<llama-server> cargo test -p quickai p3_b21 -- --ignored)"]
+    fn p3_b21_a_real_bundle_is_fetched_and_the_real_server_loads_it_with_its_projector() {
+        let binary = std::env::var("QUICKAI_REAL_LLAMA")
+            .expect("QUICKAI_REAL_LLAMA is the llama-server to run");
+        let dir = crate::testkit::scratch("b21");
+        let port = crate::testkit::free_port();
+        let settings = Settings {
+            port,
+            ctx_size: 2048,
+            n_gpu_layers: 0,
+            llama_bin_override: Some(binary),
+            models_dir_override: Some(dir.join("models").display().to_string()),
+            ..Settings::default()
+        };
+        // the documents of the application as they are: the real hub
+        let mut app = app_over(&dir, settings);
+        app.bundled_models_dir = dir.join("bundled");
+        app.load_engine_state();
+        let ctx = egui::Context::default();
+
+        app.start_lookup(&ctx, "SmolVLM-256M");
+        let deadline = Instant::now() + Duration::from_secs(180);
+        while app.lookup.running() {
+            assert!(Instant::now() < deadline, "the look-up did not end");
+            app.poll_lookup();
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(!app.lookup.failed, "{}", app.lookup.status);
+        let entry = app
+            .lookup
+            .entries
+            .iter()
+            .find(|e| e.name == "ggml-org/SmolVLM-256M-Instruct-GGUF")
+            .unwrap_or_else(|| {
+                panic!(
+                    "not found: {:?}",
+                    app.lookup
+                        .entries
+                        .iter()
+                        .map(|e| &e.name)
+                        .collect::<Vec<_>>()
+                )
+            });
+        assert_eq!(
+            entry.model_type.as_deref(),
+            Some("vision"),
+            "no pipeline tag, but a projector beside the weights"
+        );
+        let bundle = entry
+            .offers
+            .iter()
+            .find(|o| o.bundle.as_deref() == Some("vision") && o.label.starts_with("Q8_0"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "no bundle of Q8_0: {:?}",
+                    entry.offers.iter().map(|o| &o.label).collect::<Vec<_>>()
+                )
+            })
+            .fetch
+            .clone();
+
+        app.fetch_offer(&bundle, &ctx);
+        let deadline = Instant::now() + Duration::from_secs(1800);
+        while app.download.is_some() {
+            assert!(Instant::now() < deadline, "the download did not end");
+            app.poll_download();
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        assert!(
+            app.log_lines
+                .iter()
+                .any(|l| l.starts_with("Download complete:")),
+            "{:?}",
+            app.log_lines
+        );
+        assert_eq!(model_names(&app), ["SmolVLM-256M-Instruct-Q8_0.gguf"]);
+        let model = &app.models[app.selected];
+        assert_eq!(model.companions.len(), 1);
+        assert_eq!(
+            model.companions[0].name,
+            "mmproj-SmolVLM-256M-Instruct-f16.gguf"
+        );
+        assert!(model.companions[0].exists());
+
+        // started the way the Start button does it, by the real server
+        app.start_selected(&ctx);
+        until(&mut app, &ctx, "the real server to be running", |a| {
+            a.session.state() == ServerState::Running
+        });
+        let log: Vec<&String> = app.log_lines.iter().collect();
+        assert!(
+            log.iter()
+                .any(|l| l.starts_with("$ ") && l.contains("--mmproj ")),
+            "the command line has no --mmproj: {log:?}"
+        );
+        let props: serde_json::Value = ureq::get(format!("http://127.0.0.1:{port}/props"))
+            .call()
+            .expect("/props")
+            .into_body()
+            .read_json()
+            .expect("JSON");
+        assert_eq!(
+            props["modalities"]["vision"],
+            json!(true),
+            "the server was started with the projector and does not take pictures: {props}"
+        );
+        app.session.stop_blocking();
+    }
+
+    // ------------------------------------------------------------------ the recommended models (J)
+
+    /// A world with the fake hub serving two repositories, and a catalog of the person's that lists
+    /// them with the hashes their bytes really have, one that lies about its hash, one too big for any
+    /// machine and one that is only a name.
+    fn catalog_world(
+        name: &str,
+    ) -> (
+        crate::testkit::Scratch,
+        crate::testkit::fake_hub::FakeHub,
+        App,
+    ) {
+        use crate::testkit::fake_hub::{content, sha256_hex, FakeHub};
+        let dir = crate::testkit::scratch(name);
+        let hub = FakeHub::start();
+        for (repo, files) in [
+            (
+                "me/tiny-vl-GGUF",
+                vec![
+                    ("tiny-Q4_K_M.gguf", 3000),
+                    ("tiny-Q8_0.gguf", 5000),
+                    ("mmproj-f16.gguf", 1000),
+                ],
+            ),
+            ("me/vec-GGUF", vec![("vec-Q8_0.gguf", 2000)]),
+            ("me/liar-GGUF", vec![("liar-Q4_K_M.gguf", 1500)]),
+        ] {
+            hub.add_repo(repo, None, &["gguf"], &files);
+        }
+        hub.only(&[]);
+        let hash = |repo: &str, file: &str, len: usize| sha256_hex(&content(repo, file, len));
+        let document = format!(
+            r#"schema = 1
+kind = "catalog"
+id = "t"
+title = "Test"
+verified = "2026-10-07"
+
+[[model]]
+id = "tiny-vl"
+name = "Tiny VL"
+by = "Acme"
+type = "vision"
+note = "Describes pictures."
+license = "Apache-2.0"
+params = "0.1B"
+context = 8192
+input = ["text", "image"]
+features = ["fast"]
+start = true
+[model.run.llamacpp]
+repo = "me/tiny-vl-GGUF"
+rev = "0123456789abcdef0123456789abcdef01234567"
+files = [
+  {{ file = "tiny-Q4_K_M.gguf", size = 3000, sha256 = "{q4}", best = true }},
+  {{ file = "tiny-Q8_0.gguf", size = 5000, sha256 = "{q8}" }},
+]
+[model.run.llamacpp.companions]
+mmproj = {{ file = "mmproj-f16.gguf", size = 1000, sha256 = "{proj}" }}
+[model.run.ollama]
+ref = "tiny-vl:1b"
+size = 900
+
+[[model]]
+id = "vec"
+name = "Vec Maker"
+by = "Acme"
+type = "embedding"
+note = "For search."
+[model.run.llamacpp]
+repo = "me/vec-GGUF"
+mode = "embedding"
+files = [ {{ file = "vec-Q8_0.gguf", size = 2000, sha256 = "{vec}" }} ]
+
+[[model]]
+id = "liar"
+name = "Liar"
+note = "Lists a hash its file does not have."
+[model.run.llamacpp]
+repo = "me/liar-GGUF"
+files = [ {{ file = "liar-Q4_K_M.gguf", size = 1500, sha256 = "{zero}" }} ]
+
+[[model]]
+id = "huge"
+name = "Huge"
+note = "More than any computer here."
+[model.run.llamacpp]
+repo = "me/huge-GGUF"
+files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }} ]
+"#,
+            q4 = hash("me/tiny-vl-GGUF", "tiny-Q4_K_M.gguf", 3000),
+            q8 = hash("me/tiny-vl-GGUF", "tiny-Q8_0.gguf", 5000),
+            proj = hash("me/tiny-vl-GGUF", "mmproj-f16.gguf", 1000),
+            vec = hash("me/vec-GGUF", "vec-Q8_0.gguf", 2000),
+            zero = "0".repeat(64),
+        );
+        std::fs::create_dir_all(dir.join("cfg/catalog")).unwrap();
+        std::fs::write(dir.join("cfg/catalog/t.toml"), document).unwrap();
+        let app = llama_with_hub(&dir, &hub.base());
+        (dir, hub, app)
+    }
+
+    fn catalog_names(app: &App) -> Vec<&str> {
+        app.catalog
+            .entries
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect()
+    }
+
+    /// The button of the entry called `name` that says `label` in the bundle `bundle`.
+    fn catalog_button(app: &App, name: &str, label: &str, bundle: Option<&str>) -> Fetch {
+        app.catalog
+            .entries
+            .iter()
+            .find(|e| e.name == name)
+            .unwrap_or_else(|| panic!("no `{name}` in {:?}", catalog_names(app)))
+            .offers
+            .iter()
+            .find(|o| o.label.starts_with(label) && o.bundle.as_deref() == bundle)
+            .unwrap_or_else(|| panic!("no button `{label}` of {name}"))
+            .fetch
+            .clone()
+    }
+
+    #[test]
+    fn p3_j19_the_window_opens_without_asking_anything_and_shows_what_the_engine_offers() {
+        let (_dir, hub, mut app) = catalog_world("j19");
+        let ctx = egui::Context::default();
+        assert!(app.can_recommend());
+        assert!(!app.catalog.open);
+        // drawn as often as a frame, closed: the site hears nothing and nothing is built
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+        assert!(app.catalog.entries.is_empty());
+
+        app.open_catalog();
+        assert!(app.catalog.open);
+        // what the engine offers, smallest first; the shipped list is there too
+        let names = catalog_names(&app);
+        assert!(
+            names.contains(&"Tiny VL") && names.contains(&"Vec Maker") && names.contains(&"Huge")
+        );
+        let at = |n: &str| names.iter().position(|x| *x == n).unwrap();
+        assert!(
+            at("Vec Maker") < at("Tiny VL") && at("Tiny VL") < at("Huge"),
+            "{names:?}"
+        );
+        // it opens on what the list says to start with
+        assert_eq!(
+            app.catalog.browse.scope,
+            quickai_core::lookup::view::Scope::Start
+        );
+        for state in [ServerState::Idle, ServerState::Running] {
+            draw_everything(&mut app, &ctx, state);
+        }
+        // every choice of the window draws: a scope, words, a size
+        use quickai_core::lookup::view::Scope;
+        for scope in [
+            Scope::All,
+            Scope::Start,
+            Scope::Type("vision".into()),
+            Scope::Type("embedding".into()),
+        ] {
+            for (words, size) in [
+                ("", None),
+                ("tiny", None),
+                ("zzzz", None),
+                ("", Some("small")),
+                ("", Some("large")),
+            ] {
+                app.catalog.browse.scope = scope.clone();
+                app.catalog.browse.words = words.to_string();
+                app.catalog.browse.size = size.map(str::to_string);
+                draw_everything(&mut app, &ctx, ServerState::Idle);
+            }
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(
+            hub.requests().is_empty(),
+            "opening and browsing ask nothing: {:?}",
+            hub.paths()
+        );
+
+        // what is known of a model is on its entry
+        let tiny = app
+            .catalog
+            .entries
+            .iter()
+            .find(|e| e.name == "Tiny VL")
+            .unwrap();
+        let card = tiny.card.as_ref().unwrap();
+        assert_eq!(
+            (
+                card.by.as_str(),
+                card.license.as_str(),
+                card.params.as_str()
+            ),
+            ("Acme", "Apache-2.0", "0.1B")
+        );
+        assert!(card.start);
+        let line = super::super::lookup_view::facts_line(tiny);
+        assert_eq!(line, "Acme · 0.1B · Apache-2.0 · 8.2K context", "{line}");
+        assert_eq!(
+            super::super::lookup_view::card_chips(card),
+            ["sees images", "fast"]
+        );
+
+        // closed with the window's own X, it is not drawn; another engine starts again from nothing
+        app.catalog.open = false;
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+        app.open_catalog();
+        app.load_engine_state();
+        assert!(!app.catalog.open && app.catalog.entries.is_empty());
+    }
+
+    /// One frame of `show` on a screen of `size`, without the textures a renderer would take.
+    fn frame(
+        ctx: &egui::Context,
+        size: egui::Vec2,
+        show: impl FnMut(&mut egui::Ui),
+    ) -> egui::FullOutput {
+        frame_with(ctx, size, Vec::new(), show)
+    }
+
+    /// The same frame with what a person did in it: the pointer moved, the wheel turned.
+    fn frame_with(
+        ctx: &egui::Context,
+        size: egui::Vec2,
+        events: Vec<egui::Event>,
+        show: impl FnMut(&mut egui::Ui),
+    ) -> egui::FullOutput {
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            events,
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(raw, show);
+        output.textures_delta.clear();
+        output
+    }
+
+    /// A text a frame painted: its words, how far it reaches, where the screen cuts it, and whether
+    /// egui had to cut it short itself (the ellipsis of a label that is told to stay on one line).
+    struct Painted {
+        text: String,
+        right: f32,
+        clip_right: f32,
+        elided: bool,
+        at: egui::Pos2,
+    }
+
+    fn painted_texts(shapes: &[egui::epaint::ClippedShape]) -> Vec<Painted> {
+        fn walk(shape: &egui::epaint::Shape, clip: egui::Rect, into: &mut Vec<Painted>) {
+            match shape {
+                egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, clip, into)),
+                egui::epaint::Shape::Text(t) => into.push(Painted {
+                    text: t.galley.text().to_string(),
+                    right: t.pos.x + t.galley.rect.max.x,
+                    clip_right: clip.max.x,
+                    elided: t.galley.elided,
+                    at: t.pos,
+                }),
+                _ => {}
+            }
+        }
+        let mut into = Vec::new();
+        for clipped in shapes {
+            walk(&clipped.shape, clipped.clip_rect, &mut into);
+        }
+        into
+    }
+
+    /// The texts of a frame that a person cannot read to the end: cut with an ellipsis, or reaching
+    /// past the edge that clips them.
+    fn cut_texts(painted: &[Painted]) -> Vec<String> {
+        painted
+            .iter()
+            .filter(|p| p.elided || p.right > p.clip_right + 0.5)
+            .map(|p| {
+                format!(
+                    "{:?} (reaches {:.0} of {:.0}, elided: {})",
+                    p.text, p.right, p.clip_right, p.elided
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn p3_j24_nothing_a_card_says_is_cut_off_at_the_edge_of_the_list() {
+        let ctx = egui::Context::default();
+        for engine in ["llamacpp", "ollama"] {
+            let dir = crate::testkit::scratch(&format!("j24-{engine}"));
+            let mut settings = Settings::default();
+            settings.set_chosen_engine(engine);
+            let mut app = app_on(&dir, settings);
+            app.open_catalog();
+            let entries = std::mem::take(&mut app.catalog.entries);
+            assert!(entries.len() > 40, "{engine}: {} models", entries.len());
+            let labels = app
+                .engine_doc()
+                .map(super::super::lookup_view::bundle_words)
+                .unwrap_or_default();
+
+            // every card of the shipped list, one under the other, as wide as the list is
+            let installed = |_: &quickai_core::lookup::present::Offer| false;
+            let fit = |_: &quickai_core::lookup::present::Offer| crate::hardware::Fit::Comfortable;
+            let decor = super::super::lookup_view::Decor {
+                installed: &installed,
+                fit: &fit,
+                ram: 16 * GB,
+            };
+            let mut chosen = None;
+            let output = frame(&ctx, egui::vec2(576.0, 30000.0), |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    for entry in &entries {
+                        let shown: Vec<usize> = (0..entry.offers.len()).collect();
+                        super::super::lookup_view::show_entry(
+                            ui,
+                            entry,
+                            &shown,
+                            &labels,
+                            false,
+                            &mut chosen,
+                            Some(&decor),
+                        );
+                    }
+                });
+            });
+            let painted = painted_texts(&output.shapes);
+            let cut = cut_texts(&painted);
+            assert!(cut.is_empty(), "{engine}: cut short: {cut:#?}");
+            // and what a model says of itself is all there, in one piece
+            for entry in entries.iter().filter(|e| !e.description.is_empty()) {
+                assert!(
+                    painted.iter().any(|p| p.text == entry.description),
+                    "{engine}: the note of {} is not on the screen: {:?}",
+                    entry.name,
+                    entry.description
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn p3_j24b_the_window_as_a_person_first_sees_it_has_nothing_cut_off() {
+        let ctx = egui::Context::default();
+        let dir = crate::testkit::scratch("j24b");
+        let mut app = app_on(&dir, Settings::default());
+        app.open_catalog();
+        let mut failed: Vec<String> = Vec::new();
+        for scope in [
+            quickai_core::lookup::view::Scope::Start,
+            quickai_core::lookup::view::Scope::All,
+            quickai_core::lookup::view::Scope::Type("chat".into()),
+        ] {
+            app.catalog.browse.scope = scope.clone();
+            // the first frames of a window only measure it
+            let size = egui::vec2(760.0, 560.0);
+            for _ in 0..2 {
+                frame(&ctx, size, |ui| app.show_catalog_window(ui.ctx()));
+            }
+            let output = frame(&ctx, size, |ui| app.show_catalog_window(ui.ctx()));
+            let painted = painted_texts(&output.shapes);
+            assert!(
+                painted
+                    .iter()
+                    .any(|p| p.text.contains("Recommended models")),
+                "{scope:?}: the window was not drawn"
+            );
+            for p in &painted {
+                eprintln!(
+                    "DBG {scope:?} at=({:.0},{:.0}) right={:.0} clip={:.0} {:?}",
+                    p.at.x, p.at.y, p.right, p.clip_right, p.text
+                );
+            }
+            let cut = cut_texts(&painted);
+            if !cut.is_empty() {
+                failed.push(format!("{scope:?}: cut short: {cut:#?}"));
+            }
+        }
+        assert!(failed.is_empty(), "{failed:#?}");
+    }
+
+    #[test]
+    fn p3_j24c_another_page_of_the_list_starts_at_its_top() {
+        use quickai_core::lookup::view::{browse, Scope};
+        let ctx = egui::Context::default();
+        let dir = crate::testkit::scratch("j24c");
+        let mut app = app_on(&dir, Settings::default());
+        app.open_catalog();
+        app.catalog.browse.scope = Scope::All;
+        let size = egui::vec2(760.0, 560.0);
+        let draw = |app: &mut App, events: Vec<egui::Event>| {
+            painted_texts(
+                &frame_with(&ctx, size, events, |ui| app.show_catalog_window(ui.ctx())).shapes,
+            )
+        };
+        // a window needs a few frames to be measured, and a list a few to be drawn from a new top
+        let show = |app: &mut App| {
+            let mut texts = Vec::new();
+            for _ in 0..3 {
+                texts = draw(app, Vec::new());
+            }
+            texts
+        };
+        // the wheel turned down over the list, and the toolkit left to finish the motion: it smooths a
+        // turn over many frames, and what is left of it would move a list that was just put at its top
+        let over_list = egui::pos2(450.0, 350.0);
+        let scroll_down = |app: &mut App| {
+            for _ in 0..10 {
+                let turn = egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0.0, -300.0),
+                    phase: egui::TouchPhase::Move,
+                    modifiers: egui::Modifiers::NONE,
+                };
+                draw(app, vec![egui::Event::PointerMoved(over_list), turn]);
+            }
+            for _ in 0..120 {
+                draw(app, Vec::new());
+            }
+        };
+        let types = app.registry.vocabulary().model_types().to_vec();
+        let first_of = |app: &App, what: &quickai_core::lookup::view::Browse| -> String {
+            let shown = browse(&app.catalog.entries, &types, what);
+            app.catalog.entries[shown.sections[0].entries[0].entry]
+                .name
+                .clone()
+        };
+        let on_screen = |texts: &[Painted], name: &str| texts.iter().any(|p| p.text == name);
+        let page = |scope: Scope| quickai_core::lookup::view::Browse {
+            scope,
+            ..Default::default()
+        };
+
+        let first_all = first_of(&app, &page(Scope::All));
+        assert!(
+            on_screen(&show(&mut app), &first_all),
+            "{first_all} is not at the top"
+        );
+        scroll_down(&mut app);
+        assert!(
+            !on_screen(&show(&mut app), &first_all),
+            "the wheel did not move the list: {first_all} is still at its top"
+        );
+
+        // another page is shown from its top, not from where the last one was left
+        let vision = page(Scope::Type("vision".into()));
+        let first_vision = first_of(&app, &vision);
+        app.catalog.browse = vision;
+        assert!(
+            on_screen(&show(&mut app), &first_vision),
+            "the page of the vision models does not start at {first_vision}"
+        );
+
+        // and so does a search
+        scroll_down(&mut app);
+        let found = quickai_core::lookup::view::Browse {
+            words: "qwen".into(),
+            ..page(Scope::All)
+        };
+        let first_found = first_of(&app, &found);
+        app.catalog.browse = found;
+        assert!(
+            on_screen(&show(&mut app), &first_found),
+            "the search does not start at {first_found}"
+        );
+
+        // and a window that is opened again
+        scroll_down(&mut app);
+        app.open_catalog();
+        let first_start = first_of(&app, &app.catalog.browse);
+        assert!(
+            on_screen(&show(&mut app), &first_start),
+            "the window opened again does not start at {first_start}"
+        );
+    }
+
+    #[test]
+    fn p3_j20_a_button_of_the_window_fetches_what_it_says_and_the_model_is_then_installed_and_named(
+    ) {
+        let (dir, hub, mut app) = catalog_world("j20");
+        let ctx = egui::Context::default();
+        app.open_catalog();
+        let installed = |app: &App, name: &str, label: &str, bundle: Option<&str>| -> bool {
+            let o = app
+                .catalog
+                .entries
+                .iter()
+                .find(|e| e.name == name)
+                .unwrap()
+                .offers
+                .iter()
+                .find(|o| o.label.starts_with(label) && o.bundle.as_deref() == bundle)
+                .unwrap();
+            super::super::catalog_view::installed(o, &app.catalog.have, &[])
+        };
+        assert!(!installed(&app, "Tiny VL", "Q4_K_M", None));
+        // a failure that an earlier click left in the window goes with the next click on a size
+        app.catalog.note = Some("Download failed: an earlier one".into());
+
+        // the weights with the projector: one job, both files, each checked against its hash
+        let fetch = catalog_button(&app, "Tiny VL", "Q4_K_M", Some("vision"));
+        assert!(matches!(&fetch, Fetch::Files(d) if d.files.iter().all(|f| f.sha256.is_some())));
+        app.fetch_offer(&fetch, &ctx);
+        until_downloaded(&mut app, &ctx);
+        assert_eq!(
+            app.catalog.note, None,
+            "a download that ends well leaves no note"
+        );
+        assert!(
+            app.log_lines
+                .iter()
+                .any(|l| l == "Download complete: tiny-Q4_K_M.gguf"),
+            "{:?}",
+            app.log_lines
+        );
+        let models = dir.join("models");
+        assert!(models.join("tiny-Q4_K_M.gguf").is_file());
+        assert!(models.join("me--tiny-vl-GGUF--mmproj-f16.gguf").is_file());
+        assert!(models.join("tiny-Q4_K_M.gguf.bundle.json").is_file());
+        // the window knows without being told: the weights alone are there, and so is the pair, and
+        // the other quantization is not
+        assert!(installed(&app, "Tiny VL", "Q4_K_M", None));
+        assert!(installed(&app, "Tiny VL", "Q4_K_M", Some("vision")));
+        assert!(!installed(&app, "Tiny VL", "Q8_0", None));
+        // the picker names it as the list does, with what the list says of it and what goes with it
+        let model = app
+            .models
+            .iter()
+            .find(|m| m.filename == "tiny-Q4_K_M.gguf")
+            .unwrap();
+        assert_eq!(model.display, "Tiny VL (Q4_K_M)");
+        assert!(
+            model.note.starts_with("Describes pictures."),
+            "{}",
+            model.note
+        );
+        assert!(
+            model.note.contains("With its projector: mmproj-f16.gguf."),
+            "{}",
+            model.note
+        );
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+        // asked for once each, from the commit the list names
+        assert_eq!(
+            hub.downloads(),
+            [
+                "me/tiny-vl-GGUF:tiny-Q4_K_M.gguf",
+                "me/tiny-vl-GGUF:mmproj-f16.gguf"
+            ]
+        );
+        assert!(
+            hub.paths()
+                .iter()
+                .all(|p| p.contains("/resolve/0123456789abcdef0123456789abcdef01234567/")),
+            "{:?}",
+            hub.paths()
+        );
+
+        // an embedding model: its record says the mode, the picker says how it starts, and Start uses it
+        let fetch = catalog_button(&app, "Vec Maker", "Q8_0", None);
+        app.fetch_offer(&fetch, &ctx);
+        until_downloaded(&mut app, &ctx);
+        let vec = app
+            .models
+            .iter()
+            .find(|m| m.filename == "vec-Q8_0.gguf")
+            .unwrap()
+            .clone();
+        assert_eq!(vec.display, "Vec Maker (Q8_0)");
+        assert_eq!(vec.mode.as_deref(), Some("embedding"));
+        assert!(
+            vec.note.ends_with("Starts as an embedding server."),
+            "{}",
+            vec.note
+        );
+        assert!(models.join("vec-Q8_0.gguf.bundle.json").is_file());
+        let selection = app.run_selection(Some(&vec));
+        assert_eq!(selection.mode.as_deref(), Some("embedding"));
+        assert!(
+            app.log_lines.iter().all(|l| !l.contains("mode `")),
+            "no complaint: {:?}",
+            app.log_lines
+        );
+
+        // a model with no mode and no record starts as it always did
+        let tiny = app
+            .models
+            .iter()
+            .find(|m| m.filename == "tiny-Q4_K_M.gguf")
+            .unwrap()
+            .clone();
+        let selection = app.run_selection(Some(&tiny));
+        assert_eq!(selection.mode, None);
+        assert_eq!(selection.components["mmproj"].len(), 1);
+    }
+
+    #[test]
+    fn p3_j20b_a_file_that_is_not_the_one_the_list_was_made_for_is_not_kept_and_the_window_says_so()
+    {
+        let (dir, _hub, mut app) = catalog_world("j20b");
+        let ctx = egui::Context::default();
+        app.open_catalog();
+        let fetch = catalog_button(&app, "Liar", "Q4_K_M", None);
+        app.fetch_offer(&fetch, &ctx);
+        until_downloaded(&mut app, &ctx);
+        let said = app.log_lines.iter().cloned().collect::<Vec<_>>().join("\n");
+        assert!(
+            said.contains("liar-Q4_K_M.gguf does not match the checksum the list was made with")
+                && said.contains("it was not kept"),
+            "{said}"
+        );
+        // the log is under the window: the window says it too
+        let note = app.catalog.note.clone().unwrap_or_default();
+        assert!(
+            note.starts_with("Download failed: liar-Q4_K_M.gguf does not match the checksum"),
+            "{note}"
+        );
+        let left: Vec<String> = std::fs::read_dir(dir.join("models"))
+            .map(|d| {
+                d.flatten()
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert!(left.is_empty(), "{left:?}");
+        assert!(app.models.iter().all(|m| m.filename != "liar-Q4_K_M.gguf"));
+        assert!(app.download.is_none(), "the window can fetch again");
+    }
+
+    #[test]
+    fn p3_j21_in_ollamas_window_the_list_offers_names_and_marks_the_ones_it_has() {
+        let dir = crate::testkit::scratch("j21");
+        std::fs::create_dir_all(dir.join("cfg/catalog")).unwrap();
+        std::fs::write(
+            dir.join("cfg/catalog/t.toml"),
+            r#"schema = 1
+kind = "catalog"
+id = "t"
+
+[[model]]
+id = "tiny-vl"
+name = "Tiny VL"
+type = "vision"
+start = true
+[model.run.llamacpp]
+repo = "me/tiny-vl-GGUF"
+files = [ { file = "tiny-Q4_K_M.gguf", size = 3000 } ]
+[model.run.ollama]
+ref = "tiny-vl:1b"
+size = 900
+
+[[model]]
+id = "qwen"
+name = "Qwen"
+[model.run.ollama]
+ref = "qwen3:4b"
+size = 2500000000
+"#,
+        )
+        .unwrap();
+        remember_models(&dir, &["qwen3:4b", "bonsai-q1:latest"]);
+        let mut settings = Settings::default();
+        settings.set_chosen_engine("ollama");
+        let mut app = app_over(&dir, settings);
+        let ctx = egui::Context::default();
+        assert!(app.can_recommend());
+        app.open_catalog();
+        // only what Ollama pulls by name, as buttons that pull: the list of this test and the one the
+        // application ships
+        let names = catalog_names(&app);
+        assert!(
+            names.contains(&"Tiny VL") && names.contains(&"Qwen"),
+            "{names:?}"
+        );
+        assert!(
+            names.contains(&"Qwen3.5 4B"),
+            "the shipped list is there too"
+        );
+        assert!(app.catalog.entries.iter().all(|e| e
+            .offers
+            .iter()
+            .all(|o| matches!(o.fetch, Fetch::Reference(_)))));
+        assert_eq!(
+            catalog_button(&app, "Tiny VL", "1b", None),
+            Fetch::Reference("tiny-vl:1b".into())
+        );
+        // the models Ollama lists are installed, whichever way their name is written
+        let mut listed: Vec<String> = app.models.iter().map(|m| m.filename.clone()).collect();
+        listed.sort();
+        assert_eq!(listed, ["bonsai-q1:latest", "qwen3:4b"]);
+        let installed = |name: &str| {
+            let o = &app
+                .catalog
+                .entries
+                .iter()
+                .find(|e| e.name == name)
+                .unwrap()
+                .offers[0];
+            super::super::catalog_view::installed(o, &app.catalog.have, &listed)
+        };
+        assert!(installed("Qwen"));
+        assert!(!installed("Tiny VL"));
+        draw_everything(&mut app, &ctx, ServerState::Idle);
+        // llama.cpp's window does not offer the model it has no files for, and vice versa
+        let mut settings = Settings::default();
+        settings.set_chosen_engine("llamacpp");
+        let mut llama = app_over(&dir, settings);
+        llama.open_catalog();
+        assert!(
+            catalog_names(&llama).contains(&"Tiny VL") && !catalog_names(&llama).contains(&"Qwen")
+        );
+    }
+
+    #[test]
+    fn p3_j17_a_button_is_installed_when_every_file_it_fetches_is_there_at_its_size() {
+        use quickai_core::lookup::present::{Download, Offer, Piece};
+        use std::collections::BTreeMap;
+        let piece = |name: &str, size: Option<u64>| Piece {
+            kind: None,
+            label: "model".into(),
+            url: String::new(),
+            store_as: name.into(),
+            name: name.into(),
+            size,
+            sha256: None,
+        };
+        let offer = |files: Vec<Piece>| Offer {
+            bundle: None,
+            label: "x".into(),
+            hover: String::new(),
+            bytes: None,
+            estimated: false,
+            class: None,
+            recommended: false,
+            fetch: Fetch::Files(Download {
+                files,
+                bundle: None,
+                source: String::new(),
+                mode: None,
+            }),
+        };
+        let have: BTreeMap<String, u64> =
+            [("a.gguf".to_string(), 10), ("b.gguf".to_string(), 20)].into();
+        let is =
+            |files: Vec<Piece>| super::super::catalog_view::installed(&offer(files), &have, &[]);
+        assert!(is(vec![piece("a.gguf", Some(10))]));
+        assert!(
+            is(vec![piece("a.gguf", Some(10)), piece("b.gguf", Some(20))]),
+            "a bundle: all of it"
+        );
+        assert!(
+            !is(vec![piece("a.gguf", Some(10)), piece("c.gguf", Some(5))]),
+            "one is missing"
+        );
+        assert!(
+            !is(vec![piece("a.gguf", Some(11))]),
+            "a file of another size is another file"
+        );
+        assert!(
+            is(vec![piece("a.gguf", None)]),
+            "a size not said is not looked at"
+        );
+        assert!(!is(vec![]), "nothing to fetch is not a model that is there");
+        // a name the engine lists, whichever way it is written
+        let reference = |r: &str| Offer {
+            fetch: Fetch::Reference(r.into()),
+            ..offer(vec![])
+        };
+        let listed = vec!["qwen3:latest".to_string(), "library/gemma3:4b".to_string()];
+        let there = |r: &str| super::super::catalog_view::installed(&reference(r), &have, &listed);
+        assert!(there("qwen3") && there("qwen3:latest") && there("gemma3:4b"));
+        assert!(!there("qwen3:4b") && !there("gemma3"));
+    }
+
+    // ----------------------------------------------------------------- the real thing, by kind of model
+
+    /// A picture of one colour, as a PNG: a signature, a header, one block of uncompressed data, an end.
+    fn plain_png(width: u32, height: u32, rgb: [u8; 3]) -> Vec<u8> {
+        fn crc32(bytes: &[u8]) -> u32 {
+            let mut crc = !0u32;
+            for b in bytes {
+                crc ^= u32::from(*b);
+                for _ in 0..8 {
+                    crc = if crc & 1 == 1 {
+                        (crc >> 1) ^ 0xEDB8_8320
+                    } else {
+                        crc >> 1
+                    };
+                }
+            }
+            !crc
+        }
+        fn chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
+            let mut out = (data.len() as u32).to_be_bytes().to_vec();
+            let mut body = kind.to_vec();
+            body.extend_from_slice(data);
+            out.extend_from_slice(&body);
+            out.extend_from_slice(&crc32(&body).to_be_bytes());
+            out
+        }
+        // every line: a filter byte (none) and the pixels
+        let mut line = vec![0u8];
+        for _ in 0..width {
+            line.extend_from_slice(&rgb);
+        }
+        let raw = line.repeat(height as usize);
+        // zlib: a header, stored blocks of at most 65535 bytes, the Adler-32 of the data
+        let mut zlib = vec![0x78, 0x01];
+        let blocks: Vec<&[u8]> = raw.chunks(65535).collect();
+        for (i, block) in blocks.iter().enumerate() {
+            zlib.push(u8::from(i + 1 == blocks.len()));
+            zlib.extend_from_slice(&(block.len() as u16).to_le_bytes());
+            zlib.extend_from_slice(&(!(block.len() as u16)).to_le_bytes());
+            zlib.extend_from_slice(block);
+        }
+        let (mut a, mut b) = (1u32, 0u32);
+        for byte in &raw {
+            a = (a + u32::from(*byte)) % 65521;
+            b = (b + a) % 65521;
+        }
+        zlib.extend_from_slice(&((b << 16) | a).to_be_bytes());
+        let mut header = Vec::new();
+        header.extend_from_slice(&width.to_be_bytes());
+        header.extend_from_slice(&height.to_be_bytes());
+        header.extend_from_slice(&[8, 2, 0, 0, 0]);
+        let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+        png.extend(chunk(b"IHDR", &header));
+        png.extend(chunk(b"IDAT", &zlib));
+        png.extend(chunk(b"IEND", &[]));
+        png
+    }
+
+    fn base64(bytes: &[u8]) -> String {
+        const TABLE: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut out = String::new();
+        for chunk in bytes.chunks(3) {
+            let n =
+                chunk.iter().fold(0u32, |n, b| (n << 8) | u32::from(*b)) << (8 * (3 - chunk.len()));
+            for i in 0..4 {
+                if i <= chunk.len() {
+                    out.push(TABLE[((n >> (18 - 6 * i)) & 63) as usize] as char);
+                } else {
+                    out.push('=');
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn p3_j20c_a_png_made_of_one_colour_is_what_it_says_for_the_manual_test_that_sends_it() {
+        let png = plain_png(2, 2, [255, 0, 0]);
+        assert_eq!(&png[..8], &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
+        assert_eq!(&png[12..16], b"IHDR");
+        assert_eq!(&png[png.len() - 8..png.len() - 4], b"IEND");
+        assert_eq!(base64(b"Man"), "TWFu");
+        assert_eq!(base64(b"Ma"), "TWE=");
+        assert_eq!(base64(b"M"), "TQ==");
+        assert_eq!(base64(b""), "");
+    }
+
+    /// The smallest model of each kind in the list, fetched by the button of its row (the bundle, when there is
+    /// one), started the way the Start button starts it by the real `llama-server`, and asked one thing of the
+    /// right kind: a question, a picture of one colour, a recording of speech, a sentence to embed, passages to rank.
+    /// What the fakes cannot say, this does: that the list's commit, hash and projector are a model that works, that
+    /// the mode of an embedding model is what makes the server answer, and that a record carries it from the
+    /// download to the command line.
+    #[test]
+    #[ignore = "manual: needs the internet (about 2.3 GB), a real llama-server and, for the audio model, a recording (QUICKAI_REAL_LLAMA=<llama-server> [QUICKAI_REAL_AUDIO=<speech.wav>] cargo test -p quickai p3_j23 -- --ignored)"]
+    fn p3_j23_the_smallest_model_of_each_kind_is_fetched_from_the_list_and_answers_for_real() {
+        let binary = std::env::var("QUICKAI_REAL_LLAMA")
+            .expect("QUICKAI_REAL_LLAMA is the llama-server to run");
+        let speech = std::env::var("QUICKAI_REAL_AUDIO").ok();
+        let dir = crate::testkit::scratch("j23");
+        let port = crate::testkit::free_port();
+        let settings = Settings {
+            port,
+            ctx_size: 2048,
+            n_gpu_layers: 0,
+            llama_bin_override: Some(binary),
+            models_dir_override: Some(dir.join("models").display().to_string()),
+            ..Settings::default()
+        };
+        // the documents of the application as they are: the real list, the real hub
+        let mut app = app_over(&dir, settings);
+        app.bundled_models_dir = dir.join("bundled");
+        app.load_engine_state();
+        let ctx = egui::Context::default();
+
+        let post = |path: &str, body: serde_json::Value| -> serde_json::Value {
+            ureq::post(format!("http://127.0.0.1:{port}{path}"))
+                .send_json(&body)
+                .unwrap_or_else(|e| panic!("{path}: {e}"))
+                .into_body()
+                .read_json()
+                .expect("JSON")
+        };
+        let red = base64(&plain_png(96, 96, [220, 30, 30]));
+        let mut asked = Vec::new();
+        for (id, what) in [
+            ("lfm2.5-350m", "chat"),
+            ("bge-small-en-v1.5", "embedding"),
+            ("qwen3-reranker-0.6b", "rerank"),
+            ("lfm2.5-vl-450m", "picture"),
+            ("qwen3-asr-0.6b", "speech"),
+        ] {
+            // `QUICKAI_J23_ONLY=id,id` runs some of them
+            if std::env::var("QUICKAI_J23_ONLY").is_ok_and(|only| !only.split(',').any(|o| o == id))
+            {
+                continue;
+            }
+            if what == "speech" && speech.is_none() {
+                asked.push(format!("{id}: skipped, no recording (QUICKAI_REAL_AUDIO)"));
+                continue;
+            }
+            app.open_catalog();
+            let entry = app
+                .catalog
+                .entries
+                .iter()
+                .find(|e| e.key == format!("catalog:{id}"))
+                .unwrap_or_else(|| panic!("{id} is not in the list"))
+                .clone();
+            // what a person is first offered: the weights with their projector when there is one
+            let offer = entry.offers.first().expect("a button");
+            let Fetch::Files(download) = &offer.fetch else {
+                panic!("{id}: not files")
+            };
+            let weights = download.weights().expect("weights").store_as.clone();
+            app.fetch_offer(&offer.fetch, &ctx);
+            let deadline = Instant::now() + Duration::from_secs(1800);
+            while app.download.is_some() {
+                assert!(Instant::now() < deadline, "{id}: the download did not end");
+                app.poll_download();
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            let said = app.log_lines.iter().cloned().collect::<Vec<_>>().join("\n");
+            assert!(
+                said.contains(&format!("Download complete: {weights}")),
+                "{id}: {said}"
+            );
+            app.selected = app
+                .models
+                .iter()
+                .position(|m| m.filename == weights)
+                .unwrap_or_else(|| panic!("{id}: the picker does not list {weights}"));
+            // started the way the Start button does it
+            app.start_selected(&ctx);
+            let deadline = Instant::now() + Duration::from_secs(300);
+            let mut server_said: Vec<String> = Vec::new();
+            while app.session.state() != ServerState::Running {
+                assert!(
+                    Instant::now() < deadline,
+                    "{id}: the server did not run ({:?}): {:?} and the server said {:?}",
+                    app.session.state(),
+                    app.log_lines,
+                    server_said
+                );
+                app.session
+                    .poll(&mut |line| server_said.push(line), &mut |_| {});
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            // the command line of this start, which the server's log begins with
+            let line = server_said
+                .iter()
+                .rev()
+                .find(|l| l.starts_with("$ "))
+                .cloned()
+                .unwrap_or_default();
+            let answer = match what {
+                "chat" => {
+                    let a = post(
+                        "/v1/chat/completions",
+                        json!({"messages": [{"role": "user", "content": "In one short sentence, what is the capital of France?"}], "max_tokens": 60, "temperature": 0}),
+                    );
+                    let text = a["choices"][0]["message"]["content"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string();
+                    assert!(text.to_lowercase().contains("paris"), "{id}: {text}");
+                    text
+                }
+                "embedding" => {
+                    assert!(
+                        line.contains("--embeddings"),
+                        "{id}: the command line has no --embeddings: {line}"
+                    );
+                    let a = post(
+                        "/v1/embeddings",
+                        json!({"input": ["hello world", "bonjour le monde"], "model": "x"}),
+                    );
+                    let n = a["data"][0]["embedding"].as_array().map_or(0, Vec::len);
+                    assert!(
+                        n > 10 && a["data"].as_array().map_or(0, Vec::len) == 2,
+                        "{id}: {a}"
+                    );
+                    format!("vectors of {n}")
+                }
+                "rerank" => {
+                    assert!(
+                        line.contains("--reranking"),
+                        "{id}: the command line has no --reranking: {line}"
+                    );
+                    let a = post(
+                        "/v1/rerank",
+                        json!({"query": "What is the capital of France?", "documents": ["Paris is the capital of France.", "Bananas are yellow.", "Berlin is in Germany."], "model": "x"}),
+                    );
+                    assert_eq!(a["results"][0]["index"], json!(0), "{id}: {a}");
+                    format!("{}", a["results"][0]["relevance_score"])
+                }
+                "picture" => {
+                    assert!(
+                        line.contains("--mmproj "),
+                        "{id}: the command line has no --mmproj: {line}"
+                    );
+                    let a = post(
+                        "/v1/chat/completions",
+                        json!({"messages": [{"role": "user", "content": [
+                            {"type": "text", "text": "What colour is this picture? Answer in one word."},
+                            {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{red}")}}]}],
+                            "max_tokens": 30, "temperature": 0}),
+                    );
+                    let text = a["choices"][0]["message"]["content"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string();
+                    assert!(text.to_lowercase().contains("red"), "{id}: {text}");
+                    text
+                }
+                _ => {
+                    assert!(
+                        line.contains("--mmproj "),
+                        "{id}: the command line has no --mmproj: {line}"
+                    );
+                    let wav = std::fs::read(speech.as_deref().unwrap()).expect("the recording");
+                    let a = post(
+                        "/v1/chat/completions",
+                        json!({"messages": [{"role": "user", "content": [
+                            {"type": "text", "text": "Transcribe this audio."},
+                            {"type": "input_audio", "input_audio": {"data": base64(&wav), "format": "wav"}}]}],
+                            "max_tokens": 200, "temperature": 0}),
+                    );
+                    a["choices"][0]["message"]["content"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string()
+                }
+            };
+            asked.push(format!("{id}: {}", answer.replace('\n', " ")));
+            // stopped the way the Stop button stops it, and waited for, so that the next model can start
+            app.session.stop();
+            let deadline = Instant::now() + Duration::from_secs(60);
+            while app.session.state() != ServerState::Idle {
+                assert!(Instant::now() < deadline, "{id}: the server did not stop");
+                app.session.poll(&mut |_| {}, &mut |_| {});
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+        eprintln!("J23:\n{}", asked.join("\n"));
     }
 }

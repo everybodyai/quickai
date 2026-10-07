@@ -10,7 +10,7 @@ use serde_json::Value as Json;
 use crate::decode::Framing;
 use crate::plan::resolve::base_context;
 use crate::plan::{HostFacts, Selection};
-use crate::registry::engine::CompiledStep;
+use crate::registry::engine::{CompiledLookup, CompiledStep};
 use crate::registry::Engine;
 use crate::stream::ProgressMap;
 use crate::value::{map, Value};
@@ -52,6 +52,73 @@ pub struct PullCall {
 /// it listed last time). `false` for an engine with no `[models]`.
 pub fn needs_server(engine: &Engine) -> bool {
     engine.models.as_ref().is_some_and(|m| m.needs_server)
+}
+
+/// The ways the engine's document says its models are looked up online, in its order. None for an
+/// engine whose document says nothing about it.
+pub fn lookups(engine: &Engine) -> &[CompiledLookup] {
+    engine
+        .models
+        .as_ref()
+        .map(|m| m.lookups.as_slice())
+        .unwrap_or(&[])
+}
+
+/// What the engine's document says is fetched together with a model's weights, in its order. None
+/// for an engine whose document says nothing about it.
+pub fn bundles(engine: &Engine) -> &[crate::lookup::bundle::Bundle] {
+    engine
+        .models
+        .as_ref()
+        .map(|m| m.bundles.as_slice())
+        .unwrap_or(&[])
+}
+
+/// What a look-up of this engine reads what it found with: the types and size classes of the
+/// vocabulary, the engine's bundles and the settings of the look-up itself.
+pub fn lookup_rules(
+    registry: &crate::registry::Registry,
+    engine: &Engine,
+    lookup: &CompiledLookup,
+) -> crate::lookup::present::OwnedRules {
+    crate::lookup::present::OwnedRules {
+        types: registry.vocabulary().model_types().to_vec(),
+        sizes: registry.vocabulary().size_classes().to_vec(),
+        bundles: bundles(engine).to_vec(),
+        settings: lookup.kind.read().clone(),
+    }
+}
+
+/// The ways the engine's document says it is started for a kind of model, in its order.
+pub fn modes(engine: &Engine) -> &[crate::registry::engine::Mode] {
+    engine
+        .models
+        .as_ref()
+        .map(|m| m.modes.as_slice())
+        .unwrap_or(&[])
+}
+
+/// The models the application recommends that this engine offers, as the entries the look-up panel
+/// draws. The files come from the hub the engine's own look-up of Hugging Face names (so that a
+/// person who points that at a mirror points these at it too); an engine with no such look-up offers
+/// only the models it pulls by name.
+pub fn recommended(
+    registry: &crate::registry::Registry,
+    engine: &Engine,
+) -> Vec<crate::lookup::present::Entry> {
+    let site = lookups(engine).iter().find_map(|l| match &l.kind {
+        crate::registry::engine::LookupKind::HuggingFace { site, .. } => Some(site.as_str()),
+        _ => None,
+    });
+    crate::lookup::catalog::entries(
+        registry.catalog(),
+        &crate::lookup::catalog::Context {
+            engine: &engine.id,
+            sizes: registry.vocabulary().size_classes(),
+            bundles: bundles(engine),
+            site,
+        },
+    )
 }
 
 fn render(step: &CompiledStep, context: &Value) -> Result<ModelCall, String> {

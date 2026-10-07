@@ -1,0 +1,41 @@
+<div
+      id="searchresults"
+      class="mt-6 min-w-0 scroll-mt-24 md:col-start-2 md:row-start-2 md:mt-4"
+      hx-on::after-swap="
+        const count = this.querySelector('[data-result-count]');
+        const total = Number(count.dataset.resultCount);
+        document.getElementById('filters-done').textContent = 'Show ' + total.toLocaleString('en-US') + (count.dataset.hasMore === 'true' ? '+' : '') + (total === 1 ? ' model' : ' models');
+
+        const title = this.querySelector('[data-seo=title]');
+        const description = this.querySelector('[data-seo=description]');
+
+        if (title) {
+          document.title = title.textContent;
+        }
+        if (title && description) {
+          document.querySelector('meta[property=\'og:title\']').setAttribute('content', title.textContent);
+          document.querySelector('meta[property=\'og:description\']').setAttribute('content', description.textContent);
+
+          document.querySelector('meta[property=\'twitter:title\']').setAttribute('content', title.textContent);
+          document.querySelector('meta[property=\'twitter:description\']').setAttribute('content', description.textContent);
+
+          document.querySelector('meta[name=\'description\']').setAttribute('content', description.textContent);
+        }
+      "
+    >
+      
+<div hidden data-seo="title">zzzzqqqq · Ollama</div>
+<div hidden data-seo="description">Search for models on Ollama.</div>
+
+<p  data-result-count="0" data-has-more="false" class="border-b border-black/[0.08] pb-3 text-[13px] leading-5 text-black/60">0 models</p>
+<ul role="list">
+  
+    <li class="py-6 text-sm text-black/60">
+      No models found.
+    </li>
+  
+</ul>
+
+    </div>
+  </form>
+

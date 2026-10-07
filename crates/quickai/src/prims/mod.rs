@@ -9,8 +9,10 @@ pub mod engine_models;
 pub mod exec_probe;
 pub mod feed;
 pub mod http_call;
+pub mod hub;
 pub mod install;
 pub mod locate;
+pub mod lookup;
 
 use quickai_core::registry::KnownPrimitives;
 
@@ -24,6 +26,8 @@ pub const PROVIDED: &[&str] = &[
     "locate.known_paths@1",
     "exec.probe@1",
     "feed.github_release@1",
+    "lookup.ollama_library@1",
+    "lookup.huggingface_gguf@1",
     "install.archive@1",
     "spawn@1",
     "attach@1",

@@ -1,0 +1,62 @@
+{
+ "disabled": false,
+ "downloads": 11524087,
+ "gated": false,
+ "id": "mudler/locate-anything.cpp-gguf",
+ "library_name": "gguf",
+ "likes": 23,
+ "modelId": "mudler/locate-anything.cpp-gguf",
+ "pipeline_tag": "object-detection",
+ "private": false,
+ "siblings": [
+  {
+   "rfilename": ".gitattributes",
+   "size": 1828
+  },
+  {
+   "rfilename": "README.md",
+   "size": 3933
+  },
+  {
+   "rfilename": "gpu_speedup.png",
+   "size": 62965
+  },
+  {
+   "rfilename": "locate-anything-f16.gguf",
+   "size": 9154203072
+  },
+  {
+   "rfilename": "locate-anything-q4_k.gguf",
+   "size": 4716320320
+  },
+  {
+   "rfilename": "locate-anything-q5_k.gguf",
+   "size": 5102223168
+  },
+  {
+   "rfilename": "locate-anything-q6_k.gguf",
+   "size": 5512244960
+  },
+  {
+   "rfilename": "locate-anything-q8_0.gguf",
+   "size": 6259931712
+  },
+  {
+   "rfilename": "quant_tradeoff.png",
+   "size": 63546
+  }
+ ],
+ "tags": [
+  "gguf",
+  "locate-anything.cpp",
+  "ggml",
+  "object-detection",
+  "open-vocabulary-detection",
+  "visual-grounding",
+  "localai",
+  "base_model:nvidia/LocateAnything-3B",
+  "base_model:quantized:nvidia/LocateAnything-3B",
+  "license:other",
+  "region:us"
+ ]
+}

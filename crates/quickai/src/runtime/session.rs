@@ -301,6 +301,8 @@ mod tests {
             note: String::new(),
             bundled: false,
             size_bytes: 0,
+            companions: Vec::new(),
+            mode: None,
         }
     }
 
@@ -812,6 +814,8 @@ mod tests {
             note: String::new(),
             bundled: true,
             size_bytes: 0,
+            companions: Vec::new(),
+            mode: None,
         };
         let settings = RunSettings {
             port,

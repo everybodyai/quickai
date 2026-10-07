@@ -1,0 +1,468 @@
+<div
+      id="searchresults"
+      class="mt-6 min-w-0 scroll-mt-24 md:col-start-2 md:row-start-2 md:mt-4"
+      hx-on::after-swap="
+        const count = this.querySelector('[data-result-count]');
+        const total = Number(count.dataset.resultCount);
+        document.getElementById('filters-done').textContent = 'Show ' + total.toLocaleString('en-US') + (count.dataset.hasMore === 'true' ? '+' : '') + (total === 1 ? ' model' : ' models');
+
+        const title = this.querySelector('[data-seo=title]');
+        const description = this.querySelector('[data-seo=description]');
+
+        if (title) {
+          document.title = title.textContent;
+        }
+        if (title && description) {
+          document.querySelector('meta[property=\'og:title\']').setAttribute('content', title.textContent);
+          document.querySelector('meta[property=\'og:description\']').setAttribute('content', description.textContent);
+
+          document.querySelector('meta[property=\'twitter:title\']').setAttribute('content', title.textContent);
+          document.querySelector('meta[property=\'twitter:description\']').setAttribute('content', description.textContent);
+
+          document.querySelector('meta[name=\'description\']').setAttribute('content', description.textContent);
+        }
+      "
+    >
+      
+<div hidden data-seo="title">Local models · Ollama</div>
+<div hidden data-seo="description">Local models on Ollama.</div>
+
+<p  data-result-count="20" data-has-more="true" class="border-b border-black/[0.08] pb-3 text-[13px] leading-5 text-black/60">20+ of 245 models</p>
+<ul role="list">
+  
+    
+
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/clef-flash" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="clef-flash">
+        <span >clef-flash</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Clef-Flash is a 9B multimodal model that turns a state and a schema of typed questions into decisions.">Clef-Flash is a 9B multimodal model that turns a state and a schema of typed questions into decisions.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">9b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Vision</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Decision</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="10,455 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >10.5K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/clef" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="clef">
+        <span >clef</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Clef is a 27B multimodal model created by Cloudflare that turns a state and a schema of typed questions into decisions.">Clef is a 27B multimodal model created by Cloudflare that turns a state and a schema of typed questions into decisions.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">27b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Vision</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Decision</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="6,279 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >6,279</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/embeddinggemma-2" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="embeddinggemma-2">
+        <span >embeddinggemma-2</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="EmbeddingGemma 2 is a multimodal embedding model from Google built on the Gemma 4 architecture.">EmbeddingGemma 2 is a multimodal embedding model from Google built on the Gemma 4 architecture.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">270m</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">440m</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">570m</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">740m</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Vision</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Audio</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="4,114 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >4,114</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/laya" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="laya">
+        <span >laya</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Laya is a 421M decision model from Convai Innovations, fine-tuned from ModernBERT-large.">Laya is a 421M decision model from Convai Innovations, fine-tuned from ModernBERT-large.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Decision</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="433 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >433</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/tev1" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="tev1">
+        <span >tev1</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="A 4B decision model from Together AI for fast classification.">A 4B decision model from Together AI for fast classification.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">0.8b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">4b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Thinking</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Decision</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="60,454 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >60.5K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/nimble" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="nimble">
+        <span >nimble</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="A 9B decision model from Bespoke Labs for fast, typed classification.">A 9B decision model from Bespoke Labs for fast, typed classification.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">9b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Thinking</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Decision</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="29,694 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >29.7K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/qwen3.8" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="qwen3.8">
+        <span >qwen3.8</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Qwen3.8 delivers substantial gains across coding, professional work, research, and long-horizon agentic tasks.">Qwen3.8 delivers substantial gains across coding, professional work, research, and long-horizon agentic tasks.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">27b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Thinking</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Vision</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="3,301,841 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >3.3M</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/qwen3.6" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="qwen3.6">
+        <span >qwen3.6</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Qwen3.6 delivers substantial upgrades in agentic coding and thinking preservation than previous Qwen models.">Qwen3.6 delivers substantial upgrades in agentic coding and thinking preservation than previous Qwen models.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">27b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">35b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Thinking</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Vision</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="7,003,357 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >7M</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/ornith-1.5" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="ornith-1.5">
+        <span >ornith-1.5</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Chirp Chirp! 🐦 We are introducing Ornith-1.5, a major step toward building foundation models through end-to-end self-improvement.">Chirp Chirp! 🐦 We are introducing Ornith-1.5, a major step toward building foundation models through end-to-end self-improvement.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">9b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">35b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">397b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Vision</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="368,769 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >368.8K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/ornith" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="ornith">
+        <span >ornith</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="A self-improving family of open-source models for agentic coding">A self-improving family of open-source models for agentic coding</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">9b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">35b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Thinking</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="583,169 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >583.2K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/qwen3.8-flash-next" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="qwen3.8-flash-next">
+        <span >qwen3.8-flash-next</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="This experimental preview of the architecture that will underpin Qwen4.">This experimental preview of the architecture that will underpin Qwen4.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Thinking</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Vision</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="177,789 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >177.8K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/muse-glimmer" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="muse-glimmer">
+        <span >muse-glimmer</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Meta&#39;s latest open model built for always-on local agents. 30B parameters, licensed under Apache 2.0 and runs on a single GPU — tuned for tool use, long tasks, and failure recovery.">Meta&#39;s latest open model built for always-on local agents. 30B parameters, licensed under Apache 2.0 and runs on a single GPU — tuned for tool use, long tasks, and failure recovery.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">30b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Thinking</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Vision</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="266,054 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >266.1K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/nemotron-3.5-lightning" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="nemotron-3.5-lightning">
+        <span >nemotron-3.5-lightning</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="NVIDIA Nemotron 3.5 Lightning is an open 30B mixture-of-experts (MoE) model with 3B active parameters built for always-on agents.">NVIDIA Nemotron 3.5 Lightning is an open 30B mixture-of-experts (MoE) model with 3B active parameters built for always-on agents.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">30b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Thinking</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="212,854 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >212.9K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/nemotron3" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="nemotron3">
+        <span >nemotron3</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="NVIDIA Nemotron 3 Nano Omni is a multimodal large language model that unifies video, audio, image, and text understanding to support enterprise-grade Q&amp;A, summarization, transcription, and document intelligence workflows. ">NVIDIA Nemotron 3 Nano Omni is a multimodal large language model that unifies video, audio, image, and text understanding to support enterprise-grade Q&amp;A, summarization, transcription, and document intelligence workflows. </p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">33b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Thinking</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Vision</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="674,885 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >674.9K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/granite4.1" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="granite4.1">
+        <span >granite4.1</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="IBM Granite Models are a family of enterprise-ready, open foundation models that support multilingual capabilities, coding, retrieval-augmented generation (RAG), tool use, and structured JSON output. Released under Apache 2.0 license.">IBM Granite Models are a family of enterprise-ready, open foundation models that support multilingual capabilities, coding, retrieval-augmented generation (RAG), tool use, and structured JSON output. Released under Apache 2.0 license.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">3b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">8b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">30b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="512,485 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >512.5K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/granite4.2" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="granite4.2">
+        <span >granite4.2</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="IBM Granite Models are a family of enterprise-ready, open foundation models that support multilingual capabilities, coding, retrieval-augmented generation (RAG), tool use, thinking and structured JSON output. Released under Apache 2.0 license. ">IBM Granite Models are a family of enterprise-ready, open foundation models that support multilingual capabilities, coding, retrieval-augmented generation (RAG), tool use, thinking and structured JSON output. Released under Apache 2.0 license. </p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">3b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">8b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">30b</span></span>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="115,053 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >115.1K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/mistral-medium-3.5" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="mistral-medium-3.5">
+        <span >mistral-medium-3.5</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Mistral Medium 3.5 is the first flagship model of Mistral AI that merged instruction-following, reasoning, and coding in a single set of 128B weights.">Mistral Medium 3.5 is the first flagship model of Mistral AI that merged instruction-following, reasoning, and coding in a single set of 128B weights.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">128b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Thinking</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Vision</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="421,549 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >421.5K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/medgemma" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="medgemma">
+        <span >medgemma</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="MedGemma is a collection of Gemma 3 variants that are trained for performance on medical text and image comprehension.">MedGemma is a collection of Gemma 3 variants that are trained for performance on medical text and image comprehension.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">4b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">27b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Vision</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="444,003 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >444K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/laguna-s-2.1" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="laguna-s-2.1">
+        <span >laguna-s-2.1</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Our most capable model to date, designed for long-horizon work. 70.2% on Terminal-Bench 2.1 at 118B-A8B.">Our most capable model to date, designed for long-horizon work. 70.2% on Terminal-Bench 2.1 at 118B-A8B.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Thinking</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="170,461 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >170.5K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/lfm2.5" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="lfm2.5">
+        <span >lfm2.5</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="LFM2.5-8B-A1B, an edge model built for fast, reliable tool calling on consumer hardware.">LFM2.5-8B-A1B, an edge model built for fast, reliable tool calling on consumer hardware.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">8b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Thinking</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="184,691 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >184.7K</span></span>
+    
+  </a>
+</li>
+
+
+
+<li
+  hx-get="/search?page=2"
+  hx-trigger="revealed"
+  hx-swap="outerHTML"
+  hx-target="this"
+  hx-include="[name=c], [name=o], [name=s]"
+  hx-replace-url="false"
+></li>
+
+
+  
+</ul>
+
+    </div>
+  </form>
+

@@ -256,7 +256,9 @@ pub const GROUPS: &[Group] = &[
             a("input_rules", "list of tables, below", "What the model box makes of what was typed: the first rule whose `when` holds. Nothing typed is nothing; text no rule takes is refused."),
             a("sources", "list of tables, below", "For an engine whose models are files: where they are kept (read by Phase 4)."),
             a("acquire", "table, below", "For an engine whose models are files: how one gets into the folder (read by Phase 4)."),
-            a("lookup", "list of tables, below", "Looking models up online (read by Phase 4)."),
+            a("lookup", "list of tables, below", "The ways the window can look models up online: a button of the model box for each. Without one the window has none."),
+            a("bundle", "list of tables, below", "What is fetched together with a model's weights: a vision model's projector. A result that has a file for every part of a bundle is offered in it, as one download."),
+            a("mode", "list of tables, below", "The ways the engine is started for a kind of model (`embedding`). A catalog names one by its `id`, and the record beside a fetched model remembers it."),
         ],
     },
     Group {
@@ -281,11 +283,87 @@ pub const GROUPS: &[Group] = &[
     },
     Group {
         heading: "`[[models.lookup]]`",
-        intro: "One way of looking models up online (read from Phase 4): the primitive that does it and what it is told. Every key besides `id` and `use` is the primitive's own and is checked by it.",
+        intro: "One way of looking models up online: the primitive that does it and what it is told. The window draws a \"Look up online\" button for it; nothing is asked of the network until the button is pressed. Every key besides `id` and `use` is the primitive's own and is checked by it: one the look-up does not take is a warning, and the list of tables merges by `id`, so a document of the person's can change the address of a look-up and leave the rest.",
         source: Some("ModelLookup"),
         attributes: &[
-            a("id", "text", "What `input_rules` call it (`provider = \"hf_popular\"`). Required."),
-            a("use", "text", "The primitive (`catalog.hf_gguf`). Required."),
+            a("id", "text", "Its name, with no spaces (`library`), unique in the document. Required."),
+            a("use", "text", "The look-up: `ollama_library` (needs `lookup.ollama_library@1`) or `huggingface_gguf` (needs `lookup.huggingface_gguf@1`). Another name is an error that lists the ones this version has. Required."),
+        ],
+    },
+    Group {
+        heading: "`[[models.lookup]]` `use = \"ollama_library\"`",
+        intro: "A search of Ollama's library of models, the one at ollama.com, for models that run on this machine. The site publishes no list a program can read, so the look-up reads the page of the site's own search, and says so when the page is not one it understands. It finds the library's own models (a person's uploads are left out) with the sizes each is offered in; a size is pulled as `name:size`, a model with no size shown by its name. The library gives no size in bytes, so a button says how big a size is by its count of parameters times `bytes_per_parameter`, with a `~`.",
+        source: None,
+        attributes: &[
+            a("site", "address", "The root of the site (`https://ollama.com`, the default). Another root, `http` or `https`, is how a test points the look-up at a fake, or how a mirror is used."),
+            a("bytes_per_parameter", "number", "Bytes a parameter takes in what a name pulls, to tell how big a size is (0.05 to 4; default 0.6, about 4.8 bits, which is what most of the library is quantized to)."),
+            a("show_variants", "whole number", "The most size buttons a model gets (1 to 64; default 16), the smallest first."),
+            a("types", "list of text", "The ids of the model types this engine runs (`chat`, `vision`); a model of another type is shown under `other`. Without it every type is run."),
+        ],
+    },
+    Group {
+        heading: "`[[models.lookup]]` `use = \"huggingface_gguf\"`",
+        intro: "A search of the GGUF repositories of Hugging Face, the most downloaded first, for the words typed or for none. For each repository it looks into, it reads the files and their sizes, and offers the quantizations of the weights as buttons that download them; a file that a `[[models.bundle]]` part matches is not weights but a companion of them. A repository that needs a login is left out and counted in the status line.",
+        source: None,
+        attributes: &[
+            a("site", "address", "The root of the hub (`https://huggingface.co`, the default); files are fetched from `<site>/<repository>/resolve/main/<path>`. Another root is how a test points the look-up at a fake."),
+            a("popular", "whole number", "How many repositories of the plain list it looks into (1 to 50; default 30)."),
+            a("keyword", "whole number", "How many it looks into for the words typed (1 to 50; default 20)."),
+            a("similar", "whole number", "How many it looks into for each single word of a phrase typed, to find what the whole phrase misses (1 to 50; default 20)."),
+            a("prefer", "list of text", "The quantizations to offer first, best first (default `Q4_K_M`, `Q4_K_S`, `Q5_K_M`, `Q4_0`, `Q8_0`, `Q6_K`, `Q3_K_M`). A variant of one (`UD-Q4_K_M`) counts as it; the best is shown in bold."),
+            a("skip", "list of text", "A file whose name or path one of these patterns matches (`*` any run, `?` one character, any case) is not weights: shards (`*-?????-of-?????*`: five digits each side of `-of-`), draft models (`mtp/*`, `mtp-*`), importance matrices (`imatrix*`). Default those. A pattern is about the file, not about the repository: a model whose own name says `MTP` is still offered."),
+            a("show_variants", "whole number", "The most buttons a model gets (1 to 64; default 4): the ones `prefer` likes, then the smallest, shown smallest first."),
+            a("types", "list of text", "The ids of the model types this engine runs (`chat`, `code`, `vision`, `embedding`); a model of another type is shown under `other`. Without it every type is run."),
+        ],
+    },
+    Group {
+        heading: "`[[models.bundle]]`",
+        intro: "A way to fetch a model with the files that go with it: the weights of a result and one file for each part. It is offered as another row of buttons on every result that has a file for every part, and fetches them as one download; the files are kept as the pairing says (docs/lookup-and-bundles.md, section 4), and what the engine does with them is `[components.<kind>]`. The list merges by `id`, so a document of the person's can change a bundle or add another.",
+        source: Some("ModelBundle"),
+        attributes: &[
+            a("id", "text", "Its name, with no spaces (`vision`), unique in the document. Required."),
+            a("label", "text", "The words of its row (`with projector` makes `Get with projector:`); default the id."),
+            a("help", "text", "A sentence for the person who wonders what it is."),
+            a("parts", "list of tables, below", "The files beside the weights, one kind each. A bundle with none is an error. Required."),
+        ],
+    },
+    Group {
+        heading: "`[[models.bundle]]` `parts`",
+        intro: "One part of a bundle: a kind of file and how to find it among the files of a repository.",
+        source: Some("BundlePart"),
+        attributes: &[
+            a("kind", "text", "The kind of component (`mmproj`). The engine must have a `[components.<kind>]` for it, else the document is refused and says which kinds it has. Required."),
+            a("label", "text", "What the window calls it in a sentence (`the projector mmproj-F16.gguf`); default the kind."),
+            a("match", "list of text", "Patterns a file's name or path matches (`mmproj*.gguf`, `*mmproj*`): `*` stands for any run of characters, `?` for one, case is ignored. A file that matches is a companion and is not offered as a model. Required."),
+            a("prefer", "list of text", "Of several files that match, the quantizations to take first, best first (`F16`, `BF16`); else the smallest."),
+        ],
+    },
+    Group {
+        heading: "`[[models.mode]]`",
+        intro: "A way the engine is started for a model: the words it adds to the command line, after the arguments of the fields and of the model's files and before the person's own extra arguments. A catalog (which is data) and the record beside a fetched model name a mode by its `id` and never carry words of their own, so what reaches the command line is always the engine document's. A mode a model names that the engine does not have adds nothing, and the log says so. The list merges by `id`.",
+        source: Some("ModelMode"),
+        attributes: &[
+            a("id", "text", "Its name: lower case letters, digits and `.`, `_`, `-` (`embedding`), unique in the document. Required."),
+            a("label", "text", "What the model picker says of a model that runs so (`embedding server`); default the id."),
+            a("help", "text", "A sentence for the person who wonders why."),
+            a("arg", "list of text", "The words added, as they are (no templates); none is an error. Required."),
+        ],
+    },
+    Group {
+        heading: "`[components.<kind>]`",
+        intro: "How one kind of companion file reaches the program once a model that has one is started: the arguments it adds to the command line, after the fields of a lower `order` and before the person's own extra arguments. A model has a companion of a kind when the pairing file beside it names one that is still there. The rest of Phase 4's design for a component (`requires_flag`, `fields`, `live`, `bind.each`) is not read yet.",
+        source: Some("Component"),
+        attributes: &[
+            a("order", "whole number", "Where its arguments stand among the fields': after those of a lower `order`, before those of a higher one. Default 80, which is before `extra_args` (90)."),
+            a("bind", "table, below", "What it adds."),
+        ],
+    },
+    Group {
+        heading: "`[components.<kind>.bind]`",
+        intro: "The arguments a companion adds.",
+        source: Some("ComponentBind"),
+        attributes: &[
+            a("arg", "list of templates", "The arguments, one entry each, over `${component.path}` (the file): `[\"--mmproj\", \"${component.path}\"]`. Required."),
         ],
     },
     Group {
@@ -614,6 +692,42 @@ pub const VOCAB_GROUPS: &[Group] = &[
         ],
     },
     Group {
+        heading: "`[[model_type]]`",
+        intro: "A type of model, which is a section of the results of a look-up (Chat, Code, Vision, ...). A model is of the first type, in the order written, whose `match` holds, else of the `default` one; the sections stand in the order of `order`. The list merges by `id`, so a document of the person's can change a type or add one (a new one is tried after the embedded ones).",
+        source: Some("ModelTypeDef"),
+        attributes: &[
+            a("id", "text", "Lower case letters, digits and `.`, `_`, `-` (`vision`). Required. An engine's `types` list names them, and `other` is where what an engine does not run is shown."),
+            a("label", "text", "The heading of its section (`Vision`); default the id."),
+            a("help", "text", "What it means, shown when the pointer rests on the heading."),
+            a("order", "whole number", "Where its section stands: lowest first; default after the ones that say, in the order written."),
+            a("default", "bool", "What a model is when no other type matches. At most one type is the default, across all vocabularies. Default false."),
+            a("match", "table, below", "What makes a model of this type; any one hit is enough. A type that is not the default and has no `match` is a warning: nothing is ever of it."),
+        ],
+    },
+    Group {
+        heading: "`[model_type.match]`",
+        intro: "What a type's rule looks at, each list in any case.",
+        source: Some("TypeRuleDef"),
+        attributes: &[
+            a("capabilities", "list of text", "What the source says the model can do: an Ollama card's `vision`, `embedding`, `audio`."),
+            a("pipelines", "list of text", "The pipeline tag of a Hugging Face repository (`image-text-to-text`, `feature-extraction`)."),
+            a("tags", "list of text", "Another tag of the repository (`conversational`)."),
+            a("words", "list of text", "A word of the model's name (`qwen3-coder` has `qwen3` and `coder`). A word of four letters or more also matches the start of one (`embed` is in `embeddinggemma`); a shorter one only itself (`vl` is not in `vllm`)."),
+            a("companions", "list of text", "A kind of companion file found beside the model by an engine's bundles (`mmproj`): a repository with a projector is a vision model whatever its tags say."),
+        ],
+    },
+    Group {
+        heading: "`[[size_class]]`",
+        intro: "A band of sizes, which is a button of the size filter of a look-up. A model's button belongs to the first class, from the smallest up, that its size is below. Write them from the smallest to the largest; the one with no `below` is last. The list merges by `id`.",
+        source: Some("SizeClassDoc"),
+        attributes: &[
+            a("id", "text", "Lower case letters, digits and `.`, `_`, `-` (`small`). Required."),
+            a("label", "text", "What the filter says (`Small (< 4 GB)`); default the id."),
+            a("help", "text", "A sentence for the person who wonders what it is."),
+            a("below", "size", "Where it ends: sizes below it are in the class (`4GiB`, `500MB`; `GB` counts thousands, `GiB` 1024s). Left out, the class takes every size beyond the last bound."),
+        ],
+    },
+    Group {
         heading: "`[[api]]`",
         intro: "An API a client can call on a running engine. An engine lists the ones it serves in `[provides]` `apis`, and an engine that names an `id` no vocabulary defines does not load.",
         source: Some("ApiDef"),
@@ -675,7 +789,7 @@ pub const VOCAB_GROUPS: &[Group] = &[
 /// The page for vocabulary documents, as Markdown.
 pub fn render_vocab() -> String {
     let mut out = String::new();
-    out.push_str("# Vocabulary documents: modalities and APIs\n\n");
+    out.push_str("# Vocabulary documents: modalities, APIs, types of model and sizes\n\n");
     out.push_str(
         "_Generated from the types in `crates/quickai-core/src/doc/vocab.rs` by `quickai config docs vocab`. \
          Do not edit by hand: `QUICKAI_UPDATE_GOLDEN=1 cargo test -p quickai-core --test reference` \
@@ -683,11 +797,13 @@ pub fn render_vocab() -> String {
     );
     out.push_str(
         "A vocabulary document (`kind = \"vocab\"`) names what engines and the window have in common: \
-         the kinds of input and output a model can have, and the APIs an engine can serve, with where the \
+         the kinds of input and output a model can have, the APIs an engine can serve, with where the \
          text is in the requests and replies of each, so that the Live tab can read the traffic of an \
-         engine the code has never heard of. A vocabulary can name things and describe them; it cannot \
+         engine the code has never heard of, and the types of model and the classes of size a look-up \
+         sorts what it found by. A vocabulary can name things and describe them; it cannot \
          start a program or reach a host. A document in the user's configuration directory with the same \
-         `id` patches the embedded one: tables merge by key and `[[modality]]` and `[[api]]` entries by `id` \
+         `id` patches the embedded one: tables merge by key and `[[modality]]`, `[[api]]`, `[[model_type]]` \
+         and `[[size_class]]` entries by `id` \
          (docs/architecture.md, section 5.2). A key this version does not know is a warning; \
          `quickai config check --strict` makes warnings fail.\n\n\
          The primitives a document relies on go in `requires` (`requires = { primitives = [\"decode@1\"] }` \
@@ -704,9 +820,116 @@ pub fn render_vocab() -> String {
          - a pointer starts with `/`;\n\
          - `framing` is not empty and names only `sse`, `ndjson` and `json`;\n\
          - a `decode` comes with `paths`, and says where the text of a request is, by `prompt` or by `chat`, \
-         not both.\n\n\
+         not both;\n\
+         - a model type id is a name and is used once (also across documents), at most one type is the \
+         `default`, and a list of its `match` has no empty entry;\n\
+         - a size class id is a name and is used once, every `below` is a size, the bounds go up from one class \
+         to the next, and the class with no bound is the last.\n\n\
          An engine that names an API in `[provides]` `apis` that no vocabulary defines does not load (when \
          there is a vocabulary at all), with the nearest name suggested.\n",
+    );
+    out
+}
+
+/// The tables of a catalog document (`kind = "catalog"`), by the types in `doc/catalog.rs`.
+pub const CATALOG_GROUPS: &[Group] = &[
+    Group {
+        heading: "the document",
+        intro: "The top level of a catalog document, besides the envelope (`schema`, `kind`, `id`). Every document of kind `catalog` is a page of the one list: the application ships several and a person adds their own.",
+        source: Some("CatalogDoc"),
+        attributes: &[
+            a("title", "text", "What the page is called, for messages; default the document's `id`."),
+            a("verified", "text", "The day its facts were last checked against the sites, `YYYY-MM-DD`; the window says the list is as old as its oldest page."),
+            a("model", "list of tables, below", "The models of the page. The list merges by `id`, so a document with the same `id` as a shipped one patches it model by model."),
+        ],
+    },
+    Group {
+        heading: "`[[model]]`",
+        intro: "One model of the list. A model id is unique across every catalog document: a second document that writes it is refused and the message names the first.",
+        source: Some("ModelDoc"),
+        attributes: &[
+            a("id", "text", "Lower case letters, digits and `.`, `_`, `-`, beginning with a letter or a digit (`qwen3.5-4b`). Required."),
+            a("name", "text", "What the window calls it; default the id."),
+            a("by", "text", "Who made it."),
+            a("type", "text", "An id of the vocabulary's `[[model_type]]` (`chat`, `code`, `vision`, ...); default the vocabulary's default type. One no vocabulary defines is an error, with the nearest one suggested."),
+            a("note", "text", "What it is good for, in a sentence or two (a warning beyond 600 characters)."),
+            a("license", "text", "Its licence, as its makers name it."),
+            a("params", "text", "How big it is as its makers say (`4B`, `30B-A3B`)."),
+            a("context", "whole number", "The tokens of context it was made for."),
+            a("input", "list of text", "What it reads, as ids of the vocabulary's `[[modality]]` (`text`, `image`, `audio`); default `text`."),
+            a("features", "list of text", "What else is worth knowing, as short lower case words of 24 characters at most, eight at most (`thinking`, `tools`, `multilingual`). They are searched."),
+            a("start", "bool", "Whether \"Start here\" shows it. Default false."),
+            a("bundled", "bool", "Whether the packages ship it, so that it counts as there when its file is in the folder of the models that come with the application. Default false."),
+            a("hidden", "bool", "A person's document sets it to take a shipped model out of the list: it is not checked and takes no name. Default false."),
+            a("run", "table of tables, below", "How each engine gets and runs it, `[model.run.<engine id>]`. An engine with no table does not offer the model; a model that no engine offers is a warning. An engine id that does not exist is an error."),
+        ],
+    },
+    Group {
+        heading: "`[model.run.<engine>]`",
+        intro: "What one engine does with the model. Which keys are meant depends on what the engine accepts (`[provides]` `accepts`): an engine whose models are files (`formats`) takes `repo`, `rev`, `files`, `companions` and `mode`; an engine that pulls names (`refs`) takes `ref` and `size`. The other keys are errors, not ignored.",
+        source: Some("RunDoc"),
+        attributes: &[
+            a("repo", "text", "Files: the repository they are in, `owner/name`. Required for files."),
+            a("rev", "text", "Files: the commit they are fetched at; default `main`. The application's own documents give a commit, so that what was checked is what arrives."),
+            a("mode", "text", "Files: one of the engine's `[[models.mode]]`, how it is started for this model (`embedding`). One the engine does not have is an error."),
+            a("files", "list of tables, below", "Files: the weights on offer, one for each quantization. Required for files. They are shown smallest first."),
+            a("companions", "table of tables, below", "Files: the files that go with the weights, by the kind of component they are (`mmproj = { file = ... }`). The engine must be able to attach each kind (`[components.<kind>]`) and have a `[[models.bundle]]` that pairs weights with exactly these kinds; the weights are then offered in a second row, `Get with projector`, as one download."),
+            a("ref", "text", "A name: what the engine pulls (`qwen3.5:4b`). Required for a name."),
+            a("size", "whole number", "A name: what the pull downloads, in bytes, as the registry says."),
+        ],
+    },
+    Group {
+        heading: "`files` and `companions`",
+        intro: "A file of the repository.",
+        source: Some("FileDoc"),
+        attributes: &[
+            a("file", "text", "Its path in the repository (`model-Q4_K_M.gguf`, `gguf/model.gguf`): relative, with no `..`, and of a format the engine takes. Required."),
+            a("size", "whole number", "Its size in bytes; a download is refused if it comes to another size."),
+            a("sha256", "text", "Its SHA-256, 64 hexadecimal digits: what a download is checked against while it arrives, and a file that hashes to something else is not kept."),
+            a("label", "text", "What its button says; default the quantization its name says (`Q4_K_M`), else the name."),
+            a("best", "bool", "Whether it is the one the list recommends of the weights (shown in bold); only one may be. Default: the first."),
+        ],
+    },
+];
+
+/// The page for catalog documents, as Markdown.
+pub fn render_catalog() -> String {
+    let mut out = String::new();
+    out.push_str("# Catalog documents: the list of recommended models\n\n");
+    out.push_str(
+        "_Generated from the types in `crates/quickai-core/src/doc/catalog.rs` by `quickai config docs catalog`. \
+         Do not edit by hand: `QUICKAI_UPDATE_GOLDEN=1 cargo test -p quickai-core --test reference` \
+         rewrites it, and a test fails while it is out of date._\n\n",
+    );
+    out.push_str(
+        "A catalog document (`kind = \"catalog\"`) says which models the application recommends, what is known of each \
+         and, for each engine, how to get it and how to run it (docs/catalog.md). Catalog documents are data: \
+         they can name files and say where they are, and they cannot start a program, add a word to a command \
+         line or reach a host of their own (the hub files are fetched from is the one the engine's own look-up of \
+         Hugging Face names). The application ships its list in several documents, one for each kind of model; \
+         a document of the person's with the same `id` as a shipped one patches it model by model, and one with \
+         a new `id` adds a page of their own. Tables merge by key and `[[model]]` entries by `id` \
+         (docs/architecture.md, section 5.2). A key this version does not know is a warning; \
+         `quickai config check --strict` makes warnings fail.\n\n",
+    );
+    render_groups(&mut out, CATALOG_GROUPS);
+    out.push_str(
+        "## What is checked\n\n\
+         Each of these is an error that names the file and the place, and a document with an error in it \
+         defines no models (the document below it, if any, stays in force):\n\n\
+         - a model id is a name and is written once, in one document;\n\
+         - `type` is a type the vocabulary defines, and `input` names only modalities it defines;\n\
+         - `features` are lower case words of 24 characters at most, eight at most, and `context` is not 0;\n\
+         - every `[model.run.<engine>]` names an engine that exists, and has the keys that engine's models need \
+         and none of the others;\n\
+         - `repo` is `owner/name`, `rev` is a commit or a branch, every `file` is a path inside the repository of a \
+         format the engine takes, listed once, `size` is not 0 and `sha256` is 64 hexadecimal digits;\n\
+         - at most one file is `best`;\n\
+         - every companion kind is one the engine has a `[components.<kind>]` for, and the engine has a \
+         `[[models.bundle]]` that pairs weights with exactly the kinds a model has;\n\
+         - `mode` is one of the engine's `[[models.mode]]`;\n\
+         - `ref` is a name the engine can pull.\n\n\
+         A warning is a model no engine offers and a note of more than 600 characters.\n",
     );
     out
 }

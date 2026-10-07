@@ -4,6 +4,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod bundles;
 mod cli;
 mod config;
 mod downloader;
@@ -20,7 +21,7 @@ mod p3;
 mod paths;
 mod prims;
 mod proxy;
-mod remote;
+
 mod runtime;
 mod settings;
 #[cfg(test)]

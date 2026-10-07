@@ -1,0 +1,458 @@
+<div
+      id="searchresults"
+      class="mt-6 min-w-0 scroll-mt-24 md:col-start-2 md:row-start-2 md:mt-4"
+      hx-on::after-swap="
+        const count = this.querySelector('[data-result-count]');
+        const total = Number(count.dataset.resultCount);
+        document.getElementById('filters-done').textContent = 'Show ' + total.toLocaleString('en-US') + (count.dataset.hasMore === 'true' ? '+' : '') + (total === 1 ? ' model' : ' models');
+
+        const title = this.querySelector('[data-seo=title]');
+        const description = this.querySelector('[data-seo=description]');
+
+        if (title) {
+          document.title = title.textContent;
+        }
+        if (title && description) {
+          document.querySelector('meta[property=\'og:title\']').setAttribute('content', title.textContent);
+          document.querySelector('meta[property=\'og:description\']').setAttribute('content', description.textContent);
+
+          document.querySelector('meta[property=\'twitter:title\']').setAttribute('content', title.textContent);
+          document.querySelector('meta[property=\'twitter:description\']').setAttribute('content', description.textContent);
+
+          document.querySelector('meta[name=\'description\']').setAttribute('content', description.textContent);
+        }
+      "
+    >
+      
+<div hidden data-seo="title">embed · Ollama</div>
+<div hidden data-seo="description">Search for models on Ollama.</div>
+
+<p  data-result-count="20" data-has-more="true" class="border-b border-black/[0.08] pb-3 text-[13px] leading-5 text-black/60">20+ models</p>
+<ul role="list">
+  
+    
+
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/embeddinggemma-2" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="embeddinggemma-2">
+        <span >embeddinggemma-2</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="EmbeddingGemma 2 is a multimodal embedding model from Google built on the Gemma 4 architecture.">EmbeddingGemma 2 is a multimodal embedding model from Google built on the Gemma 4 architecture.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">270m</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">440m</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">570m</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">740m</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Vision</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Audio</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="4,114 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >4,114</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/embeddinggemma" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="embeddinggemma">
+        <span >embeddinggemma</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="EmbeddingGemma is a 300M parameter embedding model from Google.">EmbeddingGemma is a 300M parameter embedding model from Google.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">300m</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="2,367,891 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >2.4M</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/nomic-embed-text-v2-moe" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="nomic-embed-text-v2-moe">
+        <span >nomic-embed-text-v2-moe</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="nomic-embed-text-v2-moe is a multilingual MoE text embedding model that excels at multilingual retrieval.">nomic-embed-text-v2-moe is a multilingual MoE text embedding model that excels at multilingual retrieval.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="1,029,977 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >1M</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/nomic-embed-text" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="nomic-embed-text">
+        <span >nomic-embed-text</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="A high-performing open embedding model with a large token context window.">A high-performing open embedding model with a large token context window.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="88,321,876 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >88.3M</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/qwen3-embedding" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="qwen3-embedding">
+        <span >qwen3-embedding</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Building upon the foundational models of the Qwen3 series, Qwen3 Embedding provides a comprehensive range of text embeddings models in various sizes">Building upon the foundational models of the Qwen3 series, Qwen3 Embedding provides a comprehensive range of text embeddings models in various sizes</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">0.6b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">4b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">8b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="4,208,666 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >4.2M</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/mxbai-embed-large" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="mxbai-embed-large">
+        <span >mxbai-embed-large</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="State-of-the-art large embedding model from mixedbread.ai">State-of-the-art large embedding model from mixedbread.ai</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">335m</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="15,476,104 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >15.5M</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/all-minilm" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="all-minilm">
+        <span >all-minilm</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Embedding models on very large sentence level datasets.">Embedding models on very large sentence level datasets.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">22m</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">33m</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="3,702,704 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >3.7M</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/snowflake-arctic-embed" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="snowflake-arctic-embed">
+        <span >snowflake-arctic-embed</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="A suite of text embedding models by Snowflake, optimized for performance.">A suite of text embedding models by Snowflake, optimized for performance.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">22m</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">33m</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">110m</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">137m</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">335m</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="3,141,362 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >3.1M</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/snowflake-arctic-embed2" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="snowflake-arctic-embed2">
+        <span >snowflake-arctic-embed2</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Snowflake&#39;s frontier embedding model. Arctic Embed 2.0 adds multilingual support without sacrificing English performance or scalability.">Snowflake&#39;s frontier embedding model. Arctic Embed 2.0 adds multilingual support without sacrificing English performance or scalability.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">568m</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="463,160 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >463.2K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/granite-embedding" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="granite-embedding">
+        <span >granite-embedding</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="The IBM Granite Embedding 30M and 278M models models are text-only dense biencoder embedding models, with 30M available in English only and 278M serving multilingual use cases.">The IBM Granite Embedding 30M and 278M models models are text-only dense biencoder embedding models, with 30M available in English only and 278M serving multilingual use cases.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">30m</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">278m</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="381,096 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >381.1K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/bge-large" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="bge-large">
+        <span >bge-large</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Embedding model from BAAI mapping texts to vectors.">Embedding model from BAAI mapping texts to vectors.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">335m</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="289,346 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >289.3K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/library/exaone3.5" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="exaone3.5">
+        <span >exaone3.5</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="EXAONE 3.5 is a collection of instruction-tuned bilingual (English and Korean) generative models ranging from 2.4B to 32B parameters, developed and released by LG AI Research. ">EXAONE 3.5 is a collection of instruction-tuned bilingual (English and Korean) generative models ranging from 2.4B to 32B parameters, developed and released by LG AI Research. </p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">2.4b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">7.8b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">32b</span></span>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="571,042 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >571K</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/batiai/qwen3-embedding" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="qwen3-embedding">
+        <span >batiai/qwen3-embedding</span>
+      </h2>
+      
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <span class="group/tip relative inline-flex items-center gap-1.5"><span role="tooltip" class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-pre rounded-md bg-black px-2 py-1 text-center text-xs font-normal leading-4 tracking-normal text-white opacity-0 transition-opacity group-hover/tip:opacity-100">Runs on your computer</span><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span  class="font-medium text-black">0.6b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">4b</span><span class="text-black/50" aria-hidden="true">·</span><span  class="font-medium text-black">8b</span></span>
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="2,032 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >2,032</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/milkey/wemm-embedding-2b" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="wemm-embedding-2b">
+        <span >milkey/wemm-embedding-2b</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="WeMM-Embedding-2B is a universal multimodal embedding model built on Qwen3.5.">WeMM-Embedding-2B is a universal multimodal embedding model built on Qwen3.5.</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="414 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >414</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/batiai/qwen3-vl-embed-2b" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="qwen3-vl-embed-2b">
+        <span >batiai/qwen3-vl-embed-2b</span>
+      </h2>
+      
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="724 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >724</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/aiconjured/embeddinggemma-300M-NVFP4-Q8-GGUF" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="embeddinggemma-300M-NVFP4-Q8-GGUF">
+        <span >aiconjured/embeddinggemma-300M-NVFP4-Q8-GGUF</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Embedding Model embeddinggemma-300M-NVFP4-Q8-GGUF">Embedding Model embeddinggemma-300M-NVFP4-Q8-GGUF</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="14 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >14</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/RizwanMalik/qwen3-vl-embedding-2b" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="qwen3-vl-embedding-2b">
+        <span >RizwanMalik/qwen3-vl-embedding-2b</span>
+      </h2>
+      <p class="mt-1 max-w-2xl truncate text-sm leading-6 text-black/60" title="Qwen embedding model">Qwen embedding model</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Vision</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="391 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >391</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/batiai/qwen3-vl-embed-8b" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="qwen3-vl-embed-8b">
+        <span >batiai/qwen3-vl-embed-8b</span>
+      </h2>
+      
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="384 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >384</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/charaf/qwen3-embedding-8b-mlx-mxfp8" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="qwen3-embedding-8b-mlx-mxfp8">
+        <span >charaf/qwen3-embedding-8b-mlx-mxfp8</span>
+      </h2>
+      
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Thinking</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="272 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >272</span></span>
+    
+  </a>
+</li>
+
+
+  
+<li  class="border-b border-black/[0.08]">
+  <a href="/ttempvnn/Qwen3-Embedding-8B-Q4-K-M" class="group flex items-start justify-between gap-6 py-6">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-xl font-medium leading-7 tracking-tight underline-offset-4 group-hover:underline" title="Qwen3-Embedding-8B-Q4-K-M">
+        <span >ttempvnn/Qwen3-Embedding-8B-Q4-K-M</span>
+      </h2>
+      
+      <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] leading-5 text-black/60">
+        <div class="flex w-full flex-wrap items-center gap-x-5 gap-y-2 sm:contents"><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Tools</span><span  class="inline-flex items-center gap-1.5"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg>Embedding</span>
+        </div>
+      </div>
+    </div>
+    
+    <span class="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-7 tabular-nums text-black/60" title="88 downloads"><svg class="h-[1.15em] w-[1.15em] flex-none" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d=""/></svg><span >88</span></span>
+    
+  </a>
+</li>
+
+
+
+<li
+  hx-get="/search?page=2&q=embed"
+  hx-trigger="revealed"
+  hx-swap="outerHTML"
+  hx-target="this"
+  hx-include="[name=c], [name=o], [name=s]"
+  hx-replace-url="false"
+></li>
+
+
+  
+</ul>
+
+    </div>
+  </form>
+

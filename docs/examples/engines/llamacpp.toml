@@ -1,7 +1,7 @@
 # ILLUSTRATIVE. Nothing loads this file yet; the grammar is frozen in Phase 1 of docs/architecture.md.
 #
 # llama.cpp as data. It reproduces what the app does today (server_manager.rs, paths.rs, llama_install.rs,
-# llama_releases.rs, models.rs, downloader.rs, remote.rs, settings.rs) and adds the adapter bindings of the
+# llama_releases.rs, models.rs, downloader.rs, prims/hub.rs, settings.rs) and adds the adapter bindings of the
 # pinned llama-server (build 11007; every flag below was checked against its --help, see docs/engine-facts.md).
 #
 # Conventions: "${...}" interpolates a value from the context (a string that is exactly one ${...} keeps the
@@ -9,7 +9,7 @@
 schema = 1
 kind = "engine"
 id = "llamacpp"
-requires = { primitives = ["locate@1", "exec.probe@1", "feed.github_release@1", "install.archive@1", "spawn@1", "probe.http@1", "catalog.scan_dir@1", "catalog.hf_gguf@1", "decode@1"] }
+requires = { primitives = ["locate@1", "exec.probe@1", "feed.github_release@1", "install.archive@1", "spawn@1", "probe.http@1", "catalog.scan_dir@1", "lookup.huggingface_gguf@1", "decode@1"] }
 
 [engine]
 name = "llama.cpp"
@@ -196,22 +196,41 @@ acquire = { use = "file", dir = "${field.models_dir}" }
 input_rules = [
   { when = "is_url(input)", do = "download" },
   { when = "is_file(input)", do = "import" },
-  { do = "search", provider = "hf_popular" },
+  { do = "search", provider = "hub" },
 ]
 
 [[models.lookup]]
-id = "hf_popular"
-use = "catalog.hf_gguf"
-search = { filter = "gguf", sort = "downloads", limit = 50 }
-inspect = { popular = 30, keyword = 20, similar = 20 }
-prefer_quants = ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q4_0", "Q8_0", "Q6_K", "Q3_K_M"]
-skip_files = ["-of-", "mtp"]
-stopwords = ["gguf", "model", "models", "the", "and", "for", "with"]
-buckets = [
-  { label = "High (15 GB+)", min = "15GiB" },
-  { label = "Medium (4-15 GB)", min = "4GiB", max = "15GiB" },
-  { label = "Small (< 4 GB)", max = "4GiB" },
+id = "hub"
+use = "huggingface_gguf"        # lookup.huggingface_gguf@1: the GGUF repositories of Hugging Face
+site = "https://huggingface.co"
+popular = 30
+keyword = 20
+similar = 20
+prefer = ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q4_0", "Q8_0", "Q6_K", "Q3_K_M"]
+skip = ["*-?????-of-?????*", "mtp/*", "mtp-*", "imatrix*"]
+show_variants = 4
+types = ["chat", "reasoning", "code", "translation", "vision", "documents", "embedding"]
+
+[[models.bundle]]               # the weights and the files that go with them, one download
+id = "vision"
+label = "with projector"
+help = "A vision model reads pictures through a second file, its projector. Both are fetched, and the projector is attached when the model starts."
+parts = [
+  { kind = "mmproj", label = "projector", match = ["mmproj*.gguf", "*mmproj*.gguf"], prefer = ["F16", "BF16", "Q8_0", "F32"] },
 ]
+
+# How llama-server is started for a kind of model: a catalog names a mode by its id, the engine says what it stands for.
+[[models.mode]]
+id = "embedding"
+label = "embedding server"
+help = "llama-server answers /v1/embeddings only when it is started with --embeddings."
+arg = ["--embeddings"]
+
+[[models.mode]]
+id = "rerank"
+label = "reranker"
+help = "llama-server answers /v1/rerank only when it is started with --reranking."
+arg = ["--reranking"]
 
 [traffic]
 apis = ["openai.chat", "openai.completions", "llamacpp.completion"]

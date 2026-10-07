@@ -1,5 +1,5 @@
 //! Test infrastructure for the Phase 3 tests (docs/phase3-test-plan.md, section 2): fakes of the
-//! two things QuickAI talks to (Ollama, GitHub's release API), generators for the archives an
+//! four things QuickAI talks to (Ollama, GitHub's release API, the library at ollama.com, Hugging Face), generators for the archives an
 //! engine is installed from, helpers for the processes a session starts, and the recordings of a
 //! real Ollama that the fakes are held to.
 //!
@@ -11,6 +11,8 @@
 
 pub mod archives;
 pub mod fake_github;
+pub mod fake_hub;
+pub mod fake_library;
 pub mod fake_ollama;
 pub mod files;
 pub mod http;

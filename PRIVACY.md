@@ -1,6 +1,6 @@
 # Privacy policy: QuickAI
 
-_Last updated: 2026-10-06_
+_Last updated: 2026-10-07_
 
 QuickAI ("the app") is a desktop program for running language models on your own computer: you pick a model,
 start it, and chat with it in your browser or from another program on the same machine. It can run them with
@@ -14,8 +14,8 @@ Scoop, Chocolatey or the AUR.
 The app itself does not collect, store or send personal information to its developer or to anyone else. It has no
 accounts, no analytics or telemetry, no advertising, no crash reporting and no automatic update check of its own.
 Your prompts and the model's replies are processed on your own computer and are never uploaded. The app talks to
-the internet only when you ask it to, to search for or download a model, a llama.cpp build or an Ollama build (see
-[When the app uses the internet](#when-the-app-uses-the-internet)). Some of the stores and package managers you can
+the internet only when you ask it to, to search for or download a model, a llama.cpp build or an Ollama build, or
+to look Ollama's library up (see [When the app uses the internet](#when-the-app-uses-the-internet)). Some of the stores and package managers you can
 install it through do their own data collection, independent of anything the app does; see
 [Stores and package managers](#stores-and-package-managers) below.
 
@@ -75,12 +75,19 @@ only when you press a button, or Enter in a box, for one of these:
 
 - **Searching for a model.** **Look up online**, or typing a name into the Model box (anything that is neither a
   link nor the path of an existing file is treated as a search) and pressing Enter or **Search**. The app asks
-  Hugging Face (`huggingface.co`) for popular GGUF models and for the files in a repository. The words you typed
-  are part of the request. Hugging Face sees your IP address and handles it under its own
-  [privacy policy](https://huggingface.co/privacy).
+  Hugging Face (`huggingface.co`) for popular GGUF models and, for each repository it shows, for its tags and the
+  names and sizes of its files (one request each: a look-up makes about thirty). The words you typed are part of
+  the request. No cookie is kept and nothing is sent but the request and a `User-Agent` that says `quickai`.
+  Hugging Face sees your IP address and handles it under its own [privacy policy](https://huggingface.co/privacy).
+- **The recommended models.** **Recommended** opens a list that is part of the application: opening it, searching it and
+  closing it contact no one. A button of it fetches what it says (below), from the host the list names: Hugging Face
+  for files, and for Ollama the name is pulled by Ollama itself from its registry (`registry.ollama.ai`). Every file is
+  checked against the SHA-256 the list holds, and one that does not match is deleted.
 - **Downloading a model.** **Get** on a result, or a link pasted into the Model box. The file is requested from that
   address: Hugging Face for results, or whatever address you entered. That server sees your IP address and the
-  request.
+  request. A result that comes with a second file (a vision model's projector) fetches both from the same place,
+  one after the other; QuickAI writes a small record of the pair (`<model>.bundle.json`) beside the model in
+  `~/.quickai/models` and nothing else leaves your machine.
 - **llama.cpp builds.** ⚙ Settings, **Look up llama.cpp builds** asks GitHub's API (`api.github.com`) for llama.cpp's
   recent releases; the request identifies itself as `quickai`. Installing one of them, or entering a direct
   download link in the `llama-server` box, downloads that archive from GitHub or from the address you gave. GitHub
@@ -94,12 +101,22 @@ only when you press a button, or Enter in a box, for one of these:
   (`github.com`, which sends the file from `release-assets.githubusercontent.com`), and the app checks it against
   the checksum GitHub lists (and the one recorded in the app for the release it was tested with) before it unpacks
   anything.
+- **Looking up Ollama models.** With Ollama chosen, **Look up online** beside the Model box asks the library at
+  Ollama's website, `ollama.com`, for models that run on your computer: the page of its search for the words in the
+  box, or the models it shows first when the box is empty. The words are part of the request (a `:tag` after a name is
+  left out), and the request identifies itself as `quickai` with its version. The site sets an anonymous cookie on
+  its pages to tell visitors apart; the app does not keep it, so the next request carries none. ollama.com sees your
+  IP address and handles it under its own [privacy policy](https://ollama.com/privacy). The app reads the page it
+  gets back and lists the models that page names, and pulls nothing until you choose one (see the next item). The
+  look-up is the app's own request, not Ollama's, so it needs no Ollama installed or running. Nothing is looked up
+  just because Ollama was chosen.
 - **Pulling an Ollama model.** A name typed into the Model box with Ollama chosen (or a Hugging Face reference
   such as `hf.co/user/repo`) is pulled only when you press Enter or **Pull**. QuickAI asks the local Ollama to do
   it, and **Ollama** then contacts its registry, `registry.ollama.ai`, or Hugging Face for an `hf.co/`
   reference: `hf.co`, and the servers the files come from, `*.cdn.hf.co` (both measured with a real Ollama, which
-  contacted nothing else); those servers see your IP address and the name. Nothing is pulled, listed or started
-  just because Ollama was chosen.
+  contacted nothing else); those servers see your IP address and the name. A size chosen in the results of the
+  look-up above is pulled the same way, as `name:size`. Nothing is pulled, listed or started just because Ollama was
+  chosen.
 
 Each of these is an ordinary web request (HTTPS, or plain HTTP if you type an `http://` address) from your computer
 straight to that server. The developer of QuickAI is not involved in them and receives nothing.

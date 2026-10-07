@@ -7,6 +7,7 @@
 //! tried again, so a mistake in a user's patch leaves the embedded document in force
 //! (docs/architecture.md, section 5.3).
 
+pub mod catalog;
 pub mod context;
 pub mod engine;
 #[cfg(test)]
@@ -18,11 +19,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::config::{Loaded, MergedDoc};
 use crate::diag::{has_errors, Diagnostic, Severity};
+use crate::doc::catalog::CatalogDoc;
 use crate::doc::engine::EngineDoc;
 use crate::doc::vocab::VocabDoc;
 use crate::doc::{read_body, Kind, PrimitiveRef};
 use crate::docpath::DocPath;
 
+pub use catalog::Catalog;
 pub use engine::Engine;
 pub use input::InputAction;
 pub use vocab::{Api, Vocabulary};
@@ -74,6 +77,7 @@ impl KnownPrimitives {
 pub struct Registry {
     engines: BTreeMap<String, Engine>,
     vocabulary: Vocabulary,
+    catalog: Catalog,
     /// Documents of kinds this version does not interpret yet, kept so nothing is lost.
     other: BTreeMap<(Kind, String), MergedDoc>,
     /// Everything that went wrong while loading and building, in order.
@@ -86,6 +90,14 @@ impl Registry {
             diagnostics: loaded.diagnostics,
             ..Default::default()
         };
+        // the engines there are documents for, built or not: a catalog that names one that failed to build
+        // (this build lacks a primitive of it, say) is not wrong, and the engine has said why it is not there
+        let engine_documents: BTreeSet<String> = loaded
+            .docs
+            .keys()
+            .filter(|(kind, _)| *kind == Kind::Engine)
+            .map(|(_, id)| id.clone())
+            .collect();
         // vocabularies first: an engine's API names are held to them
         let (vocabularies, rest): (Vec<_>, Vec<_>) = loaded
             .docs
@@ -96,13 +108,17 @@ impl Registry {
             let built = build_layered(merged, &mut registry.diagnostics, |merged| {
                 try_build_vocab(merged, known, &vocabulary)
             });
-            if let Some((merged, apis, paths)) = built {
+            if let Some((merged, parts)) = built {
                 registry
                     .vocabulary
-                    .add(&merged, apis, &paths)
+                    .add(&merged, parts)
                     .expect("the conflicts were checked while building");
             }
         }
+        // catalogs last: they are held to the types of the vocabulary and to the engines they name
+        let (catalogs, rest): (Vec<_>, Vec<_>) = rest
+            .into_iter()
+            .partition(|((kind, _), _)| *kind == Kind::Catalog);
         for ((kind, id), merged) in rest {
             match kind {
                 Kind::Engine => {
@@ -124,6 +140,18 @@ impl Registry {
                         ),
                     ));
                     registry.other.insert((other, id), merged);
+                }
+            }
+        }
+        for ((_, _), merged) in catalogs {
+            let vocabulary = registry.vocabulary.clone();
+            let engines = registry.engines.clone();
+            let built = build_layered(merged, &mut registry.diagnostics, |merged| {
+                try_build_catalog(merged, &vocabulary, &engines, &engine_documents)
+            });
+            if let Some((merged, title, verified, parts)) = built {
+                if let Err(conflicts) = registry.catalog.add(&merged, title, verified, parts) {
+                    registry.diagnostics.extend(conflicts);
                 }
             }
         }
@@ -150,6 +178,11 @@ impl Registry {
         ids: impl IntoIterator<Item = &'a String>,
     ) -> Vec<crate::decode::ApiDecoder> {
         self.vocabulary.decoders_for(ids)
+    }
+
+    /// The models the application recommends, from every catalog document.
+    pub fn catalog(&self) -> &Catalog {
+        &self.catalog
     }
 
     pub fn document(&self, kind: Kind, id: &str) -> Option<&MergedDoc> {
@@ -231,15 +264,11 @@ fn missing_primitives(merged: &MergedDoc, known: &KnownPrimitives) -> Vec<Diagno
 
 /// One vocabulary document: its APIs, checked, and none of them in conflict with those already
 /// defined (with a lower layer's version of the same document tried when this one fails).
-#[allow(clippy::type_complexity)]
 fn try_build_vocab(
     merged: &MergedDoc,
     known: &KnownPrimitives,
     vocabulary: &Vocabulary,
-) -> (
-    Option<(MergedDoc, Vec<Api>, Vec<(String, String)>)>,
-    Vec<Diagnostic>,
-) {
+) -> (Option<(MergedDoc, vocab::VocabParts)>, Vec<Diagnostic>) {
     let mut problems = missing_primitives(merged, known);
     if has_errors(&problems) {
         return (None, problems);
@@ -258,16 +287,65 @@ fn try_build_vocab(
             format!("`{path}` is not used by this version of QuickAI and is ignored"),
         ));
     }
-    let (apis, paths, more) = vocab::compile(merged, &typed.value);
+    let (parts, more) = vocab::compile(merged, &typed.value);
     problems.extend(more);
     if has_errors(&problems) {
         return (None, problems);
     }
-    if let Err(conflicts) = vocabulary.clone().add(merged, apis.clone(), &paths) {
+    if let Err(conflicts) = vocabulary.clone().add(merged, parts.clone()) {
         problems.extend(conflicts);
         return (None, problems);
     }
-    (Some((merged.clone(), apis, paths)), problems)
+    (Some((merged.clone(), parts)), problems)
+}
+
+/// One catalog document: its models, checked against the vocabulary and the engines (a clash with
+/// a model another document has is found when it is taken in, and it is then refused as a whole).
+#[allow(clippy::type_complexity)]
+fn try_build_catalog(
+    merged: &MergedDoc,
+    vocabulary: &Vocabulary,
+    engines: &BTreeMap<String, Engine>,
+    engine_documents: &BTreeSet<String>,
+) -> (
+    Option<(MergedDoc, String, Option<String>, catalog::CatalogParts)>,
+    Vec<Diagnostic>,
+) {
+    let mut problems = Vec::new();
+    let typed = match read_body::<CatalogDoc>(&merged.body) {
+        Ok(t) => t,
+        Err(e) => {
+            problems.push(merged.diagnostic(Severity::Error, &e.path, e.message));
+            return (None, problems);
+        }
+    };
+    for path in &typed.unknown {
+        problems.push(merged.diagnostic(
+            Severity::Warning,
+            path,
+            format!("`{path}` is not used by this version of QuickAI and is ignored"),
+        ));
+    }
+    let context = catalog::Context {
+        vocabulary,
+        engines,
+        engine_documents,
+    };
+    let (parts, more) = catalog::compile(merged, &typed.value, &context);
+    problems.extend(more);
+    if has_errors(&problems) {
+        return (None, problems);
+    }
+    let title = typed
+        .value
+        .title
+        .clone()
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| merged.envelope.id.clone());
+    (
+        Some((merged.clone(), title, typed.value.verified.clone(), parts)),
+        problems,
+    )
 }
 
 fn try_build(
@@ -309,6 +387,9 @@ fn try_build(
     unknown.extend(vocabulary.check_engine_apis(merged, "traffic", "apis", &traffic));
     let engine = if has_errors(&unknown) { None } else { engine };
     problems.extend(unknown);
+    if let Some(models) = engine.as_ref().and_then(|e| e.models.as_ref()) {
+        problems.extend(vocabulary.check_lookup_types(merged, &models.lookups));
+    }
     (engine, problems)
 }
 
@@ -1153,19 +1234,25 @@ backends = [ { match = "cuda", label = "CUDA", needs_gpu = "nvidia" }, { match =
 
     #[test]
     fn keys_this_version_does_not_know_are_warnings() {
-        // `components` is a section of the design that no phase has built yet (Phase 4)
+        // a section no version has built, and a key of a component this version does not read yet
         let r = registry(
-            &format!("{GOOD}\n[components.mmproj]\nflag = \"--mmproj\"\n"),
+            &format!(
+                "{GOOD}\n[future]\nthing = 1\n\n[components.mmproj]\nbind.arg = [\"--mmproj\", \"${{component.path}}\"]\nflag = \"--mmproj\"\n"
+            ),
             None,
         );
         assert!(r.engine("llamacpp").is_some());
         let warnings = texts(&r, Severity::Warning);
-        assert_eq!(warnings.len(), 1, "{warnings:?}");
-        assert!(
-            warnings[0].contains("`components` is not used by this version of QuickAI"),
-            "{}",
-            warnings[0]
-        );
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        for unknown in ["`future`", "`components.mmproj.flag`"] {
+            assert!(
+                warnings
+                    .iter()
+                    .any(|w| w
+                        .contains(&format!("{unknown} is not used by this version of QuickAI"))),
+                "{unknown} in {warnings:?}"
+            );
+        }
         assert!(!r.has_errors());
     }
 
@@ -1227,18 +1314,20 @@ backends = [ { match = "cuda", label = "CUDA", needs_gpu = "nvidia" }, { match =
 
     #[test]
     fn documents_of_other_kinds_are_kept_with_a_note() {
+        // a catalog is used since the list of recommended models (docs/catalog.md): a profile is not yet
         let e = MemorySource::new(&[(
-            "embedded:catalog/starter.toml",
-            "schema = 1\nkind = \"catalog\"\nid = \"starter\"\n[[model]]\nid = \"m\"\n",
+            "embedded:profiles/starter.toml",
+            "schema = 1\nkind = \"profile\"\nid = \"starter\"\n[defaults]\nengine = \"llamacpp\"\n",
         )]);
         let r = Registry::build(
             load(&[(Layer::Embedded, &e)], &LoadOptions::default()),
             &known(),
         );
-        assert!(r.document(Kind::Catalog, "starter").is_some());
+        assert!(r.document(Kind::Profile, "starter").is_some());
         assert!(texts(&r, Severity::Info)[0]
-            .contains("catalog documents are not used by this version of QuickAI yet"));
+            .contains("profile documents are not used by this version of QuickAI yet"));
         assert!(r.engine("starter").is_none());
+        assert!(r.catalog().models().is_empty());
     }
 
     /// `GOOD` as an engine that can attach to a daemon that is already running and loads and

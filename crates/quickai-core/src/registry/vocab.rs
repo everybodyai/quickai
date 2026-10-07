@@ -1,6 +1,7 @@
 //! The vocabulary of a registry: the APIs engines serve and how the proxy reads each one (work
-//! package 3.6). Vocabulary documents are checked here, and an engine that names an API no
-//! vocabulary defines is a load diagnostic (docs/phase3-test-plan.md, D08).
+//! package 3.6), and the types of model and classes of size a look-up sorts by (WP4.9).
+//! Vocabulary documents are checked here, and an engine that names an API no vocabulary defines is
+//! a load diagnostic (docs/phase3-test-plan.md, D08).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -11,6 +12,8 @@ use crate::doc::vocab::{ApiDef, DecodeSpec, VocabDoc};
 use crate::docpath::DocPath;
 use crate::expr::types::suggest;
 use crate::expr::{Expr, Template, Type};
+use crate::lookup::size::parse_size;
+use crate::lookup::types::{SizeClassDef, TypeDef, TypeMatch};
 
 /// An API the vocabulary defines.
 #[derive(Clone, Debug)]
@@ -34,11 +37,31 @@ pub struct CompiledExample {
     pub curl: Template,
 }
 
+/// What one vocabulary document defines, once checked.
+#[derive(Clone, Debug, Default)]
+pub(super) struct VocabParts {
+    pub apis: Vec<Api>,
+    /// The `(api, path)` pairs the APIs claim.
+    pub paths: Vec<(String, String)>,
+    pub types: Vec<TypeDef>,
+    pub sizes: Vec<SizeClassDef>,
+    /// The kinds of input and output a model can have, as `(id, label)`.
+    pub modalities: Vec<(String, String)>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Vocabulary {
     apis: BTreeMap<String, Api>,
     /// Which API each path belongs to, for telling two definitions of one path apart.
     paths: BTreeMap<String, String>,
+    /// The types of model, in the order the documents list them (the first whose rule holds wins).
+    types: Vec<TypeDef>,
+    /// The classes of size, in the order they are written: from the smallest up.
+    sizes: Vec<SizeClassDef>,
+    /// The modalities, `(id, label)`, in the order the documents list them.
+    modalities: Vec<(String, String)>,
+    /// The vocabulary document each type and each size class came from, for the message of a clash.
+    owners: BTreeMap<String, String>,
     /// At least one vocabulary document was loaded (a registry of one engine document alone has
     /// nothing to hold the engine's API names to).
     present: bool,
@@ -58,6 +81,21 @@ impl Vocabulary {
         self.apis.values()
     }
 
+    /// The types of model a look-up sorts into, in the order their rules are tried.
+    pub fn model_types(&self) -> &[TypeDef] {
+        &self.types
+    }
+
+    /// The classes of size, from the smallest up.
+    pub fn size_classes(&self) -> &[SizeClassDef] {
+        &self.sizes
+    }
+
+    /// The kinds of input and output a model can have (`text`, `image`), as `(id, label)`.
+    pub fn modalities(&self) -> &[(String, String)] {
+        &self.modalities
+    }
+
     /// The decoders of the APIs named, in that order, for those that have one.
     pub fn decoders_for<'a>(&self, ids: impl IntoIterator<Item = &'a String>) -> Vec<ApiDecoder> {
         ids.into_iter()
@@ -65,16 +103,15 @@ impl Vocabulary {
             .collect()
     }
 
-    /// Takes in the APIs of one document. A document that defines an API or a path that another
-    /// one already has is refused as a whole, with the diagnostics that say which.
+    /// Takes in what one document defines. A document that defines an API, a path, a type or a size
+    /// class that another one already has is refused as a whole, with the diagnostics that say which.
     pub(super) fn add(
         &mut self,
         merged: &MergedDoc,
-        apis: Vec<Api>,
-        paths: &[(String, String)],
+        parts: VocabParts,
     ) -> Result<(), Vec<Diagnostic>> {
         let mut problems = Vec::new();
-        for api in &apis {
+        for api in &parts.apis {
             if let Some(other) = self.apis.get(&api.id) {
                 problems.push(merged.diagnostic(
                     Severity::Error,
@@ -86,7 +123,7 @@ impl Vocabulary {
                 ));
             }
         }
-        for (api, path) in paths {
+        for (api, path) in &parts.paths {
             if let Some(other) = self.paths.get(path) {
                 problems.push(merged.diagnostic(
                     Severity::Error,
@@ -95,17 +132,107 @@ impl Vocabulary {
                 ));
             }
         }
+        for ty in &parts.types {
+            if let Some(owner) = self.owners.get(&format!("type:{}", ty.id)) {
+                problems.push(merged.diagnostic(
+                    Severity::Error,
+                    &DocPath::default().key("model_type").id(&ty.id),
+                    format!(
+                        "the model type `{}` is already defined by the vocabulary `{owner}`",
+                        ty.id
+                    ),
+                ));
+            }
+            if ty.default {
+                if let Some(other) = self.types.iter().find(|t| t.default) {
+                    problems.push(
+                        merged.diagnostic(
+                            Severity::Error,
+                            &DocPath::default()
+                                .key("model_type")
+                                .id(&ty.id)
+                                .key("default"),
+                            format!("`{}` is already the default type", other.id),
+                        ),
+                    );
+                }
+            }
+        }
+        for class in &parts.sizes {
+            if let Some(owner) = self.owners.get(&format!("size:{}", class.id)) {
+                problems.push(merged.diagnostic(
+                    Severity::Error,
+                    &DocPath::default().key("size_class").id(&class.id),
+                    format!(
+                        "the size class `{}` is already defined by the vocabulary `{owner}`",
+                        class.id
+                    ),
+                ));
+            }
+        }
         if !problems.is_empty() {
             return Err(problems);
         }
-        for (api, path) in paths {
+        let vocab_id = merged.envelope.id.clone();
+        for (api, path) in &parts.paths {
             self.paths.insert(path.clone(), api.clone());
         }
-        for api in apis {
+        for api in parts.apis {
             self.apis.insert(api.id.clone(), api);
+        }
+        for ty in parts.types {
+            self.owners
+                .insert(format!("type:{}", ty.id), vocab_id.clone());
+            self.types.push(ty);
+        }
+        for class in parts.sizes {
+            self.owners
+                .insert(format!("size:{}", class.id), vocab_id.clone());
+            self.sizes.push(class);
+        }
+        for modality in parts.modalities {
+            if !self.modalities.iter().any(|(id, _)| *id == modality.0) {
+                self.modalities.push(modality);
+            }
         }
         self.present = true;
         Ok(())
+    }
+
+    /// Warnings for the model types a look-up of the engine says it runs (`types`) that no vocabulary
+    /// defines: the type would never be shown, and the person who wrote it should hear. Nothing is said
+    /// when no vocabulary defines any type (a registry of one engine document alone).
+    pub(super) fn check_lookup_types(
+        &self,
+        merged: &MergedDoc,
+        lookups: &[crate::registry::engine::CompiledLookup],
+    ) -> Vec<Diagnostic> {
+        if self.types.is_empty() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for (i, lookup) in lookups.iter().enumerate() {
+            for (n, id) in lookup.kind.read().types.iter().enumerate() {
+                if self.types.iter().any(|t| &t.id == id) {
+                    continue;
+                }
+                let mut d = merged.diagnostic(
+                    Severity::Warning,
+                    &DocPath::default()
+                        .key("models")
+                        .key("lookup")
+                        .index(i)
+                        .key("types")
+                        .index(n),
+                    format!("`{id}` is not a model type any vocabulary defines"),
+                );
+                if let Some(hint) = suggest(id, self.types.iter().map(|t| t.id.as_str())) {
+                    d = d.with_hint(format!("did you mean `{hint}`?"));
+                }
+                out.push(d);
+            }
+        }
+        out
     }
 
     /// The problems with the API names an engine lists under `section.key` (`provides.apis`,
@@ -141,10 +268,7 @@ impl Vocabulary {
 
 /// Reads and checks the APIs of one vocabulary document: the compiled APIs, and the `(api, path)`
 /// pairs they claim. With any error the document has no APIs.
-pub(super) fn compile(
-    merged: &MergedDoc,
-    doc: &VocabDoc,
-) -> (Vec<Api>, Vec<(String, String)>, Vec<Diagnostic>) {
+pub(super) fn compile(merged: &MergedDoc, doc: &VocabDoc) -> (VocabParts, Vec<Diagnostic>) {
     let mut problems = Vec::new();
     let mut apis = Vec::new();
     let mut paths: Vec<(String, String)> = Vec::new();
@@ -210,10 +334,248 @@ pub(super) fn compile(
         });
     }
 
+    let types = compile_types(merged, doc, &mut problems);
+    let sizes = compile_sizes(merged, doc, &mut problems);
+    let modalities = compile_modalities(merged, doc, &mut problems);
+
     if problems.iter().any(Diagnostic::is_error) {
-        return (Vec::new(), Vec::new(), problems);
+        return (VocabParts::default(), problems);
     }
-    (apis, paths, problems)
+    (
+        VocabParts {
+            apis,
+            paths,
+            types,
+            sizes,
+            modalities,
+        },
+        problems,
+    )
+}
+
+/// The modalities of one document: each an id, written once.
+fn compile_modalities(
+    merged: &MergedDoc,
+    doc: &VocabDoc,
+    problems: &mut Vec<Diagnostic>,
+) -> Vec<(String, String)> {
+    let mut found: Vec<(String, String)> = Vec::new();
+    for def in &doc.modalities {
+        let at = DocPath::default().key("modality").id(&def.id);
+        if !valid_id(&def.id) {
+            problems.push(
+                merged
+                    .diagnostic(
+                        Severity::Error,
+                        &at.key("id"),
+                        format!("`{}` is not a valid modality id", def.id),
+                    )
+                    .with_hint("lower case letters, digits and . _ -"),
+            );
+            continue;
+        }
+        if found.iter().any(|(id, _)| *id == def.id) {
+            problems.push(merged.diagnostic(
+                Severity::Error,
+                &at,
+                format!("the modality `{}` is written twice", def.id),
+            ));
+            continue;
+        }
+        found.push((
+            def.id.clone(),
+            def.label
+                .clone()
+                .filter(|l| !l.trim().is_empty())
+                .unwrap_or_else(|| def.id.clone()),
+        ));
+    }
+    found
+}
+
+/// What an id may be: lower case letters, digits and `.` `_` `-`.
+fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "._-".contains(c))
+}
+
+/// The types of model of one document, checked: the ids are names, no id is used twice, at most one
+/// type is the default, every list entry says something, and a type that is not the default has a
+/// rule (else nothing could ever be of it).
+fn compile_types(
+    merged: &MergedDoc,
+    doc: &VocabDoc,
+    problems: &mut Vec<Diagnostic>,
+) -> Vec<TypeDef> {
+    let mut types: Vec<TypeDef> = Vec::new();
+    for (index, def) in doc.model_types.iter().enumerate() {
+        let at = DocPath::default().key("model_type").id(&def.id);
+        let mut error = |path: DocPath, message: String, hint: Option<&str>| {
+            let mut d = merged.diagnostic(Severity::Error, &path, message);
+            if let Some(hint) = hint {
+                d = d.with_hint(hint);
+            }
+            problems.push(d);
+        };
+        if !valid_id(&def.id) {
+            error(
+                at.clone().key("id"),
+                format!("`{}` is not a valid model type id", def.id),
+                Some("lower case letters, digits and . _ -"),
+            );
+            continue;
+        }
+        if types.iter().any(|t| t.id == def.id) {
+            error(
+                at.clone(),
+                format!("the model type `{}` is written twice", def.id),
+                None,
+            );
+            continue;
+        }
+        if def.default && types.iter().any(|t| t.default) {
+            error(
+                at.clone().key("default"),
+                "only one model type is the default".to_string(),
+                None,
+            );
+            continue;
+        }
+        let mut rule = TypeMatch::default();
+        for (key, list, into) in [
+            (
+                "capabilities",
+                &def.rule.capabilities,
+                &mut rule.capabilities,
+            ),
+            ("pipelines", &def.rule.pipelines, &mut rule.pipelines),
+            ("tags", &def.rule.tags, &mut rule.tags),
+            ("words", &def.rule.words, &mut rule.words),
+            ("companions", &def.rule.companions, &mut rule.companions),
+        ] {
+            for (i, entry) in list.iter().enumerate() {
+                if entry.trim().is_empty() {
+                    error(
+                        at.clone().key("match").key(key).index(i),
+                        format!("an empty entry in `match.{key}` matches nothing"),
+                        None,
+                    );
+                } else {
+                    into.push(entry.trim().to_lowercase());
+                }
+            }
+        }
+        if !def.default && rule.is_empty() {
+            problems.push(merged.diagnostic(
+                Severity::Warning,
+                &at,
+                format!(
+                    "the model type `{}` has no `match` and is not the `default`: nothing is ever of it",
+                    def.id
+                ),
+            ));
+        }
+        types.push(TypeDef {
+            id: def.id.clone(),
+            label: def
+                .label
+                .clone()
+                .filter(|l| !l.trim().is_empty())
+                .unwrap_or_else(|| def.id.clone()),
+            help: def.help.clone().unwrap_or_default(),
+            order: def.order.unwrap_or(100 + index as i64),
+            default: def.default,
+            rule,
+        });
+    }
+    types
+}
+
+/// The size classes of one document, checked: the ids are names and are not repeated, every bound is
+/// a size, the bounds go up, and the class with no bound (at most one) is the last.
+fn compile_sizes(
+    merged: &MergedDoc,
+    doc: &VocabDoc,
+    problems: &mut Vec<Diagnostic>,
+) -> Vec<SizeClassDef> {
+    let mut classes: Vec<SizeClassDef> = Vec::new();
+    for def in &doc.size_classes {
+        let at = DocPath::default().key("size_class").id(&def.id);
+        let mut error = |path: DocPath, message: String, hint: Option<&str>| {
+            let mut d = merged.diagnostic(Severity::Error, &path, message);
+            if let Some(hint) = hint {
+                d = d.with_hint(hint);
+            }
+            problems.push(d);
+        };
+        if !valid_id(&def.id) {
+            error(
+                at.clone().key("id"),
+                format!("`{}` is not a valid size class id", def.id),
+                Some("lower case letters, digits and . _ -"),
+            );
+            continue;
+        }
+        if classes.iter().any(|c| c.id == def.id) {
+            error(
+                at.clone(),
+                format!("the size class `{}` is written twice", def.id),
+                None,
+            );
+            continue;
+        }
+        let below = match def.below.as_deref() {
+            None => None,
+            Some(text) => match parse_size(text) {
+                Some(bytes) if bytes > 0 => Some(bytes),
+                _ => {
+                    error(
+                        at.clone().key("below"),
+                        format!("`{text}` is not a size"),
+                        Some("a number and a unit: 4GiB, 500MB"),
+                    );
+                    continue;
+                }
+            },
+        };
+        if let Some(last) = classes.last() {
+            match (last.below, below) {
+                (None, _) => {
+                    error(
+                        at.clone(),
+                        format!(
+                            "`{}` has no `below`, so it takes every size left and must be the last",
+                            last.id
+                        ),
+                        Some("write the classes from the smallest to the largest"),
+                    );
+                    continue;
+                }
+                (Some(before), Some(now)) if now <= before => {
+                    error(
+                        at.clone().key("below"),
+                        format!("`{}` ends at or below where `{}` does", def.id, last.id),
+                        Some("write the classes from the smallest to the largest"),
+                    );
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        classes.push(SizeClassDef {
+            id: def.id.clone(),
+            label: def
+                .label
+                .clone()
+                .filter(|l| !l.trim().is_empty())
+                .unwrap_or_else(|| def.id.clone()),
+            help: def.help.clone().unwrap_or_default(),
+            below,
+        });
+    }
+    classes
 }
 
 /// The curl examples of an API: the template must only name `api.base_url` and `api.model`, and the

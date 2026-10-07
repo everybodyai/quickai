@@ -1,0 +1,116 @@
+{
+ "disabled": false,
+ "downloads": 1991159,
+ "gated": false,
+ "id": "mixedbread-ai/mxbai-embed-large-v1",
+ "library_name": "sentence-transformers",
+ "likes": 826,
+ "modelId": "mixedbread-ai/mxbai-embed-large-v1",
+ "pipeline_tag": "feature-extraction",
+ "private": false,
+ "siblings": [
+  {
+   "rfilename": ".gitattributes",
+   "size": 1585
+  },
+  {
+   "rfilename": "1_Pooling/config.json",
+   "size": 297
+  },
+  {
+   "rfilename": "LICENSE",
+   "size": 10762
+  },
+  {
+   "rfilename": "README.md",
+   "size": 114268
+  },
+  {
+   "rfilename": "config.json",
+   "size": 677
+  },
+  {
+   "rfilename": "config_sentence_transformers.json",
+   "size": 266
+  },
+  {
+   "rfilename": "gguf/mxbai-embed-large-v1-f16.gguf",
+   "size": 669603712
+  },
+  {
+   "rfilename": "model.safetensors",
+   "size": 670328392
+  },
+  {
+   "rfilename": "modules.json",
+   "size": 229
+  },
+  {
+   "rfilename": "onnx/model.onnx",
+   "size": 1336854282
+  },
+  {
+   "rfilename": "onnx/model_fp16.onnx",
+   "size": 668828772
+  },
+  {
+   "rfilename": "onnx/model_quantized.onnx",
+   "size": 336983163
+  },
+  {
+   "rfilename": "openvino/openvino_model.bin",
+   "size": 1336373408
+  },
+  {
+   "rfilename": "openvino/openvino_model.xml",
+   "size": 707313
+  },
+  {
+   "rfilename": "openvino/openvino_model_qint8_quantized.bin",
+   "size": 336759312
+  },
+  {
+   "rfilename": "openvino/openvino_model_qint8_quantized.xml",
+   "size": 1308665
+  },
+  {
+   "rfilename": "sentence_bert_config.json",
+   "size": 53
+  },
+  {
+   "rfilename": "special_tokens_map.json",
+   "size": 695
+  },
+  {
+   "rfilename": "tokenizer.json",
+   "size": 711396
+  },
+  {
+   "rfilename": "tokenizer_config.json",
+   "size": 1242
+  },
+  {
+   "rfilename": "vocab.txt",
+   "size": 231508
+  }
+ ],
+ "tags": [
+  "sentence-transformers",
+  "onnx",
+  "safetensors",
+  "openvino",
+  "gguf",
+  "bert",
+  "feature-extraction",
+  "mteb",
+  "transformers.js",
+  "transformers",
+  "en",
+  "arxiv:2309.12871",
+  "license:apache-2.0",
+  "model-index",
+  "text-embeddings-inference",
+  "endpoints_compatible",
+  "region:us"
+ ]
+}

@@ -1,7 +1,8 @@
 # The shared nouns that engines and the interface refer to by id: the kinds of input and output a
-# model can have, and the APIs an engine can serve, with how the live-traffic proxy reads each one
-# (docs/examples/vocab/core.toml is the fuller design, with the adapter kinds of Phase 4; they join
-# this file when the interface uses them).
+# model can have, the types of model and the classes of size a look-up sorts by, and the APIs an
+# engine can serve, with how the live-traffic proxy reads each one (docs/examples/vocab/core.toml is
+# the fuller design, with the adapter kinds of Phase 4; they join this file when the interface uses
+# them).
 #
 # `decode` drives the Live tab: how a reply comes (`framing`), and JSON pointers to the text of a
 # request (`prompt`, or the `chat` table) and of a reply (`delta` for each event of a stream,
@@ -27,6 +28,97 @@ label = "Audio"
 [[modality]]
 id = "video"
 label = "Video"
+
+# ---- what a look-up sorts what it found into ---------------------------------------------------------------
+# The section a model is shown in, and the bands the size filter has (docs/lookup-and-bundles.md, section 3).
+# A model is of the first type, in the order written, whose `match` holds, else of the `default` one; the
+# sections stand in the order of `order`. Both are the same for every engine, so what a model is does not
+# depend on where it was found. A document of the person's patches one by `id` or adds another (a new type
+# is tried after these).
+#
+# `match` is a list of what a source says (a capability of an Ollama card, the pipeline tag and tags of a
+# Hugging Face repository), words of the model's name (a word of four letters or more also matches the start
+# of one: `embed` is in `embeddinggemma`) and the kinds of companion file found beside it (`mmproj`).
+
+[[model_type]]
+id = "embedding"
+label = "Embedding"
+order = 40
+help = "Turns text into numbers for search and retrieval. It does not chat."
+match = { capabilities = ["embedding"], pipelines = ["feature-extraction", "sentence-similarity", "text-ranking"], words = ["embed", "bge", "gte", "e5", "minilm", "rerank", "reranker"] }
+
+[[model_type]]
+id = "audio"
+label = "Audio"
+order = 50
+help = "Listens or speaks: speech to text, text to speech."
+match = { capabilities = ["audio"], pipelines = ["automatic-speech-recognition", "text-to-speech", "text-to-audio", "audio-to-audio", "audio-classification", "voice-activity-detection"], words = ["whisper", "tts", "asr", "speech", "parakeet"] }
+
+[[model_type]]
+id = "documents"
+label = "Documents"
+order = 35
+help = "Reads scans, forms and photographs of pages and gives back their text."
+match = { words = ["ocr", "docling"] }
+
+[[model_type]]
+id = "vision"
+label = "Vision"
+order = 30
+help = "Reads pictures as well as text; most need a second file, their projector."
+match = { capabilities = ["vision"], pipelines = ["image-text-to-text", "image-to-text", "visual-question-answering", "document-question-answering", "video-text-to-text"], companions = ["mmproj"], words = ["vl", "vision", "llava", "pixtral", "minicpm"] }
+
+[[model_type]]
+id = "code"
+label = "Code"
+order = 20
+help = "Tuned for programming."
+match = { words = ["code", "starcoder", "devstral", "deepcoder", "opencoder"], tags = ["code"] }
+
+[[model_type]]
+id = "reasoning"
+label = "Reasoning"
+order = 15
+help = "Thinks step by step before it answers: slower, and better at logic, maths and planning."
+match = { words = ["reasoning", "thinking", "r1", "qwq", "reasoner"] }
+
+[[model_type]]
+id = "translation"
+label = "Translation"
+order = 25
+help = "Translates between languages."
+match = { pipelines = ["translation"], words = ["translat", "madlad"] }
+
+[[model_type]]
+id = "other"
+label = "Other"
+order = 90
+help = "Not language models, or kinds this engine does not run."
+match = { pipelines = ["object-detection", "image-segmentation", "image-classification", "image-feature-extraction", "depth-estimation", "zero-shot-object-detection", "zero-shot-image-classification", "mask-generation", "keypoint-detection", "text-to-image", "image-to-image", "unconditional-image-generation", "text-to-video", "image-to-video", "image-text-to-video", "video-classification", "tabular-classification", "reinforcement-learning", "robotics"] }
+
+[[model_type]]
+id = "chat"
+label = "Chat"
+order = 10
+default = true
+help = "Answers in conversation, and everything that does not say it is something else."
+
+[[size_class]]
+id = "small"
+label = "Small (< 4 GB)"
+help = "Runs on most machines."
+below = "4GiB"
+
+[[size_class]]
+id = "medium"
+label = "Medium (4-15 GB)"
+help = "Wants a machine with 16 GB of memory or a good graphics card."
+below = "15GiB"
+
+[[size_class]]
+id = "large"
+label = "Large (15 GB+)"
+help = "Wants a lot of memory."
 
 # ---- OpenAI's shapes, which both engines serve --------------------------------------------------------
 [[api]]
