@@ -1,6 +1,7 @@
 //! The model panels of an engine whose models are named references the daemon lists (Ollama):
 //! the picker of what it has, and the box that pulls a model by name. llama.cpp's panels (files in a
-//! folder) are `model_bar.rs` and `acquire.rs`, untouched.
+//! folder) are `model_bar.rs` and `acquire.rs`. The results of "Look up online" are drawn by
+//! `lookup_view.rs`, the same panel for both.
 
 use eframe::egui;
 
@@ -106,9 +107,12 @@ impl App {
         });
     }
 
-    /// The box that pulls a model by name, the pull's progress and the reason an input was refused.
+    /// The box that pulls a model by name, its look-up online, the pull's progress and the reason an
+    /// input was refused.
     pub(super) fn show_named_acquire(&mut self, ui: &mut egui::Ui, active: bool) {
         let server = self.server_name();
+        let engine_name = self.engine_name();
+        let can_look_up = self.can_look_up();
         ui.group(|ui| {
             let pulling = self.named.pull.is_some();
             ui.horizontal(|ui| {
@@ -134,6 +138,47 @@ impl App {
                         self.submit_model_input(ui.ctx());
                     }
                 });
+                if can_look_up {
+                    ui.add_space(8.0);
+                    if ui
+                        .button("Look up online")
+                        .on_hover_text(
+                            "Search the library of models at ollama.com for the words in the \
+                             box, or list the ones it shows first when the box is empty. \
+                             Nothing is pulled until you choose one.",
+                        )
+                        .clicked()
+                    {
+                        let words = self.model_input.clone();
+                        self.start_lookup(ui.ctx(), &words);
+                    }
+                }
+                if self.can_recommend() {
+                    ui.add_space(8.0);
+                    if ui
+                        .button("Recommended")
+                        .on_hover_text(format!(
+                            "Browse the models QuickAI recommends for {engine_name}, from small ones \
+                             that run on any computer to bigger ones: chat, code, pictures, \
+                             audio, documents, translation and search. The list is part of the \
+                             application: nothing is asked of the internet to open it."
+                        ))
+                        .clicked()
+                    {
+                        self.open_catalog();
+                    }
+                }
+                // Only shown once there is something on screen to close, as llama.cpp's is.
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if self.lookup.has_results()
+                        && ui
+                            .add(egui::Button::new("X").small())
+                            .on_hover_text("Close lookup results")
+                            .clicked()
+                    {
+                        self.lookup.open = false;
+                    }
+                });
             });
             if let Some((job, handle)) = &self.named.pull {
                 ui.add_space(4.0);
@@ -149,6 +194,7 @@ impl App {
                 ui.add_space(4.0);
                 ui.colored_label(egui::Color32::from_rgb(192, 57, 43), notice);
             }
+            self.show_lookup_results(ui);
             let _ = active;
         });
     }

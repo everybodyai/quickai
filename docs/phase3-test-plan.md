@@ -287,7 +287,7 @@ Against the embedded registry. The plan is read as JSON, so the tests say what a
 | E15 | 3.7 | ready | A document needing a primitive this build lacks (`attach@1` removed from the known set) is skipped with the primitive named. | `p3/engine.rs` |
 | E16 | 3.7 | ready | `config check --strict --embedded` is clean with the Ollama document in the set, and CI runs it. | `cli.rs` |
 | E17 | 3.7 | ready | The ollama example fits the typed engine schema with nothing ignored. | `core/tests/p3_schema.rs` |
-| E18 | 3.7 | ready | The llama.cpp example is typed but for the components that wait for phase 4. | `core/tests/p3_schema.rs` |
+| E18 | 3.7 | ready | The llama.cpp example is typed, but for the keys Phase 4 adds to its components (`requires_flag`, `fields`, `live`, `bind.each`, `bind.sep`): `bind.arg` of a component is read from WP4.9. | `core/tests/p3_schema.rs` |
 | E19 | 3.7 | ready | The generated reference page (`docs/reference/engine-fields.md`) describes every new attribute and key, in both directions as in Phase 2 (D1). | `core/tests/reference.rs` |
 | E20 | 3.7 | ready | `the_llamacpp_example_fits_the_typed_engine_schema` in `tests/examples.rs`, which asserts that `runtime`, `models`, `traffic`, `api_info` and `diagnostic` are *ignored*, is replaced by E17 and E18. | `core/tests/examples.rs` |
 | E21 | 3.7 | ready | Settings: `values."app.engine"` is read and written through an API of `Settings`; it is absent for llama.cpp (so a llama.cpp user's file keeps exactly its nine keys after choosing Ollama and back), and the Ollama values stay when the choice goes back. | `p3/engine.rs` |
@@ -394,6 +394,146 @@ A fake of a program is only as good as its likeness to the program. `crates/quic
 | C03 | - | ready | The recordings show what a real pull looks like. | `p3/contract.rs` |
 | C04 | - | ready | The recordings name the errors the application will show. | `p3/contract.rs` |
 
+### U. Looking models up online (WP3.15)
+
+Added after the gate, at the user's request (2026-10-07: "I also want lookup online for ollama"). Ollama's window had a box that pulls
+a name and nothing to find a name with; llama.cpp's has a look-up of Hugging Face. ollama.com has no list a program can read
+(`engine-facts.md`, O23 to O26), so the look-up reads the page of the site's own search, and these rows are the ways that can go wrong: the page,
+the reading of it, the document that declares it, the one request it makes, and what the window does with the answer. The pages are
+recordings (`crates/quickai/tests/fixtures/ollama/library/`, `record.sh`), so none of this needs the internet but U18.
+
+| ID | WP | State | Case | Where |
+|---|---|---|---|---|
+| U01 | 3.15 | ready | The recorded popular page is read card by card: the twenty names in the page's order, and for named cards the description, the sizes in order, the words an icon carries, how often it was pulled. | `core/tests/p3_lookup.rs` |
+| U02 | 3.15 | ready | What a card may lack or carry is read as it is: a cloud variant's word is not something the model can do, a card with no size is not given one, and the people's uploads on the page (`user/name`) are not offered. | `core/tests/p3_lookup.rs` |
+| U03 | 3.15 | ready | A page that says it has no results is an answer, in its count or its words; a page that says it has results and has none that can be read, and a page that is not a page of the search, are `Unreadable`, which is not the same as nothing matching. | `core/tests/p3_lookup.rs` |
+| U04 | 3.15 | ready | Text from the page is decoded (entities named, decimal and hex), cleaned (white space, markup, control characters) and bounded (a description of 400 characters at most, cut at a character); a count is a number or nothing. | `core/tests/p3_lookup.rs` |
+| U05 | 3.15 | ready | The address asks for the words (one space between, a `:tag` not among them, encoded, 100 characters at most) and for models that run on this machine, and for the site's own list when nothing was typed; the root may have a slash or spaces. | `core/tests/p3_lookup.rs` |
+| U06 | 3.15 | ready | A page of any shape is read without a panic (cut at every kind of place, tags thrown about, noise, unfinished tags and quotes), and nothing unfit is offered: a name that is not a model name, a size that is not a tag, more than 50 rows, the same name twice. | `core/tests/p3_lookup.rs` |
+| U07 | 3.15 | ready | A restyled page still gives names (no class, no list, any quoting and order of attributes), a page whose words changed gives the names and loses only what it cannot find (sizes, counts), and a description that says "computer" does not hide the sizes. | `core/tests/p3_lookup.rs` |
+| U08 | 3.15 | ready | A reference is the name, or the name and a size; every way a row offers to pull a model is a name the box takes. | `core/tests/p3_lookup.rs` |
+| U09 | 3.15 | ready | A look-up is what a document's `[[models.lookup]]` declares (the library's own site unless it says another, without a trailing slash), in the order given; a document that says nothing has none. | `core/tests/p3_lookup.rs` |
+| U10 | 3.15 | ready | A look-up that is wrong is refused with where and what to write: a kind this version does not have (and which it has), an address that is not http(s), a name that is empty or has spaces, the same name twice; a key it does not take is a warning; a build without the primitive skips the document and names it. | `core/tests/p3_lookup.rs` |
+| U11 | 3.15 | ready | A document of the person's moves a look-up and leaves the rest (the list merges by `id`), a broken one of theirs is skipped, and they can add a look-up of their own. | `core/tests/p3_lookup.rs` |
+| U12 | 3.15 | ready | A look-up makes one request, for the address the words make, with a `User-Agent` that says what asks, no cookie and no credentials, and reports a status line, a `Found` for each model and `Done`. | `prims/lookup.rs` |
+| U13 | 3.15 | ready | A redirect of the site's is followed, and the cookie it sets on every page is not kept: the next request is as strange to it as the first. | `prims/lookup.rs` |
+| U14 | 3.15 | ready | A look-up that cannot be made says why and is never a list that looks empty: nothing listens, a name that does not resolve, 429 (told apart from other statuses), 5xx and 4xx, a page that is not the search page, a reply of more than 2 MB, no answer within the time allowed. | `prims/lookup.rs` |
+| U15 | 3.15 | ready | A search that finds nothing says so in words and is not a failure. | `prims/lookup.rs` |
+| U16 | 3.15 | ready | A page with bytes that are not UTF-8 is read for what it holds: the character costs the character, not the page. | `prims/lookup.rs` |
+| U17 | 3.15 | ready | A sentence names the site by its host. | `prims/lookup.rs` |
+| U18 | 3.15 | manual | The real ollama.com is still read: at least ten models, valid names, descriptions, sizes and counts present somewhere, and a search for `qwen` finds one. Run when the look-up seems wrong, and before a release: the site changes without telling anyone. | `prims/lookup.rs` |
+| U19 | 3.15 | ready | Each engine document the application ships declares its look-up (Ollama's `library`, llama.cpp's `hub`, the sites, the primitive in `requires`) and loads with no diagnostic. | `prims/lookup.rs` |
+| U20 | 3.15 | ready | Nothing the look-up offers is something the model box would refuse: every reference of every recorded model is taken by the document's own rules as itself. | `prims/lookup.rs` |
+| U21 | 3.15 | ready | Nothing is asked of the site while the window is drawn and polled; the button asks once, with the words in the box (a tag not counting) or for the site's own list, and leaves the box as it was; a closed list is not asked for again. | `app/engine.rs` |
+| U22 | 3.15 | ready | A look-up that fails keeps its sentence as the last word (never "nothing found"), and one that finds nothing says so; a site that is not there is told and the window goes on. | `app/engine.rs` |
+| U23 | 3.15 | ready | A row is pulled through the rules of the box: with nothing running the box's sentence and nothing sent; with the daemon running a size is pulled as `name:size`, a model with none as its name; the box's text is left to the person; what the rules refuse is not sent. | `app/engine.rs` |
+| U24 | 3.15 | ready | Choosing another engine clears the results and asks nothing; llama.cpp has a look-up of its own (WP4.9). | `app/engine.rs` |
+| U25 | 3.15 | ready | The results draw whatever the look-up said (no description, no class, sixty buttons, a description of two thousand characters, no count, a type nobody has, a bundle, every size filter, only a status, nothing at all). | `app/engine.rs` |
+
+### V. What a look-up shows (WP4.9)
+
+Added after the gate, at the user's request (2026-10-07: "make the lookup results look similar on both ollama and llamacpp. Try to
+categorize based on model types and size."). Both windows draw one panel from one kind of result (`docs/lookup-and-bundles.md`): what a look-up
+finds is made into entries, each of a type (Chat, Code, Vision, Embedding, Audio, Other) with a button for each way to fetch it, and the types
+and the classes of size are data of the vocabulary. llama.cpp's look-up of Hugging Face, which was code of the window's own, is declared as
+Ollama's is. The Hugging Face answers are recordings (`crates/quickai/tests/fixtures/huggingface/`, `record.sh`), so none of this needs the
+internet but V15.
+
+| ID | WP | State | Case | Where |
+|---|---|---|---|---|
+| V01 | 4.9 | ready | A model is of the first type whose rule holds and else of the default: what an Ollama card says, the name (a long word matches a start, a short one only itself), the pipeline and tags of a repository, a projector beside the weights; embedding beats code beats chat, vision beats code, and a vocabulary with no types has no type of anything. | `core/tests/p3_entries.rs` |
+| V02 | 4.9 | ready | A size falls in the class it is below (the bound itself is in the next one), and a button carries the class of its own size: the weights and the weights with a projector of one repository can be in different classes. | `core/tests/p3_entries.rs` |
+| V03 | 4.9 | ready | A repository offers the quantizations the preferences like (a variant such as `UD-Q4_K_M` counts as `Q4_K_M`), smallest first, the best one marked, no more than `show_variants`; shards, draft models, importance matrices and projectors are not offered as weights. | `core/tests/p3_entries.rs` |
+| V03b | 4.9 | ready | A file is skipped for what it is, not for what its repository is called: weights of a model whose name says `MTP` or `iMatrix` are offered, a draft model in a folder of its own and the matrix itself are not. | `core/tests/p3_entries.rs` |
+| V04 | 4.9 | ready | A file that names no quantization is told by what is not the same in the names; two that say the same are told by their names; a subfolder is not part of what is kept; a repository with nothing but a projector, shards or no GGUF has nothing to offer. | `core/tests/p3_entries.rs` |
+| V05 | 4.9 | ready | A card of Ollama's library has a button for every size, smallest first and no more than `show_variants`, saying how big it is for a guess (`~`); a card with no size is pulled by its name; the type comes from what the card says it can do. | `core/tests/p3_entries.rs` |
+| V06 | 4.9 | ready | The recorded answers of Hugging Face are read: fifty repositories most downloaded first, one with no pipeline tag, its files with their sizes, what its tags say of it, none that needs a login. | `core/tests/p3_entries.rs` |
+| V07 | 4.9 | ready | The entries are laid out in sections by the order of the types, Other folded, each section in the order the entries came; a size keeps the buttons of its class and hides an entry that has none; an entry of a type nobody has goes under Other; with no types there is one section with no heading. | `core/tests/p3_entries.rs` |
+| V08 | 4.9 | ready | The vocabulary that sorts is checked where it is written (ids, one default, bounds that go up, a size that is a size, empty entries), across documents too, a person's vocabulary patches by id, and the one the application ships is right. | `core/tests/p3_entries.rs` |
+| V09 | 4.9 | ready | The look-up of Hugging Face is what the document declares (the counts the old code had, the quantizations, the skipped files), a person's document patches it by id, what is wrong in it is refused with where and what to write, a type no vocabulary defines is a warning with the nearest, and a build without the primitive skips the document. | `core/tests/p3_entries.rs` |
+| V10 | 4.9 | ready | A look-up asks for the list and then for each repository, one request each in order, saying who asks and for what, with no cookie and no credentials, and reports each repository that has weights as an entry of its type. | `prims/hub.rs` |
+| V11 | 4.9 | ready | Words are searched as a phrase and then one by one (a tag is no word), a repository is looked into once however many searches find it, and the counts of the document bound it. | `prims/hub.rs` |
+| V12 | 4.9 | ready | A look-up that cannot be made says why and is never a list that looks empty: nothing listens, a name that does not resolve, 429, 5xx and 4xx, an answer that is not a list, one of more than 4 MB, no answer in time, every repository failing; a site that begins to refuse part-way keeps what it found and says so. | `prims/hub.rs` |
+| V13 | 4.9 | ready | What cannot be fetched is left out and counted (a repository that needs a login, one with no weights, one that cannot be read), and nothing found is said in words and is not a failure. | `prims/hub.rs` |
+| V14 | 4.9 | ready | Everything a button fetches has a name that stays in the models folder and an address on the site. | `prims/hub.rs` |
+| V15 | 4.9 | manual | The real Hugging Face is still read: at least ten models, each with something to fetch, a projector offered somewhere, a type other than chat somewhere, and a search for `qwen` finds only models of that name. Run when the look-up seems wrong, and before a release: the site changes without telling anyone. | `prims/hub.rs` |
+| V16 | 4.9 | ready | The window of llama.cpp looks up the hub when asked and not before (the document of the application moved to a fake by a person's patch), draws the sections and every size filter, searches with words, shows the sentence of a failure as the last word, and closing the results asks nothing. | `app/engine.rs` |
+
+### B. Bundles: what is fetched with the weights, and used (WP4.9)
+
+A vision model needs a second file, its projector. A bundle (`[[models.bundle]]` of an engine document) says which kinds of file go with the weights and how to
+find each among the files of a repository; the engine's `[components.<kind>]` says how the program is told about one. A result that has the files is offered in
+a second row as one download, the pairing is kept in a record beside the weights, the picker lists weights only, Start puts the projector on the command line
+and Delete takes what nothing else uses. Everything here is configurable by a document of the person's.
+
+| ID | WP | State | Case | Where |
+|---|---|---|---|---|
+| B01 | 4.9 | ready | A repository is offered in a bundle when it has a file for every part: the buttons twice, once for the weights and once with the projector (the size is the sum), the projector chosen by `prefer` and not the smaller one, a person's preference moves it, a repository without one has no bundle, a projector is never a model. | `core/tests/p3_bundles.rs` |
+| B02 | 4.9 | ready | A bundle the person defines (a draft model, with its component) is offered beside the shipped one, as its own row, and only for a repository that has such a file. | `core/tests/p3_bundles.rs` |
+| B03 | 4.9 | ready | What is fetched is kept under names that cannot clash or climb: the weights as they were named, a companion under its repository's name (so two repositories' `mmproj-F16.gguf` are two files and two quantizations of one share it), a name that tries to leave the folder or hide cannot. | `core/tests/p3_bundles.rs` |
+| B04 | 4.9 | ready | A bundle that is wrong is refused with where and what to write (a kind the engine cannot attach and which it can, no parts, no `match`, empty entries, a name with spaces, two of one name) and the document of the application stays. | `core/tests/p3_bundles.rs` |
+| B05 | 4.9 | ready | A bundle of the person's patches the shipped one by id (a list is replaced, what was not said stays), labels default to names, and an engine with no components cannot have a bundle. | `core/tests/p3_bundles.rs` |
+| B06 | 4.9 | ready | A component is checked where it is written (a name, `bind.arg` present, templates that only name the file) and compiled with its order, 80 unless it says. | `core/tests/p3_bundles.rs` |
+| B07 | 4.9 | ready | An attached companion is on the command line after the fields of a lower order and before the person's own arguments, with its origin; no companion, no change; a kind the engine has no component for adds nothing; two files of a kind are two sets in the order attached. | `core/tests/p3_bundles.rs` |
+| B08 | 4.9 | ready | The order of a component is the document's to say: before the fields, between them, and a field comes first at the same order. | `core/tests/p3_bundles.rs` |
+| B09 | 4.9 | ready | The record beside the weights names the files that go with them, is written whole, replaced whole, and a download of the weights alone has none. | `bundles.rs` |
+| B10 | 4.9 | ready | A record is not believed beyond what it may say: not JSON, another version, the wrong shape, names that climb out of the folder or are not names. | `bundles.rs` |
+| B11 | 4.9 | ready | Deleting a model takes its record and the companions no other record names, keeps a shared one and says so, and says when the weights themselves could not go. | `bundles.rs` |
+| B12 | 4.9 | ready | A bundle is one job that fetches the weights and then what goes with them, one bar for all the bytes that never goes back, a line in the log for each part, no half-written file left, and writes the record when the last file is in place; the weights alone are as ever. | `downloader.rs` |
+| B13 | 4.9 | ready | A file that is already there at the size it should be is not fetched again (a second quantization shares the projector); one of the same name and another size is fetched. | `downloader.rs` |
+| B14 | 4.9 | ready | A file after the weights that fails leaves the weights, writes no record and says what was not fetched; if the weights fail nothing else is asked for. | `downloader.rs` |
+| B15 | 4.9 | ready | A name that climbs out of the folder cannot. | `downloader.rs` |
+| B16 | 4.9 | ready | The picker lists weights and not the files that go with them (a record's, or what a bundle's patterns match), says which projector a model has and when it has gone. | `models.rs` |
+| B16b | 4.9 | ready | Both folders are scanned the same way, a known model keeps its note, a folder that is not there is no models, and with no patterns what a folder holds is what is listed. | `models.rs` |
+| B17 | 4.9 | ready | A button of a bundle downloads both files, the picker lists the weights alone and selects them, the log says each part, a second quantization does not fetch the projector again, the weights alone are as ever, a second button is not taken while one runs, and a name to pull is not something llama.cpp does. | `app/engine.rs` |
+| B18 | 4.9 | ready | Start puts the projector on the command line (`--mmproj` and the file, after the fields, before `extra_args`) and says in the log when it has gone and starts without it; a model with no companion starts as it always did. | `app/engine.rs` |
+| B19 | 4.9 | ready | Deleting a model deletes its record and the projector nothing else uses, keeps one another model uses and says so, and the modal says the projector goes with it. | `app/engine.rs` |
+| B20 | 4.9 | ready | A bundle that comes in part (the projector fails) still lists the weights, says what was not fetched in the log, and says nothing of a pair. | `app/engine.rs` |
+| B21 | 4.9 | manual | The real thing end to end: a real bundle (`ggml-org/SmolVLM-256M-Instruct-GGUF`, no pipeline tag, a projector beside the weights) is looked up on the real hub, fetched by the button of its row, listed as the weights alone, and started by a real `llama-server` with `--mmproj`, which then says it takes pictures (`/props`, `modalities.vision`). About 365 MB and a real `llama-server` (`QUICKAI_REAL_LLAMA`). Run before a release and when the projector seems not to be used. | `app/engine.rs` |
+
+### J. The recommended models (WP4.10)
+
+Asked for on 2026-10-07 ("scan major projects that can be run today using the quickai, this will be a curated list that will be packaged
+along with the app ... small/medium ... all categories ... create another button or some UI stuff that helps the users navigate this list and get
+them"). The list is `catalog` documents (`crates/quickai/manifests/catalog/*.toml`, `docs/catalog.md`), built by `scripts/catalog.py` from picks and
+the real sites; the window that browses it is the look-up's panel with a way to find a model (Start here, a type, words, a size) and marks for what
+is there already and what would not fit. A download is checked against the SHA-256 the list holds, and a model that is served differently (an
+embedding model) says so in the record beside its weights as the id of the engine's `[[models.mode]]`. The pure half is `core/tests/p3_catalog.rs`.
+
+| ID | WP | State | Case | Where |
+|---|---|---|---|---|
+| J01 | 4.10 | ready | A catalog document is read with everything it says (name, maker, type, note, licence, size, context, what it reads, features, start, bundled, files with their commit, size and hash, a companion and the bundle that pairs it, a name to pull with its size), and a model that says only what it must gets sensible defaults (the id as its name, the vocabulary's default type, text, the branch). | `core/tests/p3_catalog.rs` |
+| J02 | 4.10 | ready | What cannot be right is refused where it is written, as a whole document and with what to write: a bad id, a type or modality no vocabulary has (the nearest one suggested), a feature that is not a short lower case word, too many, a context of 0, an engine that does not exist, a repository that is not `owner/name`, a commit that is not one, a path that climbs out of its repository or is not of the engine's format, a size of 0, a hash that is not one, two files that are best, the same file twice, no weights, a companion the engine cannot attach, a mode it does not have, a name where files are wanted and the reverse, a name it cannot pull, the same model twice. | `core/tests/p3_catalog.rs` |
+| J02b | 4.10 | ready | Weights and companions the engine has no bundle for are refused with the bundles it has. | `core/tests/p3_catalog.rs` |
+| J03 | 4.10 | ready | A person's documents patch a shipped model by id (a key they say is replaced, what they leave out stays), hide one (not checked, no name taken), and add pages of their own; a model two documents write is refused in the second and says where the first is; a mistake in a patch leaves the shipped document in force and says so. | `core/tests/p3_catalog.rs` |
+| J04 | 4.10 | ready | An engine offers the models that say how it runs them, in the order of the list, smallest first; without a hub to fetch from a model that is files is not offered and a name still is; the helper the window calls uses the hub the engine's own look-up names. | `core/tests/p3_catalog.rs` |
+| J05 | 4.10 | ready | A model becomes an entry of its type with a card and a button for every way to get it: first the weights with their companion as one download of the sum (what most people want), then the weights alone (fetching the extra file is the person's choice), each smallest first with the recommended one marked; a name pulled with its exact size; a name with no tag says `latest`. | `core/tests/p3_catalog.rs` |
+| J05b | 4.10 | ready | The words of a button are the list's, else the quantization the name says, else the name (two files that say the same are told by their names); with no `best` the first is the recommended one; a path in a folder is kept by its name and fetched by its path. | `core/tests/p3_catalog.rs` |
+| J06 | 4.10 | ready | Everything a button fetches has the address of the commit it was checked at, its size and its hash, is kept by a name that stays (a companion by its repository first), and carries the mode of the model. | `core/tests/p3_catalog.rs` |
+| J07 | 4.10 | ready | A list is browsed by scope (Start here, a type), words (every one somewhere in the name, maker, note, licence, features, what it reads or the words of its type, whatever the case; a word ending in `s` is also found without it) and size, with counts for each choice that follow the other two, and an entry of a type nobody has under Other. | `core/tests/p3_catalog.rs` |
+| J08 | 4.10 | ready | The list the application ships loads with no error and no warning; every kind of model has at least three; every model says its maker, licence and note, is offered by an engine, is pinned (a commit, a size and a hash on every file, a bundle for every companion, the mode an embedding model needs); an Ollama name has its size; every model that reads pictures or listens has its projector in the list and is offered with it and without it, the bundled download first; a few models are marked to start with, one for each need; large models are the exception; and the two that ship with the packages are the ones `build/config.env` pins, byte for byte. | `core/tests/p3_catalog.rs` |
+| J09 | 4.10 | ready | The reference page of catalog documents is the one generated from their types, and says every key. | `core/tests/p3_catalog.rs`, `core/tests/reference.rs` |
+| J10 | 4.10 | ready | The modes of an engine are checked where they are written, and a person's document patches one by id or adds one. | `core/tests/p3_catalog.rs` |
+| J11 | 4.10 | ready | The mode of a model is on the command line after the fields and the projector and before the person's own words, traced to the mode; none, an empty one and one the engine does not have add nothing; an engine with no modes is told none. | `core/tests/p3_catalog.rs` |
+| J12 | 4.10 | ready | llama.cpp's document says how it serves embeddings (`--embeddings`) and reranking (`--reranking`) and the vocabulary has the types the list sorts into, in the order of the sidebar. | `core/tests/p3_catalog.rs` |
+| J13 | 4.10 | ready | A piece with a hash is checked while it arrives: the right bytes are kept; the wrong hash or a size that is not the one keep nothing, not even a half, and say which file and what was expected; a piece with no hash is as before; a projector that fails leaves the weights, which run alone, and no record. | `downloader.rs` |
+| J14 | 4.10 | ready | A mode is kept in the record by its id, with or without a companion, and never as the words it stands for; a record of the first version is read as it was; what is not a plain id, or a record of another version, is not a mode. | `bundles.rs` |
+| J15 | 4.10 | ready | Start attaches what the record says (the projector that is there, the mode the engine has) and says what it could not (a projector that has gone, a mode the engine does not have); the command line carries both in their places. | `launch.rs` |
+| J16 | 4.10 | ready | Deleting a model takes a record that holds only a mode. | `bundles.rs` |
+| J17 | 4.10 | ready | A button is installed when every file it fetches is in the folders at the size the list says, or the name is among those the engine lists, whichever way either is written. | `app/engine.rs` |
+| J18 | 4.10 | ready | A model fits comfortably in half of the memory with the overhead counted, tightly in four fifths and not beyond; an unknown memory judges nothing. | `hardware.rs` |
+| J19 | 4.10 | ready | The window opens without asking anything of any site (it is drawn closed, open and in every choice), shows what the engine offers and starts with what the list says to start with, says what is known of a model, closes, and starts again from nothing when the engine changes. | `app/engine.rs` |
+| J19b | 4.10 | ready | The two rows of a model that has a companion say what it is for: the bundled row what the extra file is and that it can be left out, the row of the weights alone what it leaves out and that the choice is the person's; a model with no bundle says nothing. | `app/lookup_view.rs` |
+| J20 | 4.10 | ready | A button of the window fetches through the code of the look-up (one job, each file checked, the commit named in the address), the window then knows the model is installed, the picker names it as the list does with its note and its projector, and an embedding model's record, picker note and selection say its mode. | `app/engine.rs` |
+| J20b | 4.10 | ready | A file that is not the one the list was made for is not kept, the log says which and the window says it too (the log is under it), and the window can fetch again; a download that ends well leaves no such note. | `app/engine.rs` |
+| J21 | 4.10 | ready | In Ollama's window the list offers names as buttons that pull and marks the ones the daemon lists; llama.cpp's window does not offer what has no files and the reverse. | `app/engine.rs` |
+| J20c | 4.10 | ready | The PNG and the base64 that the manual J23 sends are what they say they are (signature, header, end, the three padding cases). | `app/engine.rs` |
+| J22 | 4.10 | manual | The real sites still have what the list says: every repository at its commit and open to anyone, every file with the size and SHA-256 the list holds, every Ollama name pulling the bytes the list says (the sum of its manifest's layers). Run before a release and when the list seems wrong. | `p3/catalog.rs` |
+| J23 | 4.10 | manual | The smallest model of each kind in the list (chat, embedding, reranking, vision, speech) is fetched by the button of its row, started by the code of the Start button with the real pinned `llama-server`, and answers: a capital, vectors, the passage that answers, "red" to a red picture, a transcript; the command line of the embedding model has `--embeddings`, of the reranker `--reranking`, of the picture and speech models `--mmproj`; each server is stopped the way the Stop button stops it before the next starts (`QUICKAI_J23_ONLY=id,id` runs some of them). | `app/engine.rs` |
+| J24 | 4.10 | ready | Nothing a card says is cut off: every card of the shipped list, for both engines, is drawn at the width of the list with the whole of its note (no ellipsis, nothing past the edge that clips it, the note in one piece on the screen). The notes were cut short after one line, and the rest was only in a hover. | `app/engine.rs` |
+| J24b | 4.10 | ready | The window as a person first sees it (Start here, All, a category) has nothing cut off and nothing outside it: the hint of the search box is whole, and every section and every card is under the one before it. They were laid out side by side, because a scroll area takes the layout of the row it is in, so that everything but the first section (and, on a category page, everything but the first card) was off to the right, where a list that scrolls down cannot be reached. | `app/engine.rs` |
+| J24c | 4.10 | ready | Another page, a search, or the window opened again starts at the top of its list, however far the one before was scrolled (the toolkit keeps the position of a scroll area, and a page that opened at its end looked as if it held a few models). | `app/engine.rs` |
+
 ### N. llama.cpp must not change
 
 Phase 3 touches the supervisor, the installer, the feed and the proxy that llama.cpp runs through.
@@ -406,7 +546,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 224 / 0 / 2 / 5 (total 231). The test kit has 26 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 314 / 0 / 7 / 5 (total 326). The test kit has 29 tests of its own and the Python fake
 19, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 
@@ -422,7 +562,9 @@ calibrated against the real window.
 | `ollama_lifecycle` | TC-OLL-001 to -018 (18) | Start with the document's environment; the model loaded before Running; the log's first lines; Stop unloads and ends the daemon **and its runner**; attach to one already running (and leave it); spawn mode refuses a busy port; something that is not Ollama on the port; a daemon that dies; a model that cannot be loaded; closing the window and killing the app; SIGTERM ignored; management mode; live traffic; context, GPU and environment lines; the model store; the API panel |
 | `ollama_models` | TC-OMD-001 to -007 (7) | listing, pulling with progress, a failing pull (inside a 200), what is not a model name, an `hf.co` reference, delete with confirmation, nothing before a click |
 | `ollama_runtime` | TC-ORT-001 to -009 (9) | nothing looked up before the click; the newest stable release first; install whole; a wrong checksum and a cut-off archive install nothing; a pasted address; a rate limit; delete; CUDA left out |
-| `network_privacy` | TC-NET-019 to -022 (4) | idle with Ollama chosen; running and using it; loopback and `OLLAMA_NO_CLOUD=1`; the look-up contacts `api.github.com` and nothing else |
+| `ollama_lookup` | TC-OLK-001 to -011 (11), added with WP3.15 | nothing before the click; the models listed with their sizes; the words in the box are the search; a size pulled as `name:size` by the running Ollama, a model with none by its name; with Ollama not running the box's sentence and nothing sent; the X; a site that fails, a page that is not the search page, a search that finds nothing; what the request says and no cookie back |
+| `network_privacy` | TC-NET-019 to -023 (5) | idle with Ollama chosen; running and using it; loopback and `OLLAMA_NO_CLOUD=1`; the look-up of builds contacts `api.github.com` and nothing else; the look-up of models contacts `ollama.com` and nothing else, only when asked (TC-NET-023) |
+| `online_lookups` | TC-ONL-006 and -007 (2, opt-in), added with WP3.15 | the real ollama.com's search read by the window: the models it shows first, and a search for `qwen` |
 
 ## 6. The gate of these tests
 

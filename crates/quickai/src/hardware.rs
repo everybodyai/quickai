@@ -32,6 +32,42 @@ pub(crate) fn format_bytes(n: u64) -> String {
     }
 }
 
+/// What the context and the program need on top of the bytes of the weights.
+const OVERHEAD_FACTOR: f64 = 1.2;
+/// The part of the memory a model is comfortably given.
+const RAM_FRACTION: f64 = 0.5;
+/// The part of the memory beyond which a model does not fit at all.
+const RAM_LIMIT: f64 = 0.8;
+
+/// How a model of some size sits in this machine's memory.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Fit {
+    /// It fits with room to spare.
+    Comfortable,
+    /// It fits, and little else does.
+    Tight,
+    /// It is more than the machine can hold.
+    TooBig,
+}
+
+/// Whether `bytes` of weights fit in `total_ram_bytes`: comfortably in half of it with the overhead
+/// counted, tightly in four fifths, not beyond. All that is known of the machine is its total memory
+/// (no graphics memory), so this is a hint and not a promise; an unknown memory judges nothing.
+pub fn fit(bytes: u64, total_ram_bytes: u64) -> Fit {
+    if total_ram_bytes == 0 {
+        return Fit::Comfortable;
+    }
+    let need = bytes as f64 * OVERHEAD_FACTOR;
+    let ram = total_ram_bytes as f64;
+    if need <= ram * RAM_FRACTION {
+        Fit::Comfortable
+    } else if need <= ram * RAM_LIMIT {
+        Fit::Tight
+    } else {
+        Fit::TooBig
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SpeedTier {
     Slow,
@@ -106,8 +142,6 @@ pub fn recommend(models: &[ModelEntry], total_ram_bytes: u64, gpu_offload: bool)
     }
     sized.sort_by_key(|m| m.size_bytes);
 
-    const OVERHEAD_FACTOR: f64 = 1.2;
-    const RAM_FRACTION: f64 = 0.5;
     let budget = total_ram_bytes as f64 * RAM_FRACTION;
     let fits_ram = |m: &&ModelEntry| (m.size_bytes as f64) * OVERHEAD_FACTOR <= budget;
 
@@ -141,6 +175,8 @@ mod tests {
             note: String::new(),
             bundled: false,
             size_bytes,
+            companions: Vec::new(),
+            mode: None,
         }
     }
 
@@ -203,6 +239,33 @@ mod tests {
         let ram = 32 * GB; // ratio 32 -> Fast with GPU offload
         assert_eq!(speed_tier(size, ram, true), SpeedTier::Fast);
         assert_eq!(speed_tier(size, ram, false), SpeedTier::Medium);
+    }
+
+    #[test]
+    fn p3_j18_a_model_fits_comfortably_in_half_the_memory_tightly_in_four_fifths_and_not_beyond() {
+        // 16 GB of memory: the weights plus a fifth are comfortable up to 8 GB of it, tight up to 12.8 GB
+        let ram = 16 * GB;
+        assert_eq!(fit(GB, ram), Fit::Comfortable);
+        assert_eq!(
+            fit(6 * GB, ram),
+            Fit::Comfortable,
+            "7.2 GB with the overhead"
+        );
+        assert_eq!(fit(7 * GB, ram), Fit::Tight, "8.4 GB with the overhead");
+        assert_eq!(fit(10 * GB, ram), Fit::Tight, "12 GB with the overhead");
+        assert_eq!(fit(11 * GB, ram), Fit::TooBig, "13.2 GB with the overhead");
+        assert_eq!(fit(40 * GB, ram), Fit::TooBig);
+        // the edges belong to the kinder side
+        assert_eq!(fit((ram as f64 * 0.5 / 1.2) as u64, ram), Fit::Comfortable);
+        assert_eq!(fit((ram as f64 * 0.8 / 1.2) as u64, ram), Fit::Tight);
+        // a machine whose memory is not known is not judged, and an empty file always fits
+        assert_eq!(fit(100 * GB, 0), Fit::Comfortable);
+        assert_eq!(fit(0, ram), Fit::Comfortable);
+        // the same model on a smaller machine
+        assert_eq!(fit(3 * GB, 4 * GB), Fit::TooBig);
+        assert_eq!(fit(3 * GB, 8 * GB), Fit::Comfortable, "3.6 GB of 8");
+        assert_eq!(fit(4 * GB + GB / 2, 8 * GB), Fit::Tight, "5.4 GB of 8");
+        assert_eq!(fit(3 * GB, 64 * GB), Fit::Comfortable);
     }
 
     #[test]

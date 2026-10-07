@@ -40,12 +40,7 @@ impl App {
         } else {
             None
         };
-        let selection = launch::selection_from_values(
-            &self.engine,
-            model.map(ModelEntry::info),
-            self.values.map(),
-            self.enable_traffic_proxy,
-        );
+        let selection = self.run_selection(model);
         match launch::plan_selection(
             &self.registry,
             &selection,
@@ -71,6 +66,29 @@ impl App {
                     .report_start_failure(port, &display, message, wake);
             }
         }
+    }
+
+    /// What a run is asked of the planner: the engine, the model, the values the window holds, and the
+    /// files that were fetched with the model, which go on its command line. One that has gone is said
+    /// in the log and the model starts without it.
+    pub(super) fn run_selection(
+        &mut self,
+        model: Option<&ModelEntry>,
+    ) -> quickai_core::plan::Selection {
+        let mut selection = launch::selection_from_values(
+            &self.engine,
+            model.map(ModelEntry::info),
+            self.values.map(),
+            self.enable_traffic_proxy,
+        );
+        if let (Some(model), Some(engine)) = (model, self.engine_doc()) {
+            let (attached, notes) = launch::attach_record(selection, model, engine);
+            selection = attached;
+            for note in notes {
+                self.push_log(note);
+            }
+        }
+        selection
     }
 
     /// What the Start button does: start the engine with the model the picker has selected.

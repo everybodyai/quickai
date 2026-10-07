@@ -28,7 +28,7 @@ request_body = "8MiB"           # proxy.rs MAX_REQUEST_BODY: larger bodies are r
 sniff_buffer = "4MiB"           # proxy.rs MAX_SNIFF_BUFFER
 
 [timeouts]
-http = "15s"                    # remote.rs, llama_releases.rs CALL_TIMEOUT
+http = "15s"                    # prims/hub.rs, prims/lookup.rs, prims/feed.rs CALL_TIMEOUT
 ready = "120s"                  # server_manager.rs HEALTH_TIMEOUT (an engine document may override)
 ready_interval = "500ms"        # server_manager.rs HEALTH_POLL_INTERVAL
 

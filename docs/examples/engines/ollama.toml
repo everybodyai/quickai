@@ -1,4 +1,6 @@
-# Ollama as data, with no Ollama-specific Rust. This is the document the application ships
+# Ollama as data, with one piece of Rust that is about Ollama's website and not its program: the reading of
+# the library's search page (`lookup.ollama_library@1`), because the library has no list a program can read.
+# This is the document the application ships
 # (crates/quickai/manifests/engines/ollama.toml has the same content, and a test keeps them equal), and
 # a document of the same id in the user's configuration directory patches it.
 #
@@ -11,7 +13,7 @@
 schema = 1
 kind = "engine"
 id = "ollama"
-requires = { primitives = ["locate.setting@1", "locate.installed@1", "locate.path_search@1", "locate.known_paths@1", "exec.probe@1", "feed.github_release@1", "install.archive@1", "spawn@1", "attach@1", "probe.http@1", "http_call@1", "decode@1"] }
+requires = { primitives = ["locate.setting@1", "locate.installed@1", "locate.path_search@1", "locate.known_paths@1", "exec.probe@1", "feed.github_release@1", "install.archive@1", "spawn@1", "attach@1", "probe.http@1", "http_call@1", "decode@1", "lookup.ollama_library@1"] }
 
 [engine]
 name = "Ollama"
@@ -201,7 +203,7 @@ list = { call = { method = "GET", path = "/api/tags" }, items = "/models", map =
 pull = { call = { method = "POST", path = "/api/pull", body = { model = "${ref}" }, stream = "ndjson" }, progress = { key = "/digest", completed = "/completed", total = "/total", status = "/status" } }
 remove = { call = { method = "DELETE", path = "/api/delete", body = { model = "${ref}" } } }
 capabilities = { call = { method = "POST", path = "/api/show", body = { model = "${ref}" } }, pointer = "/capabilities" }   # discovered modalities: "vision" and so on
-# first match wins (docs/phase3-test-plan.md, M01); a `search` rule over the curated list and Hugging Face joins in Phase 4
+# first match wins (docs/phase3-test-plan.md, M01). What "Look up online" fills the list from is `[[models.lookup]]` below, not a rule here
 input_rules = [
   { when = 'matches(input, "^hf\.co/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+(:[A-Za-z0-9._-]+)?$")', do = "pull", ref = "${input}" },
   { when = 'matches(input, "^https://huggingface\.co/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/?$")', do = "pull", ref = "hf.co/${path_after_host(input)}" },
@@ -211,6 +213,15 @@ input_rules = [
   { when = 'matches(input, "^[a-z0-9._/-]+(:[A-Za-z0-9._-]+)?$")', do = "pull", ref = "${input}" },
   { do = "reject", message = "That does not look like a model name. Try qwen3:4b or hf.co/user/repo:Q4_K_M." },
 ]
+
+# "Look up online": the library of models at ollama.com. It has no list a program can read, so the page of its own
+# search is read, local models only, and the library's own models (a person's uploads are left out). It is
+# QuickAI that asks, not the daemon, and only when the button is pressed, so this host is not in `egress` above
+# (that is what the daemon contacts); `site` is where a mirror, or a test, would point it
+[[models.lookup]]
+id = "library"
+use = "ollama_library"
+site = "https://ollama.com"
 
 [traffic]
 apis = ["openai.chat", "openai.completions", "ollama.chat", "ollama.generate"]

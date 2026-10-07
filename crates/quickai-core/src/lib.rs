@@ -22,6 +22,7 @@ pub mod guard;
 pub mod heuristics;
 pub mod kvlines;
 pub mod loaderenv;
+pub mod lookup;
 pub mod models;
 pub mod plan;
 pub mod registry;

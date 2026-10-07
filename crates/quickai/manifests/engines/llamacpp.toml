@@ -9,7 +9,7 @@
 schema = 1
 kind = "engine"
 id = "llamacpp"
-requires = { primitives = ["locate.setting@1", "locate.next_to_exe@1", "locate.dev_tree@1", "spawn@1", "probe.http@1", "feed.github_release@1", "install.archive@1"] }
+requires = { primitives = ["locate.setting@1", "locate.next_to_exe@1", "locate.dev_tree@1", "spawn@1", "probe.http@1", "feed.github_release@1", "install.archive@1", "lookup.huggingface_gguf@1"] }
 
 [engine]
 name = "llama.cpp"
@@ -23,6 +23,7 @@ egress = []                     # QuickAI never passes -hf or --model-url, so th
 [provides]
 apis = ["openai.chat", "openai.completions", "llamacpp.completion", "openai.embeddings"]
 web_ui = { path = "/", label = "Open Chat UI" }
+accepts = { formats = ["gguf"] }                  # models are files of this format (a catalog is held to it)
 model_name_matters = false
 default_port = 8080
 
@@ -77,6 +78,52 @@ backends = [
   { match = "rocm", label = "ROCm/HIP", needs_gpu = "amd" },
   { match = "cpu", label = "CPU" },
 ]
+
+# ---- models: how they are looked up online, and what goes with them -------------------------------------
+# "Look up online" and the Search button of the model box read the GGUF repositories of Hugging Face
+# (docs/lookup-and-bundles.md). The window sorts what is found by the types and sizes of the vocabulary and
+# draws it as Ollama's look-up is drawn. Nothing is asked until a button is pressed.
+[[models.lookup]]
+id = "hub"
+use = "huggingface_gguf"
+site = "https://huggingface.co"
+popular = 30                    # repositories looked into for the plain list
+keyword = 20                    # ... for the words typed
+similar = 20                    # ... for each single word of a phrase typed, to find what the phrase misses
+prefer = ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q4_0", "Q8_0", "Q6_K", "Q3_K_M"]      # the quantizations to offer first
+skip = ["*-?????-of-?????*", "mtp/*", "mtp-*", "imatrix*"]     # patterns: shards, draft models and importance matrices are not weights
+show_variants = 4               # buttons a model gets
+types = ["chat", "reasoning", "code", "translation", "vision", "documents", "embedding"]     # what llama-server runs; the rest is shown as Other
+
+# What is fetched together with the weights of a model, as one download. A vision model needs its projector,
+# a second file that turns pictures into what the model reads; a repository that has one is offered in a
+# second row. A bundle names a kind of component, and `[components.<kind>]` says how llama-server is told.
+[[models.bundle]]
+id = "vision"
+label = "with projector"
+help = "A vision model reads pictures through a second file, its projector. Both are fetched, and the projector is attached when the model starts."
+parts = [
+  { kind = "mmproj", label = "projector", match = ["mmproj*.gguf", "*mmproj*.gguf"], prefer = ["F16", "BF16", "Q8_0", "F32"] },
+]
+
+[components.mmproj]
+bind.arg = ["--mmproj", "${component.path}"]
+
+# How llama-server is started for a kind of model. A catalog (data) names a mode by its id and a record
+# beside the weights remembers it; the words are the engine's own, and they come after the arguments of the
+# fields and before the person's extra ones. Without the flag the server is up and answers 501 to the
+# calls these models are for.
+[[models.mode]]
+id = "embedding"
+label = "embedding server"
+help = "llama-server answers /v1/embeddings only when it is started with --embeddings."
+arg = ["--embeddings"]
+
+[[models.mode]]
+id = "rerank"
+label = "reranker"
+help = "llama-server answers /v1/rerank only when it is started with --reranking."
+arg = ["--reranking"]
 
 # ---- what the API panel says ---------------------------------------------------------------------------
 # The texts are the ones the window always had, word for word (the curl example is the vocabulary's).

@@ -73,6 +73,43 @@ pub fn selection_from_values(
     selection
 }
 
+/// What the record beside a model's weights adds to a selection: each companion file that is still
+/// there (a projector), and the mode the engine is started in for it. What cannot be attached is
+/// said in the sentences that come back, for the log: a companion that has gone (the model starts
+/// without it) and a mode the engine's document does not have (the model starts as usual).
+pub fn attach_record(
+    mut selection: Selection,
+    model: &crate::models::ModelEntry,
+    engine: &quickai_core::registry::Engine,
+) -> (Selection, Vec<String>) {
+    let mut notes = Vec::new();
+    for companion in &model.companions {
+        if companion.exists() {
+            selection =
+                selection.with_component(&companion.kind, &companion.path.display().to_string());
+        } else {
+            notes.push(format!(
+                "[quickai] {} is not in the models folder any more: starting without it.",
+                companion.name
+            ));
+        }
+    }
+    if let Some(mode) = &model.mode {
+        if quickai_core::models::modes(engine)
+            .iter()
+            .any(|m| &m.id == mode)
+        {
+            selection = selection.with_mode(mode);
+        } else {
+            notes.push(format!(
+                "[quickai] {} is meant to be started in the mode `{mode}`, which {}'s document does not define: starting as usual.",
+                model.filename, engine.id
+            ));
+        }
+    }
+    (selection, notes)
+}
+
 /// The selection the tests of the session have always built for llama.cpp from `RunSettings`.
 #[cfg(test)]
 pub fn selection(model: &ModelEntry, settings: &RunSettings) -> Selection {
@@ -228,6 +265,8 @@ mod tests {
             note: String::new(),
             bundled: false,
             size_bytes: 123,
+            companions: Vec::new(),
+            mode: None,
         }
     }
 
@@ -264,6 +303,81 @@ mod tests {
             s.values["llamacpp.bin_override"].as_str(),
             Some("/opt/llama/llama-server")
         );
+    }
+
+    #[test]
+    fn p3_j15_start_attaches_what_the_record_says_and_tells_what_it_could_not() {
+        use crate::bundles::Companion;
+        let registry = build_registry(&ConfigDirs::default());
+        let engine = registry.engine(DEFAULT_ENGINE).unwrap();
+        let dir = crate::testkit::scratch("j15");
+        let projector = dir.join("o--r--mmproj-f16.gguf");
+        std::fs::write(&projector, b"p").unwrap();
+        let companion = |path: &Path| Companion {
+            kind: "mmproj".into(),
+            label: "projector".into(),
+            name: "mmproj-f16.gguf".into(),
+            path: path.to_path_buf(),
+        };
+        let mut m = model();
+        m.companions = vec![companion(&projector)];
+        m.mode = Some("embedding".into());
+        let base = || selection(&model(), &settings());
+
+        // the projector that is there and the mode the engine has are attached, and nothing is said
+        let (s, notes) = attach_record(base(), &m, engine);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(
+            s.components["mmproj"][0].path,
+            projector.display().to_string()
+        );
+        assert_eq!(s.mode.as_deref(), Some("embedding"));
+
+        // and the command line carries both, the mode's words after the projector's
+        let binary = std::path::PathBuf::from("/opt/llama/llama-server");
+        let plan = plan_selection(&registry, &s, &binary, MachineFacts::default(), None).unwrap();
+        let args: Vec<String> = match &plan.units[0].start[0] {
+            quickai_core::plan::Start::Spawn(spawn) => {
+                spawn.args.iter().map(|a| a.value.clone()).collect()
+            }
+            other => panic!("{other:?}"),
+        };
+        let at = |word: &str| {
+            args.iter()
+                .position(|a| a == word)
+                .unwrap_or_else(|| panic!("{word} in {args:?}"))
+        };
+        assert!(at("--mmproj") < at("--embeddings") && at("--embeddings") < at("--threads"));
+
+        // a projector that has gone is said, and the model starts without it
+        std::fs::remove_file(&projector).unwrap();
+        let (s, notes) = attach_record(base(), &m, engine);
+        assert!(s.components.is_empty());
+        assert_eq!(
+            notes,
+            ["[quickai] mmproj-f16.gguf is not in the models folder any more: starting without it."]
+        );
+        assert_eq!(
+            s.mode.as_deref(),
+            Some("embedding"),
+            "the mode does not depend on the file"
+        );
+
+        // a mode the engine does not have is said and not used
+        m.mode = Some("telepathy".into());
+        let (s, notes) = attach_record(base(), &m, engine);
+        assert_eq!(s.mode, None);
+        assert_eq!(notes.len(), 2);
+        assert!(
+            notes[1].contains("m.gguf is meant to be started in the mode `telepathy`")
+                && notes[1].contains("llamacpp's document does not define"),
+            "{notes:?}"
+        );
+
+        // a model with no record is the model it always was
+        let plain = model();
+        let (s, notes) = attach_record(base(), &plain, engine);
+        assert!(notes.is_empty() && s.components.is_empty() && s.mode.is_none());
     }
 
     #[test]

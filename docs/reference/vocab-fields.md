@@ -1,8 +1,8 @@
-# Vocabulary documents: modalities and APIs
+# Vocabulary documents: modalities, APIs, types of model and sizes
 
 _Generated from the types in `crates/quickai-core/src/doc/vocab.rs` by `quickai config docs vocab`. Do not edit by hand: `QUICKAI_UPDATE_GOLDEN=1 cargo test -p quickai-core --test reference` rewrites it, and a test fails while it is out of date._
 
-A vocabulary document (`kind = "vocab"`) names what engines and the window have in common: the kinds of input and output a model can have, and the APIs an engine can serve, with where the text is in the requests and replies of each, so that the Live tab can read the traffic of an engine the code has never heard of. A vocabulary can name things and describe them; it cannot start a program or reach a host. A document in the user's configuration directory with the same `id` patches the embedded one: tables merge by key and `[[modality]]` and `[[api]]` entries by `id` (docs/architecture.md, section 5.2). A key this version does not know is a warning; `quickai config check --strict` makes warnings fail.
+A vocabulary document (`kind = "vocab"`) names what engines and the window have in common: the kinds of input and output a model can have, the APIs an engine can serve, with where the text is in the requests and replies of each, so that the Live tab can read the traffic of an engine the code has never heard of, and the types of model and the classes of size a look-up sorts what it found by. A vocabulary can name things and describe them; it cannot start a program or reach a host. A document in the user's configuration directory with the same `id` patches the embedded one: tables merge by key and `[[modality]]`, `[[api]]`, `[[model_type]]` and `[[size_class]]` entries by `id` (docs/architecture.md, section 5.2). A key this version does not know is a warning; `quickai config check --strict` makes warnings fail.
 
 The primitives a document relies on go in `requires` (`requires = { primitives = ["decode@1"] }` for one with `decode` tables); a build that lacks one skips the document and says which.
 
@@ -14,6 +14,42 @@ A kind of input or output a model can have, named once here so that everything e
 |---|---|---|
 | `id` | text | Names it (`image`). Required. |
 | `label` | text | What the window calls it (`Images`). |
+
+## `[[model_type]]`
+
+A type of model, which is a section of the results of a look-up (Chat, Code, Vision, ...). A model is of the first type, in the order written, whose `match` holds, else of the `default` one; the sections stand in the order of `order`. The list merges by `id`, so a document of the person's can change a type or add one (a new one is tried after the embedded ones).
+
+| Key | Value | Meaning |
+|---|---|---|
+| `id` | text | Lower case letters, digits and `.`, `_`, `-` (`vision`). Required. An engine's `types` list names them, and `other` is where what an engine does not run is shown. |
+| `label` | text | The heading of its section (`Vision`); default the id. |
+| `help` | text | What it means, shown when the pointer rests on the heading. |
+| `order` | whole number | Where its section stands: lowest first; default after the ones that say, in the order written. |
+| `default` | bool | What a model is when no other type matches. At most one type is the default, across all vocabularies. Default false. |
+| `match` | table, below | What makes a model of this type; any one hit is enough. A type that is not the default and has no `match` is a warning: nothing is ever of it. |
+
+## `[model_type.match]`
+
+What a type's rule looks at, each list in any case.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `capabilities` | list of text | What the source says the model can do: an Ollama card's `vision`, `embedding`, `audio`. |
+| `pipelines` | list of text | The pipeline tag of a Hugging Face repository (`image-text-to-text`, `feature-extraction`). |
+| `tags` | list of text | Another tag of the repository (`conversational`). |
+| `words` | list of text | A word of the model's name (`qwen3-coder` has `qwen3` and `coder`). A word of four letters or more also matches the start of one (`embed` is in `embeddinggemma`); a shorter one only itself (`vl` is not in `vllm`). |
+| `companions` | list of text | A kind of companion file found beside the model by an engine's bundles (`mmproj`): a repository with a projector is a vision model whatever its tags say. |
+
+## `[[size_class]]`
+
+A band of sizes, which is a button of the size filter of a look-up. A model's button belongs to the first class, from the smallest up, that its size is below. Write them from the smallest to the largest; the one with no `below` is last. The list merges by `id`.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `id` | text | Lower case letters, digits and `.`, `_`, `-` (`small`). Required. |
+| `label` | text | What the filter says (`Small (< 4 GB)`); default the id. |
+| `help` | text | A sentence for the person who wonders what it is. |
+| `below` | size | Where it ends: sizes below it are in the class (`4GiB`, `500MB`; `GB` counts thousands, `GiB` 1024s). Left out, the class takes every size beyond the last bound. |
 
 ## `[[api]]`
 
@@ -80,6 +116,8 @@ Each of these is an error that names the file and the place, and a document with
 - a path starts with `/` and has no query, and is listed once;
 - a pointer starts with `/`;
 - `framing` is not empty and names only `sse`, `ndjson` and `json`;
-- a `decode` comes with `paths`, and says where the text of a request is, by `prompt` or by `chat`, not both.
+- a `decode` comes with `paths`, and says where the text of a request is, by `prompt` or by `chat`, not both;
+- a model type id is a name and is used once (also across documents), at most one type is the `default`, and a list of its `match` has no empty entry;
+- a size class id is a name and is used once, every `below` is a size, the bounds go up from one class to the next, and the class with no bound is the last.
 
 An engine that names an API in `[provides]` `apis` that no vocabulary defines does not load (when there is a vocabulary at all), with the nearest name suggested.

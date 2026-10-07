@@ -16,7 +16,8 @@ use std::collections::BTreeMap;
 use crate::diag::{Diagnostic, Severity};
 use crate::docpath::DocPath;
 use crate::registry::engine::{
-    CompiledAttach, CompiledEnv, CompiledField, CompiledSpawn, CompiledStep, LaunchStrategy,
+    CompiledAttach, CompiledComponent, CompiledEnv, CompiledField, CompiledSpawn, CompiledStep,
+    LaunchStrategy,
 };
 use crate::registry::{Engine, Registry};
 use crate::value::Value;
@@ -40,6 +41,13 @@ pub struct ModelInfo {
     pub size_bytes: u64,
 }
 
+/// A companion file attached to the model of a run: a projector.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Attached {
+    /// Where the file is.
+    pub path: String,
+}
+
 /// What the user chose: an engine, optionally a model, and values for fields. A saved selection is
 /// a profile.
 #[derive(Clone, Debug, Default)]
@@ -49,6 +57,12 @@ pub struct Selection {
     /// Field values by `<engine>.<field>` (`llamacpp.port`), and app-level ones such as
     /// `app.traffic_proxy`.
     pub values: BTreeMap<String, Value>,
+    /// The companion files of the model, by kind (`mmproj`), in the order they are attached. A kind
+    /// the engine has no `[components.<kind>]` for is not attached.
+    pub components: BTreeMap<String, Vec<Attached>>,
+    /// How the engine is started for this model, by the id of one of its `[[models.mode]]`
+    /// (`embedding`); a mode the engine does not have adds nothing.
+    pub mode: Option<String>,
 }
 
 impl Selection {
@@ -66,6 +80,23 @@ impl Selection {
 
     pub fn set(mut self, key: &str, value: impl Into<Value>) -> Self {
         self.values.insert(key.to_string(), value.into());
+        self
+    }
+
+    /// Starts the engine in this mode for the model.
+    pub fn with_mode(mut self, mode: &str) -> Self {
+        self.mode = Some(mode.to_string());
+        self
+    }
+
+    /// Attaches a companion file of this kind to the model.
+    pub fn with_component(mut self, kind: &str, path: &str) -> Self {
+        self.components
+            .entry(kind.to_string())
+            .or_default()
+            .push(Attached {
+                path: path.to_string(),
+            });
         self
     }
 }
@@ -539,15 +570,81 @@ fn plan_spawn(
         // nothing more to say: an engine that runs without a model is planned as it is
     }
 
-    // Field bindings go in `order`, then document order.
-    let mut bound: Vec<(usize, &CompiledField)> = engine
+    // What the fields and the components add goes in `order`, then document order, a field before a
+    // component of the same order. A component adds its arguments for each file of its kind the
+    // selection attaches, and nothing when it attaches none.
+    enum Binding<'a> {
+        Field(usize, &'a CompiledField),
+        Component(&'a CompiledComponent),
+        Mode(&'a crate::registry::engine::Mode),
+    }
+    let mut bound: Vec<(i32, usize, Binding<'_>)> = engine
         .fields
         .iter()
         .enumerate()
         .filter(|(_, f)| f.arg.is_some() || f.arg_split)
+        .map(|(i, f)| (f.order, i, Binding::Field(i, f)))
         .collect();
-    bound.sort_by_key(|(i, f)| (f.order, *i));
-    for (i, field) in bound {
+    bound.extend(
+        engine
+            .components
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (c.order, engine.fields.len() + i, Binding::Component(c))),
+    );
+    // the mode the model runs in is the last of what stands at the components' place: the engine's
+    // own arguments for it, which the person's extra arguments still come after
+    if let Some(mode) = selection
+        .mode
+        .as_deref()
+        .and_then(|id| engine.models.as_ref()?.modes.iter().find(|m| m.id == id))
+    {
+        bound.push((
+            crate::registry::engine::DEFAULT_COMPONENT_ORDER,
+            engine.fields.len() + engine.components.len(),
+            Binding::Mode(mode),
+        ));
+    }
+    bound.sort_by_key(|(order, index, _)| (*order, *index));
+    for (_, _, binding) in bound {
+        let (i, field) = match binding {
+            Binding::Mode(mode) => {
+                for word in &mode.arg {
+                    arguments.push(Traced {
+                        value: word.clone(),
+                        origin: format!("mode {}", mode.id),
+                    });
+                }
+                continue;
+            }
+            Binding::Component(component) => {
+                let origin = format!("component {}", component.kind);
+                for attached in selection
+                    .components
+                    .get(&component.kind)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[])
+                {
+                    let mut ctx = context.clone();
+                    ctx.set_path(&["component", "path"], Value::from(attached.path.clone()));
+                    for template in &component.arg {
+                        let path = DocPath::default()
+                            .key("components")
+                            .key(&component.kind)
+                            .key("bind")
+                            .key("arg");
+                        if let Some(text) = render(template, path, &ctx, errors) {
+                            arguments.push(Traced {
+                                value: text,
+                                origin: origin.clone(),
+                            });
+                        }
+                    }
+                }
+                continue;
+            }
+            Binding::Field(i, field) => (i, field),
+        };
         let r = &resolved[i];
         if r.value.is_null() {
             continue; // a field with no value adds no arguments

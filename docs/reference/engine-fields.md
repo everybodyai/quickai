@@ -224,7 +224,9 @@ For an engine that keeps its own models, named references it lists, pulls and re
 | `input_rules` | list of tables, below | What the model box makes of what was typed: the first rule whose `when` holds. Nothing typed is nothing; text no rule takes is refused. |
 | `sources` | list of tables, below | For an engine whose models are files: where they are kept (read by Phase 4). |
 | `acquire` | table, below | For an engine whose models are files: how one gets into the folder (read by Phase 4). |
-| `lookup` | list of tables, below | Looking models up online (read by Phase 4). |
+| `lookup` | list of tables, below | The ways the window can look models up online: a button of the model box for each. Without one the window has none. |
+| `bundle` | list of tables, below | What is fetched together with a model's weights: a vision model's projector. A result that has a file for every part of a bundle is offered in it, as one download. |
+| `mode` | list of tables, below | The ways the engine is started for a kind of model (`embedding`). A catalog names one by its `id`, and the record beside a fetched model remembers it. |
 
 ## `[[models.sources]]`
 
@@ -248,12 +250,88 @@ How a model gets into the folder (read from Phase 4).
 
 ## `[[models.lookup]]`
 
-One way of looking models up online (read from Phase 4): the primitive that does it and what it is told. Every key besides `id` and `use` is the primitive's own and is checked by it.
+One way of looking models up online: the primitive that does it and what it is told. The window draws a "Look up online" button for it; nothing is asked of the network until the button is pressed. Every key besides `id` and `use` is the primitive's own and is checked by it: one the look-up does not take is a warning, and the list of tables merges by `id`, so a document of the person's can change the address of a look-up and leave the rest.
 
 | Key | Value | Meaning |
 |---|---|---|
-| `id` | text | What `input_rules` call it (`provider = "hf_popular"`). Required. |
-| `use` | text | The primitive (`catalog.hf_gguf`). Required. |
+| `id` | text | Its name, with no spaces (`library`), unique in the document. Required. |
+| `use` | text | The look-up: `ollama_library` (needs `lookup.ollama_library@1`) or `huggingface_gguf` (needs `lookup.huggingface_gguf@1`). Another name is an error that lists the ones this version has. Required. |
+
+## `[[models.lookup]]` `use = "ollama_library"`
+
+A search of Ollama's library of models, the one at ollama.com, for models that run on this machine. The site publishes no list a program can read, so the look-up reads the page of the site's own search, and says so when the page is not one it understands. It finds the library's own models (a person's uploads are left out) with the sizes each is offered in; a size is pulled as `name:size`, a model with no size shown by its name. The library gives no size in bytes, so a button says how big a size is by its count of parameters times `bytes_per_parameter`, with a `~`.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `site` | address | The root of the site (`https://ollama.com`, the default). Another root, `http` or `https`, is how a test points the look-up at a fake, or how a mirror is used. |
+| `bytes_per_parameter` | number | Bytes a parameter takes in what a name pulls, to tell how big a size is (0.05 to 4; default 0.6, about 4.8 bits, which is what most of the library is quantized to). |
+| `show_variants` | whole number | The most size buttons a model gets (1 to 64; default 16), the smallest first. |
+| `types` | list of text | The ids of the model types this engine runs (`chat`, `vision`); a model of another type is shown under `other`. Without it every type is run. |
+
+## `[[models.lookup]]` `use = "huggingface_gguf"`
+
+A search of the GGUF repositories of Hugging Face, the most downloaded first, for the words typed or for none. For each repository it looks into, it reads the files and their sizes, and offers the quantizations of the weights as buttons that download them; a file that a `[[models.bundle]]` part matches is not weights but a companion of them. A repository that needs a login is left out and counted in the status line.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `site` | address | The root of the hub (`https://huggingface.co`, the default); files are fetched from `<site>/<repository>/resolve/main/<path>`. Another root is how a test points the look-up at a fake. |
+| `popular` | whole number | How many repositories of the plain list it looks into (1 to 50; default 30). |
+| `keyword` | whole number | How many it looks into for the words typed (1 to 50; default 20). |
+| `similar` | whole number | How many it looks into for each single word of a phrase typed, to find what the whole phrase misses (1 to 50; default 20). |
+| `prefer` | list of text | The quantizations to offer first, best first (default `Q4_K_M`, `Q4_K_S`, `Q5_K_M`, `Q4_0`, `Q8_0`, `Q6_K`, `Q3_K_M`). A variant of one (`UD-Q4_K_M`) counts as it; the best is shown in bold. |
+| `skip` | list of text | A file whose name or path one of these patterns matches (`*` any run, `?` one character, any case) is not weights: shards (`*-?????-of-?????*`: five digits each side of `-of-`), draft models (`mtp/*`, `mtp-*`), importance matrices (`imatrix*`). Default those. A pattern is about the file, not about the repository: a model whose own name says `MTP` is still offered. |
+| `show_variants` | whole number | The most buttons a model gets (1 to 64; default 4): the ones `prefer` likes, then the smallest, shown smallest first. |
+| `types` | list of text | The ids of the model types this engine runs (`chat`, `code`, `vision`, `embedding`); a model of another type is shown under `other`. Without it every type is run. |
+
+## `[[models.bundle]]`
+
+A way to fetch a model with the files that go with it: the weights of a result and one file for each part. It is offered as another row of buttons on every result that has a file for every part, and fetches them as one download; the files are kept as the pairing says (docs/lookup-and-bundles.md, section 4), and what the engine does with them is `[components.<kind>]`. The list merges by `id`, so a document of the person's can change a bundle or add another.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `id` | text | Its name, with no spaces (`vision`), unique in the document. Required. |
+| `label` | text | The words of its row (`with projector` makes `Get with projector:`); default the id. |
+| `help` | text | A sentence for the person who wonders what it is. |
+| `parts` | list of tables, below | The files beside the weights, one kind each. A bundle with none is an error. Required. |
+
+## `[[models.bundle]]` `parts`
+
+One part of a bundle: a kind of file and how to find it among the files of a repository.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `kind` | text | The kind of component (`mmproj`). The engine must have a `[components.<kind>]` for it, else the document is refused and says which kinds it has. Required. |
+| `label` | text | What the window calls it in a sentence (`the projector mmproj-F16.gguf`); default the kind. |
+| `match` | list of text | Patterns a file's name or path matches (`mmproj*.gguf`, `*mmproj*`): `*` stands for any run of characters, `?` for one, case is ignored. A file that matches is a companion and is not offered as a model. Required. |
+| `prefer` | list of text | Of several files that match, the quantizations to take first, best first (`F16`, `BF16`); else the smallest. |
+
+## `[[models.mode]]`
+
+A way the engine is started for a model: the words it adds to the command line, after the arguments of the fields and of the model's files and before the person's own extra arguments. A catalog (which is data) and the record beside a fetched model name a mode by its `id` and never carry words of their own, so what reaches the command line is always the engine document's. A mode a model names that the engine does not have adds nothing, and the log says so. The list merges by `id`.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `id` | text | Its name: lower case letters, digits and `.`, `_`, `-` (`embedding`), unique in the document. Required. |
+| `label` | text | What the model picker says of a model that runs so (`embedding server`); default the id. |
+| `help` | text | A sentence for the person who wonders why. |
+| `arg` | list of text | The words added, as they are (no templates); none is an error. Required. |
+
+## `[components.<kind>]`
+
+How one kind of companion file reaches the program once a model that has one is started: the arguments it adds to the command line, after the fields of a lower `order` and before the person's own extra arguments. A model has a companion of a kind when the pairing file beside it names one that is still there. The rest of Phase 4's design for a component (`requires_flag`, `fields`, `live`, `bind.each`) is not read yet.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `order` | whole number | Where its arguments stand among the fields': after those of a lower `order`, before those of a higher one. Default 80, which is before `extra_args` (90). |
+| `bind` | table, below | What it adds. |
+
+## `[components.<kind>.bind]`
+
+The arguments a companion adds.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `arg` | list of templates | The arguments, one entry each, over `${component.path}` (the file): `["--mmproj", "${component.path}"]`. Required. |
 
 ## `[models]` `list`
 

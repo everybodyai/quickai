@@ -205,6 +205,15 @@ each engine are kept separately, and the row is locked while a server runs or so
   lists what it has. Pull a model by typing a name (`qwen3:4b`) or a Hugging Face reference
   (`hf.co/user/repo:Q4_K_M`) into the **Model** box and pressing Enter or **Pull**, choose a model, and press
   **Start** again to load it. With a model already chosen, one Start does both.
+- **Finding a model.** **Look up online**, beside **Pull**, searches the library at ollama.com for the words in the
+  box (the models it shows first when the box is empty) and lists what it finds the way llama.cpp's look-up
+  does: in sections by type (**Chat**, **Vision**, **Embedding**, ...), with the **Size** filter, and for each
+  model a name, what it can do, how often it was pulled and a button for every size it is offered in
+  (`4b · ~2.2 GB`: the `~` says the size is an estimate, the library gives none) that pulls it exactly as typing
+  `qwen3:4b` would. It needs no Ollama running, only the internet, and asks nothing until you press it. ollama.com
+  publishes no list a program can read, so QuickAI reads the page of the site's own search, and says so if the
+  page ever stops looking like one (a name typed into the box still pulls); only the library's own models are
+  listed, not people's uploads (type `user/name` to pull one).
 - **What Ollama is told.** It listens on this machine only, with its own calls home switched off
   (`OLLAMA_NO_CLOUD=1`), keeps one model loaded, and keeps its models in `~/.quickai/ollama/models` unless you
   ask for Ollama's own store. Its advanced settings are what to do when one is already running, the model
@@ -256,27 +265,40 @@ Three ways, from most to least manual:
   in when possible (instant, no extra disk space, same-filesystem only) and
   falls back to a real chunked copy — with the same progress bar — when it
   isn't (e.g. a different drive).
-- **Look up online**: click **Look up online** to search Hugging Face for
-  the current top GGUF-tagged repos (`remote.rs`), sorted by downloads as
-  a rough proxy for "best", plus High/Medium/Small sections bucketed by
-  file size so there's something browsable regardless of hardware. For
-  each repo it inspects the file listing and picks one reasonably-sized
-  quantization (preferring `Q4_K_M`-style K-quants, skipping sharded
-  multi-part files and MTP draft-model files), building the direct
-  `resolve/main/...` download URL. Click **Get** on a result to download
-  it the same way as a pasted URL (also into `~/.quickai/models`). This is
-  a heuristic best-effort pick, not a guarantee of quality or llama.cpp
-  compatibility for every quant format that exists on the Hub —
-  mainstream K-quants work; unusual/experimental formats may not. The
-  result list sits in a fixed-height, scrollable, collapsible section (the
-  collapsing-header arrow tucks the list away without discarding it; the
-  **X** at the top right of the Model URL row closes the whole section,
-  and only lights up once there are results on screen to close) so a long
-  list of results doesn't take over the window. It scrolls both ways: a
-  bottom scrollbar appears for any entry too wide for the panel, rather
-  than clipping it or stretching the window — the panel keeps the same
-  width as the rest of the window and only grows if you resize the window
-  itself.
+- **Look up online**: click **Look up online** to search Hugging Face for the most downloaded GGUF
+  repositories, or type words into the box and press **Search** to find the ones that have them. Each is
+  listed in a section by what kind of model it is (**Chat**, **Code**, **Vision**, **Embedding**, **Audio**, and
+  **Other** for what llama.cpp cannot run, folded away) with a button for each quantization it has
+  (`Q4_K_M · 2.8 GB`; the one it would pick for you is bold), and **Size** at the top keeps only the models with a
+  button of a size (**Small**, **Medium**, **Large**). A vision model needs a second file, its **projector**:
+  such a model has two rows, **Get model only** and **Get with projector**, the second a single download of
+  both. Click a button to download it into `~/.quickai/models` like a pasted URL; the projector is kept
+  beside the model (with a small record, `<model>.bundle.json`), the picker lists the model alone and says
+  which projector it has, **Start** passes it to `llama-server` (`--mmproj`), and deleting the model in
+  Settings deletes the projector too unless another model uses it. Repositories that need a Hugging Face
+  login are left out and counted in the status line; a model that has been cut into shards is not
+  offered. How a look-up reads and sorts, what a bundle is made of and which sizes there are is **data**, not
+  code: see [docs/lookup-and-bundles.md](docs/lookup-and-bundles.md) for how to change it with a document of your own
+  (a draft model for speculative decoding is a bundle, for one), and the generated pages
+  [engine-fields.md](docs/reference/engine-fields.md) and [vocab-fields.md](docs/reference/vocab-fields.md)
+  for every key. The look-up is a heuristic best-effort, not a guarantee of quality or of llama.cpp
+  compatibility for every quantization that exists on the Hub: mainstream K-quants work; unusual or
+  experimental formats may not. The results sit in a fixed-height, scrollable section (the arrow tucks it
+  away without discarding it; the **X** at the top right of the Model row closes the whole section).
+
+- **Recommended**: the button beside **Look up online** opens the list of models QuickAI recommends, which is part of
+  the application (nothing is asked of the internet to open or browse it): 81 models from a few hundred megabytes to
+  14 GB, mostly small and medium ones, in categories (**Chat**, **Reasoning**, **Code**, **Vision**, **Documents** for
+  OCR, **Audio** for speech recognition, **Translation** and **Embedding** for search), with **Start here** for a
+  handful to begin with, a search box (words such as `image`, `code`, `thinking` or a maker's name), the same **Size**
+  chips, and a mark on what you already have. A size that would not fit in this computer's memory is greyed. A model that
+  reads pictures or listens needs a second file, its projector, and the list has it: **Get with projector** fetches both
+  as one download and **Get model only** just the weights — which to fetch is your choice. Every file is checked against
+  the SHA-256 the list holds as it arrives (a file that is not the one is not kept), the model is then named as the list
+  names it in the picker, and one that is served differently starts the way it needs (an embedding model with
+  `--embeddings`). With Ollama chosen the same button lists the models Ollama pulls by name. The list, how it is made
+  from the sites and how to add a model or hide one with a document of your own are in
+  [docs/catalog.md](docs/catalog.md).
 
 Downloads always land in `~/.quickai/models` rather than next to the
 executable: a packaged build's own directory can be read-only (an

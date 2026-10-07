@@ -1,7 +1,7 @@
 # QuickAI architecture: a declarative runtime
 
-_Status: accepted (Q1-Q15 as recommended); Phases 0 to 2 implemented, see
-[implementation-plan.md](implementation-plan.md) · Last updated: 2026-10-06 · Supersedes
+_Status: accepted (Q1-Q15 as recommended); Phases 0 to 3 implemented, and parts of 4 (look-ups, bundles, components) at the user's request, see
+[implementation-plan.md](implementation-plan.md) · Last updated: 2026-10-07 · Supersedes
 [ollama-backend-architecture.md](ollama-backend-architecture.md)_
 
 Companion files: [engine-facts.md](engine-facts.md) (what was verified about llama.cpp and Ollama, and what is
@@ -163,7 +163,7 @@ serving; making egui rendering itself data (widgets stay Rust).
 | Kind | Defines | Tier | Typical source |
 |---|---|---|---|
 | `engine` | A runner: where it comes from, how it launches, probes and stops; the APIs it serves; its settings fields; how it attaches component kinds; hints | privileged | embedded, bundle, user |
-| `vocab` | Shared nouns: modalities, component (adapter) kinds with their fields, API definitions with decoding and examples | data | embedded, user, later remote |
+| `vocab` | Shared nouns: modalities, component (adapter) kinds with their fields, API definitions with decoding and examples, and (WP4.9) the types of model and the classes of size a look-up sorts by | data | embedded, user, later remote |
 | `catalog` | Model recipes, their components and sources; curated lists | data | embedded, user, later remote |
 | `profile` | A saved selection, or a stack of units | data | user |
 | `ui` | Window, screens and panels, settings sections, app-level fields, strings, theme | privileged | embedded, bundle, user |
@@ -281,6 +281,20 @@ A recipe is *offered* under an engine when it has a `run.<engine>` table, the en
 kind the table lists, and the model format is one the engine accepts (`formats` for files, `refs` for names). A
 file with no recipe still appears (as today) with an automatic recipe built from its name; a sibling
 `mmproj*.gguf` is suggested as its projector. A recipe with no `sources` only names a file the user brings.
+
+**What is built of this (WP4.9, [lookup-and-bundles.md](lookup-and-bundles.md)).** The recipe as a catalog entry is not (that is Phase 4's), but the
+part of it that a person meets first is: a model found online is fetched *with the files that go with it*. `[[models.bundle]]` of an engine document
+names the kinds of file that go with weights (`mmproj`) and how to find one among a repository's files (patterns, a preferred quantization); the
+engine's `[components.<kind>]` says how the program is told about one; a download of the bundle is one job whose end writes a record beside the
+weights (`<weights>.bundle.json`), the picker lists weights only, and Start puts the files the record names on the command line
+(`Selection.components`, after the fields of a lower `order` and before `extra_args`). A person adds a bundle (a draft model, say) with a document
+of their own, as they add a field.
+
+**What is built of the catalog kind (WP4.10, [catalog.md](catalog.md)).** The kind is read now: `[[model]]` with `[model.run.<engine>]` (files for an engine whose models are files,
+a name for one that pulls), checked against the vocabulary and the engines, offered per engine as the entries the look-up draws, and shipped as eight pages
+(81 models) that `scripts/catalog.py` makes from the real sites. It is the first piece of 4.1 and of `catalog.curated` (done as documents, not as a primitive: nothing is
+asked of a network to list the models); components other than a file beside the weights, `sources` other than a repository, and verification modes other than a SHA-256 are Phase 4's.
+`[[models.mode]]` of an engine document (how the engine is started for a kind of model) is new with it, so that a document that is data never carries a command-line word.
 
 ### 6.5 Selection, values, persistence
 
@@ -425,7 +439,9 @@ manifest was written against. So bindings do not guess from version numbers; the
 | Probe | `probe.http`, `probe.tcp`, `probe.exit` | path, expected status, timeout | `spawn_health_poller` |
 | Calls | `http_call` (method, path, body, timeout; streaming `sse` or `ndjson`; progress and extract mappings by JSON pointer) | everything | new (Ollama) |
 | Files | `write_file` (render a template) | template, path | new |
-| Catalog | `catalog.scan_dir`, `.bundle_dir`, `.hf_gguf` (the multi-step Hugging Face look-up), `.engine_list` (an `http_call` plus a mapping), `.curated` | directories, filters, counts | `models.rs`, `remote.rs` |
+| Catalog | `catalog.scan_dir`, `.bundle_dir`, `.engine_list` (an `http_call` plus a mapping), `.curated` (the multi-step Hugging Face look-up that was to be `.hf_gguf` is `lookup.huggingface_gguf`, below) | directories, filters, counts | `models.rs`, `remote.rs` |
+| Look-ups | `lookup.ollama_library` and `lookup.huggingface_gguf` (both built: WP3.15 and WP4.9). Ollama publishes no list a program can read, so the page of its search is read; Hugging Face's search and the files of each repository are asked of its API. Both end in the same kind of result, which `quickai-core::lookup::present` makes into what the window draws: a type from the vocabulary (`[[model_type]]`), a button for each way to fetch it with its size class (`[[size_class]]`), and the bundles that go with it; declared by `[[models.lookup]]` (one button of the model box for each) and `[[models.bundle]]`, see [lookup-and-bundles.md](lookup-and-bundles.md) | the site, how many repositories, which quantizations, which files are not weights | `remote.rs`, the look-up panels of `app.rs` |
+| Components | `[components.<kind>]` of an engine document: the arguments a companion file (a projector) adds to the command line, in the order of the fields' (WP4.9; the rest of §6.3's design for a component is Phase 4) | `bind.arg`, `order` | none (a file path given with `extra_args`) |
 | Rules | `input_rules`, `diagnostic_rules`, `discover` (globs) | patterns, hints | `app.rs` branches |
 | Decode | `decode` (framing sse, ndjson or json; JSON pointers; chat-message shape) | pointers | `proxy.rs` |
 | Gateway | `gateway` (relay, tap, routes) | ports, routes | `proxy.rs` |
@@ -824,8 +840,8 @@ see, by design; Ollama arrives in Phase 3, adapters in Phase 4.
 | `app.rs` `MAX_LOG_LINES`, `MAX_TRAFFIC_TURNS` | 2000, 200 | `policy.limits` |
 | `proxy.rs` `MAX_REQUEST_BODY`, `MAX_SNIFF_BUFFER` | 8 MiB, 4 MiB | `policy.limits` |
 | `remote.rs`, `llama_releases.rs` `CALL_TIMEOUT` | 15 s | `policy.timeouts.http` |
-| `remote.rs` `REPOS_TO_INSPECT`, `KEYWORD_…`, `SIMILAR_…` | 30, 20, 20 | `catalog.hf_gguf` `inspect` |
-| `remote.rs` `PREFERRED_QUANTS`, `STOPWORDS`, skipped `-of-` and `mtp` files, the search URL | lists | `catalog.hf_gguf` parameters |
+| `remote.rs` `REPOS_TO_INSPECT`, `KEYWORD_…`, `SIMILAR_…` | 30, 20, 20 | `[[models.lookup]]` `popular`, `keyword`, `similar` (done, WP4.9) |
+| `remote.rs` `PREFERRED_QUANTS`, `STOPWORDS`, skipped `-of-` and `mtp` files, the search URL | lists | `[[models.lookup]]` `prefer`, `skip` (patterns), `site` (done, WP4.9; the stop words are code, in `lookup::huggingface`) |
 | `llama_releases.rs` releases URL, `per_page`, `MAX_RELEASES_TO_SHOW`, OS and arch keywords, `cudart` exclusion | 10, 5, lists | `[acquire]` `feed` and `assets` |
 | `llama_install.rs` `MAX_SEARCH_DEPTH`; `CHUNK` | 4; 256 KiB | `binary.search_depth`; chunk stays code |
 | `hardware.rs` `OVERHEAD_FACTOR`, `RAM_FRACTION`, speed caps | 1.2, 0.5, 6 GB, 12 GB | `policy.heuristics.recommend` |
@@ -834,7 +850,7 @@ see, by design; Ollama arrives in Phase 3, adapters in Phase 4.
 | `gpu.rs` vendor keywords | lists | `policy.gpu.vendors`; the OS commands (`lspci`, PowerShell, `system_profiler`) stay in `gpu.detect` |
 | `settings.rs` defaults | port 8080, context 4096, GPU layers 999, dark mode | field `default`s; `ui.theme` |
 | `main.rs` window size, minimum, title, `APP_ID` | 760×560, 520×380 | `ui.window` |
-| `app.rs` `DELETE_LIST_MAX_ROWS`, scroll heights, look-up size buckets | 4; 280, 200; 15 and 4 GB | panel parameters; `buckets` |
+| `app.rs` `DELETE_LIST_MAX_ROWS`, scroll heights, look-up size buckets | 4; 280, 200; 15 and 4 GB | panel parameters; the buckets are the vocabulary's `[[size_class]]` (done, WP4.9) |
 | `app.rs` state colours | five colours | `ui.theme.state_colors` |
 | `models.rs` `KNOWN_MODELS` | 5 entries | catalog recipes |
 | `paths.rs` `~/.quickai/models`, `~/.quickai/llama-bin`, the executable-relative `llama-server` and `models/` | | `policy.paths`, `[locate]`, `[models].sources` |

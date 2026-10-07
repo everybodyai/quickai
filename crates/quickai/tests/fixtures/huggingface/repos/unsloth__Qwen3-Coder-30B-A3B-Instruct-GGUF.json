@@ -1,0 +1,161 @@
+{
+ "disabled": false,
+ "downloads": 6499878,
+ "gated": false,
+ "id": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+ "library_name": "transformers",
+ "likes": 1114,
+ "modelId": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+ "pipeline_tag": "text-generation",
+ "private": false,
+ "siblings": [
+  {
+   "rfilename": ".gitattributes",
+   "size": 3854
+  },
+  {
+   "rfilename": "BF16/Qwen3-Coder-30B-A3B-Instruct-BF16-00001-of-00002.gguf",
+   "size": 49655154016
+  },
+  {
+   "rfilename": "BF16/Qwen3-Coder-30B-A3B-Instruct-BF16-00002-of-00002.gguf",
+   "size": 11440652032
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-IQ4_NL.gguf",
+   "size": 17310784672
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-IQ4_XS.gguf",
+   "size": 16378076320
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-Q2_K.gguf",
+   "size": 11258612896
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-Q2_K_L.gguf",
+   "size": 11331542176
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-Q3_K_M.gguf",
+   "size": 14711850144
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-Q3_K_S.gguf",
+   "size": 13292471456
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-Q4_0.gguf",
+   "size": 17379990688
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-Q4_1.gguf",
+   "size": 19192503456
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+   "size": 18556689568
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-Q4_K_S.gguf",
+   "size": 17456012448
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-Q5_K_M.gguf",
+   "size": 21725584544
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-Q5_K_S.gguf",
+   "size": 21080513696
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-Q6_K.gguf",
+   "size": 25092535456
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-Q8_0.gguf",
+   "size": 32483935392
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-UD-IQ1_M.gguf",
+   "size": 9627540640
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-UD-IQ1_S.gguf",
+   "size": 8914328736
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-UD-IQ2_M.gguf",
+   "size": 10837007520
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-UD-IQ2_XXS.gguf",
+   "size": 10333691040
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-UD-IQ3_XXS.gguf",
+   "size": 12848766112
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-UD-Q2_K_XL.gguf",
+   "size": 11788590240
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-UD-Q3_K_XL.gguf",
+   "size": 13806312608
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf",
+   "size": 17665334432
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-UD-Q5_K_XL.gguf",
+   "size": 21740305568
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-UD-Q6_K_XL.gguf",
+   "size": 26340328608
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL.gguf",
+   "size": 35989947552
+  },
+  {
+   "rfilename": "Qwen3-Coder-30B-A3B-Instruct-UD-TQ1_0.gguf",
+   "size": 8005213344
+  },
+  {
+   "rfilename": "README.md",
+   "size": 8413
+  },
+  {
+   "rfilename": "imatrix_unsloth.gguf_file",
+   "size": 122029344
+  },
+  {
+   "rfilename": "params",
+   "size": 178
+  },
+  {
+   "rfilename": "template",
+   "size": 1482
+  }
+ ],
+ "tags": [
+  "transformers",
+  "gguf",
+  "unsloth",
+  "qwen3",
+  "qwen",
+  "text-generation",
+  "arxiv:2505.09388",
+  "base_model:Qwen/Qwen3-Coder-30B-A3B-Instruct",
+  "base_model:quantized:Qwen/Qwen3-Coder-30B-A3B-Instruct",
+  "license:apache-2.0",
+  "endpoints_compatible",
+  "region:us",
+  "imatrix",
+  "conversational"
+ ]
+}

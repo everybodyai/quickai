@@ -251,6 +251,8 @@ fn p3_m05_the_size_the_listing_gives_is_the_size_the_heuristics_use_for_the_mode
         note: String::new(),
         bundled: false,
         size_bytes: size,
+        companions: Vec::new(),
+        mode: None,
     };
     let ram = 16 * 1024 * 1024 * 1024;
     for gpu in [false, true] {

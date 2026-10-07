@@ -7,6 +7,10 @@
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
+use quickai_core::lookup::present::{safe_file_name, Download};
+use sha2::{Digest, Sha256};
+
+use crate::bundles;
 use crate::jobs::{Job, JobEvent};
 
 /// Whether `input` should be fetched over HTTP rather than treated as a
@@ -75,6 +79,21 @@ fn stream_to_part(
     part_path: &Path,
     send: &dyn Fn(JobEvent<String>),
 ) -> Result<(), ()> {
+    stream_to_part_at(reader, 0, total, part_path, send, None).map(|_| ())
+}
+
+/// The same, for a file that is one of several: progress is counted from `base` bytes (what the
+/// files before it came to) towards `total`, the bytes of all of them. Gives what this one came to.
+/// `digest`, when there is one, is fed every byte on its way to the disk, so that a file is checked
+/// without being read a second time.
+fn stream_to_part_at(
+    reader: &mut impl Read,
+    base: u64,
+    total: Option<u64>,
+    part_path: &Path,
+    send: &dyn Fn(JobEvent<String>),
+    mut digest: Option<&mut Sha256>,
+) -> Result<u64, ()> {
     let mut file = match std::fs::File::create(part_path) {
         Ok(f) => f,
         Err(e) => {
@@ -103,10 +122,16 @@ fn stream_to_part(
             let _ = std::fs::remove_file(part_path);
             return Err(());
         }
+        if let Some(digest) = digest.as_deref_mut() {
+            digest.update(&buf[..n]);
+        }
         downloaded += n as u64;
-        send(JobEvent::Progress { downloaded, total });
+        send(JobEvent::Progress {
+            downloaded: base + downloaded,
+            total,
+        });
     }
-    Ok(())
+    Ok(downloaded)
 }
 
 /// Starts the download (or local-file import) in a background thread and
@@ -225,6 +250,157 @@ pub fn spawn_download(
     })
 }
 
+/// The start of a SHA-256, enough to tell two apart in a sentence.
+fn short(hash: &str) -> String {
+    format!("{}…", hash.chars().take(12).collect::<String>())
+}
+
+/// Starts the download of the files of a look-up's button, one after the other, in a background
+/// thread: the weights first, then what goes with them. The bar counts the bytes of all of them; a
+/// file that is already in the folder at the size it should be is not fetched again (a second
+/// quantization of a repository shares its projector); the record that pairs them (`bundles`) is
+/// written when the last file is in place. If a file after the weights fails the weights stay, because
+/// they run alone, and the message says what was not fetched. The job's result is the weights' name.
+pub fn spawn_files(
+    download: Download,
+    models_dir: PathBuf,
+    wake: impl Fn() + Send + Sync + 'static,
+) -> Job<String> {
+    let weights = download
+        .weights()
+        .map(|w| safe_file_name(&w.store_as))
+        .unwrap_or_default();
+    let more = download.files.len().saturating_sub(1);
+    let label = match more {
+        0 => weights.clone(),
+        1 => format!("{weights} and 1 more file"),
+        n => format!("{weights} and {n} more files"),
+    };
+    Job::spawn(label, "Downloading", wake, move |send| {
+        if let Err(e) = std::fs::create_dir_all(&models_dir) {
+            send(JobEvent::Failed(format!(
+                "could not create {}: {e}",
+                models_dir.display()
+            )));
+            return;
+        }
+        let total = download.total();
+        let count = download.files.len();
+        let mut before = 0u64;
+        for (index, piece) in download.files.iter().enumerate() {
+            let name = safe_file_name(&piece.store_as);
+            let final_path = models_dir.join(&name);
+            let part_path = models_dir.join(format!("{name}.part"));
+            let failed = |what: String| {
+                if index == 0 {
+                    JobEvent::Failed(what)
+                } else {
+                    JobEvent::Failed(format!(
+                        "could not fetch {}: {what}; {weights} was fetched and runs without it",
+                        piece.name
+                    ))
+                }
+            };
+            // already here, and the size it should be: not fetched again
+            if let (Some(size), Ok(meta)) = (piece.size, std::fs::metadata(&final_path)) {
+                if meta.is_file() && meta.len() == size {
+                    send(JobEvent::Status(format!(
+                        "{name} is already in the models folder."
+                    )));
+                    before += size;
+                    send(JobEvent::Progress {
+                        downloaded: before,
+                        total,
+                    });
+                    continue;
+                }
+            }
+            if count > 1 {
+                send(JobEvent::Status(format!(
+                    "Downloading {} ({} of {count})",
+                    piece.name,
+                    index + 1
+                )));
+            }
+            let response = match ureq::get(&piece.url)
+                .header("User-Agent", concat!("quickai/", env!("CARGO_PKG_VERSION")))
+                .call()
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    send(failed(format!("request failed: {e}")));
+                    return;
+                }
+            };
+            let body = response.into_body();
+            let announced = body.content_length();
+            let mut reader = body.into_reader();
+            // the bar is the whole bundle's when every size is known, else this file's alone
+            let (base, bar) = match total {
+                Some(_) => (before, total),
+                None => (0, announced),
+            };
+            // a piece the list gave a hash for is hashed on its way in
+            let mut digest = piece.sha256.as_ref().map(|_| Sha256::new());
+            let Ok(written) = stream_to_part_at(
+                &mut reader,
+                base,
+                bar,
+                &part_path,
+                &|event| {
+                    send(match event {
+                        JobEvent::Failed(m) => failed(m),
+                        other => other,
+                    })
+                },
+                digest.as_mut(),
+            ) else {
+                return;
+            };
+            if let (Some(want), Some(digest)) = (&piece.sha256, digest) {
+                let got: String = digest
+                    .finalize()
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect();
+                let wrong_length = piece.size.filter(|size| *size != written);
+                if wrong_length.is_some() || got != *want {
+                    let _ = std::fs::remove_file(&part_path);
+                    send(failed(match wrong_length {
+                        Some(size) => format!(
+                            "{} came to {written} bytes and the list says {size}: it was not kept",
+                            piece.name
+                        ),
+                        None => format!(
+                            "{} does not match the checksum the list was made with (expected {}, got {}): it was not kept",
+                            piece.name,
+                            short(want),
+                            short(&got)
+                        ),
+                    }));
+                    return;
+                }
+            }
+            if let Err(e) = std::fs::rename(&part_path, &final_path) {
+                send(failed(format!(
+                    "could not finalize {}: {e}",
+                    final_path.display()
+                )));
+                return;
+            }
+            before += written;
+        }
+        if let Err(e) = bundles::write(&models_dir.join(&weights), &download) {
+            send(JobEvent::Failed(format!(
+                "the files are in the models folder, but the record that pairs them could not be \
+                 written: {e}"
+            )));
+            return;
+        }
+        send(JobEvent::Done(weights.clone()));
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,6 +435,391 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A download of `me/tiny-vl-GGUF` from the fake hub: the weights, and a projector if asked.
+    fn tiny(hub: &crate::testkit::fake_hub::FakeHub, with_projector: bool) -> Download {
+        use quickai_core::lookup::huggingface::file_url;
+        use quickai_core::lookup::present::Piece;
+        let piece =
+            |kind: Option<&str>, label: &str, store_as: &str, name: &str, size: u64| Piece {
+                kind: kind.map(str::to_string),
+                label: label.to_string(),
+                url: file_url(&hub.base(), "me/tiny-vl-GGUF", "main", name),
+                store_as: store_as.to_string(),
+                name: name.to_string(),
+                size: Some(size),
+                sha256: None,
+            };
+        let mut files = vec![piece(
+            None,
+            "model",
+            "tiny-Q4_K_M.gguf",
+            "tiny-Q4_K_M.gguf",
+            3000,
+        )];
+        if with_projector {
+            files.push(piece(
+                Some("mmproj"),
+                "projector",
+                "me--tiny-vl-GGUF--mmproj-f16.gguf",
+                "mmproj-f16.gguf",
+                1000,
+            ));
+        }
+        Download {
+            files,
+            bundle: with_projector.then(|| "vision".to_string()),
+            source: "huggingface:me/tiny-vl-GGUF".into(),
+            mode: None,
+        }
+    }
+
+    fn tiny_hub() -> crate::testkit::fake_hub::FakeHub {
+        let hub = crate::testkit::fake_hub::FakeHub::start();
+        hub.add_repo(
+            "me/tiny-vl-GGUF",
+            Some("image-text-to-text"),
+            &["gguf"],
+            &[("tiny-Q4_K_M.gguf", 3000), ("mmproj-f16.gguf", 1000)],
+        );
+        hub
+    }
+
+    /// What a job came to, what it said on the way and how far along it was each time it was asked.
+    type Ran = (Result<String, String>, Vec<String>, Vec<(u64, Option<u64>)>);
+
+    /// Runs a job to its end, keeping what it said on the way.
+    fn run_job(job: &mut Job<String>) -> Ran {
+        let mut statuses = Vec::new();
+        let mut progress = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        loop {
+            let outcome = job.poll();
+            statuses.extend(job.take_statuses());
+            progress.push((job.downloaded, job.total));
+            if let Some(outcome) = outcome {
+                return (outcome, statuses, progress);
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the download did not end"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn p3_b12_a_bundle_is_one_job_that_fetches_the_weights_and_what_goes_with_them_and_records_the_pair(
+    ) {
+        let hub = tiny_hub();
+        let dir = crate::testkit::scratch("b12");
+        let mut job = spawn_files(tiny(&hub, true), dir.join("models"), || {});
+        assert_eq!(job.verb, "Downloading");
+        assert_eq!(job.label, "tiny-Q4_K_M.gguf and 1 more file");
+        let (outcome, statuses, progress) = run_job(&mut job);
+        assert_eq!(
+            outcome.unwrap(),
+            "tiny-Q4_K_M.gguf",
+            "the weights are what is selected afterwards"
+        );
+        // both files are in place with all their bytes, and nothing half-written is left
+        let models = dir.join("models");
+        assert_eq!(
+            std::fs::metadata(models.join("tiny-Q4_K_M.gguf"))
+                .unwrap()
+                .len(),
+            3000
+        );
+        assert_eq!(
+            std::fs::metadata(models.join("me--tiny-vl-GGUF--mmproj-f16.gguf"))
+                .unwrap()
+                .len(),
+            1000
+        );
+        assert!(std::fs::read_to_string(models.join("tiny-Q4_K_M.gguf"))
+            .unwrap()
+            .starts_with("me/tiny-vl-GGUF:tiny-Q4_K_M.gguf|"));
+        let mut left: Vec<String> = std::fs::read_dir(&models)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(
+            left,
+            [
+                "me--tiny-vl-GGUF--mmproj-f16.gguf",
+                "tiny-Q4_K_M.gguf",
+                "tiny-Q4_K_M.gguf.bundle.json"
+            ]
+        );
+        // the weights first, then the projector, each once
+        assert_eq!(
+            hub.downloads(),
+            [
+                "me/tiny-vl-GGUF:tiny-Q4_K_M.gguf",
+                "me/tiny-vl-GGUF:mmproj-f16.gguf"
+            ]
+        );
+        // the log is told of each part
+        assert_eq!(
+            statuses,
+            [
+                "Downloading tiny-Q4_K_M.gguf (1 of 2)",
+                "Downloading mmproj-f16.gguf (2 of 2)"
+            ]
+        );
+        // the bar is the bundle's: bytes of both against the sum, and it never goes back
+        let counted: Vec<u64> = progress
+            .iter()
+            .filter(|(_, t)| *t == Some(4000))
+            .map(|(d, _)| *d)
+            .collect();
+        assert!(counted.windows(2).all(|w| w[0] <= w[1]), "{counted:?}");
+        assert_eq!(counted.last(), Some(&4000));
+        // and the record pairs them
+        let companions = crate::bundles::companions(&models.join("tiny-Q4_K_M.gguf"));
+        assert_eq!(companions.len(), 1);
+        assert_eq!(
+            (companions[0].kind.as_str(), companions[0].name.as_str()),
+            ("mmproj", "mmproj-f16.gguf")
+        );
+        assert!(companions[0].exists());
+        // the weights alone are what they have always been: no record
+        let alone_dir = crate::testkit::scratch("b12-alone");
+        let mut job = spawn_files(tiny(&hub, false), alone_dir.join("m"), || {});
+        assert_eq!(job.label, "tiny-Q4_K_M.gguf");
+        let (outcome, statuses, _) = run_job(&mut job);
+        assert_eq!(outcome.unwrap(), "tiny-Q4_K_M.gguf");
+        assert!(
+            statuses.is_empty(),
+            "one file says nothing of parts: {statuses:?}"
+        );
+        assert!(!alone_dir.join("m/tiny-Q4_K_M.gguf.bundle.json").exists());
+    }
+
+    /// The download `tiny` makes, with the hash the fake's bytes really have on each piece.
+    fn tiny_checked(hub: &crate::testkit::fake_hub::FakeHub, with_projector: bool) -> Download {
+        use crate::testkit::fake_hub::{content, sha256_hex};
+        let mut download = tiny(hub, with_projector);
+        for piece in &mut download.files {
+            let bytes = content("me/tiny-vl-GGUF", &piece.name, piece.size.unwrap() as usize);
+            piece.sha256 = Some(sha256_hex(&bytes));
+        }
+        download
+    }
+
+    #[test]
+    fn p3_j13_a_piece_with_a_hash_is_checked_while_it_arrives_and_a_wrong_one_is_not_kept() {
+        // the right bytes: kept, with the record and nothing left over
+        let hub = tiny_hub();
+        let dir = crate::testkit::scratch("j13");
+        let models = dir.join("models");
+        let (outcome, _, _) = run_job(&mut spawn_files(
+            tiny_checked(&hub, true),
+            models.clone(),
+            || {},
+        ));
+        assert_eq!(outcome.unwrap(), "tiny-Q4_K_M.gguf");
+        assert!(models.join("tiny-Q4_K_M.gguf").is_file());
+        assert!(models.join("tiny-Q4_K_M.gguf.bundle.json").is_file());
+
+        // the wrong hash on the weights: nothing is kept, not even a half, and the message says why
+        let hub = tiny_hub();
+        let dir = crate::testkit::scratch("j13-weights");
+        let models = dir.join("models");
+        let mut download = tiny_checked(&hub, false);
+        download.files[0].sha256 = Some("0".repeat(64));
+        let (outcome, _, _) = run_job(&mut spawn_files(download, models.clone(), || {}));
+        let message = outcome.unwrap_err();
+        assert!(
+            message.contains("tiny-Q4_K_M.gguf does not match the checksum the list was made with")
+                && message.contains("expected 000000000000…")
+                && message.contains("it was not kept"),
+            "{message}"
+        );
+        let left: Vec<String> = std::fs::read_dir(&models)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            left.is_empty(),
+            "nothing stays of a file that is not the one: {left:?}"
+        );
+
+        // the right hash and a size that is not the one: the same
+        let hub = tiny_hub();
+        let dir = crate::testkit::scratch("j13-size");
+        let models = dir.join("models");
+        let mut download = tiny_checked(&hub, false);
+        // the fake serves as many bytes as the repository lists; the list the hash came from says another
+        download.files[0].size = Some(3001);
+        let (outcome, _, _) = run_job(&mut spawn_files(download, models.clone(), || {}));
+        let message = outcome.unwrap_err();
+        assert!(
+            message.contains("came to 3000 bytes and the list says 3001"),
+            "{message}"
+        );
+        assert!(std::fs::read_dir(&models).unwrap().next().is_none());
+
+        // a piece with no hash is as before: a size that is not the one is not looked at
+        let hub = tiny_hub();
+        let dir = crate::testkit::scratch("j13-plain");
+        let models = dir.join("models");
+        let mut download = tiny(&hub, false);
+        download.files[0].size = Some(3001);
+        let (outcome, _, _) = run_job(&mut spawn_files(download, models.clone(), || {}));
+        assert_eq!(outcome.unwrap(), "tiny-Q4_K_M.gguf");
+
+        // the projector is wrong: the weights stay and run alone, the projector is not kept and there
+        // is no record that says the two belong together
+        let hub = tiny_hub();
+        let dir = crate::testkit::scratch("j13-projector");
+        let models = dir.join("models");
+        let mut download = tiny_checked(&hub, true);
+        download.files[1].sha256 = Some("f".repeat(64));
+        let (outcome, _, _) = run_job(&mut spawn_files(download, models.clone(), || {}));
+        let message = outcome.unwrap_err();
+        assert!(
+            message.contains("could not fetch mmproj-f16.gguf")
+                && message.contains("does not match the checksum")
+                && message.contains("tiny-Q4_K_M.gguf was fetched and runs without it"),
+            "{message}"
+        );
+        assert!(models.join("tiny-Q4_K_M.gguf").is_file());
+        assert!(!models.join("me--tiny-vl-GGUF--mmproj-f16.gguf").exists());
+        assert!(!models
+            .join("me--tiny-vl-GGUF--mmproj-f16.gguf.part")
+            .exists());
+        assert!(!models.join("tiny-Q4_K_M.gguf.bundle.json").exists());
+    }
+
+    #[test]
+    fn p3_b13_a_file_that_is_already_there_at_its_size_is_not_fetched_again() {
+        let hub = tiny_hub();
+        let dir = crate::testkit::scratch("b13");
+        let models = dir.join("models");
+        std::fs::create_dir_all(&models).unwrap();
+        // the projector of another quantization of the repository, as it was fetched then
+        std::fs::write(
+            models.join("me--tiny-vl-GGUF--mmproj-f16.gguf"),
+            vec![b'p'; 1000],
+        )
+        .unwrap();
+        let (outcome, statuses, progress) =
+            run_job(&mut spawn_files(tiny(&hub, true), models.clone(), || {}));
+        assert_eq!(outcome.unwrap(), "tiny-Q4_K_M.gguf");
+        assert_eq!(
+            hub.downloads(),
+            ["me/tiny-vl-GGUF:tiny-Q4_K_M.gguf"],
+            "only the weights were asked for"
+        );
+        assert!(
+            statuses.contains(
+                &"me--tiny-vl-GGUF--mmproj-f16.gguf is already in the models folder.".to_string()
+            ),
+            "{statuses:?}"
+        );
+        assert_eq!(
+            progress.last().unwrap().0,
+            4000,
+            "the bar still counts the file that was there"
+        );
+        assert_eq!(
+            std::fs::read(models.join("me--tiny-vl-GGUF--mmproj-f16.gguf")).unwrap(),
+            vec![b'p'; 1000],
+            "untouched"
+        );
+        assert!(models.join("tiny-Q4_K_M.gguf.bundle.json").exists());
+
+        // a file of the same name and another size is another file: it is fetched
+        let hub = tiny_hub();
+        let dir = crate::testkit::scratch("b13-size");
+        let models = dir.join("models");
+        std::fs::create_dir_all(&models).unwrap();
+        std::fs::write(models.join("me--tiny-vl-GGUF--mmproj-f16.gguf"), b"short").unwrap();
+        let (outcome, _, _) = run_job(&mut spawn_files(tiny(&hub, true), models.clone(), || {}));
+        assert!(outcome.is_ok());
+        assert_eq!(hub.downloads().len(), 2);
+        assert_eq!(
+            std::fs::metadata(models.join("me--tiny-vl-GGUF--mmproj-f16.gguf"))
+                .unwrap()
+                .len(),
+            1000
+        );
+    }
+
+    #[test]
+    fn p3_b14_a_file_after_the_weights_that_fails_leaves_the_weights_and_says_what_was_not_fetched()
+    {
+        use crate::testkit::mini_http::{MiniServer, Request};
+        // the site has the weights and refuses the projector
+        let hub = tiny_hub();
+        let mut download = tiny(&hub, true);
+        download.files[1].url = format!(
+            "{}/me/tiny-vl-GGUF/resolve/main/not-there.gguf",
+            "http://127.0.0.1:1"
+        );
+        let dir = crate::testkit::scratch("b14");
+        let models = dir.join("models");
+        let (outcome, statuses, _) = run_job(&mut spawn_files(download, models.clone(), || {}));
+        let message = outcome.unwrap_err();
+        assert!(
+            message.contains("could not fetch mmproj-f16.gguf")
+                && message.contains("tiny-Q4_K_M.gguf was fetched and runs without it"),
+            "{message}"
+        );
+        assert!(statuses.contains(&"Downloading mmproj-f16.gguf (2 of 2)".to_string()));
+        assert!(
+            models.join("tiny-Q4_K_M.gguf").is_file(),
+            "the weights stay: they run alone"
+        );
+        assert!(
+            !models.join("tiny-Q4_K_M.gguf.bundle.json").exists(),
+            "and nothing says they have a pair"
+        );
+        assert!(!models
+            .join("me--tiny-vl-GGUF--mmproj-f16.gguf.part")
+            .exists());
+
+        // the weights fail: nothing else is asked for, and the message is the plain one
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let log = asked.clone();
+        let broken = MiniServer::start(None, move |req: &Request, resp| {
+            log.lock().unwrap().push(req.path.clone());
+            resp.status(404);
+            resp.send(b"no");
+        })
+        .unwrap();
+        let hub = tiny_hub();
+        let mut download = tiny(&hub, true);
+        for piece in &mut download.files {
+            piece.url = format!("http://127.0.0.1:{}/x/{}", broken.port(), piece.name);
+        }
+        let dir = crate::testkit::scratch("b14-weights");
+        let (outcome, _, _) = run_job(&mut spawn_files(download, dir.join("m"), || {}));
+        let message = outcome.unwrap_err();
+        assert!(message.starts_with("request failed"), "{message}");
+        assert_eq!(
+            asked.lock().unwrap().len(),
+            1,
+            "the projector was not asked for"
+        );
+        assert!(!dir.join("m/tiny-Q4_K_M.gguf").exists());
+    }
+
+    #[test]
+    fn p3_b15_a_name_that_climbs_out_of_the_folder_cannot() {
+        let hub = tiny_hub();
+        let dir = crate::testkit::scratch("b15");
+        let models = dir.join("models");
+        let mut download = tiny(&hub, false);
+        download.files[0].store_as = "../../escaped.gguf".into();
+        let (outcome, _, _) = run_job(&mut spawn_files(download, models.clone(), || {}));
+        assert_eq!(outcome.unwrap(), "escaped.gguf");
+        assert!(models.join("escaped.gguf").is_file());
+        assert!(!dir.join("escaped.gguf").exists());
+        assert!(!dir.parent().unwrap().join("escaped.gguf").exists());
     }
 
     #[test]

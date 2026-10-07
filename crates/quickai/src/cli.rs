@@ -33,10 +33,11 @@ QuickAI headless commands
       --strict      warnings (for example keys this version does not know) fail too
       --embedded    check only the documents compiled into the application
 
-  quickai config docs [vocab]
+  quickai config docs [vocab | catalog]
       Print the reference page for engine documents (docs/reference/engine-fields.md), or with
-      `vocab` the one for vocabulary documents (docs/reference/vocab-fields.md), generated from the
-      types the loader reads.
+      `vocab` the one for vocabulary documents (docs/reference/vocab-fields.md), or with `catalog`
+      the one for catalog documents (docs/reference/catalog-fields.md), generated from the types the
+      loader reads.
 
   quickai plan [--explain | --json] [--engine ID] [--model FILE|NAME] [--binary FILE] [--port N]
                [--ctx-size N] [--gpu-layers N] [--extra-args TEXT] [--proxy]
@@ -87,7 +88,14 @@ pub fn run_with(
                 let _ = write!(out, "{}", quickai_core::doc::reference::render_vocab());
                 0
             }
-            _ => usage_error(err, "expected `config check` or `config docs [vocab]`"),
+            Some("docs") if args.len() == 3 && args[2] == "catalog" => {
+                let _ = write!(out, "{}", quickai_core::doc::reference::render_catalog());
+                0
+            }
+            _ => usage_error(
+                err,
+                "expected `config check` or `config docs [vocab | catalog]`",
+            ),
         },
         Some("plan") => plan_command(&args[1..], dirs, out, err),
         _ => usage_error(err, "unknown command"),
@@ -221,6 +229,8 @@ fn model_entry(path: &Path) -> ModelEntry {
         note: String::new(),
         bundled: false,
         size_bytes: std::fs::metadata(path).map(|m| m.len()).unwrap_or(0),
+        companions: crate::bundles::companions(path),
+        mode: crate::bundles::mode(path),
     }
 }
 
@@ -269,7 +279,10 @@ fn plan_command(
             None => {
                 let bundled = crate::paths::bundled_models_dir();
                 let user = crate::paths::user_models_dir();
-                match crate::models::discover_all(&bundled, &user)
+                let hide = quickai_core::lookup::bundle::companion_patterns(
+                    quickai_core::models::bundles(engine_doc),
+                );
+                match crate::models::discover_all(&bundled, &user, &hide)
                     .into_iter()
                     .next()
                 {
@@ -286,6 +299,21 @@ fn plan_command(
 
     let mut selection = Selection::new(&engine);
     selection.model = model;
+    // what the record beside a model's weights adds: its projector, and the mode it is started in
+    if !lists_models {
+        if let Some(path) = selection
+            .model
+            .as_ref()
+            .map(|m| std::path::PathBuf::from(&m.path))
+        {
+            let (attached, notes) =
+                launch::attach_record(selection, &model_entry(&path), engine_doc);
+            selection = attached;
+            for note in notes {
+                let _ = writeln!(err, "{note}");
+            }
+        }
+    }
     let key = |field: &str| format!("{engine}.{field}");
     if let Some(port) = parsed.port {
         selection = selection.set(&key("port"), port);
@@ -480,10 +508,26 @@ mod tests {
     }
 
     #[test]
+    fn config_docs_catalog_prints_the_checked_in_page_for_catalog_documents() {
+        let (code, out, _) = run_capture(&["config", "docs", "catalog"], &ConfigDirs::default());
+        assert_eq!(code, 0);
+        let page = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../docs/reference/catalog-fields.md"),
+        )
+        .expect("the reference page is checked in");
+        assert_eq!(
+            out,
+            page.replace("\r\n", "\n"),
+            "regenerate it with `quickai config docs catalog`"
+        );
+    }
+
+    #[test]
     fn warnings_fail_only_under_strict() {
         let (dir, dirs) = user_dir_with(
             "warn",
-            "schema = 1\nkind = \"engine\"\nid = \"llamacpp\"\n[components.mmproj]\nflag = \"--mmproj\"\n",
+            "schema = 1\nkind = \"engine\"\nid = \"llamacpp\"\n[future]\nthing = 1\n",
         );
         let (code, out, _) = run_capture(&["config", "check"], &dirs);
         assert_eq!(code, 0, "{out}");

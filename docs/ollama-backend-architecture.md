@@ -361,7 +361,7 @@ Embedding-only models are listed but flagged: they cannot be warmed for chat.
 existing Hugging Face lookup, whose rows become pulls of `hf.co/<repo>:<quant>`. `pick_file` already prefers
 Q4_K_M, which is also Ollama's default quantisation. `RemoteModel` generalises to
 `LookupRow { title, detail, size, popularity, action: AcquireAction }`, so the results list is generic. No public
-JSON listing of Ollama's library was found (A7), so scraping ollama.com is deliberately not part of the design.
+JSON listing of Ollama's library was found (A7), so scraping ollama.com is deliberately not part of the design. (Changed on 2026-10-07, when the user asked for a look-up online for Ollama: the library's own search page is read after all, as work package 3.15, decision C56 of `implementation-plan.md`; the Hugging Face and curated-list rows above are still not built.)
 
 **Pull and Delete.** A pull is a `Job` over `POST /api/pull`. Its NDJSON status lines go to the log pane, and
 progress is summed over layer digests. Cancelling drops the connection; the daemon keeps partial blobs, so the next

@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use crossbeam_channel::Receiver;
 use eframe::egui;
 
 use crate::config;
@@ -12,10 +11,10 @@ use crate::jobs::Job;
 use crate::launch::MachineFacts;
 use crate::models::{discover_all, ModelEntry};
 use crate::paths;
-use crate::remote::{LookupEvent, RemoteModel};
 use crate::runtime::Session;
 use crate::settings::Settings;
 use engine::NamedModels;
+use lookup_view::LookupView;
 use quickai_core::form::{self, FormModel};
 use quickai_core::plan::{HostFacts, ModelInfo, Selection};
 use quickai_core::registry::Registry;
@@ -26,6 +25,7 @@ use values::FieldValues;
 mod about_window;
 mod acquire;
 mod api_info;
+mod catalog_view;
 mod confirm_delete;
 mod controls;
 mod diagnostics;
@@ -34,6 +34,7 @@ mod foreign_program;
 mod header;
 mod live_traffic;
 mod log_pane;
+mod lookup_view;
 mod model_bar;
 mod named_models;
 mod run_bar;
@@ -106,10 +107,10 @@ pub struct App {
     /// dynamic label right where it's used).
     model_input: String,
     download: Option<Job<String>>,
-    show_lookup: bool,
-    lookup_rx: Option<Receiver<LookupEvent>>,
-    lookup_results: Vec<RemoteModel>,
-    lookup_status: String,
+    /// What the look-up of models online has said, for whichever engine is in use.
+    lookup: LookupView,
+    /// The window of the recommended models: what it shows and which of them are there already.
+    catalog: catalog_view::CatalogView,
     total_ram_bytes: u64,
     recommended_filename: Option<String>,
     dark_mode: bool,
@@ -244,10 +245,8 @@ impl App {
             run_reached_running: false,
             model_input: String::new(),
             download: None,
-            show_lookup: false,
-            lookup_rx: None,
-            lookup_results: Vec::new(),
-            lookup_status: String::new(),
+            lookup: LookupView::default(),
+            catalog: catalog_view::CatalogView::default(),
             total_ram_bytes,
             recommended_filename: None,
             show_api_info: false,
@@ -352,11 +351,42 @@ impl App {
     /// "Apply"/"Reset to default" actions on the downloaded-models folder.
     fn rescan_models(&mut self) {
         let current = self.models.get(self.selected).map(|m| m.filename.clone());
-        self.models = discover_all(&self.bundled_models_dir, &self.models_dir);
+        self.models = self.scan_models();
         self.selected = current
             .and_then(|f| self.models.iter().position(|m| m.filename == f))
             .unwrap_or(0);
         self.refresh_recommendation();
+    }
+
+    /// The models both folders hold, named as the picker shows them: what the file says, else what the
+    /// recommended list calls it, with a sentence about the mode it is started in when its record
+    /// names one.
+    fn scan_models(&self) -> Vec<ModelEntry> {
+        let mut models = discover_all(
+            &self.bundled_models_dir,
+            &self.models_dir,
+            &self.companion_patterns(),
+        );
+        if let Some(engine) = self.engine_doc() {
+            let list = quickai_core::models::recommended(&self.registry, engine);
+            crate::models::name_from_list(&mut models, &crate::models::names_from_list(&list));
+            let labels: Vec<(String, String)> = quickai_core::models::modes(engine)
+                .iter()
+                .map(|m| (m.id.clone(), m.label.clone()))
+                .collect();
+            crate::models::say_modes(&mut models, &labels);
+        }
+        models
+    }
+
+    /// The patterns of the files that go with a model and are not models themselves (`mmproj*.gguf`):
+    /// what the engine's bundles say, so the picker lists weights only.
+    fn companion_patterns(&self) -> Vec<String> {
+        self.engine_doc()
+            .map(|e| {
+                quickai_core::lookup::bundle::companion_patterns(quickai_core::models::bundles(e))
+            })
+            .unwrap_or_default()
     }
 
     fn push_log(&mut self, line: String) {
@@ -481,17 +511,26 @@ impl App {
 
     /// Drains the in-flight download's channel, if any. On completion,
     /// re-scans models_dir (the new file is now sitting there) and selects
-    /// it; on failure, just logs — the caller already cleaned up the
-    /// `.part` file.
+    /// it; on failure, logs, and scans all the same: the weights of a bundle
+    /// are there when only a file after them failed.
     fn poll_download(&mut self) {
         let Some(mut job) = self.download.take() else {
             return;
         };
-        match job.poll() {
+        // what the job said on the way, which polling is what gathers: the last of it comes with the end
+        let outcome = job.poll();
+        for line in job.take_statuses() {
+            self.push_log(line);
+        }
+        match outcome {
             Some(Ok(filename)) => {
                 self.push_log(format!("Download complete: {filename}"));
+                self.catalog.note = None;
                 let current = self.models.get(self.selected).map(|m| m.filename.clone());
-                self.models = discover_all(&self.bundled_models_dir, &self.models_dir);
+                self.models = self.scan_models();
+                if self.catalog.open {
+                    self.refresh_catalog_have();
+                }
                 self.selected = self
                     .models
                     .iter()
@@ -503,32 +542,12 @@ impl App {
                 self.refresh_recommendation();
                 self.save_settings();
             }
-            Some(Err(msg)) => self.push_log(format!("Download failed: {msg}")),
-            None => self.download = Some(job),
-        }
-    }
-
-    /// Drains the online-lookup channel, if a search is running.
-    fn poll_lookup(&mut self) {
-        let Some(rx) = self.lookup_rx.take() else {
-            return;
-        };
-        let mut done = false;
-        while let Ok(event) = rx.try_recv() {
-            match event {
-                LookupEvent::Found(m) => self.lookup_results.push(m),
-                LookupEvent::Status(s) => self.lookup_status = s,
-                LookupEvent::Done => done = true,
+            Some(Err(msg)) => {
+                self.push_log(format!("Download failed: {msg}"));
+                self.catalog.note = Some(format!("Download failed: {msg}"));
+                self.rescan_models();
             }
-        }
-        if done {
-            self.lookup_status = if self.lookup_results.is_empty() {
-                "No compatible models found.".to_string()
-            } else {
-                format!("Found {} model(s).", self.lookup_results.len())
-            };
-        } else {
-            self.lookup_rx = Some(rx);
+            None => self.download = Some(job),
         }
     }
 
@@ -593,6 +612,7 @@ impl eframe::App for App {
 
         self.show_settings_window(ui.ctx());
         self.show_about_window(ui.ctx());
+        self.show_catalog_window(ui.ctx());
         self.show_confirm_delete_modal(ui.ctx());
         self.show_foreign_program_modal(ui.ctx());
     }

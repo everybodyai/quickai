@@ -6,6 +6,7 @@
 //! (`cargo test -p quickai -- --ignored p3_`), for the reason the message gives. When the work
 //! package lands the `ignore` goes, and the test is a regression test from then on.
 
+mod catalog;
 mod contract;
 mod docs;
 mod engine;

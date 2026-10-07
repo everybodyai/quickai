@@ -31,6 +31,26 @@ pub struct EngineDoc {
     pub diagnostics: Vec<DiagnosticRule>,
     #[serde(default, rename = "field")]
     pub fields: Vec<Field>,
+    /// How each kind of file that goes with a model (a projector) is attached to the program.
+    #[serde(default)]
+    pub components: std::collections::BTreeMap<String, Component>,
+}
+
+/// How one kind of companion file reaches the program (`[components.mmproj]`).
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct Component {
+    /// Where its arguments stand among the fields': after those of a lower `order` and before those of
+    /// a higher one. Default 80, which is before the person's own extra arguments (90).
+    pub order: Option<i32>,
+    #[serde(default)]
+    pub bind: ComponentBind,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct ComponentBind {
+    /// Command-line arguments, templates over `${component.path}`: the file.
+    #[serde(default)]
+    pub arg: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -433,9 +453,58 @@ pub struct Models {
     pub sources: Vec<ModelSource>,
     /// For an engine whose models are files: how one gets into the folder (Phase 4).
     pub acquire: Option<ModelAcquire>,
-    /// Looking models up online (Phase 4).
+    /// Looking models up online.
     #[serde(default)]
     pub lookup: Vec<ModelLookup>,
+    /// What is fetched together with a model's weights (a vision model's projector).
+    #[serde(default)]
+    pub bundle: Vec<ModelBundle>,
+    /// The ways the engine can be started for a kind of model (`embedding`), which a catalog names
+    /// and a record beside the weights remembers.
+    #[serde(default)]
+    pub mode: Vec<ModelMode>,
+}
+
+/// A way the engine is started for a model (`[[models.mode]]`): the arguments that make it serve
+/// that kind of model. A catalog, which is data, names a mode by its id and never carries the
+/// arguments itself.
+#[derive(Clone, Debug, Deserialize)]
+pub struct ModelMode {
+    pub id: String,
+    /// What the model picker says of a model that runs so (default: the id).
+    pub label: Option<String>,
+    pub help: Option<String>,
+    /// The words added to the command line: plain text, no templates.
+    #[serde(default)]
+    pub arg: Vec<String>,
+}
+
+/// A way to fetch a model with the files that go with it (`[[models.bundle]]`).
+#[derive(Clone, Debug, Deserialize)]
+pub struct ModelBundle {
+    pub id: String,
+    /// The words of its row of buttons: `with projector` (default: the id).
+    pub label: Option<String>,
+    pub help: Option<String>,
+    /// The files beside the weights, one kind each; the bundle is offered for a repository that has
+    /// a file for every part.
+    #[serde(default)]
+    pub parts: Vec<BundlePart>,
+}
+
+/// One part of a bundle: a kind of file and how to find it among the files of a repository.
+#[derive(Clone, Debug, Deserialize)]
+pub struct BundlePart {
+    /// The kind of component, which `[components.<kind>]` says how to attach.
+    pub kind: String,
+    /// What the window calls it: `projector` (default: the kind).
+    pub label: Option<String>,
+    /// Patterns (`*` any run, `?` one character, case ignored) a file's name or path matches.
+    #[serde(default, rename = "match")]
+    pub matches: Vec<String>,
+    /// The quantizations to take first, best first; else the smallest file.
+    #[serde(default)]
+    pub prefer: Vec<String>,
 }
 
 /// A place models are found: a folder shipped with the application, or one the person can write to.

@@ -1,0 +1,8 @@
+popular.json	https://huggingface.co/api/models?filter=gguf&sort=downloads&direction=-1&limit=50	2026-10-07
+search_qwen.json	https://huggingface.co/api/models?filter=gguf&sort=downloads&direction=-1&limit=50&search=qwen	2026-10-07
+repos/ggml-org__gemma-3-4b-it-GGUF.json	https://huggingface.co/api/models/ggml-org/gemma-3-4b-it-GGUF?blobs=true	2026-10-07
+repos/unsloth__Qwen3.8-27B-GGUF.json	https://huggingface.co/api/models/unsloth/Qwen3.8-27B-GGUF?blobs=true	2026-10-07
+repos/unsloth__Qwen3-Coder-30B-A3B-Instruct-GGUF.json	https://huggingface.co/api/models/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF?blobs=true	2026-10-07
+repos/mixedbread-ai__mxbai-embed-large-v1.json	https://huggingface.co/api/models/mixedbread-ai/mxbai-embed-large-v1?blobs=true	2026-10-07
+repos/mudler__Laguna-XS-2.1-APEX-GGUF.json	https://huggingface.co/api/models/mudler/Laguna-XS-2.1-APEX-GGUF?blobs=true	2026-10-07
+repos/mudler__locate-anything.cpp-gguf.json	https://huggingface.co/api/models/mudler/locate-anything.cpp-gguf?blobs=true	2026-10-07
