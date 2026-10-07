@@ -5,6 +5,10 @@
 
 use std::path::{Path, PathBuf};
 
+use quickai_core::plan::ModelInfo;
+
+use crate::prims::engine_models::ModelRow;
+
 pub struct KnownModel {
     pub filename: &'static str,
     pub display: &'static str,
@@ -57,6 +61,34 @@ pub struct ModelEntry {
     pub note: String,
     pub bundled: bool,
     pub size_bytes: u64,
+}
+
+impl ModelEntry {
+    /// A model an engine lists by name, as the picker holds one: there is no file, so `path` is
+    /// empty, `filename` is the name the engine knows it by (what is remembered, and what a request
+    /// names), and the size is the one the listing gave, which the context-size heuristic and the
+    /// speed estimate then use as they use a file's.
+    #[allow(dead_code)] // the model box for engines that list their models arrives with 3.7
+    pub fn from_row(row: &ModelRow) -> ModelEntry {
+        ModelEntry {
+            filename: row.id.clone(),
+            path: PathBuf::new(),
+            display: row.display.clone(),
+            note: row.capabilities.join(", "),
+            bundled: false,
+            size_bytes: row.size_bytes.unwrap_or(0),
+        }
+    }
+
+    /// The model as the form and the planner know one.
+    pub fn info(&self) -> ModelInfo {
+        ModelInfo {
+            id: self.filename.clone(),
+            display: self.display.clone(),
+            path: self.path.display().to_string(),
+            size_bytes: self.size_bytes,
+        }
+    }
 }
 
 /// Scans both the bundled and user (downloaded-into) models directories and

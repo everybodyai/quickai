@@ -215,7 +215,9 @@ fn the_form_and_the_planner_share_one_resolver() {
             assert_eq!(shown, i64::from(recommend_ctx_size(size, ram)));
 
             let run = plan(&registry, &sel, &f).unwrap();
-            let Start::Spawn(spawn) = &run.units[0].start[0];
+            let Start::Spawn(spawn) = &run.units[0].start[0] else {
+                panic!("a spawn plan")
+            };
             let args = spawn.arg_values();
             let at = args.iter().position(|a| a == "--ctx-size").unwrap();
             assert_eq!(args[at + 1], shown.to_string(), "size {size}, ram {ram}");

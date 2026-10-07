@@ -2,7 +2,8 @@
 
 A Rust/[egui](https://github.com/emilk/egui) GUI for starting and stopping
 local GGUF models via `llama-server` (from
-[llama.cpp](https://github.com/ggml-org/llama.cpp)), built with the
+[llama.cpp](https://github.com/ggml-org/llama.cpp)) or, if you choose it,
+[Ollama](https://ollama.com) (see "Choosing an engine" below), built with the
 **Vulkan** backend so inference runs on the AMD GPU (RX 6700 XT / RADV)
 instead of ROCm, which doesn't officially support this card. It is packaged
 as a Linux tar.gz, a self-integrating AppImage, and a Windows zip — each
@@ -187,6 +188,32 @@ it looks for `llama-server`/bundled `models/` right next to its own
 executable instead. Either way, that directory is treated as read-only —
 see "Adding more models" below for where downloads actually go.
 
+## Choosing an engine (⚙ → Engine)
+
+Models run on **llama.cpp**, which comes with QuickAI and is what a first run uses, or on **Ollama**. Ollama is
+never part of a package and nothing is downloaded, listed or started because you chose it: pick **Ollama** in the
+Engine row of ⚙ Settings and the window shows what Ollama needs instead of what llama.cpp does; the settings of
+each engine are kept separately, and the row is locked while a server runs or something is being fetched.
+
+- **Getting Ollama.** If an `ollama` is on your `PATH` (or where Ollama usually installs itself) it is used.
+  Otherwise open ⚙ Settings → **Advanced: Ollama** → **Look up Ollama builds** and click **Use** on a row (the first
+  is the release QuickAI was tested with): QuickAI downloads it from GitHub, checks its checksum, unpacks it under
+  `~/.quickai/ollama` and runs it once to see that it works. A checksum that does not match, or a download that is
+  cut off, installs nothing.
+- **A first run is two steps.** Ollama lists its models only while it runs. **Start** brings it up with nothing
+  loaded (or uses an Ollama that is already running on that port, and leaves it running when you stop); it then
+  lists what it has. Pull a model by typing a name (`qwen3:4b`) or a Hugging Face reference
+  (`hf.co/user/repo:Q4_K_M`) into the **Model** box and pressing Enter or **Pull**, choose a model, and press
+  **Start** again to load it. With a model already chosen, one Start does both.
+- **What Ollama is told.** It listens on this machine only, with its own calls home switched off
+  (`OLLAMA_NO_CLOUD=1`), keeps one model loaded, and keeps its models in `~/.quickai/ollama/models` unless you
+  ask for Ollama's own store. Its advanced settings are what to do when one is already running, the model
+  store, extra environment (`KEY=VALUE` lines), the executable, the GPU and the context size.
+- **Engines are documents.** What an engine is, how it starts and which settings it has is a TOML document
+  (`crates/quickai/manifests/engines/`, `docs/reference/engine-fields.md`); one in your configuration directory
+  patches it (`quickai config check` and `quickai plan --engine ollama --model NAME --explain` show what comes of
+  it). A document of yours that starts a program QuickAI did not find or install asks you once before it does.
+
 ## Live conversation traffic (📡)
 
 Off by default. When turned on in ⚙ Settings, llama-server itself binds an
@@ -307,7 +334,7 @@ cmake --build build -j$(nproc)
 
 QuickAI has no telemetry, accounts or update checks, and keeps your prompts on
 your computer. It talks to the internet only when you ask it to (searching for
-or downloading a model or a llama.cpp build); the details are in
+or downloading a model or a llama.cpp or Ollama build, or pulling a model into Ollama); the details are in
 [PRIVACY.md](PRIVACY.md).
 
 ## License

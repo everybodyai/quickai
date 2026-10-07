@@ -9,6 +9,16 @@ use quickai_core::registry::Engine;
 use quickai_core::value::Value;
 use serde::{Deserialize, Serialize};
 
+/// Where the chosen engine is kept: `values."app.engine"`.
+pub const ENGINE_KEY: &str = "app.engine";
+
+/// The engine a file with no choice in it means.
+pub const DEFAULT_ENGINE: &str = "llamacpp";
+
+/// Where the hashes of the documents the person said may run a program are kept:
+/// `values."app.confirmed_engines"`, a list of texts.
+pub const CONFIRMED_ENGINES_KEY: &str = "app.confirmed_engines";
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub last_model_filename: Option<String>,
@@ -92,7 +102,7 @@ impl Settings {
             .unwrap_or_default()
     }
 
-    fn save_to(&self, path: &Path) {
+    pub(crate) fn save_to(&self, path: &Path) {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -173,6 +183,75 @@ impl Settings {
         *self = serde_json::from_value(serde_json::Value::Object(object))
             .map_err(|e| format!("a stored value does not fit its setting: {e}"))?;
         Ok(())
+    }
+
+    /// The engine the file says was chosen, `None` when it says nothing, which is llama.cpp (a
+    /// llama.cpp user's file has no such key).
+    pub fn chosen_engine(&self) -> Option<String> {
+        self.other
+            .get("values")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|values| values.get(ENGINE_KEY))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    }
+
+    /// Records the choice of an engine. llama.cpp is what a file with no choice means, so choosing
+    /// it takes the key away again: a llama.cpp user's file keeps exactly the keys it has always
+    /// had. The settings of every engine, the one chosen or not, are left as they are.
+    pub fn set_chosen_engine(&mut self, id: &str) {
+        let mut values = match self.other.get("values") {
+            Some(serde_json::Value::Object(existing)) => existing.clone(),
+            _ => serde_json::Map::new(),
+        };
+        if id == DEFAULT_ENGINE {
+            values.remove(ENGINE_KEY);
+        } else {
+            values.insert(ENGINE_KEY.to_string(), serde_json::Value::from(id));
+        }
+        if values.is_empty() {
+            self.other.remove("values");
+        } else {
+            self.other
+                .insert("values".to_string(), serde_json::Value::Object(values));
+        }
+    }
+
+    /// The hashes of the engine documents the person has said may start the program they name (see
+    /// `quickai_core::guard`).
+    pub fn confirmed_engines(&self) -> Vec<String> {
+        self.other
+            .get("values")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|values| values.get(CONFIRMED_ENGINES_KEY))
+            .and_then(serde_json::Value::as_array)
+            .map(|hashes| {
+                hashes
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Remembers that the person said yes to the document with this hash.
+    pub fn confirm_engine(&mut self, hash: &str) {
+        let mut hashes = self.confirmed_engines();
+        if hashes.iter().any(|h| h == hash) {
+            return;
+        }
+        hashes.push(hash.to_string());
+        let mut values = match self.other.get("values") {
+            Some(serde_json::Value::Object(existing)) => existing.clone(),
+            _ => serde_json::Map::new(),
+        };
+        values.insert(
+            CONFIRMED_ENGINES_KEY.to_string(),
+            serde_json::Value::from(hashes),
+        );
+        self.other
+            .insert("values".to_string(), serde_json::Value::Object(values));
     }
 
     /// The file as a JSON object: the nine keys and everything in `other`, flattened.

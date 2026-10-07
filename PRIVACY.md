@@ -1,9 +1,11 @@
 # Privacy policy: QuickAI
 
-_Last updated: 2026-10-03_
+_Last updated: 2026-10-06_
 
 QuickAI ("the app") is a desktop program for running language models on your own computer: you pick a model,
-start it, and chat with it in your browser or from another program on the same machine. This policy covers the
+start it, and chat with it in your browser or from another program on the same machine. It can run them with
+llama.cpp (which comes with the app) or, if you choose it in ⚙ Settings, with Ollama (which does not: the app
+downloads it only when you ask). This policy covers the
 app however you install it: the Microsoft Store, GitHub Releases (tar.gz, AppImage or zip), Snap, Homebrew,
 Scoop, Chocolatey or the AUR.
 
@@ -12,7 +14,7 @@ Scoop, Chocolatey or the AUR.
 The app itself does not collect, store or send personal information to its developer or to anyone else. It has no
 accounts, no analytics or telemetry, no advertising, no crash reporting and no automatic update check of its own.
 Your prompts and the model's replies are processed on your own computer and are never uploaded. The app talks to
-the internet only when you ask it to, to search for or download a model or a llama.cpp build (see
+the internet only when you ask it to, to search for or download a model, a llama.cpp build or an Ollama build (see
 [When the app uses the internet](#when-the-app-uses-the-internet)). Some of the stores and package managers you can
 install it through do their own data collection, independent of anything the app does; see
 [Stores and package managers](#stores-and-package-managers) below.
@@ -26,6 +28,19 @@ install it through do their own data collection, independent of anything the app
   developer or to any third party. Whatever conversation history the chat page keeps is kept by your browser, on
   your computer; the app does not store it. The local server has no password (the **API** panel shows the key as
   "none"), so any program or other user on the same computer can send it requests while it is running.
+- **Ollama, if you choose it.** Ollama is a separate program, MIT-licensed, that QuickAI downloads on request
+  (⚙ Settings, **Look up Ollama builds**) and never ships. QuickAI starts it as `ollama serve` so that it listens
+  on `127.0.0.1` only and with `OLLAMA_NO_CLOUD=1`, which you cannot override from the app's extra-environment box:
+  measured, without that variable an idle `ollama serve` contacts `ollama.com` a moment after it starts and again
+  every few hours, and with it a whole session of starting, chatting and stopping made no connection off your
+  computer and no DNS lookup. Ollama keeps its own files: the first time it starts it writes a key pair under
+  `~/.ollama` (`~/.ollama/id_ed25519` and its public half; Ollama's own business, not QuickAI's), and the graphics
+  driver may write shader caches under `~/.cache`. The builds QuickAI installs are kept under `~/.quickai/ollama`,
+  and so are the models it pulls (`~/.quickai/ollama/models`) unless you tell it to use Ollama's own store; a list
+  of the models Ollama had last time is kept there too, so something can be shown while Ollama is not running.
+  If an Ollama of your own is already running on the port, QuickAI uses it, changes nothing about how it was
+  started, and leaves it running when you press **Stop**. Prompts and replies travel only between your client and
+  the local Ollama, as with llama-server, and the live traffic view works the same way.
 - **The optional live traffic view.** Off by default. If you turn on "Show live conversation traffic" in
   ⚙ Settings, the app puts a small proxy on your computer (also on `127.0.0.1` only) between your clients and
   `llama-server`, so the **📡 Live** tab can show the chat requests and replies passing through. What it captures
@@ -74,12 +89,25 @@ only when you press a button, or Enter in a box, for one of these:
   A build you install is a program that runs on your computer with your own rights, so install builds only from
   sources you trust.
 
+- **Ollama builds.** With Ollama chosen, ⚙ Settings, **Look up Ollama builds** asks GitHub's API
+  (`api.github.com`) for the releases of `ollama/ollama`; installing one downloads that archive from GitHub
+  (`github.com`, which sends the file from `release-assets.githubusercontent.com`), and the app checks it against
+  the checksum GitHub lists (and the one recorded in the app for the release it was tested with) before it unpacks
+  anything.
+- **Pulling an Ollama model.** A name typed into the Model box with Ollama chosen (or a Hugging Face reference
+  such as `hf.co/user/repo`) is pulled only when you press Enter or **Pull**. QuickAI asks the local Ollama to do
+  it, and **Ollama** then contacts its registry, `registry.ollama.ai`, or Hugging Face for an `hf.co/`
+  reference: `hf.co`, and the servers the files come from, `*.cdn.hf.co` (both measured with a real Ollama, which
+  contacted nothing else); those servers see your IP address and the name. Nothing is pulled, listed or started
+  just because Ollama was chosen.
+
 Each of these is an ordinary web request (HTTPS, or plain HTTP if you type an `http://` address) from your computer
 straight to that server. The developer of QuickAI is not involved in them and receives nothing.
 
 ## Bundled software
 
-The app ships with `llama-server` (from [llama.cpp](https://github.com/ggml-org/llama.cpp), MIT) and two models,
+Ollama is not bundled: it is downloaded on request, and its archive carries its own licence files (see
+`THIRD_PARTY_LICENSES.md`). The app ships with `llama-server` (from [llama.cpp](https://github.com/ggml-org/llama.cpp), MIT) and two models,
 Bonsai 8B and Bonsai 1.7B (from PrismML, Apache-2.0), unmodified. They run entirely on your computer; QuickAI
 starts `llama-server` without any option that makes it download anything. If you add your own extra command-line
 arguments in ⚙ Settings, what they do is up to `llama-server`. The licenses are in `LICENSE` and

@@ -1,52 +1,78 @@
-//! The `probe.http@1` primitive: wait until an engine answers a request with the expected status.
-//! A plan's `ready` step runs it; reaching the expected status is what turns `Starting` into
-//! `Running`.
+//! The `probe.http@1` primitive: ask an engine once whether it answers a request with the status
+//! that means ready. The supervisor asks again every `interval` until it does, or until the
+//! plan's timeout says to stop asking.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use crossbeam_channel::Sender;
-use quickai_core::plan::ReadyPlan;
+/// How long one question may take. A server that is loading a model answers at once with a "not
+/// yet" status; one that accepts a connection and says nothing must not hold up a Stop.
+const ASK_TIMEOUT: Duration = Duration::from_secs(1);
 
-use super::process::send;
-use crate::events::{Event, ServerState};
+pub struct HttpProbe {
+    agent: ureq::Agent,
+    url: String,
+    expect_status: u16,
+}
 
-/// Polls `http://{host}:{port}{path}` every `interval` until it answers with `expect_status`, then
-/// reports `Running`. Gives up after `timeout` with a log line and no state change (the process may
-/// still be loading a big model; the user can wait or stop). A stop that was asked for while still
-/// starting ends the poll quietly: reporting `Running` would be a stale, misleading transition.
-pub fn spawn_http_ready(
-    host: String,
-    port: u16,
-    ready: ReadyPlan,
-    intentional_stop: Arc<AtomicBool>,
-    evt_tx: Sender<Event>,
-    wake: Arc<impl Fn() + Send + Sync + 'static>,
-) {
-    std::thread::spawn(move || {
-        let url = format!("http://{host}:{port}{}", ready.path);
-        let deadline = Instant::now() + Duration::from_millis(ready.timeout_ms);
-        let interval = Duration::from_millis(ready.interval_ms);
-        loop {
-            if intentional_stop.load(Ordering::SeqCst) {
-                return;
-            }
-            if Instant::now() > deadline {
-                send(
-                    &evt_tx,
-                    Event::Log("Timed out waiting for server to become healthy.".into()),
-                    &wake,
-                );
-                return;
-            }
-            if let Ok(resp) = ureq::get(&url).call() {
-                if resp.status() == ready.expect_status {
-                    send(&evt_tx, Event::StateChanged(ServerState::Running), &wake);
-                    return;
-                }
-            }
-            std::thread::sleep(interval);
+impl HttpProbe {
+    pub fn new(host: &str, port: u16, path: &str, expect_status: u16) -> Self {
+        HttpProbe {
+            // a status is an answer here, not an error: the plan says which one means ready
+            agent: ureq::Agent::config_builder()
+                .http_status_as_error(false)
+                .timeout_global(Some(ASK_TIMEOUT))
+                .build()
+                .into(),
+            url: format!("http://{host}:{port}{path}"),
+            expect_status,
         }
-    });
+    }
+
+    /// True when the engine answered with the status that means ready.
+    pub fn ready(&self) -> bool {
+        self.agent
+            .get(&self.url)
+            .call()
+            .is_ok_and(|reply| reply.status().as_u16() == self.expect_status)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn server(status: u16) -> (std::sync::Arc<tiny_http::Server>, u16) {
+        let server = std::sync::Arc::new(tiny_http::Server::http("127.0.0.1:0").unwrap());
+        let port = server.server_addr().to_ip().unwrap().port();
+        let worker = server.clone();
+        std::thread::spawn(move || {
+            while let Ok(request) = worker.recv() {
+                let _ = request.respond(tiny_http::Response::empty(status));
+            }
+        });
+        (server, port)
+    }
+
+    #[test]
+    fn it_is_ready_only_on_the_status_that_means_ready() {
+        let (up, port) = server(200);
+        assert!(HttpProbe::new("127.0.0.1", port, "/health", 200).ready());
+        assert!(
+            !HttpProbe::new("127.0.0.1", port, "/health", 204).ready(),
+            "another status than the expected one is not ready"
+        );
+        up.unblock();
+
+        // a server that says "not yet" (llama-server while it loads) is not ready, and not an error
+        let (loading, port) = server(503);
+        assert!(!HttpProbe::new("127.0.0.1", port, "/health", 200).ready());
+        assert!(HttpProbe::new("127.0.0.1", port, "/health", 503).ready());
+        loading.unblock();
+    }
+
+    #[test]
+    fn nothing_listening_is_not_ready() {
+        let port = crate::runtime::process::ephemeral_port().unwrap();
+        assert!(!HttpProbe::new("127.0.0.1", port, "/health", 200).ready());
+    }
 }

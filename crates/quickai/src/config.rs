@@ -12,7 +12,7 @@ use include_dir::{Dir, DirEntry};
 use quickai_core::config::{load, Layer, LayerSource, Listing, LoadOptions, SourceDoc};
 use quickai_core::diag::Diagnostic;
 use quickai_core::doc::Kind;
-use quickai_core::registry::Registry;
+use quickai_core::registry::{KnownPrimitives, Registry};
 
 use crate::prims;
 
@@ -125,6 +125,12 @@ impl ConfigDirs {
 /// Loads every layer and builds the registry. It always returns one: what could not be loaded is
 /// in `registry.diagnostics`, and the embedded documents keep the application working.
 pub fn build_registry(dirs: &ConfigDirs) -> Registry {
+    build_registry_with(dirs, &prims::known())
+}
+
+/// `build_registry` for a build that provides `known` (a test of what a build that lacks a primitive
+/// does with the documents that need it).
+pub fn build_registry_with(dirs: &ConfigDirs, known: &KnownPrimitives) -> Registry {
     let embedded = EmbeddedSource;
     let bundle = dirs.bundle.as_deref().map(root_source);
     let user = dirs.user.as_deref().map(root_source);
@@ -147,7 +153,28 @@ pub fn build_registry(dirs: &ConfigDirs) -> Registry {
             app_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         },
     );
-    Registry::build(loaded, &prims::known())
+    Registry::build(loaded, known)
+}
+
+/// The engine to run: the one the settings name, or llama.cpp when this build has no document for
+/// it (an engine of a newer version, a document that did not load), with a sentence for the log.
+/// What the settings hold for the engine that is not used is left alone, and so is the choice: it is
+/// not forgotten, and comes back when the document does.
+pub fn engine_in_use(
+    registry: &Registry,
+    settings: &crate::settings::Settings,
+) -> (String, Option<String>) {
+    match settings.chosen_engine() {
+        Some(wanted) if registry.engine(&wanted).is_some() => (wanted, None),
+        Some(wanted) => (
+            crate::settings::DEFAULT_ENGINE.to_string(),
+            Some(format!(
+                "config: the settings name the engine `{wanted}`, which this build has no document for; \
+                 using llama.cpp. What is stored for `{wanted}` is kept."
+            )),
+        ),
+        None => (crate::settings::DEFAULT_ENGINE.to_string(), None),
+    }
 }
 
 fn root_source(root: &Path) -> FsSource {

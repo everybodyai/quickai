@@ -4,5 +4,6 @@
 pub mod probe;
 pub mod process;
 pub mod session;
+pub mod supervisor;
 
 pub use session::Session;

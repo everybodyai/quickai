@@ -11,6 +11,34 @@ impl App {
         }
         let mut open = true;
         let mut close_clicked = false;
+        // an engine that is downloaded on request, not shipped, says so (its own license too); the
+        // text of a window for llama.cpp, which ships, is what it has always been
+        let downloaded = self
+            .engine_doc()
+            .filter(|e| !e.doc.engine.bundled)
+            .map(|e| {
+                let name = e.doc.engine.name.clone();
+                let license = e.doc.engine.license.clone().unwrap_or_default();
+                let hosts = e.doc.engine.egress.join(", ");
+                let contacts = if hosts.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        " When you pull a model it is {name} that contacts {hosts}, and only \
+                         when you ask."
+                    )
+                };
+                (
+                    format!(
+                        "With {name} chosen, ⚙ Settings' \"Look up {name} builds\" contacts \
+                         GitHub to list and download its releases, only when you click it.{contacts}"
+                    ),
+                    format!(
+                        "• {name} is not part of this package: it is downloaded on request, \
+                         under its own license ({license}), and is not bundled."
+                    ),
+                )
+            });
         egui::Window::new("ℹ About QuickAI")
             .open(&mut open)
             .collapsible(false)
@@ -55,6 +83,10 @@ impl App {
                          decisions. This software is provided \"as is\", without warranty of \
                          any kind — see the license below.",
                         );
+                        if let Some((contacts, _)) = &downloaded {
+                            ui.add_space(4.0);
+                            ui.label(contacts);
+                        }
                         ui.add_space(10.0);
 
                         ui.label(egui::RichText::new("License").strong());
@@ -68,6 +100,10 @@ impl App {
                          • Bonsai 8B and Bonsai 1.7B model weights, from PrismML — Apache \
                          License 2.0.",
                         );
+                        if let Some((_, license)) = &downloaded {
+                            ui.add_space(4.0);
+                            ui.label(license);
+                        }
                         ui.add_space(4.0);
                         ui.label(
                             egui::RichText::new(

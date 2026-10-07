@@ -9,6 +9,18 @@ impl App {
     /// The title row: the heading, the Main/Live tab strip (only with live traffic on) and the theme,
     /// speed, settings and About icons, then the rule under it.
     pub(super) fn show_header(&mut self, ui: &mut egui::Ui) {
+        // llama.cpp's settings are described as they always were; another engine's by its own name
+        let settings_hover = if self.engine == crate::settings::DEFAULT_ENGINE {
+            "App and llama.cpp settings — downloaded-models folder, \
+             custom llama-server binary, extra command-line arguments"
+                .to_string()
+        } else {
+            format!(
+                "App and {} settings — the engine, where {} is found and its options",
+                self.engine_name(),
+                self.server_name()
+            )
+        };
         ui.horizontal(|ui| {
             ui.heading("QuickAI");
 
@@ -64,10 +76,7 @@ impl App {
                 ui.add_space(6.0);
                 if ui
                     .add(egui::Button::new("⚙").frame(false))
-                    .on_hover_text(
-                        "App and llama.cpp settings — downloaded-models folder, \
-                                    custom llama-server binary, extra command-line arguments",
-                    )
+                    .on_hover_text(settings_hover)
                     .clicked()
                 {
                     self.show_settings = !self.show_settings;

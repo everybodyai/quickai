@@ -1,0 +1,133 @@
+# The shared nouns that engines and the interface refer to by id: the kinds of input and output a
+# model can have, and the APIs an engine can serve, with how the live-traffic proxy reads each one
+# (docs/examples/vocab/core.toml is the fuller design, with the adapter kinds of Phase 4; they join
+# this file when the interface uses them).
+#
+# `decode` drives the Live tab: how a reply comes (`framing`), and JSON pointers to the text of a
+# request (`prompt`, or the `chat` table) and of a reply (`delta` for each event of a stream,
+# `final` for a reply that comes whole, `error`). The proxy relays every byte as it is whatever
+# this says; a shape nothing here describes is a blank entry in the Live tab, never a failure.
+schema = 1
+kind = "vocab"
+id = "core"
+requires = { primitives = ["decode@1"] }
+
+[[modality]]
+id = "text"
+label = "Text"
+
+[[modality]]
+id = "image"
+label = "Images"
+
+[[modality]]
+id = "audio"
+label = "Audio"
+
+[[modality]]
+id = "video"
+label = "Video"
+
+# ---- OpenAI's shapes, which both engines serve --------------------------------------------------------
+[[api]]
+id = "openai.chat"
+paths = ["/v1/chat/completions", "/chat/completions"]
+capabilities = ["chat"]
+
+[api.decode]
+framing = ["sse", "json"]
+delta = ["/choices/0/delta/content"]
+final = ["/choices/0/message/content"]
+error = ["/error"]
+
+[api.decode.chat]
+messages = "/messages"
+role = "/role"
+content = "/content"
+skip_roles = ["system"]
+parts = { type = "/type", text = "/text" }
+
+# What the API panel shows: the first example whose `when` holds, with this engine's address and the
+# name of the model (`${api.base_url}`, `${api.model}`). The image one waits for models that take
+# pictures (Phase 4); every model has text input today.
+[[api.examples]]
+label = "Text"
+when = "true"
+curl = '''
+curl ${api.base_url}/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"${api.model}","messages":[{"role":"user","content":"Hello"}]}'
+'''
+
+[[api.examples]]
+label = "Image"
+when = "has(model.modalities.input, 'image')"
+curl = '''
+curl ${api.base_url}/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"${api.model}","messages":[{"role":"user","content":[{"type":"text","text":"What is in this picture?"},{"type":"image_url","image_url":{"url":"data:image/png;base64,<BASE64>"}}]}]}'
+'''
+
+[[api]]
+id = "openai.completions"
+paths = ["/v1/completions", "/completions"]
+capabilities = ["completion"]
+
+[api.decode]
+framing = ["sse", "json"]
+prompt = "/prompt"
+delta = ["/choices/0/text"]
+final = ["/choices/0/text"]
+error = ["/error"]
+
+[[api]]
+id = "openai.embeddings"
+paths = ["/v1/embeddings"]
+capabilities = ["embedding"]
+
+# ---- llama.cpp's own ------------------------------------------------------------------------------------
+[[api]]
+id = "llamacpp.completion"
+paths = ["/completion"]
+capabilities = ["completion"]
+
+[api.decode]
+framing = ["sse", "json"]
+prompt = "/prompt"
+delta = ["/content"]
+final = ["/content"]
+error = ["/error"]
+
+# ---- Ollama's own -----------------------------------------------------------------------------------------
+# A reply streams as one JSON object per line (`application/x-ndjson`) unless the request says
+# `"stream": false`. A request with no prompt (or no messages) is a load or an unload: it goes
+# through the same path and is not a conversation, so the Live tab does not show it.
+[[api]]
+id = "ollama.chat"
+paths = ["/api/chat"]
+capabilities = ["chat"]
+
+[api.decode]
+framing = ["ndjson", "json"]
+delta = ["/message/content"]
+final = ["/message/content"]
+error = ["/error"]
+
+[api.decode.chat]
+messages = "/messages"
+role = "/role"
+content = "/content"
+skip_roles = ["system"]
+images = "/images"              # base64 images in a message are listed as attachments
+
+[[api]]
+id = "ollama.generate"
+paths = ["/api/generate"]
+capabilities = ["completion"]
+
+[api.decode]
+framing = ["ndjson", "json"]
+prompt = "/prompt"
+delta = ["/response"]
+final = ["/response"]
+error = ["/error"]

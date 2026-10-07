@@ -15,12 +15,16 @@ mod hardware;
 mod jobs;
 mod launch;
 mod models;
+#[cfg(test)]
+mod p3;
 mod paths;
 mod prims;
 mod proxy;
 mod remote;
 mod runtime;
 mod settings;
+#[cfg(test)]
+mod testkit;
 
 /// Must match the AppImage's `.desktop` file (`StartupWMClass=quickai`, made
 /// by `build/appimage.sh` in the `quickai_base` repository) so window managers

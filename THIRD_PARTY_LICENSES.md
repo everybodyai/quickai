@@ -10,6 +10,11 @@ their own license terms, reproduced in full below:
   [PrismML](https://huggingface.co/prism-ml) — Apache License 2.0. Bundled
   unmodified; no changes have been made to the weight files.
 
+- **Ollama** is *not* part of this package. If you choose it as the engine,
+  QuickAI downloads it on request from [its releases](https://github.com/ollama/ollama/releases)
+  — MIT License, © Ollama. It is downloaded, not bundled, and its archive carries
+  its own licence files, which stay with the files you download.
+
 Neither license requires QuickAI's own code to be released under the same
 terms — each applies only to the files it covers.
 

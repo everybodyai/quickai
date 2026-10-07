@@ -1,29 +1,40 @@
-//! The reference page for engine documents is generated from the types, and these tests keep it
-//! honest (docs/implementation-plan.md, WP2.7): the checked-in page is the generated one, every
-//! table lists exactly the fields of the type behind it, every field type is listed, and the keys of
-//! the shapes that are enum variants are ones the typed schema accepts.
+//! The reference pages for engine and vocabulary documents are generated from the types, and these
+//! tests keep them honest (docs/implementation-plan.md, WP2.7 and WP3.6): each checked-in page is
+//! the generated one, every table lists exactly the fields of the type behind it, every field type
+//! is listed, and the keys of the shapes that are enum variants (or that a table of its own does not
+//! cover) are ones the typed schema accepts.
 
 use std::path::{Path, PathBuf};
 
 use quickai_core::doc::engine::EngineDoc;
 use quickai_core::doc::read_body;
-use quickai_core::doc::reference::{render, type_name, GROUPS, TYPES};
+use quickai_core::doc::reference::{render, render_vocab, type_name, GROUPS, TYPES, VOCAB_GROUPS};
+use quickai_core::doc::vocab::VocabDoc;
 
 const ENGINE_RS: &str = include_str!("../src/doc/engine.rs");
+const VOCAB_RS: &str = include_str!("../src/doc/vocab.rs");
 
-fn page_path() -> PathBuf {
+fn page_path(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("docs")
         .join("reference")
-        .join("engine-fields.md")
+        .join(name)
 }
 
 #[test]
 fn the_checked_in_page_is_the_generated_one() {
-    let generated = render();
-    let path = page_path();
+    check_golden("engine-fields.md", render());
+}
+
+#[test]
+fn the_checked_in_vocabulary_page_is_the_generated_one() {
+    check_golden("vocab-fields.md", render_vocab());
+}
+
+fn check_golden(name: &str, generated: String) {
+    let path = page_path(name);
     if std::env::var_os("QUICKAI_UPDATE_GOLDEN").is_some_and(|v| !v.is_empty() && v != "0") {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, &generated).unwrap();
@@ -44,48 +55,157 @@ fn the_checked_in_page_is_the_generated_one() {
     );
 }
 
-/// The keys of `struct <name>` as a document spells them (a `#[serde(rename = "...")]` wins), read
-/// from the source of the types.
-fn struct_keys(name: &str) -> Vec<String> {
-    let start = ENGINE_RS
+/// The keys of `struct <name>` in `source` as a document spells them (a `rename = "..."` in a
+/// `#[serde(...)]` wins), read from the source of the types.
+fn struct_keys(source: &str, name: &str) -> Vec<String> {
+    let start = source
         .lines()
         .position(|l| l.starts_with(&format!("pub struct {name} {{")))
-        .unwrap_or_else(|| panic!("no `pub struct {name}` in doc/engine.rs"));
+        .unwrap_or_else(|| panic!("no `pub struct {name}` in the types"));
     let mut keys = Vec::new();
     let mut rename: Option<String> = None;
-    for line in ENGINE_RS.lines().skip(start + 1) {
+    let mut flattened = false;
+    for line in source.lines().skip(start + 1) {
         if line == "}" {
             break;
         }
         let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("#[serde(rename = \"") {
-            rename = rest.split('"').next().map(str::to_string);
+        if trimmed.starts_with("#[serde(") && trimmed.contains("flatten") {
+            // the keys of a flattened field are another type's: the field is no key of its own
+            flattened = true;
+        } else if trimmed.starts_with("#[serde(") && trimmed.contains("rename = \"") {
+            rename = trimmed
+                .split("rename = \"")
+                .nth(1)
+                .and_then(|rest| rest.split('"').next())
+                .map(str::to_string);
         } else if let Some(rest) = trimmed.strip_prefix("pub ") {
             let field = rest.split(':').next().unwrap().trim().to_string();
-            keys.push(rename.take().unwrap_or(field));
+            let key = rename.take().unwrap_or(field);
+            if !std::mem::take(&mut flattened) {
+                keys.push(key);
+            }
         }
     }
     keys
 }
 
 #[test]
-fn every_table_lists_exactly_the_fields_of_its_type() {
-    for group in GROUPS {
-        let Some(source) = group.source else { continue };
-        let mut documented: Vec<String> = group
-            .attributes
-            .iter()
-            .map(|a| a.name.to_string())
-            .collect();
-        let mut actual = struct_keys(source);
-        documented.sort();
-        actual.sort();
-        assert_eq!(
-            documented, actual,
-            "the table `{}` and `struct {source}` disagree: add or remove a row in doc/reference.rs",
-            group.heading
+fn p3_e19_every_table_lists_exactly_the_fields_of_its_type_in_both_directions() {
+    for (types, groups) in [(ENGINE_RS, GROUPS), (VOCAB_RS, VOCAB_GROUPS)] {
+        for group in groups {
+            let Some(source) = group.source else { continue };
+            let mut documented: Vec<String> = group
+                .attributes
+                .iter()
+                .map(|a| a.name.to_string())
+                .collect();
+            let mut actual = struct_keys(types, source);
+            documented.sort();
+            actual.sort();
+            assert_eq!(
+                documented, actual,
+                "the table `{}` and `struct {source}` disagree: add or remove a row in doc/reference.rs",
+                group.heading
+            );
+        }
+    }
+}
+
+#[test]
+fn the_vocabulary_page_has_a_table_for_every_type_of_the_document() {
+    let types: Vec<&str> = VOCAB_RS
+        .lines()
+        .filter_map(|l| l.strip_prefix("pub struct "))
+        .filter_map(|rest| rest.split(' ').next())
+        .collect();
+    let described: Vec<&str> = VOCAB_GROUPS.iter().filter_map(|g| g.source).collect();
+    for ty in &types {
+        // the document itself is its two tables
+        if *ty == "VocabDoc" {
+            continue;
+        }
+        assert!(
+            described.contains(ty),
+            "`struct {ty}` of doc/vocab.rs has no table in VOCAB_GROUPS"
         );
     }
+    for group in VOCAB_GROUPS {
+        assert!(group.source.is_some(), "{}", group.heading);
+    }
+}
+
+/// A vocabulary document that says every key there is.
+const EVERY_VOCAB_KEY: &str = r#"
+[[modality]]
+id = "image"
+label = "Images"
+
+[[api]]
+id = "acme.chat"
+paths = ["/chat"]
+capabilities = ["chat"]
+
+[api.decode]
+framing = ["sse", "ndjson", "json"]
+delta = ["/d"]
+final = ["/f"]
+error = ["/e"]
+
+[api.decode.chat]
+messages = "/messages"
+role = "/role"
+content = "/content"
+skip_roles = ["system"]
+images = "/images"
+
+[api.decode.chat.parts]
+type = "/type"
+text = "/text"
+
+[[api.examples]]
+label = "Chat with an image"
+when = "has(model.modalities.input, 'image')"
+curl = "curl http://localhost/chat"
+
+[[api]]
+id = "acme.complete"
+paths = ["/complete"]
+
+[api.decode]
+framing = ["json"]
+prompt = "/prompt"
+"#;
+
+#[test]
+fn every_key_the_vocabulary_page_lists_is_one_the_schema_accepts() {
+    let table: toml::Table = toml::from_str(EVERY_VOCAB_KEY).unwrap();
+    let typed =
+        read_body::<VocabDoc>(&table).unwrap_or_else(|e| panic!("{}: {}", e.path, e.message));
+    assert!(
+        typed.unknown.is_empty(),
+        "keys the schema does not know: {:?}",
+        typed.unknown
+    );
+    for group in VOCAB_GROUPS {
+        for attribute in group.attributes {
+            // a key is said as `key = ...` or, for a table, as a header ending in `.key]`
+            let (as_value, as_table) = (
+                format!("{} =", attribute.name),
+                format!(".{}]", attribute.name),
+            );
+            assert!(
+                EVERY_VOCAB_KEY.contains(&as_value) || EVERY_VOCAB_KEY.contains(&as_table),
+                "`{}` of `{}` is not exercised by the document above",
+                attribute.name,
+                group.heading
+            );
+        }
+    }
+    // and what a key that is not on the page does
+    let table: toml::Table = toml::from_str("[[api]]\nid = \"x\"\npahts = []\n").unwrap();
+    let typed = read_body::<VocabDoc>(&table).unwrap();
+    assert_eq!(typed.unknown.len(), 1, "{:?}", typed.unknown);
 }
 
 fn snake(camel: &str) -> String {
@@ -128,13 +248,15 @@ fn the_keys_of_the_variant_shapes_are_ones_the_schema_accepts() {
 [engine]
 name = "x"
 [locate]
-strategies = [ { use = "setting", field = "f" }, { use = "next_to_exe", file = "f" }, { use = "dev_tree", path = "p" } ]
+strategies = [ { use = "setting", field = "f" }, { use = "next_to_exe", file = "f" }, { use = "dev_tree", path = "p" }, { use = "installed", root = "${data}/x", pick = "newest", binary = { linux = "bin/x", windows = "x.exe" } }, { use = "path_search", name = "x" }, { use = "known_paths", linux = ["/usr/bin/x"], macos = ["/opt/x"], windows = ["%LOCALAPPDATA%\\x.exe"] } ]
+[runtime]
+version = { exec = ["${binary}", "--version"], regex = 'version is (\S+)', as = "version" }
 [acquire]
 root = "${data}/x"
 filter_hint = "h"
-feed = { use = "github_release", repo = "a/b", per_page = 10, show = 5, prereleases = true }
+feed = { use = "github_release", repo = "a/b", per_page = 10, show = 5, prereleases = true, api = "https://api.example.com", digest = true }
 assets = { by = "keywords", ext = [".zip"], exclude = ["x"], os = { linux = ["l"] }, arch = { x86_64 = ["x"] }, label = "${tag}" }
-install = { use = "archive", binary = { name = "x", search_depth = 4 }, chmod = true }
+install = { use = "archive", binary = { name = "x", search_depth = 4 }, chmod = true, verify = "digest", smoke = ["${binary}", "--version"], skip = [ { when = "gpu.known", glob = "lib/cuda_*" } ] }
 backends = [ { match = "a", label = "A", needs_gpu = "amd" } ]
 "#;
     let names = r#"

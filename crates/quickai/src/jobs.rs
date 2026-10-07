@@ -10,9 +10,26 @@ use crate::hardware::format_bytes;
 /// What a worker tells the UI while it runs. `T` is what a successful job produces: the file name
 /// of a download, the binary of an install.
 pub enum JobEvent<T> {
-    Progress { downloaded: u64, total: Option<u64> },
+    Progress {
+        downloaded: u64,
+        total: Option<u64>,
+    },
+    /// How far along it is, from 0 to 1, when bytes are not what the work is counted in (a model
+    /// pull adds up layers the engine announces as it goes).
+    Fraction(f32),
+    /// A line about what the job is doing now (`Unpacking ollama-linux-amd64.tar.zst`, or an
+    /// engine's own words while it pulls a model), for the log.
+    Status(String),
     Done(T),
     Failed(String),
+}
+
+/// How far along `downloaded` of `total` is, from 0 to 1: more than the total announced is all of
+/// it, and a total that is not there, or is 0, says nothing about how far along it is.
+pub fn fraction_of(downloaded: u64, total: Option<u64>) -> Option<f32> {
+    total
+        .filter(|t| *t > 0)
+        .map(|total| (downloaded as f64 / total as f64).min(1.0) as f32)
 }
 
 /// A running job as the UI holds it: the receiving end of the channel plus what the progress line
@@ -25,6 +42,10 @@ pub struct Job<T> {
     pub verb: &'static str,
     pub downloaded: u64,
     pub total: Option<u64>,
+    /// Set instead of the two above by a job that reports a fraction.
+    fraction_only: Option<f32>,
+    /// What the job has said since the interface last asked (`take_statuses`).
+    statuses: Vec<String>,
 }
 
 impl<T: Send + 'static> Job<T> {
@@ -50,6 +71,8 @@ impl<T: Send + 'static> Job<T> {
             verb,
             downloaded: 0,
             total: None,
+            fraction_only: None,
+            statuses: Vec::new(),
         }
     }
 }
@@ -65,6 +88,8 @@ impl<T> Job<T> {
                     self.downloaded = downloaded;
                     self.total = total;
                 }
+                JobEvent::Fraction(f) => self.fraction_only = Some(f.clamp(0.0, 1.0)),
+                JobEvent::Status(line) => self.statuses.push(line),
                 JobEvent::Done(value) => outcome = Some(Ok(value)),
                 JobEvent::Failed(message) => outcome = Some(Err(message)),
             }
@@ -72,9 +97,22 @@ impl<T> Job<T> {
         outcome
     }
 
+    /// The lines the job has said since the last call, oldest first: for the log pane.
+    pub fn take_statuses(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.statuses)
+    }
+
     /// The progress line: "Downloading model.gguf: 1.2 GB / 4.0 GB", or without the total when the
     /// server did not announce one.
     pub fn progress_line(&self) -> String {
+        if let Some(fraction) = self.fraction_only {
+            return format!(
+                "{} {}: {}%",
+                self.verb,
+                self.label,
+                (fraction * 100.0).floor() as u32
+            );
+        }
         match self.total.filter(|t| *t > 0) {
             Some(total) => format!(
                 "{} {}: {} / {}",
@@ -94,9 +132,10 @@ impl<T> Job<T> {
 
     /// How far along it is, for a progress bar; `None` when the total is not known.
     pub fn fraction(&self) -> Option<f32> {
-        self.total
-            .filter(|t| *t > 0)
-            .map(|total| self.downloaded as f32 / total as f32)
+        if self.fraction_only.is_some() {
+            return self.fraction_only;
+        }
+        fraction_of(self.downloaded, self.total)
     }
 
     /// Blocks until the job finishes or `timeout` passes. For tests, which have no frame loop.
@@ -173,6 +212,27 @@ mod tests {
         assert!(job.poll().is_none());
         release_tx.send(()).unwrap();
         assert_eq!(job.wait(Duration::from_secs(5)).unwrap().unwrap(), 7);
+    }
+
+    #[test]
+    fn p3_w02c_a_total_of_zero_says_nothing_and_more_than_the_total_is_all_of_it() {
+        assert_eq!(fraction_of(5, Some(0)), None, "a total of 0");
+        assert_eq!(fraction_of(5, None), None, "no total announced");
+        assert_eq!(fraction_of(0, Some(100)), Some(0.0));
+        assert_eq!(fraction_of(25, Some(100)), Some(0.25));
+        assert_eq!(fraction_of(100, Some(100)), Some(1.0), "exactly the total");
+        assert_eq!(
+            fraction_of(150, Some(100)),
+            Some(1.0),
+            "more than the total"
+        );
+        assert_eq!(fraction_of(u64::MAX, Some(1)), Some(1.0));
+        assert_eq!(fraction_of(u64::MAX, Some(u64::MAX)), Some(1.0));
+        // and a job reports the same
+        let mut job: Job<()> = Job::spawn("m.gguf".into(), "Downloading", || {}, |_| {});
+        job.downloaded = 3_000;
+        job.total = Some(2_000);
+        assert_eq!(job.fraction(), Some(1.0));
     }
 
     #[test]

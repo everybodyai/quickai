@@ -11,46 +11,69 @@ pub mod context;
 pub mod engine;
 #[cfg(test)]
 pub(crate) mod fixtures;
+pub mod input;
+pub mod vocab;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::config::{Loaded, MergedDoc};
 use crate::diag::{has_errors, Diagnostic, Severity};
 use crate::doc::engine::EngineDoc;
+use crate::doc::vocab::VocabDoc;
 use crate::doc::{read_body, Kind, PrimitiveRef};
 use crate::docpath::DocPath;
 
 pub use engine::Engine;
+pub use input::InputAction;
+pub use vocab::{Api, Vocabulary};
 
-/// The primitives (and versions) the running application provides. The application declares them;
-/// the core only compares (docs/implementation-plan.md, C5).
+/// The primitives (and versions) the running application provides, and the widgets its interface can
+/// draw. The application declares them; the core only compares (docs/implementation-plan.md, C5).
 #[derive(Clone, Debug, Default)]
-pub struct KnownPrimitives(BTreeSet<PrimitiveRef>);
+pub struct KnownPrimitives {
+    primitives: BTreeSet<PrimitiveRef>,
+    /// The names a field's `ui.widget` may have. `None` when the application did not say, which is
+    /// how a registry built to test something else has it: no widget name is held to anything.
+    widgets: Option<BTreeSet<String>>,
+}
 
 impl KnownPrimitives {
     /// `KnownPrimitives::new(&["spawn@1", "locate.setting@1"])`. A malformed entry is a bug in the
     /// application, not in a document, so it panics.
     pub fn new(items: &[&str]) -> Self {
-        KnownPrimitives(
-            items
+        KnownPrimitives {
+            primitives: items
                 .iter()
                 .map(|i| PrimitiveRef::parse(i).unwrap_or_else(|e| panic!("bad primitive id: {e}")))
                 .collect(),
-        )
+            widgets: None,
+        }
+    }
+
+    /// Says which widgets the interface has: a field that names another is a load error.
+    pub fn with_widgets(mut self, names: &[&str]) -> Self {
+        self.widgets = Some(names.iter().map(|n| (*n).to_string()).collect());
+        self
     }
 
     pub fn supports(&self, p: &PrimitiveRef) -> bool {
-        self.0.contains(p)
+        self.primitives.contains(p)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &PrimitiveRef> {
-        self.0.iter()
+        self.primitives.iter()
+    }
+
+    /// The widget names a document may use, when the application said.
+    pub fn widget_names(&self) -> Option<&BTreeSet<String>> {
+        self.widgets.as_ref()
     }
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct Registry {
     engines: BTreeMap<String, Engine>,
+    vocabulary: Vocabulary,
     /// Documents of kinds this version does not interpret yet, kept so nothing is lost.
     other: BTreeMap<(Kind, String), MergedDoc>,
     /// Everything that went wrong while loading and building, in order.
@@ -63,10 +86,31 @@ impl Registry {
             diagnostics: loaded.diagnostics,
             ..Default::default()
         };
-        for ((kind, id), merged) in loaded.docs {
+        // vocabularies first: an engine's API names are held to them
+        let (vocabularies, rest): (Vec<_>, Vec<_>) = loaded
+            .docs
+            .into_iter()
+            .partition(|((kind, _), _)| *kind == Kind::Vocab);
+        for ((_, _), merged) in vocabularies {
+            let vocabulary = registry.vocabulary.clone();
+            let built = build_layered(merged, &mut registry.diagnostics, |merged| {
+                try_build_vocab(merged, known, &vocabulary)
+            });
+            if let Some((merged, apis, paths)) = built {
+                registry
+                    .vocabulary
+                    .add(&merged, apis, &paths)
+                    .expect("the conflicts were checked while building");
+            }
+        }
+        for ((kind, id), merged) in rest {
             match kind {
                 Kind::Engine => {
-                    if let Some(engine) = build_engine(merged, known, &mut registry.diagnostics) {
+                    let vocabulary = registry.vocabulary.clone();
+                    let built = build_layered(merged, &mut registry.diagnostics, |merged| {
+                        try_build(merged, known, &vocabulary)
+                    });
+                    if let Some(engine) = built {
                         registry.engines.insert(id, engine);
                     }
                 }
@@ -94,6 +138,20 @@ impl Registry {
         self.engines.values()
     }
 
+    /// The APIs the vocabulary documents define.
+    pub fn vocabulary(&self) -> &Vocabulary {
+        &self.vocabulary
+    }
+
+    /// How the proxy reads the APIs named, in that order (those the vocabulary only names are
+    /// left out: they are relayed and not shown).
+    pub fn decoders_for<'a>(
+        &self,
+        ids: impl IntoIterator<Item = &'a String>,
+    ) -> Vec<crate::decode::ApiDecoder> {
+        self.vocabulary.decoders_for(ids)
+    }
+
     pub fn document(&self, kind: Kind, id: &str) -> Option<&MergedDoc> {
         self.other.get(&(kind, id.to_string()))
     }
@@ -103,13 +161,14 @@ impl Registry {
     }
 }
 
-/// Checks one engine document, falling back to lower layers when the merge of all of them is
-/// invalid.
-fn build_engine(
+/// Checks one document, falling back to lower layers when the merge of all of them is invalid.
+/// `try_build` gives what a merge makes and the problems with it; a document that is built is
+/// returned together with the merge it was built from (a lower layer's, after a fall back).
+fn build_layered<T>(
     mut merged: MergedDoc,
-    known: &KnownPrimitives,
     diagnostics: &mut Vec<Diagnostic>,
-) -> Option<Engine> {
+    try_build: impl Fn(&MergedDoc) -> (Option<T>, Vec<Diagnostic>),
+) -> Option<T> {
     let mut reported: BTreeSet<String> = diagnostics.iter().map(|d| d.to_string()).collect();
     let mut push = |diagnostics: &mut Vec<Diagnostic>, list: Vec<Diagnostic>| {
         for d in list {
@@ -119,11 +178,11 @@ fn build_engine(
         }
     };
     loop {
-        let (engine, mut problems) = try_build(&merged, known);
-        match engine {
-            Some(engine) => {
+        let (built, mut problems) = try_build(&merged);
+        match built {
+            Some(built) => {
                 push(diagnostics, problems);
-                return Some(engine);
+                return Some(built);
             }
             None if merged.contributors.len() > 1 => {
                 let mut contributors = merged.contributors.clone();
@@ -149,24 +208,74 @@ fn build_engine(
     }
 }
 
-fn try_build(merged: &MergedDoc, known: &KnownPrimitives) -> (Option<Engine>, Vec<Diagnostic>) {
-    let mut problems = Vec::new();
+/// The primitives a document needs that this build does not provide, as errors.
+fn missing_primitives(merged: &MergedDoc, known: &KnownPrimitives) -> Vec<Diagnostic> {
+    merged
+        .envelope
+        .requires_primitives
+        .iter()
+        .filter(|p| !known.supports(p))
+        .map(|p| {
+            merged
+                .diagnostic(
+                    Severity::Error,
+                    &DocPath::default().key("requires").key("primitives"),
+                    format!(
+                        "the document needs `{p}`, which this version of QuickAI does not provide"
+                    ),
+                )
+                .with_hint("update QuickAI, or remove the document")
+        })
+        .collect()
+}
 
-    for p in &merged.envelope.requires_primitives {
-        if !known.supports(p) {
-            problems.push(
-                merged
-                    .diagnostic(
-                        Severity::Error,
-                        &DocPath::default().key("requires").key("primitives"),
-                        format!(
-                            "the document needs `{p}`, which this version of QuickAI does not provide"
-                        ),
-                    )
-                    .with_hint("update QuickAI, or remove the document"),
-            );
-        }
+/// One vocabulary document: its APIs, checked, and none of them in conflict with those already
+/// defined (with a lower layer's version of the same document tried when this one fails).
+#[allow(clippy::type_complexity)]
+fn try_build_vocab(
+    merged: &MergedDoc,
+    known: &KnownPrimitives,
+    vocabulary: &Vocabulary,
+) -> (
+    Option<(MergedDoc, Vec<Api>, Vec<(String, String)>)>,
+    Vec<Diagnostic>,
+) {
+    let mut problems = missing_primitives(merged, known);
+    if has_errors(&problems) {
+        return (None, problems);
     }
+    let typed = match read_body::<VocabDoc>(&merged.body) {
+        Ok(t) => t,
+        Err(e) => {
+            problems.push(merged.diagnostic(Severity::Error, &e.path, e.message));
+            return (None, problems);
+        }
+    };
+    for path in &typed.unknown {
+        problems.push(merged.diagnostic(
+            Severity::Warning,
+            path,
+            format!("`{path}` is not used by this version of QuickAI and is ignored"),
+        ));
+    }
+    let (apis, paths, more) = vocab::compile(merged, &typed.value);
+    problems.extend(more);
+    if has_errors(&problems) {
+        return (None, problems);
+    }
+    if let Err(conflicts) = vocabulary.clone().add(merged, apis.clone(), &paths) {
+        problems.extend(conflicts);
+        return (None, problems);
+    }
+    (Some((merged.clone(), apis, paths)), problems)
+}
+
+fn try_build(
+    merged: &MergedDoc,
+    known: &KnownPrimitives,
+    vocabulary: &Vocabulary,
+) -> (Option<Engine>, Vec<Diagnostic>) {
+    let mut problems = missing_primitives(merged, known);
     if has_errors(&problems) {
         return (None, problems);
     }
@@ -186,8 +295,20 @@ fn try_build(merged: &MergedDoc, known: &KnownPrimitives) -> (Option<Engine>, Ve
         ));
     }
 
-    let (engine, more) = engine::compile(merged, typed.value);
+    let apis = typed.value.provides.apis.clone();
+    let traffic = typed
+        .value
+        .traffic
+        .as_ref()
+        .map(|t| t.apis.clone())
+        .unwrap_or_default();
+    let (engine, more) = engine::compile(merged, typed.value, known);
     problems.extend(more);
+    // the names of the APIs it serves and of those whose traffic is read are held to the vocabulary
+    let mut unknown = vocabulary.check_engine_apis(merged, "provides", "apis", &apis);
+    unknown.extend(vocabulary.check_engine_apis(merged, "traffic", "apis", &traffic));
+    let engine = if has_errors(&unknown) { None } else { engine };
+    problems.extend(unknown);
     (engine, problems)
 }
 
@@ -795,7 +916,7 @@ backends = [ { match = "cuda", label = "CUDA", needs_gpu = "nvidia" }, { match =
             errors
                 .iter()
                 .any(|e| e.contains("cannot launch an engine by `telepathy`")
-                    && e.contains("the strategies it knows are: spawn")),
+                    && e.contains("the strategies it knows are: attach_if_running, spawn")),
             "{errors:?}"
         );
 
@@ -813,6 +934,203 @@ backends = [ { match = "cuda", label = "CUDA", needs_gpu = "nvidia" }, { match =
         assert!(texts(&r, Severity::Error)
             .iter()
             .any(|e| e.contains("needs `value` or `prepend`")));
+    }
+
+    /// `GOOD` with a `stop` line added to its `[launch.spawn]` table.
+    fn with_stop(stop: &str) -> String {
+        with(
+            "[launch.ready]",
+            &format!("stop = {stop}\n\n[launch.ready]"),
+        )
+    }
+
+    fn stop_of(r: &Registry) -> engine::CompiledStop {
+        r.engine("llamacpp").unwrap().spawn.as_ref().unwrap().stop
+    }
+
+    #[test]
+    fn a_graceful_stop_has_its_waits_and_defaults() {
+        use crate::doc::engine::StopPolicy;
+        use std::time::Duration;
+
+        let r = registry(
+            &with_stop(r#"{ policy = "graceful", grace = "300ms", exit_grace = "1s" }"#),
+            None,
+        );
+        assert!(texts(&r, Severity::Error).is_empty(), "{:?}", r.diagnostics);
+        let stop = stop_of(&r);
+        assert_eq!(stop.policy, StopPolicy::Graceful);
+        assert_eq!(stop.grace, Duration::from_millis(300));
+        assert_eq!(stop.exit_grace, Duration::from_secs(1));
+
+        // a graceful stop that says nothing about its waits has the defaults
+        let r = registry(&with_stop(r#"{ policy = "graceful" }"#), None);
+        let stop = stop_of(&r);
+        assert_eq!(stop.grace, engine::DEFAULT_STOP_GRACE);
+        assert_eq!(stop.exit_grace, engine::DEFAULT_EXIT_GRACE);
+
+        // `kill` is the default and waits for nothing
+        assert_eq!(
+            stop_of(&registry(GOOD, None)),
+            engine::CompiledStop::default()
+        );
+    }
+
+    #[test]
+    fn the_waits_of_a_stop_are_checked_where_they_are_written() {
+        let r = registry(&with_stop(r#"{ policy = "graceful", grace = "10" }"#), None);
+        assert!(
+            texts(&r, Severity::Error)
+                .iter()
+                .any(|e| e.contains("launch.spawn.stop.grace") && e.contains("needs a unit")),
+            "{:?}",
+            r.diagnostics
+        );
+        // a policy this build does not have is the parser's error, naming the place
+        let r = registry(&with_stop(r#"{ policy = "polite" }"#), None);
+        assert!(r.engine("llamacpp").is_none() && !r.diagnostics.is_empty());
+        // waits given to a stop that never waits are noticed
+        let r = registry(&with_stop(r#"{ policy = "kill", grace = "5s" }"#), None);
+        assert!(
+            texts(&r, Severity::Warning)
+                .iter()
+                .any(|w| w.contains("`grace` belongs to `policy = \"graceful\"`")),
+            "{:?}",
+            r.diagnostics
+        );
+        assert!(r.engine("llamacpp").is_some());
+    }
+
+    #[test]
+    fn what_a_ready_timeout_means_is_the_documents_to_say() {
+        use crate::doc::engine::OnTimeout;
+        let r = registry(GOOD, None);
+        let ready = r.engine("llamacpp").unwrap().ready.as_ref().unwrap();
+        assert_eq!(
+            ready.on_timeout,
+            OnTimeout::Fail,
+            "the default is to give up"
+        );
+        let r = registry(
+            &with(
+                "interval = \"500ms\"",
+                "interval = \"500ms\"\non_timeout = \"wait\"",
+            ),
+            None,
+        );
+        let ready = r.engine("llamacpp").unwrap().ready.as_ref().unwrap();
+        assert_eq!(ready.on_timeout, OnTimeout::Wait);
+        let r = registry(
+            &with(
+                "interval = \"500ms\"",
+                "interval = \"500ms\"\non_timeout = \"shrug\"",
+            ),
+            None,
+        );
+        assert!(r.engine("llamacpp").is_none(), "{:?}", r.diagnostics);
+    }
+
+    #[test]
+    fn the_new_locate_strategies_and_the_version_probe_are_checked_where_they_are_written() {
+        let strategies = |text: &str| {
+            with(
+                "  { use = \"next_to_exe\", file = \"llama-server\" },",
+                &format!("  {{ use = \"next_to_exe\", file = \"llama-server\" }},\n  {text},"),
+            )
+        };
+        let errors_of = |doc: String| texts(&registry(&doc, None), Severity::Error);
+        let good = [
+            r#"{ use = "installed", root = "${data}/x", binary = { linux = "bin/x", windows = "x.exe" } }"#,
+            r#"{ use = "path_search", name = "x" }"#,
+            r#"{ use = "known_paths", linux = ["/usr/bin/x"] }"#,
+        ];
+        for strategy in good {
+            assert!(errors_of(strategies(strategy)).is_empty(), "{strategy}");
+        }
+        for (strategy, wanted) in [
+            (
+                r#"{ use = "installed", root = "${nonsense}/x", binary = { linux = "bin/x" } }"#,
+                "nonsense",
+            ),
+            (
+                r#"{ use = "installed", root = "${data}/x", binary = {} }"#,
+                "needs the path of its executable",
+            ),
+            (
+                r#"{ use = "installed", root = "${data}/x", binary = { linux = "../x" } }"#,
+                "not a path inside a build",
+            ),
+            (
+                r#"{ use = "installed", root = "${data}/x", binary = { linux = "/usr/bin/x" } }"#,
+                "not a path inside a build",
+            ),
+            (
+                r#"{ use = "path_search", name = "bin/x" }"#,
+                "not a program name",
+            ),
+            (
+                r#"{ use = "path_search", name = "" }"#,
+                "not a program name",
+            ),
+            (r#"{ use = "known_paths" }"#, "lists no place"),
+            (
+                r#"{ use = "known_paths", linux = [""] }"#,
+                "cannot be empty",
+            ),
+        ] {
+            let errors = errors_of(strategies(strategy));
+            assert!(
+                errors.iter().any(|e| e.contains(wanted)),
+                "{strategy}: {errors:?}"
+            );
+        }
+        // a system nobody knows is a warning, never used
+        let r = registry(
+            &strategies(
+                r#"{ use = "installed", root = "${data}/x", binary = { linux = "bin/x", plan9 = "x" } }"#,
+            ),
+            None,
+        );
+        assert!(texts(&r, Severity::Warning)
+            .iter()
+            .any(|w| w.contains("plan9")));
+        assert!(r.engine("llamacpp").is_some());
+
+        // the version probe
+        let runtime = |body: &str| {
+            with(
+                "[launch]",
+                &format!("[runtime]\nversion = {body}\n\n[launch]"),
+            )
+        };
+        assert!(errors_of(runtime(
+            r#"{ exec = ["${binary}", "--version"], regex = 'version is (\S+)', as = "version" }"#
+        ))
+        .is_empty());
+        for (body, wanted) in [
+            (
+                r#"{ exec = ["tool", "--version"], regex = '(\S+)', as = "version" }"#,
+                "starts with it",
+            ),
+            (
+                r#"{ exec = ["${binary}"], regex = 'version', as = "version" }"#,
+                "no group",
+            ),
+            (
+                r#"{ exec = ["${binary}"], regex = '(unclosed', as = "version" }"#,
+                "not a valid pattern",
+            ),
+            (
+                r#"{ exec = ["${binary}"], regex = '(\S+)', as = "build" }"#,
+                "not something this version",
+            ),
+        ] {
+            let errors = errors_of(runtime(body));
+            assert!(
+                errors.iter().any(|e| e.contains(wanted)),
+                "{body}: {errors:?}"
+            );
+        }
     }
 
     #[test]
@@ -835,13 +1153,16 @@ backends = [ { match = "cuda", label = "CUDA", needs_gpu = "nvidia" }, { match =
 
     #[test]
     fn keys_this_version_does_not_know_are_warnings() {
-        // `models` is a section of the design that no phase has built yet
-        let r = registry(&format!("{GOOD}\n[models]\nneeds_server = true\n"), None);
+        // `components` is a section of the design that no phase has built yet (Phase 4)
+        let r = registry(
+            &format!("{GOOD}\n[components.mmproj]\nflag = \"--mmproj\"\n"),
+            None,
+        );
         assert!(r.engine("llamacpp").is_some());
         let warnings = texts(&r, Severity::Warning);
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert!(
-            warnings[0].contains("`models` is not used by this version of QuickAI"),
+            warnings[0].contains("`components` is not used by this version of QuickAI"),
             "{}",
             warnings[0]
         );
@@ -918,6 +1239,229 @@ backends = [ { match = "cuda", label = "CUDA", needs_gpu = "nvidia" }, { match =
         assert!(texts(&r, Severity::Info)[0]
             .contains("catalog documents are not used by this version of QuickAI yet"));
         assert!(r.engine("starter").is_none());
+    }
+
+    /// `GOOD` as an engine that can attach to a daemon that is already running and loads and
+    /// unloads a model with calls: the section the tests below damage one key at a time.
+    fn attaching() -> String {
+        let launch = r#"[launch]
+strategies = ["attach_if_running", "spawn"]
+strategy_field = "mode"
+
+[launch.attach]
+endpoint = "127.0.0.1:${public_port}"
+identity = { path = "/api/version", pointer = "/version" }
+liveness = { path = "/api/version", every = "5s", failures = 3 }
+
+[[launch.warm]]
+when = "model"
+call = { method = "POST", path = "/api/generate", body = { model = "${model.id}", keep_alive = -1 }, timeout = "10m" }
+
+[[launch.unload]]
+when = "model"
+call = { method = "POST", path = "/api/generate", body = { model = "${model.id}", keep_alive = 0 }, best_effort = true }
+"#;
+        let mode = "\n[[field]]\nid = \"mode\"\ntype = \"choice\"\noptions = [\"auto\", \"attach\", \"spawn\"]\ndefault = \"auto\"\n";
+        format!(
+            "{}{mode}",
+            with("[launch]\nstrategies = [\"spawn\"]\n", launch)
+        )
+    }
+
+    #[test]
+    fn attaching_warming_and_unloading_compile_with_their_defaults() {
+        let r = registry(&attaching(), None);
+        assert!(r.diagnostics.is_empty(), "{:#?}", r.diagnostics);
+        let launch = &r.engine("llamacpp").unwrap().launch;
+        assert_eq!(
+            launch.strategies,
+            [
+                engine::LaunchStrategy::AttachIfRunning,
+                engine::LaunchStrategy::Spawn
+            ]
+        );
+        assert_eq!(launch.strategy_field.as_deref(), Some("mode"));
+        let attach = launch.attach.as_ref().expect("the attach");
+        assert_eq!(attach.identity_path, "/api/version");
+        assert_eq!(attach.identity_pointer, "/version");
+        let liveness = attach.liveness.as_ref().expect("the liveness");
+        assert_eq!((liveness.every.as_secs(), liveness.failures), (5, 3));
+        let (warm, unload) = (&launch.warm[0], &launch.unload[0]);
+        assert_eq!(warm.method, "POST");
+        assert_eq!(warm.timeout.as_secs(), 600, "the timeout the document gave");
+        assert_eq!(
+            unload.timeout,
+            engine::DEFAULT_UNLOAD_TIMEOUT,
+            "no timeout given: the default of an unload"
+        );
+        assert!(unload.best_effort && !warm.best_effort);
+
+        // what is left out has a default, and a document with no liveness is not polled
+        let r = registry(
+            &attaching().replace(
+                "liveness = { path = \"/api/version\", every = \"5s\", failures = 3 }\n",
+                "",
+            ),
+            None,
+        );
+        assert!(r.diagnostics.is_empty(), "{:#?}", r.diagnostics);
+        assert!(r
+            .engine("llamacpp")
+            .unwrap()
+            .launch
+            .attach
+            .as_ref()
+            .unwrap()
+            .liveness
+            .is_none());
+        let r = registry(
+            &attaching().replace(
+                "liveness = { path = \"/api/version\", every = \"5s\", failures = 3 }",
+                "liveness = { path = \"/api/version\" }",
+            ),
+            None,
+        );
+        let liveness = r
+            .engine("llamacpp")
+            .unwrap()
+            .launch
+            .attach
+            .clone()
+            .unwrap()
+            .liveness
+            .unwrap();
+        assert_eq!(
+            (liveness.every, liveness.failures),
+            (
+                engine::DEFAULT_LIVENESS_EVERY,
+                engine::DEFAULT_LIVENESS_FAILURES
+            )
+        );
+    }
+
+    #[test]
+    fn the_attach_the_strategy_field_and_the_calls_are_checked_where_they_are_written() {
+        let errors_of = |doc: String| texts(&registry(&doc, None), Severity::Error);
+        let cases: [(&str, &str, &str); 13] = [
+            (
+                "endpoint = \"127.0.0.1:${public_port}\"",
+                "endpoint = \"127.0.0.1:${public_prt}\"",
+                "public_prt",
+            ),
+            (
+                "identity = { path = \"/api/version\"",
+                "identity = { path = \"api/version\"",
+                "must start with `/`",
+            ),
+            (
+                "liveness = { path = \"/api/version\"",
+                "liveness = { path = \"health\"",
+                "must start with `/`",
+            ),
+            (
+                "pointer = \"/version\"",
+                "pointer = \"version\"",
+                "is not a JSON pointer",
+            ),
+            (
+                "every = \"5s\"",
+                "every = \"soon\"",
+                "every",
+            ),
+            (
+                "failures = 3",
+                "failures = 0",
+                "at least 1",
+            ),
+            (
+                "strategy_field = \"mode\"",
+                "strategy_field = \"how\"",
+                "which this engine does not have",
+            ),
+            (
+                "id = \"mode\"\ntype = \"choice\"",
+                "id = \"mode\"\ntype = \"text\"",
+                "is not a `choice`",
+            ),
+            (
+                "options = [\"auto\", \"attach\", \"spawn\"]",
+                "options = [\"auto\", \"attach\", \"spawn\", \"remote\"]",
+                "not one of the ways to launch",
+            ),
+            (
+                "method = \"POST\", path = \"/api/generate\", body = { model = \"${model.id}\", keep_alive = -1 }",
+                "method = \"FETCH\", path = \"/api/generate\", body = { model = \"${model.id}\", keep_alive = -1 }",
+                "not a method",
+            ),
+            (
+                "path = \"/api/generate\", body = { model = \"${model.id}\", keep_alive = -1 }",
+                "path = \"api/generate\", body = { model = \"${model.id}\", keep_alive = -1 }",
+                "must start with `/`",
+            ),
+            (
+                "body = { model = \"${model.id}\", keep_alive = -1 }",
+                "body = { model = \"${model.idd}\", keep_alive = -1 }",
+                "model.idd",
+            ),
+            (
+                "timeout = \"10m\"",
+                "timeout = \"a while\"",
+                "timeout",
+            ),
+        ];
+        for (old, new, wanted) in cases {
+            let doc = attaching();
+            assert!(doc.contains(old), "the fixture has no `{old}`");
+            let errors = errors_of(doc.replace(old, new));
+            assert!(
+                errors.iter().any(|e| e.contains(wanted)),
+                "`{new}` should be reported with `{wanted}`: {errors:?}"
+            );
+        }
+
+        // an option that needs a strategy the document does not list
+        let doc = attaching().replace(
+            "strategies = [\"attach_if_running\", \"spawn\"]",
+            "strategies = [\"spawn\"]",
+        );
+        let errors = errors_of(doc);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("needs the strategy AttachIfRunning")),
+            "{errors:?}"
+        );
+        // attaching with nothing to say how
+        let doc = attaching().replace("[launch.attach]", "[launch.unused]");
+        let errors = errors_of(doc);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("needs a `[launch.attach]` table")),
+            "{errors:?}"
+        );
+        // and the place of the mistake is the place in the document
+        let errors = errors_of(attaching().replace("failures = 3", "failures = 0"));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("launch.attach.liveness.failures")),
+            "{errors:?}"
+        );
+        let errors = errors_of(attaching().replace("every = \"5s\"", "every = \"soon\""));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("launch.attach.liveness.every")),
+            "{errors:?}"
+        );
+        let errors = errors_of(attaching().replace("keep_alive = 0", "keep_alive = \"${nope}\""));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("launch.unload[0].call.body.keep_alive")),
+            "{errors:?}"
+        );
     }
 
     #[test]

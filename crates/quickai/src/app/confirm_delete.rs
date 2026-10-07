@@ -20,6 +20,13 @@ impl App {
                 "Delete model?".to_string(),
                 format!("Delete \"{filename}\" from disk? This can't be undone."),
             ),
+            PendingDelete::Listed { name } => (
+                "Remove model?".to_string(),
+                format!(
+                    "Remove \"{name}\" from {}?\nThis can't be undone.",
+                    self.engine_name()
+                ),
+            ),
             PendingDelete::Build { label, .. } => match self.runtime_texts() {
                 Some(texts) => (texts.confirm_title.clone(), texts.confirm_body(label)),
                 None => ("Delete build?".to_string(), format!("Delete \"{label}\"?")),
@@ -68,11 +75,14 @@ impl App {
                     }
                     if was_active {
                         self.runtime.input.clear();
-                        self.llama_server_bin = launch::default_binary(&self.registry);
+                        self.binary = launch::default_binary(&self.registry, &self.engine);
                         self.set_bin_override(None);
                         self.missing_binary_warned = false;
                         self.save_settings();
                     }
+                }
+                Some(PendingDelete::Listed { name }) => {
+                    self.remove_listed_model(&name, ctx);
                 }
                 None => {}
             }

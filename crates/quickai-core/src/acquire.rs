@@ -81,6 +81,89 @@ pub fn matching_assets(engine: &Engine, names: &[&str], facts: &HostFacts) -> Ve
     }
 }
 
+/// The globs an install leaves out on this machine: the `[acquire.install]` `skip` rules whose
+/// condition holds (or that have none), in the document's order.
+pub fn skip_globs(engine: &Engine, facts: &HostFacts) -> Vec<String> {
+    let Some(compiled) = engine.acquire.as_ref() else {
+        return Vec::new();
+    };
+    let context = base_context(&Selection::default(), facts);
+    compiled
+        .skip_rules
+        .iter()
+        .filter(|(when, _)| match when {
+            None => true,
+            // a condition that cannot be evaluated does not hold: nothing is left out on a guess
+            Some(when) => eval(when, &context).is_ok_and(|v| v.truthy()),
+        })
+        .map(|(_, glob)| glob.clone())
+        .collect()
+}
+
+/// An overlay this machine has, and the file that is it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OverlayChoice {
+    pub id: String,
+    pub label: String,
+    pub asset_name: String,
+}
+
+/// The overlays of the document that exist for this machine (the first of each one's rules whose
+/// condition holds names its file), in the document's order. A platform no rule matches has none.
+pub fn overlay_choices(engine: &Engine, facts: &HostFacts) -> Vec<OverlayChoice> {
+    let Some(compiled) = engine.acquire.as_ref() else {
+        return Vec::new();
+    };
+    let context = base_context(&Selection::default(), facts);
+    compiled
+        .overlay_rules
+        .iter()
+        .filter_map(|overlay| {
+            let name = overlay.rules.iter().find_map(|(when, name)| {
+                eval(when, &context)
+                    .ok()
+                    .filter(Value::truthy)
+                    .map(|_| name.clone())
+            })?;
+            Some(OverlayChoice {
+                id: overlay.id.clone(),
+                label: overlay.label.clone(),
+                asset_name: name,
+            })
+        })
+        .collect()
+}
+
+/// Fills a path template (`${data}/ollama`) in from what is known of this machine: how a locate
+/// strategy and the installer learn where an engine's builds are. `None` for a template that does
+/// not parse or cannot be filled.
+pub fn render_template(text: &str, facts: &HostFacts) -> Option<String> {
+    let template = crate::expr::Template::parse(text).ok()?;
+    let context = base_context(&Selection::default(), facts);
+    template.render(&context).ok().map(|v| v.to_string())
+}
+
+/// The release the document was tested with.
+pub fn tested_tag(engine: &Engine) -> Option<&str> {
+    engine
+        .doc
+        .acquire
+        .as_ref()?
+        .tested
+        .as_ref()
+        .map(|t| t.tag.as_str())
+}
+
+/// The sha256 (hex, lower case) the document pins for a file of the tested release.
+pub fn pin_for(engine: &Engine, asset_name: &str) -> Option<String> {
+    let pin = engine.doc.acquire.as_ref()?.pins.get(asset_name)?;
+    Some(
+        pin.trim()
+            .trim_start_matches("sha256:")
+            .to_ascii_lowercase(),
+    )
+}
+
 /// The directory name a build of `asset_name` from release `tag` is installed under.
 pub fn install_label(engine: &Engine, tag: &str, asset_name: &str) -> String {
     let stem = archive_stem(asset_name);

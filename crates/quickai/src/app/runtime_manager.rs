@@ -21,7 +21,7 @@ use crate::downloader;
 use crate::gpu;
 use crate::hardware;
 use crate::jobs::Job;
-use crate::launch::{self, ENGINE_ID};
+use crate::launch;
 use crate::prims::feed::{self, Build, BuildLookupEvent, LookupSpec};
 use crate::prims::install::{self, InstallSpec, InstalledBuild};
 
@@ -38,6 +38,9 @@ pub struct RuntimeManager {
     /// A live narrowing of `lookup_results`, cleared whenever a fresh look-up starts.
     pub filter: String,
     pub install: Option<Job<PathBuf>>,
+    /// The overlays (extra archives, such as a GPU vendor's libraries) the person ticked in the
+    /// list; cleared whenever a fresh look-up starts.
+    pub overlays: Vec<String>,
 }
 
 /// A build the feed offered, with what a row needs worked out once.
@@ -167,7 +170,7 @@ pub fn display_root(root: &Path, home: &str) -> String {
 impl App {
     /// The engine this version of the interface runs.
     fn runtime_engine(&self) -> Option<&Engine> {
-        self.registry.engine(ENGINE_ID)
+        self.registry.engine(&self.engine)
     }
 
     pub(super) fn install_spec(&self) -> Option<InstallSpec> {
@@ -202,7 +205,7 @@ impl App {
     /// model download selects the new model.
     pub(super) fn poll_runtime_manager(&mut self) {
         if let Some(rx) = self.runtime.lookup_rx.take() {
-            let mut done = false;
+            let (mut done, mut failed) = (false, false);
             while let Ok(event) = rx.try_recv() {
                 match event {
                     BuildLookupEvent::Found(b) => {
@@ -210,15 +213,19 @@ impl App {
                         self.runtime.lookup_results.push(row);
                     }
                     BuildLookupEvent::Status(s) => self.runtime.lookup_status = s,
+                    BuildLookupEvent::Failed => failed = true,
                     BuildLookupEvent::Done => done = true,
                 }
             }
             if done {
-                self.runtime.lookup_status = if self.runtime.lookup_results.is_empty() {
-                    "No compatible builds found.".to_string()
-                } else {
-                    format!("Found {} build(s).", self.runtime.lookup_results.len())
-                };
+                // a look-up that failed keeps the sentence it gave: nothing was *found* is another thing
+                if !failed {
+                    self.runtime.lookup_status = if self.runtime.lookup_results.is_empty() {
+                        "No compatible builds found.".to_string()
+                    } else {
+                        format!("Found {} build(s).", self.runtime.lookup_results.len())
+                    };
+                }
             } else {
                 self.runtime.lookup_rx = Some(rx);
             }
@@ -227,13 +234,19 @@ impl App {
         let Some(mut job) = self.runtime.install.take() else {
             return;
         };
-        match job.poll() {
+        let outcome = job.poll();
+        // what the install said on the way (an engine that asks for verification says what it
+        // checked, what it is unpacking and what it ran), before how it ended
+        for line in job.take_statuses() {
+            self.push_log(line);
+        }
+        match outcome {
             Some(Ok(path)) => {
                 if let Some(texts) = self.runtime_texts() {
                     self.push_log(texts.installed_log(&path.display().to_string()));
                 }
                 self.runtime.input = path.display().to_string();
-                self.llama_server_bin = path.clone();
+                self.binary = path.clone();
                 self.set_bin_override(Some(path));
                 self.missing_binary_warned = false;
                 self.settings_error = None;
@@ -248,10 +261,26 @@ impl App {
         }
     }
 
+    /// What the look-up button does: clears the list and asks the engine's feed.
+    pub(super) fn start_build_lookup(
+        &mut self,
+        spec: LookupSpec,
+        texts: &RuntimeTexts,
+        ctx: &egui::Context,
+    ) {
+        self.runtime.show_lookup = true;
+        self.runtime.lookup_results.clear();
+        self.runtime.overlays.clear();
+        self.runtime.filter.clear();
+        self.runtime.lookup_status = texts.checking_status.clone();
+        let ctx = ctx.clone();
+        self.runtime.lookup_rx = Some(feed::spawn_lookup(spec, move || ctx.request_repaint()));
+    }
+
     /// Points the engine back at the executable it finds by itself.
     fn use_default_binary(&mut self) {
         self.runtime.input.clear();
-        self.llama_server_bin = launch::default_binary(&self.registry);
+        self.binary = launch::default_binary(&self.registry, &self.engine);
         self.set_bin_override(None);
         self.missing_binary_warned = false;
         self.settings_error = None;
@@ -261,7 +290,7 @@ impl App {
     /// Points the engine at one executable.
     fn use_binary(&mut self, path: PathBuf) {
         self.runtime.input = path.display().to_string();
-        self.llama_server_bin = path.clone();
+        self.binary = path.clone();
         self.set_bin_override(Some(path));
         self.missing_binary_warned = false;
         self.settings_error = None;
@@ -322,7 +351,7 @@ impl App {
                 } else {
                     let candidate = PathBuf::from(&trimmed);
                     if candidate.is_file() {
-                        self.llama_server_bin = candidate.clone();
+                        self.binary = candidate.clone();
                         self.set_bin_override(Some(candidate));
                         self.missing_binary_warned = false;
                         self.settings_error = None;
@@ -410,15 +439,8 @@ impl App {
                 .on_hover_text(&texts.lookup_help)
                 .clicked()
             {
-                self.runtime.show_lookup = true;
-                self.runtime.lookup_results.clear();
-                self.runtime.filter.clear();
-                self.runtime.lookup_status = texts.checking_status.clone();
                 if let Some(spec) = lookup_spec.clone() {
-                    let ctx_clone = ui.ctx().clone();
-                    self.runtime.lookup_rx = Some(feed::spawn_lookup(spec, move || {
-                        ctx_clone.request_repaint()
-                    }));
+                    self.start_build_lookup(spec, &texts, ui.ctx());
                 }
             }
             if self.runtime.show_lookup
@@ -435,7 +457,7 @@ impl App {
             ui.add_space(4.0);
             ui.colored_label(egui::Color32::from_rgb(212, 160, 23), job.progress_line());
             if let Some(fraction) = job.fraction() {
-                ui.add(egui::ProgressBar::new(fraction));
+                super::widgets::progress_bar(ui, Some(fraction));
             }
         }
 
@@ -464,6 +486,7 @@ impl App {
             }
 
             let mut to_install: Option<usize> = None;
+            let mut toggled_overlay: Option<String> = None;
             let mut reset_to_default = false;
             let filter = self.runtime.filter.trim().to_ascii_lowercase();
 
@@ -484,7 +507,7 @@ impl App {
                             }
                             ui.label(
                                 egui::RichText::new(
-                                    launch::default_binary(&self.registry).display().to_string(),
+                                    launch::default_binary(&self.registry, &self.engine).display().to_string(),
                                 )
                                 .small()
                                 .color(egui::Color32::GRAY),
@@ -506,15 +529,49 @@ impl App {
                             .bin_override()
                             .is_some_and(|p| p.display().to_string().contains(&b.label));
                         ui.horizontal(|ui| {
-                            if ui.selectable_label(is_current, "Use").clicked() && !is_current {
+                            // a file that changed after it was tested is not installed on a click
+                            let clicked = if b.conflict {
+                                ui.add_enabled_ui(false, |ui| ui.selectable_label(is_current, "Use"))
+                                    .inner
+                                    .clicked()
+                            } else {
+                                ui.selectable_label(is_current, "Use").clicked()
+                            };
+                            if clicked && !is_current {
                                 to_install = Some(i);
                             }
                             let size = b
                                 .size_bytes
                                 .map(hardware::format_bytes)
                                 .unwrap_or_else(|| "?".into());
-                            ui.label(format!("{} — {} ({backend}, {size})", b.tag, b.asset_name));
+                            let tested = if b.tested {
+                                " — the version this was tested with"
+                            } else {
+                                ""
+                            };
+                            ui.label(format!(
+                                "{} — {} ({backend}, {size}){tested}",
+                                b.tag, b.asset_name
+                            ));
                         });
+                        if b.conflict {
+                            ui.label(
+                                egui::RichText::new(
+                                    "This file is not the one this version was tested with (its checksum differs), so it is not installed.",
+                                )
+                                .small()
+                                .color(egui::Color32::from_rgb(212, 160, 23)),
+                            );
+                        }
+                        for overlay in &b.overlays {
+                            let mut on = self.runtime.overlays.contains(&overlay.id);
+                            let tick = ui
+                                .checkbox(&mut on, &overlay.label)
+                                .on_hover_text(&overlay.asset_name);
+                            if tick.changed() {
+                                toggled_overlay = Some(overlay.id.clone());
+                            }
+                        }
                         if let Some(warning) = &row.warning {
                             ui.label(
                                 egui::RichText::new(warning)
@@ -535,18 +592,26 @@ impl App {
                     }
                 });
 
+            if let Some(id) = toggled_overlay {
+                match self.runtime.overlays.iter().position(|o| *o == id) {
+                    Some(at) => {
+                        self.runtime.overlays.remove(at);
+                    }
+                    None => self.runtime.overlays.push(id),
+                }
+            }
             if reset_to_default {
                 self.use_default_binary();
             }
             if let (Some(i), Some(spec)) = (to_install, install_spec) {
                 let b = &self.runtime.lookup_results[i].build;
+                let chosen: Vec<&str> = self.runtime.overlays.iter().map(String::as_str).collect();
+                let request = b.install_request(&chosen);
                 let ctx_clone = ui.ctx().clone();
-                self.runtime.install = Some(install::spawn_install(
-                    spec,
-                    b.url.clone(),
-                    b.label.clone(),
-                    move || ctx_clone.request_repaint(),
-                ));
+                self.runtime.install =
+                    Some(install::spawn_install_build(spec, request, move || {
+                        ctx_clone.request_repaint()
+                    }));
             }
         }
     }
@@ -560,7 +625,7 @@ mod tests {
     fn llama_texts() -> RuntimeTexts {
         let registry = build_registry(&ConfigDirs::default());
         RuntimeTexts::for_engine(
-            registry.engine(ENGINE_ID).expect("the embedded engine"),
+            registry.engine("llamacpp").expect("the embedded engine"),
             "~/.quickai/llama-bin",
         )
     }

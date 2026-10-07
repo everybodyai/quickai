@@ -26,6 +26,11 @@ impl ServerState {
 pub enum Event {
     Log(String),
     StateChanged(ServerState),
+    /// The model the engine has loaded changed (`None`: nothing is loaded).
+    Model(Option<String>),
+    /// The run is using an engine that was already running (`true`), which QuickAI did not start and
+    /// whose environment is not its own.
+    Attached(bool),
     Traffic(TrafficEvent),
 }
 

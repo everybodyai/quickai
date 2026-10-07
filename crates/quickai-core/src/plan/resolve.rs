@@ -104,6 +104,10 @@ pub(crate) fn default_value(
     match &field.default {
         None => Ok((Value::Null, Origin::Unset)),
         Some(CompiledDefault::Literal(v)) => Ok((v.clone(), Origin::Default)),
+        Some(CompiledDefault::Template(template)) => template
+            .render(context)
+            .map(|v| (v, Origin::Default))
+            .map_err(|e| format!("the default could not be filled in: {}", e.message)),
         Some(CompiledDefault::Computed(expr)) => crate::expr::eval(expr, context)
             .map(|v| (v, Origin::Computed(call_name(expr))))
             .map_err(|e| format!("the default could not be computed: {}", e.message)),
@@ -230,6 +234,7 @@ pub(crate) fn base_context(selection: &Selection, facts: &HostFacts) -> Value {
             map([
                 ("running", facts.session_running.into()),
                 ("crashed", facts.session_crashed.into()),
+                ("attached", facts.session_attached.into()),
                 (
                     "model_display",
                     selection
