@@ -15,6 +15,14 @@ their own license terms, reproduced in full below:
   — MIT License, © Ollama. It is downloaded, not bundled, and its archive carries
   its own licence files, which stay with the files you download.
 
+- **ComfyUI** is *not* part of this package either. If you choose it as the engine,
+  QuickAI downloads it on request from [its releases](https://github.com/Comfy-Org/ComfyUI/releases)
+  — GPL-3.0 License, © comfyanonymous and contributors — together with the pack of GGUF nodes
+  [ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF) (Apache License 2.0) and, through pip, PyTorch
+  (BSD-3-Clause) and the other Python packages ComfyUI needs, each under its own licence, which stays with the
+  files you download. It is downloaded, not bundled, and it is a separate program that QuickAI starts, not part
+  of QuickAI.
+
 Neither license requires QuickAI's own code to be released under the same
 terms — each applies only to the files it covers.
 

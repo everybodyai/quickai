@@ -37,13 +37,14 @@ One model of the list. A model id is unique across every catalog document: a sec
 
 ## `[model.run.<engine>]`
 
-What one engine does with the model. Which keys are meant depends on what the engine accepts (`[provides]` `accepts`): an engine whose models are files (`formats`) takes `repo`, `rev`, `files`, `companions` and `mode`; an engine that pulls names (`refs`) takes `ref` and `size`. The other keys are errors, not ignored.
+What one engine does with the model. Which keys are meant depends on what the engine accepts (`[provides]` `accepts`): an engine whose models are files (`formats`) takes `repo`, `rev`, `files`, `companions`, `mode` and `place`; an engine that pulls names (`refs`) takes `ref` and `size`. The other keys are errors, not ignored.
 
 | Key | Value | Meaning |
 |---|---|---|
 | `repo` | text | Files: the repository they are in, `owner/name`. Required for files. |
 | `rev` | text | Files: the commit they are fetched at; default `main`. The application's own documents give a commit, so that what was checked is what arrives. |
 | `mode` | text | Files: one of the engine's `[[models.mode]]`, how it is started for this model (`embedding`). One the engine does not have is an error. |
+| `place` | text | Files: the folder of the models folder the weights are kept in, for an engine that finds its files by the folder they are in (ComfyUI) and a model whose weights are not where it keeps weights (`checkpoints`). A plain name. |
 | `files` | list of tables, below | Files: the weights on offer, one for each quantization. Required for files. They are shown smallest first. |
 | `companions` | table of tables, below | Files: the files that go with the weights, by the kind of component they are (`mmproj = { file = ... }`). The engine must be able to attach each kind (`[components.<kind>]`) and have a `[[models.bundle]]` that pairs weights with exactly these kinds; the weights are then offered in a second row, `Get with projector`, as one download. |
 | `ref` | text | A name: what the engine pulls (`qwen3.5:4b`). Required for a name. |

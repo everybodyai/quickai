@@ -156,7 +156,10 @@ in ⚙ below) persist between runs as JSON in the OS config dir
 
 ## Settings (⚙)
 
-Click the gear icon next to the speed indicator for:
+Click the gear icon next to the speed indicator. The settings open in a **window of their own**, not on top of the main
+one: move it beside the main window or to another screen, make it any size (what is in it scrolls, and **Close** stays
+at its foot), and go on using the main window while it is open. Click the gear again, press **Close** or close the
+window and what you changed is saved; closing the main window closes it too. It has:
 
 - **Downloaded models folder** — where "Model URL / Path", "Import", and
   "Look up online" save files (defaults to `~/.quickai/models`; see
@@ -190,10 +193,11 @@ see "Adding more models" below for where downloads actually go.
 
 ## Choosing an engine (⚙ → Engine)
 
-Models run on **llama.cpp**, which comes with QuickAI and is what a first run uses, or on **Ollama**. Ollama is
-never part of a package and nothing is downloaded, listed or started because you chose it: pick **Ollama** in the
-Engine row of ⚙ Settings and the window shows what Ollama needs instead of what llama.cpp does; the settings of
-each engine are kept separately, and the row is locked while a server runs or something is being fetched.
+Models run on **llama.cpp**, which comes with QuickAI and is what a first run uses, on **Ollama**, or, for pictures and
+video, on **ComfyUI**. Ollama and ComfyUI are never part of a package and nothing is downloaded, listed or started
+because you chose one: pick it in the Engine row of ⚙ Settings and the window shows what it needs instead of what
+llama.cpp does; the settings of each engine are kept separately, and the row is locked while a server runs or something
+is being fetched.
 
 - **Getting Ollama.** If an `ollama` is on your `PATH` (or where Ollama usually installs itself) it is used.
   Otherwise open ⚙ Settings → **Advanced: Ollama** → **Look up Ollama builds** and click **Use** on a row (the first
@@ -218,6 +222,31 @@ each engine are kept separately, and the row is locked while a server runs or so
   (`OLLAMA_NO_CLOUD=1`), keeps one model loaded, and keeps its models in `~/.quickai/ollama/models` unless you
   ask for Ollama's own store. Its advanced settings are what to do when one is already running, the model
   store, extra environment (`KEY=VALUE` lines), the executable, the GPU and the context size.
+- **ComfyUI** (`docs/comfyui.md`) makes pictures and video from workflows you build in its own page. **Getting it:** ⚙ Settings →
+  **Advanced: ComfyUI** → **Look up ComfyUI builds** → **Use** on a row (the first is the release QuickAI was tested
+  with). It needs a Python 3.10 or newer that can make an environment (on Debian and Ubuntu `sudo apt install
+  python3-venv`; QuickAI installs no Python), downloads the source of the release and a pack of GGUF nodes (checked
+  against checksums), makes an environment of its own and installs PyTorch for your graphics card into it, and runs it
+  once to see that it works: **about twenty minutes and 17 GB** (30 GiB free are asked for). The window says where it is
+  (`Step 4 of 7 · PyTorch ... · downloading ...: 117.5 MB of 5.8 GB, 7.0 MB/s, about 13 min left`) and stays usable.
+  **If it is interrupted** (the window is closed or killed, the machine is switched off, a step fails) nothing is
+  lost: ⚙ Settings lists it under **Unfinished installs**, and **Continue** does the steps that are left; a directory
+  you renamed by hand is not a build and is continued the same way. **Cancel** throws the work away. **Models:**
+  three ways to get one, like llama.cpp's. **Recommended** offers LTX-Video 2B distilled with its text encoder and VAE,
+  each file into the folder ComfyUI looks for it in under `~/.quickai/comfyui/models`. **Look up online** searches
+  Hugging Face for GGUF models of video, pictures and text encoders (type a name in the box to look for that instead,
+  e.g. `wan2.2 ti2v 5b turbo` or `umt5`): each result has its quantizations as buttons, and a VAE or a text encoder that
+  a repository holds is a button of its own (*Get VAE only*), each put in the folder it belongs in (`diffusion_models`,
+  `text_encoders`, `vae`) under its own name and checked against the checksum Hugging Face states. The **Get** box also
+  takes the address of one `.gguf` or `.safetensors` file (or a file of this computer) and the folder to keep it in
+  (**Into**: *auto* chooses it from the file's name). Files of your own go in those folders too (`docs/examples/workflows/` has a workflow for Wan 2.2 5B Turbo and one for LTX-Video, each run on a 12 GB card). **Start** runs ComfyUI
+  with no model (a workflow names the files it uses), **Open ComfyUI** opens its page, and the **API** panel shows how to
+  send it a workflow. **The page's Download button:** when a workflow needs a model you lack, ComfyUI's page lists it with a
+  **Download**, which in a browser saves the file in the browser's own folder. With ComfyUI started by QuickAI it puts the
+  file in the models folder, in the folder of its kind, checked against the hub's checksum and gone on from if it is
+  interrupted (Hugging Face, `.safetensors` and `.gguf` only; anything else is left to the browser; ⚙ Settings → Advanced →
+  *The page's Download button* turns it off). If the window ever stops answering while something runs, `~/.quickai/ui-stalls.log` says when and
+  what it was waiting in; nothing leaves the computer.
 - **Engines are documents.** What an engine is, how it starts and which settings it has is a TOML document
   (`crates/quickai/manifests/engines/`, `docs/reference/engine-fields.md`); one in your configuration directory
   patches it (`quickai config check` and `quickai plan --engine ollama --model NAME --explain` show what comes of

@@ -69,6 +69,16 @@ pub fn render_explain(plan: &RunPlan) -> String {
             for arg in &spawn.args {
                 push("", format!("  {}", arg.value), &arg.origin);
             }
+            for dir in &spawn.mkdir {
+                push("", format!("mkdir {dir}"), "engine launch.spawn.mkdir");
+            }
+            for step in &spawn.write {
+                push(
+                    "",
+                    format!("write {}   (the application's own {})", step.to, step.asset),
+                    "engine launch.spawn.write",
+                );
+            }
             for env in &spawn.env {
                 let text = match &env.mode {
                     EnvMode::Set { value } => format!("env {}={}", env.name, value),

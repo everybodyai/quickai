@@ -7,6 +7,8 @@
 //! package lands the `ignore` goes, and the test is a regression test from then on.
 
 mod catalog;
+#[cfg(unix)]
+mod comfy;
 mod contract;
 mod docs;
 mod engine;

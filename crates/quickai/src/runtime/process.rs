@@ -159,12 +159,24 @@ pub enum RunFailure {
     TimedOut,
     /// It could not be waited for.
     Wait(std::io::Error),
+    /// The caller's flag was set while it ran, and it was killed.
+    Stopped,
 }
 
 /// Runs `cmd` to its end with no input, collecting what it prints (the first 64 KB of each stream)
 /// and killing it when `timeout` passes. A program that was written a moment ago may be busy for a
 /// few milliseconds, which `spawn_retrying` allows for.
 pub fn run_captured(cmd: &mut Command, timeout: Duration) -> Result<Captured, RunFailure> {
+    run_captured_until(cmd, timeout, &std::sync::atomic::AtomicBool::new(false))
+}
+
+/// As `run_captured`, and killed as soon as `stop` is set: a check that takes minutes must not make a
+/// person wait for it after they said stop.
+pub fn run_captured_until(
+    cmd: &mut Command,
+    timeout: Duration,
+    stop: &std::sync::atomic::AtomicBool,
+) -> Result<Captured, RunFailure> {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -185,6 +197,11 @@ pub fn run_captured(cmd: &mut Command, timeout: Duration) -> Result<Captured, Ru
 
     let started = Instant::now();
     let status = loop {
+        if stop.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(RunFailure::Stopped);
+        }
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) if started.elapsed() < timeout => {
@@ -220,18 +237,24 @@ impl Daemon {
     /// Starts the program of `spawn` with `env`, output piped. On a failure nothing was started.
     pub fn spawn(spawn: &SpawnPlan, env: &ChildEnv) -> std::io::Result<Daemon> {
         let mut cmd = Command::new(&spawn.program.value);
-        cmd.args(spawn.args.iter().map(|a| &a.value))
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.args(spawn.args.iter().map(|a| &a.value));
         for name in &env.remove {
             cmd.env_remove(name);
         }
         cmd.envs(env.set.iter().map(|(k, v)| (k, v)));
+        Daemon::start(cmd, spawn.group)
+    }
+
+    /// Starts `cmd` with the hygiene of every program QuickAI starts (output piped, a process group
+    /// of its own when `group`, the parent-death signal on Linux, a job and no console window on
+    /// Windows). The program, its arguments and its environment are the caller's.
+    pub fn start(mut cmd: Command, group: bool) -> std::io::Result<Daemon> {
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
-            if spawn.group {
+            if group {
                 // A program in a group of its own is a background group: it must not read the
                 // terminal QuickAI may have been started from.
                 cmd.stdin(Stdio::null());
@@ -256,7 +279,7 @@ impl Daemon {
             #[cfg(windows)]
             job: job::Job::around(&child),
             child,
-            group: cfg!(unix) && spawn.group,
+            group: cfg!(unix) && group,
             exited: false,
         })
     }
@@ -473,6 +496,8 @@ mod tests {
             env,
             group: false,
             scrub_loader_env: scrub,
+            mkdir: Vec::new(),
+            write: Vec::new(),
             identity: None,
         }
     }
@@ -623,6 +648,8 @@ mod tests {
                 }],
                 group: true,
                 scrub_loader_env: false,
+                mkdir: Vec::new(),
+                write: Vec::new(),
                 identity: None,
             }
         }
@@ -712,6 +739,8 @@ mod tests {
                 env: vec![],
                 group,
                 scrub_loader_env: false,
+                mkdir: Vec::new(),
+                write: Vec::new(),
                 identity: None,
             }
         }

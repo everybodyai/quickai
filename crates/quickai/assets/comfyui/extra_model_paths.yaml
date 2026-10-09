@@ -1,0 +1,5 @@
+# Written by QuickAI every time it starts ComfyUI, and read by ComfyUI (--extra-model-paths-config).
+# It makes the folder `extensions`, beside this file, a place ComfyUI looks for custom nodes in, which
+# is where QuickAI keeps its bridge for ComfyUI's page (docs/comfyui.md, "The page's Download button").
+quickai:
+  custom_nodes: extensions

@@ -82,7 +82,7 @@ impl App {
                                     trimmed,
                                     None,
                                     self.models_dir.clone(),
-                                    move || ctx_clone.request_repaint(),
+                                    super::calm_wake(ctx_clone),
                                 ));
                             } else {
                                 self.start_lookup(ui.ctx(), &trimmed);

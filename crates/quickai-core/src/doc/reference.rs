@@ -49,6 +49,7 @@ pub const GROUPS: &[Group] = &[
             a("bundled", "bool", "Whether packages ship it. Default false."),
             a("homepage", "text", "Where to read about it."),
             a("egress", "list of text", "The hosts the engine itself contacts, which the privacy table lists; a name that begins `*.` stands for every host under it."),
+            a("order", "whole number", "Where the engine stands in the engine selector, lowest first. Default 100; engines with the same number stand in the order of their ids."),
         ],
     },
     Group {
@@ -61,6 +62,7 @@ pub const GROUPS: &[Group] = &[
             a("accepts", "`{ formats, refs }`", "What a model is for it: the file formats it loads (`gguf`), or the kinds of named reference it takes (`ollama`)."),
             a("model_name_matters", "bool", "Whether a request naming another model loads that one."),
             a("default_port", "whole number", "The port it uses when nothing says otherwise."),
+            a("needs_model", "bool", "Whether it has to be given a model to start (llama.cpp). Default true. An engine that says false runs on its own, and Start needs no model: the work a client sends it names the models it uses (ComfyUI)."),
         ],
     },
     Group {
@@ -155,7 +157,18 @@ pub const GROUPS: &[Group] = &[
             a("args", "list of templates", "Its first arguments, one each. The fields' `bind.arg` follow, by `order`."),
             a("env", "list of tables", "Environment variables to set, below."),
             a("group", "bool", "Start it in a process group of its own (a job on Windows), so that stopping it takes the processes it started with it, and, on Linux, so that it follows QuickAI if QuickAI is killed. Default false."),
+            a("mkdir", "list of templates", "Folders made, with the ones above them, before the program starts: for a program that refuses a folder it is told about that does not exist yet (ComfyUI's `--models-directory`)."),
+            a("write", "list of tables", "Files of the application's own that are put where the program is told to read them, before it starts, below."),
             a("stop", "table", "How to stop it: `{ policy = \"kill\" }` (the default: at once), or `{ policy = \"graceful\", grace = \"10s\", exit_grace = \"2s\" }`: ask it to leave (SIGTERM to its group; Windows has no such signal), wait `grace` (`exit_grace` while the application is closing), then kill what is left."),
+        ],
+    },
+    Group {
+        heading: "`[[launch.spawn.write]]`",
+        intro: "A file or a folder that is part of the application, put on the disk before the program starts, at every start: what is there already and the same is left alone, what differs is written again (a file that is not in the application is not removed). For a program that reads extensions from a folder it is told about (ComfyUI's custom nodes, with `--extra-model-paths-config`), so that every build has them and a person's own files are not touched. A document of the person's own can only name what the application has.",
+        source: Some("WriteSpec"),
+        attributes: &[
+            a("asset", "text", "The name of the file or folder among the application's own files, with `/` between the parts (`comfyui/quickai_bridge`)."),
+            a("to", "template", "Where it is put (`${data}/comfyui/extensions/quickai_bridge`). The folders above it are made."),
         ],
     },
     Group {
@@ -218,6 +231,7 @@ pub const GROUPS: &[Group] = &[
             a("port", "`public`", "This field is the port the engine listens on, and the one clients use."),
             a("arg", "list of templates", "Arguments to add to the command line."),
             a("arg_split", "bool", "The value is a text of arguments, split like a shell does (quotes group words); nothing is added when it is empty."),
+            a("arg_by_value", "table of lists of text", "For a `choice` field: the arguments each option adds, as plain words (`low = [\"--lowvram\"]`); an option that is not listed adds none."),
             a("order", "whole number", "Where among the field arguments these go. Default: the field's `ui.order`."),
             a("env", "list of tables, below", "Environment variables of the engine that this field decides, each with an optional condition on `value`."),
             a("env_lines", "table, below", "For a `kv_lines` field: its lines are environment variables of the engine."),
@@ -274,11 +288,13 @@ pub const GROUPS: &[Group] = &[
     },
     Group {
         heading: "`[models]` `acquire`",
-        intro: "How a model gets into the folder (read from Phase 4).",
+        intro: "How a model gets into the folder.",
         source: Some("ModelAcquire"),
         attributes: &[
             a("use", "text", "`file`: it is downloaded or linked as a file. Required."),
             a("dir", "template", "Where it goes."),
+            a("place", "text", "For an engine that finds its files by the folder they are in (ComfyUI): the folder of `dir` the weights of a model go in (`diffusion_models`), a plain name. The recommended list may say another for a model, and `[components.<kind>] place` says where each kind of companion goes."),
+            a("places", "list of text", "The other folders of `dir` a file can be put in by hand, plain names (`checkpoints`, `controlnet`): what the window offers a person who gives a link or a file of their own and says where it goes, besides `place` and the folder of each `[components.<kind>]`."),
         ],
     },
     Group {
@@ -310,6 +326,9 @@ pub const GROUPS: &[Group] = &[
             a("popular", "whole number", "How many repositories of the plain list it looks into (1 to 50; default 30)."),
             a("keyword", "whole number", "How many it looks into for the words typed (1 to 50; default 20)."),
             a("similar", "whole number", "How many it looks into for each single word of a phrase typed, to find what the whole phrase misses (1 to 50; default 20)."),
+            a("pipelines", "list of text", "The pipelines of the hub (`text-to-video`, `text-to-image`: lower case letters, digits and `-`; at most eight) the plain list is made of: one search for each, `popular` of the repositories of each looked into. For an engine that runs one kind of model, whose plain list would otherwise be the most downloaded GGUF repositories of any kind, which are language models. Words typed are one search that no pipeline narrows. Default none."),
+            a("words", "list of text", "Words the plain list is also made of: one search for each (at most four; `encoder`), `popular` of the repositories of each looked into, for what no pipeline tag finds (a text encoder has none). A search is a few words with single spaces, up to 100 characters, and no `:`. Default none."),
+            a("alone", "list of text", "Kinds of file (the `kind` of a `[[models.bundle]]` part: `vae`, `text_encoder`) that are offered by themselves as well as with a model: each file of the repository that a part of that kind finds gets a button in a row of its own (`Get VAE only:`), the ones `prefer` likes and then the smallest, and is kept under its own name in the folder of its kind (`[components.<kind>] place`). A repository that holds only such files is offered by them. For an engine whose workflows name their files one by one. A kind no part finds is an error. Default none: a companion is fetched with the weights it goes with."),
             a("prefer", "list of text", "The quantizations to offer first, best first (default `Q4_K_M`, `Q4_K_S`, `Q5_K_M`, `Q4_0`, `Q8_0`, `Q6_K`, `Q3_K_M`). A variant of one (`UD-Q4_K_M`) counts as it; the best is shown in bold."),
             a("skip", "list of text", "A file whose name or path one of these patterns matches (`*` any run, `?` one character, any case) is not weights: shards (`*-?????-of-?????*`: five digits each side of `-of-`), draft models (`mtp/*`, `mtp-*`), importance matrices (`imatrix*`). Default those. A pattern is about the file, not about the repository: a model whose own name says `MTP` is still offered."),
             a("show_variants", "whole number", "The most buttons a model gets (1 to 64; default 4): the ones `prefer` likes, then the smallest, shown smallest first."),
@@ -356,6 +375,7 @@ pub const GROUPS: &[Group] = &[
         attributes: &[
             a("order", "whole number", "Where its arguments stand among the fields': after those of a lower `order`, before those of a higher one. Default 80, which is before `extra_args` (90)."),
             a("bind", "table, below", "What it adds."),
+            a("place", "text", "For an engine that finds its files by the folder they are in (ComfyUI): the folder of the models folder this kind of file is kept in (`text_encoders`), a plain name. A component needs `place` or `bind.arg`, and may have both."),
         ],
     },
     Group {
@@ -363,7 +383,7 @@ pub const GROUPS: &[Group] = &[
         intro: "The arguments a companion adds.",
         source: Some("ComponentBind"),
         attributes: &[
-            a("arg", "list of templates", "The arguments, one entry each, over `${component.path}` (the file): `[\"--mmproj\", \"${component.path}\"]`. Required."),
+            a("arg", "list of templates", "The arguments, one entry each, over `${component.path}` (the file): `[\"--mmproj\", \"${component.path}\"]`. Required unless the component has a `place`."),
         ],
     },
     Group {
@@ -375,6 +395,7 @@ pub const GROUPS: &[Group] = &[
             a("items", "pointer", "The array of models in the reply (`/models`). Required."),
             a("map", "table, below", "Where the parts of one model are. Required."),
             a("cache", "template", "Where the last reply is kept (`${data}/ollama/catalog-cache.json`), written whole or not at all, so that a list can be shown while the engine is not running."),
+            a("hide", "list of patterns", "Names the engine lists that are its own bookkeeping, not models to pick (`[\"llamacpp:.*\"]`): each pattern must match the whole name. The picker, the recommendation and the cache never see them. A name the engine lists twice is shown once, whatever this says."),
         ],
     },
     Group {
@@ -516,6 +537,7 @@ pub const GROUPS: &[Group] = &[
             a("prereleases", "bool", "Whether a release GitHub marks as a prerelease counts. Default false."),
             a("api", "address", "The root of the API (`https://api.github.com`, the default). Another root, `http` or `https`, is how a test points the feed at a fake; only documents QuickAI trusts may name one."),
             a("digest", "bool", "The feed lists a sha256 for each file (GitHub's `digest`) and a build carries it, for the installer to check. Default false."),
+            a("archive", "address", "Where the source archive of a release is fetched from, for `assets` of `by = \"source\"`: `<archive>/<owner>/<name>/archive/refs/tags/<tag>.tar.gz`. Default `https://github.com`; as with `api`, only documents QuickAI trusts may name another."),
         ],
     },
     Group {
@@ -542,6 +564,15 @@ pub const GROUPS: &[Group] = &[
         ],
     },
     Group {
+        heading: "`[acquire]` `assets`, `by = \"source\"`",
+        intro: "The release's own source archive is the build, for an application that is installed from its source (`install` of `use = \"python_app\"`). Every release has one, on every platform; its digest is not listed by the host, so only the pin of the tested release can check it.",
+        source: None,
+        attributes: &[
+            a("by", "`source`", "The kind of rule."),
+            a("label", "template", "The directory a build is installed under, over `tag`, `stem` and `asset`. Default `${tag}`."),
+        ],
+    },
+    Group {
         heading: "`[acquire]` `install`",
         intro: "`use = \"archive\"`: unpack a `.zip`, `.tar.gz` or `.tar.zst`, safely, into a directory of its own that is renamed into place when it is whole, and find the executable inside.",
         source: None,
@@ -552,6 +583,52 @@ pub const GROUPS: &[Group] = &[
             a("verify", "`none` or `digest`", "`digest`: compare the download with the sha256 the host lists for the file and the one this document pins before anything is unpacked; a build with neither is installed and said to be unchecked. Default `none`."),
             a("smoke", "list of text", "A command that must succeed on the unpacked build before it counts as installed, starting with the executable: `[\"${binary}\", \"--version\"]`."),
             a("skip", "list of `{ when, glob }`", "Entries of the archive to leave out: `glob` is a path inside the build (`lib/ollama/cuda_*`, `*` for a run of characters inside one name), `when` a condition on this machine. What is below a directory that matches goes with it."),
+        ],
+    },
+    Group {
+        heading: "`[acquire]` `install`, `use = \"python_app\"`",
+        intro: "Install an application written in Python from its source: the source archive is checked and unpacked as `app/`, a Python makes a virtual environment `venv/` beside it, the `pip` steps that apply to this machine install into it (only as wheels: no package runs a build script on the person's machine), the `nodes` are unpacked into the source, and a launcher is written that runs the application with that environment. The launcher is the build's executable. Everything is made in a directory of its own that is renamed into place when it is whole, and can be stopped at any moment.",
+        source: None,
+        attributes: &[
+            a("use", "`python_app`", "The kind of install."),
+            a("binary", "`{ name }`", "The launcher the installer writes (`comfyui`; `comfyui.cmd` on Windows)."),
+            a("entry", "text", "The script of the unpacked source that the launcher runs, relative to it (`main.py`)."),
+            a("python", "`{ versions }`", "The versions of Python to look for, best first (`[\"3.13\", \"3.12\"]`): on the `PATH`, in pyenv's and uv's folders, and through the Windows launcher. The person may name a Python of their own."),
+            a("verify", "`none` or `digest`", "`digest`: compare the source archive with the sha256 this document pins for the tested release before anything is unpacked; another release is installed and said to be unchecked. Default `none`."),
+            a("smoke", "list of text", "A command that must succeed on the finished build before it counts as installed, starting with the launcher: `[\"${binary}\", \"--quick-test-for-ci\"]`."),
+            a("smoke_timeout", "duration", "How long the smoke test may take (default `120s`)."),
+            a("space", "size", "How much free room an install needs (`30GiB`): the download and the environment together. Checked before anything is asked of the network."),
+            a("pip", "list of tables, below", "The packages of the environment, in the order they are installed."),
+            a("nodes", "list of tables, below", "Packs of extra nodes, unpacked into the source."),
+        ],
+    },
+    Group {
+        heading: "`[[acquire.install.pip]]`",
+        intro: "One `pip install`.",
+        source: Some("PipStep"),
+        attributes: &[
+            a("id", "text", "Letters, digits and `_`; a document of the person's replaces a step by it."),
+            a("label", "text", "What the log and the window call it (`PyTorch for AMD GPUs (ROCm 7.2)`)."),
+            a("when", "condition", "Only on a machine where this holds (`has(gpu.vendors, 'amd')`); always when left out."),
+            a("packages", "list of text", "Packages, as requirement specifiers (`torch`, `torchvision==0.29.1`)."),
+            a("requirements", "text", "A requirements file of the unpacked source, relative to it (`requirements.txt`)."),
+            a("index", "address", "The package index the packages come from instead of PyPI. It is the only one used: a second could offer a newer package built for something else."),
+            a("weight", "whole number", "How much of the progress bar this step is, next to the others (default 1)."),
+        ],
+    },
+    Group {
+        heading: "`[[acquire.install.nodes]]`",
+        intro: "One pack of extra nodes (a custom node of ComfyUI), pinned to one commit by the sha256 of its archive.",
+        source: Some("NodePack"),
+        attributes: &[
+            a("id", "text", "Letters, digits and `_`."),
+            a("label", "text", "What the log and the window call it."),
+            a("when", "condition", "Only on a machine where this holds; always when left out."),
+            a("url", "address", "A `.tar.gz` of one commit."),
+            a("sha256", "text", "What the archive must hash to, as `sha256:` and 64 hexadecimal digits. Always checked."),
+            a("into", "text", "Where it goes, relative to the unpacked source (`custom_nodes/ComfyUI-GGUF`)."),
+            a("requirements", "text", "Its requirements file, relative to the pack; installed into the environment."),
+            a("license", "text", "Its licence, for the About window."),
         ],
     },
     Group {
@@ -866,12 +943,13 @@ pub const CATALOG_GROUPS: &[Group] = &[
     },
     Group {
         heading: "`[model.run.<engine>]`",
-        intro: "What one engine does with the model. Which keys are meant depends on what the engine accepts (`[provides]` `accepts`): an engine whose models are files (`formats`) takes `repo`, `rev`, `files`, `companions` and `mode`; an engine that pulls names (`refs`) takes `ref` and `size`. The other keys are errors, not ignored.",
+        intro: "What one engine does with the model. Which keys are meant depends on what the engine accepts (`[provides]` `accepts`): an engine whose models are files (`formats`) takes `repo`, `rev`, `files`, `companions`, `mode` and `place`; an engine that pulls names (`refs`) takes `ref` and `size`. The other keys are errors, not ignored.",
         source: Some("RunDoc"),
         attributes: &[
             a("repo", "text", "Files: the repository they are in, `owner/name`. Required for files."),
             a("rev", "text", "Files: the commit they are fetched at; default `main`. The application's own documents give a commit, so that what was checked is what arrives."),
             a("mode", "text", "Files: one of the engine's `[[models.mode]]`, how it is started for this model (`embedding`). One the engine does not have is an error."),
+            a("place", "text", "Files: the folder of the models folder the weights are kept in, for an engine that finds its files by the folder they are in (ComfyUI) and a model whose weights are not where it keeps weights (`checkpoints`). A plain name."),
             a("files", "list of tables, below", "Files: the weights on offer, one for each quantization. Required for files. They are shown smallest first."),
             a("companions", "table of tables, below", "Files: the files that go with the weights, by the kind of component they are (`mmproj = { file = ... }`). The engine must be able to attach each kind (`[components.<kind>]`) and have a `[[models.bundle]]` that pairs weights with exactly these kinds; the weights are then offered in a second row, `Get with projector`, as one download."),
             a("ref", "text", "A name: what the engine pulls (`qwen3.5:4b`). Required for a name."),

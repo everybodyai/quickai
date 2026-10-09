@@ -138,6 +138,44 @@ pub fn detect() -> Vec<GpuVendor> {
     vendors
 }
 
+/// The name of the architecture a node of the kernel's compute topology (`/sys/class/kfd`) has:
+/// its `gfx_target_version` is the number `MMmmss` (`100301`), and the name is the one ROCm uses
+/// (`gfx1031`, with the minor number and the step in hexadecimal: `90010` is `gfx90a`). The CPU's
+/// node has a version of 0 and no name.
+pub fn target_from_properties(properties: &str) -> Option<String> {
+    let version: u32 = properties.lines().find_map(|line| {
+        let (key, value) = line.trim().split_once(char::is_whitespace)?;
+        (key == "gfx_target_version").then(|| value.trim().parse().ok())?
+    })?;
+    if version == 0 {
+        return None;
+    }
+    let (major, minor, step) = (version / 10_000, (version / 100) % 100, version % 100);
+    Some(format!("gfx{major}{minor:x}{step:x}"))
+}
+
+/// The architectures of the AMD GPUs the kernel driver reports, as ROCm names them. Empty where the
+/// driver does not say (it is not loaded, or the system is not Linux): that is not "no GPU".
+#[cfg(target_os = "linux")]
+pub fn amd_targets() -> Vec<String> {
+    let Ok(nodes) = std::fs::read_dir("/sys/class/kfd/kfd/topology/nodes") else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = nodes
+        .flatten()
+        .filter_map(|node| std::fs::read_to_string(node.path().join("properties")).ok())
+        .filter_map(|text| target_from_properties(&text))
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn amd_targets() -> Vec<String> {
+    Vec::new()
+}
+
 /// If `backend` (a rule of the engine document's `backends`, see `acquire::backend`) needs a GPU
 /// vendor that is not among `vendors`, a short warning explaining the mismatch, with `label` as the
 /// backend's name. `None` if the backend is vendor-agnostic (Vulkan, SYCL, CPU) or `vendors` is
@@ -177,6 +215,37 @@ mod tests {
         );
         assert_eq!(classify("Apple M2"), Some(GpuVendor::Apple));
         assert_eq!(classify("Some Unknown Adapter"), None);
+    }
+
+    #[test]
+    fn a_nodes_target_version_is_the_name_rocm_gives_it() {
+        let node = |version: &str| {
+            format!("cpu_cores_count 0\ngfx_target_version {version}\nvendor_id 4098\n")
+        };
+        assert_eq!(
+            target_from_properties(&node("100301")).as_deref(),
+            Some("gfx1031")
+        );
+        assert_eq!(
+            target_from_properties(&node("110000")).as_deref(),
+            Some("gfx1100")
+        );
+        assert_eq!(
+            target_from_properties(&node("90010")).as_deref(),
+            Some("gfx90a")
+        );
+        assert_eq!(
+            target_from_properties(&node("90402")).as_deref(),
+            Some("gfx942")
+        );
+        assert_eq!(
+            target_from_properties(&node("120001")).as_deref(),
+            Some("gfx1201")
+        );
+        // the CPU's node, and a file with no such line
+        assert_eq!(target_from_properties(&node("0")), None);
+        assert_eq!(target_from_properties("vendor_id 4098\n"), None);
+        assert_eq!(target_from_properties(&node("none")), None);
     }
 
     fn backend(label: &str, needs_gpu: Option<&str>) -> Backend {

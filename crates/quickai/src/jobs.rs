@@ -20,6 +20,9 @@ pub enum JobEvent<T> {
     /// A line about what the job is doing now (`Unpacking ollama-linux-amd64.tar.zst`, or an
     /// engine's own words while it pulls a model), for the log.
     Status(String),
+    /// What it is doing right now, in more words than the progress line has (the step, the file,
+    /// how fast): each one replaces the one before, and none is kept in the log.
+    Detail(String),
     Done(T),
     Failed(String),
 }
@@ -46,6 +49,8 @@ pub struct Job<T> {
     fraction_only: Option<f32>,
     /// What the job has said since the interface last asked (`take_statuses`).
     statuses: Vec<String>,
+    /// The last thing it said about what it is doing right now (`JobEvent::Detail`).
+    detail: Option<String>,
 }
 
 impl<T: Send + 'static> Job<T> {
@@ -73,6 +78,7 @@ impl<T: Send + 'static> Job<T> {
             total: None,
             fraction_only: None,
             statuses: Vec::new(),
+            detail: None,
         }
     }
 }
@@ -90,6 +96,7 @@ impl<T> Job<T> {
                 }
                 JobEvent::Fraction(f) => self.fraction_only = Some(f.clamp(0.0, 1.0)),
                 JobEvent::Status(line) => self.statuses.push(line),
+                JobEvent::Detail(text) => self.detail = Some(text),
                 JobEvent::Done(value) => outcome = Some(Ok(value)),
                 JobEvent::Failed(message) => outcome = Some(Err(message)),
             }
@@ -100,6 +107,11 @@ impl<T> Job<T> {
     /// The lines the job has said since the last call, oldest first: for the log pane.
     pub fn take_statuses(&mut self) -> Vec<String> {
         std::mem::take(&mut self.statuses)
+    }
+
+    /// What the job is doing right now, if it has said: shown under the progress line.
+    pub fn detail(&self) -> Option<&str> {
+        self.detail.as_deref()
     }
 
     /// The progress line: "Downloading model.gguf: 1.2 GB / 4.0 GB", or without the total when the
@@ -233,6 +245,33 @@ mod tests {
         job.downloaded = 3_000;
         job.total = Some(2_000);
         assert_eq!(job.fraction(), Some(1.0));
+    }
+
+    #[test]
+    fn p3_f77_a_job_says_what_it_is_doing_in_a_line_that_replaces_the_last_and_is_not_logged() {
+        let mut job: Job<u8> = Job::spawn(
+            "v1".into(),
+            "Installing",
+            || {},
+            |send| {
+                send(JobEvent::Detail("step 1 of 3".into()));
+                send(JobEvent::Status("Using Python 3.13".into()));
+                send(JobEvent::Detail("step 2 of 3".into()));
+                send(JobEvent::Done(1));
+            },
+        );
+        assert_eq!(job.detail(), None, "nothing said yet");
+        assert!(job.wait(Duration::from_secs(5)).is_some());
+        assert_eq!(
+            job.detail(),
+            Some("step 2 of 3"),
+            "the last one is the one kept"
+        );
+        assert_eq!(
+            job.take_statuses(),
+            ["Using Python 3.13"],
+            "a detail is not a line of the log"
+        );
     }
 
     #[test]

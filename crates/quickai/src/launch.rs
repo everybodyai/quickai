@@ -41,6 +41,8 @@ pub struct MachineFacts {
     pub gpu_vendors: Vec<String>,
     /// False when nothing could be detected.
     pub gpu_known: bool,
+    /// The architectures of the AMD GPUs the driver reports (`gfx1031`); empty when none, or not asked.
+    pub gpu_targets: Vec<String>,
 }
 
 impl MachineFacts {
@@ -52,6 +54,12 @@ impl MachineFacts {
                 .map(|g| g.label().to_ascii_lowercase())
                 .collect(),
             gpu_known: !gpus.is_empty(),
+            // the driver is asked only on a machine that has an AMD GPU
+            gpu_targets: if gpus.contains(&GpuVendor::Amd) {
+                crate::gpu::amd_targets()
+            } else {
+                Vec::new()
+            },
         }
     }
 }
@@ -137,6 +145,7 @@ pub fn host_facts(binary: &Path, machine: MachineFacts, internal_port: Option<u1
         cpus: std::thread::available_parallelism().map_or(1, |n| n.get() as u32),
         gpu_known: machine.gpu_known,
         gpu_vendors: machine.gpu_vendors,
+        gpu_targets: machine.gpu_targets,
         binary: Some(binary.display().to_string()),
         data_dir: home.join(".quickai").display().to_string(),
         config_dir: directories::ProjectDirs::from("dev", "quickai", "quickai")
@@ -250,6 +259,21 @@ fn program_name(engine: &quickai_core::registry::Engine) -> String {
 /// The executable ignoring any override: what "Reset to default" returns to.
 pub fn default_binary(registry: &Registry, engine_id: &str) -> PathBuf {
     locate_binary(registry, engine_id, None)
+}
+
+/// Whether the engine serves any API whose traffic can be read (a conversation): only then is there
+/// anything for the live-traffic proxy to show. A proxy in front of an engine whose traffic is not
+/// read (ComfyUI's workflows) would only be a hop that its web page's connections have to survive, so
+/// neither the window nor the headless `plan` puts one there.
+pub fn engine_reads_traffic(registry: &Registry, engine_id: &str) -> bool {
+    let Some(engine) = registry.engine(engine_id) else {
+        return false;
+    };
+    let ids = match &engine.doc.traffic {
+        Some(traffic) => &traffic.apis,
+        None => &engine.doc.provides.apis,
+    };
+    !registry.decoders_for(ids).is_empty()
 }
 
 #[cfg(test)]

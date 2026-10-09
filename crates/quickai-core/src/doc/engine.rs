@@ -44,6 +44,9 @@ pub struct Component {
     pub order: Option<i32>,
     #[serde(default)]
     pub bind: ComponentBind,
+    /// The folder of the models folder this kind of file is kept in, for an engine that finds its
+    /// files by where they are and not by an argument (`vae`, `text_encoders`): a plain name.
+    pub place: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -65,9 +68,12 @@ pub struct EngineInfo {
     /// Hosts the engine itself contacts; feeds the privacy table.
     #[serde(default)]
     pub egress: Vec<String>,
+    /// Where the engine stands in the engine selector, lowest first (default 100); engines with the same
+    /// number stand in the order of their ids.
+    pub order: Option<i32>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Provides {
     /// API ids the running engine serves (defined in the vocabulary).
     #[serde(default)]
@@ -77,6 +83,28 @@ pub struct Provides {
     #[serde(default)]
     pub model_name_matters: bool,
     pub default_port: Option<u16>,
+    /// Whether the engine has to be given a model to start (llama.cpp). An engine that says `false`
+    /// runs on its own: its models are used by what a client asks of it (ComfyUI's workflows), not
+    /// chosen when it starts, and Start needs no model.
+    #[serde(default = "yes")]
+    pub needs_model: bool,
+}
+
+impl Default for Provides {
+    fn default() -> Self {
+        Provides {
+            apis: Vec::new(),
+            web_ui: None,
+            accepts: None,
+            model_name_matters: false,
+            default_port: None,
+            needs_model: true,
+        }
+    }
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -245,6 +273,10 @@ pub enum Feed {
         /// The feed lists a sha256 for each file (GitHub's `digest`), and a build carries it.
         #[serde(default)]
         digest: bool,
+        /// Where the source archive of a release is fetched from (`assets` of `by = "source"`):
+        /// `<archive>/<owner>/<name>/archive/refs/tags/<tag>.tar.gz`. Default `https://github.com`; as
+        /// with `api`, a document that names another is how a test points the install at a fake.
+        archive: Option<String>,
     },
 }
 
@@ -279,6 +311,9 @@ pub enum Assets {
         rules: Vec<NameRule>,
         label: Option<String>,
     },
+    /// The release's own source archive (`<tag>.tar.gz`) is the build, for an application that is
+    /// installed from its source (ComfyUI). Every release has one, on every platform.
+    Source { label: Option<String> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
@@ -310,6 +345,83 @@ pub enum Install {
         #[serde(default)]
         skip: Vec<SkipRule>,
     },
+    /// An application written in Python, installed from its source: the source archive is unpacked
+    /// into the build, a virtual environment is made beside it, the packages it needs are installed
+    /// into that, and a launcher that runs the application with that environment is written. The
+    /// launcher is the build's executable.
+    PythonApp {
+        /// The launcher the installer writes (`comfyui`; `comfyui.cmd` on Windows).
+        binary: BinarySpec,
+        /// The script of the unpacked source the launcher runs, relative to the source (`main.py`).
+        entry: String,
+        python: PythonSpec,
+        /// Whether the source archive is compared with a sha256 before anything is unpacked.
+        #[serde(default)]
+        verify: Verify,
+        /// A command that must succeed on the finished build before it counts as installed: the
+        /// launcher (`${binary}`) and its arguments.
+        smoke: Option<Vec<String>>,
+        /// How long the smoke test may take (default `120s`: a program that imports PyTorch for the
+        /// first time is slow to start).
+        smoke_timeout: Option<String>,
+        /// How much free room an install needs (`30GiB`): the download and the environment together.
+        space: Option<String>,
+        /// The packages of the environment, in the order they are installed.
+        #[serde(default)]
+        pip: Vec<PipStep>,
+        /// Packages of extra nodes unpacked into the source (a custom node of ComfyUI).
+        #[serde(default)]
+        nodes: Vec<NodePack>,
+    },
+}
+
+/// Which Python makes the virtual environment of a `python_app`.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct PythonSpec {
+    /// The versions to look for, best first (`3.13`, `3.12`): the first one the machine has is used.
+    /// A person who has another puts its path in the engine's Python field.
+    pub versions: Vec<String>,
+}
+
+/// One `pip install` of the environment of a `python_app`.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct PipStep {
+    /// Its name; a document of the person's patches or replaces a step by `id`.
+    pub id: String,
+    /// What the log says it is doing (default: the id).
+    pub label: Option<String>,
+    /// Only on a machine where this holds (`has(gpu.vendors, 'amd')`); always when left out.
+    pub when: Option<String>,
+    /// Packages, as requirement specifiers (`torch`, `torchvision==0.29.1`).
+    #[serde(default)]
+    pub packages: Vec<String>,
+    /// A requirements file of the unpacked source, relative to it (`requirements.txt`).
+    pub requirements: Option<String>,
+    /// The index the packages come from instead of PyPI (`https://download.pytorch.org/whl/rocm7.2`).
+    pub index: Option<String>,
+    /// How much of the progress bar this step is, next to the others (default 1): PyTorch is most of
+    /// the time an install takes, and a bar that gave every step an equal share would stand still
+    /// for it.
+    pub weight: Option<u32>,
+}
+
+/// A package of extra nodes that is unpacked into the source of a `python_app`, pinned by a sha256.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct NodePack {
+    pub id: String,
+    pub label: Option<String>,
+    /// Only on a machine where this holds; always when left out.
+    pub when: Option<String>,
+    /// A `.tar.gz` of one commit.
+    pub url: String,
+    /// What the archive must hash to (`sha256:` and 64 hexadecimal digits).
+    pub sha256: String,
+    /// Where it goes, relative to the unpacked source (`custom_nodes/ComfyUI-GGUF`).
+    pub into: String,
+    /// Its requirements file, relative to the pack (`requirements.txt`); installed into the environment.
+    pub requirements: Option<String>,
+    /// Its licence, for the About window.
+    pub license: Option<String>,
 }
 
 /// Whether an install checks what it downloaded.
@@ -524,6 +636,15 @@ pub struct ModelAcquire {
     #[serde(rename = "use")]
     pub kind: String,
     pub dir: Option<String>,
+    /// The folder of `dir` the weights of a model go in (`diffusion_models`), for an engine that
+    /// finds its files by the folder they are in; a plain name. The recommended list may say another
+    /// for a model.
+    pub place: Option<String>,
+    /// The other folders of `dir` a file can be put in by hand, for the same kind of engine: what the
+    /// window offers a person who gives a link or a file of their own and says where it goes. Plain
+    /// names; `place` and the folder of each `[components.<kind>]` are offered too.
+    #[serde(default)]
+    pub places: Vec<String>,
 }
 
 /// One way of looking models up online: the primitive that does it and what it is told.
@@ -547,6 +668,10 @@ pub struct ModelList {
     /// Where the last reply is kept (a template), so something can be shown while the engine is not
     /// running.
     pub cache: Option<String>,
+    /// Names the engine lists that are its own bookkeeping, not models to pick: patterns over the
+    /// whole name (`llamacpp:.*`). The picker, the recommendation and the cache never see them.
+    #[serde(default)]
+    pub hide: Vec<String>,
 }
 
 /// Where the parts of one listed model are, as JSON pointers into it.
@@ -682,6 +807,23 @@ pub struct Spawn {
     pub group: bool,
     #[serde(default)]
     pub stop: StopSpec,
+    /// Folders made, with the ones above them, before the program starts: templates. For a program
+    /// that refuses a folder it is told about that does not exist yet (ComfyUI's `--models-directory`).
+    #[serde(default)]
+    pub mkdir: Vec<String>,
+    /// Files of the application's own that are put where the program is told to read them, before it
+    /// starts: for a program that has a folder of extensions (ComfyUI's custom nodes).
+    #[serde(default)]
+    pub write: Vec<WriteSpec>,
+}
+
+/// One file or folder of the application's own, and where it is put.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct WriteSpec {
+    /// A name in the application's own files, `comfyui/quickai_bridge`: a file, or a folder with everything in it.
+    pub asset: String,
+    /// A template: where it is put. What is already there and the same is left alone.
+    pub to: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -837,6 +979,10 @@ pub struct Bind {
     /// The value is a shell-like quoted string of arguments (nothing is added when it is empty).
     #[serde(default)]
     pub arg_split: bool,
+    /// For a `choice` field: the arguments each option adds (plain words, not templates); an option
+    /// that is not listed adds none.
+    #[serde(default)]
+    pub arg_by_value: std::collections::BTreeMap<String, Vec<String>>,
     /// Where among the field bindings this goes; defaults to the field's `ui.order`.
     pub order: Option<i32>,
     /// Environment variables of the engine this field decides: each is set when its `when` holds

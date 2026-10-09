@@ -157,6 +157,21 @@ pub struct SpawnPlan {
     /// Do not hand it the loader variables of QuickAI's own package (an AppImage's or a snap's
     /// library directories): it is a program that was downloaded, with libraries of its own.
     pub scrub_loader_env: bool,
+    /// Folders to make, with the ones above them, before it starts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mkdir: Vec<String>,
+    /// Files of the application's own to put where it reads them, before it starts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub write: Vec<WriteStep>,
+}
+
+/// A file or folder of the application's own, and where it goes.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct WriteStep {
+    /// Its name among the application's own files.
+    pub asset: String,
+    /// Where it is put.
+    pub to: String,
 }
 
 impl SpawnPlan {
@@ -319,6 +334,8 @@ mod tests {
             env: vec![],
             group: false,
             scrub_loader_env: false,
+            mkdir: Vec::new(),
+            write: Vec::new(),
             identity: None,
         };
         assert_eq!(
@@ -338,6 +355,8 @@ mod tests {
             env,
             group: true,
             scrub_loader_env: true,
+            mkdir: Vec::new(),
+            write: Vec::new(),
             identity: None,
         }
     }
@@ -441,6 +460,8 @@ mod tests {
             env: ops(),
             group: false,
             scrub_loader_env: false,
+            mkdir: Vec::new(),
+            write: Vec::new(),
             identity: None,
         }))
         .unwrap();

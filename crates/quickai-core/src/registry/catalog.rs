@@ -48,6 +48,9 @@ pub struct FilesRun {
     pub companions: Vec<(String, CatalogFile)>,
     /// The engine's bundle that pairs the weights with the companions; `None` without companions.
     pub bundle: Option<String>,
+    /// The folder of the models folder the weights are kept in, when this model's are not where the
+    /// engine keeps weights (a checkpoint, not a diffusion model).
+    pub place: Option<String>,
 }
 
 /// What an engine that keeps its own models does: pulls a name.
@@ -566,6 +569,7 @@ fn compile_run(
             ("files", !run.files.is_empty()),
             ("companions", !run.companions.is_empty()),
             ("mode", run.mode.is_some()),
+            ("place", run.place.is_some()),
         ] {
             if present {
                 error(
@@ -789,6 +793,21 @@ fn compile_run(
         }
     }
 
+    // the folder its weights are kept in
+    let place = match run.place.as_deref().map(str::trim) {
+        None => None,
+        Some(folder) if crate::registry::engine::is_folder_name(folder) => Some(folder.to_string()),
+        Some(folder) => {
+            error(
+                at.clone().key("place"),
+                format!("`{folder}` is not the name of a folder"),
+                Some("lower case letters, digits and _ or -, such as `checkpoints`".to_string()),
+            );
+            wrong = true;
+            None
+        }
+    };
+
     // how the engine is started for it
     let modes = engine
         .models
@@ -830,6 +849,7 @@ fn compile_run(
         files,
         companions,
         bundle,
+        place,
     }))
 }
 

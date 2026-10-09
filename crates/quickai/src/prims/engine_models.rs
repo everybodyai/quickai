@@ -19,6 +19,7 @@ use quickai_core::decode::Framing as DocFraming;
 use quickai_core::models::{same_model, ListCall, ModelCall, PullCall};
 use quickai_core::plan::Endpoint;
 use quickai_core::stream::{ProgressMap, PullTracker, PullUpdate};
+use regex::Regex;
 use serde_json::{json, Value};
 
 use super::http_call::{call, call_cancellable, stream, Call, CallError, Framing};
@@ -68,6 +69,8 @@ pub struct ListSpec {
     pub capabilities: Option<String>,
     /// Where the last answer is kept.
     pub cache: Option<PathBuf>,
+    /// The names the engine's document says are its own bookkeeping, each matched against a whole name.
+    pub hide: Vec<Regex>,
     pub timeout: Duration,
 }
 
@@ -84,6 +87,12 @@ impl ListSpec {
             digest: list.digest.clone(),
             capabilities: list.capabilities.clone(),
             cache: list.cache.as_ref().map(PathBuf::from),
+            // the registry already refused a pattern that does not compile, so none is dropped here
+            hide: list
+                .hide
+                .iter()
+                .filter_map(|pattern| Regex::new(&format!("^(?:{pattern})$")).ok())
+                .collect(),
             timeout: list.call.timeout,
         }
     }
@@ -100,6 +109,7 @@ impl ListSpec {
             digest: Some("/digest".into()),
             capabilities: Some("/capabilities".into()),
             cache,
+            hide: Vec::new(),
             timeout: Duration::from_secs(5),
         }
     }
@@ -146,7 +156,7 @@ pub fn list_models(endpoint: &Endpoint, spec: &ListSpec) -> Result<Listing, Call
 }
 
 fn read_rows(body: &Value, spec: &ListSpec) -> (Vec<ModelRow>, Vec<String>) {
-    let (mut rows, mut warnings) = (Vec::new(), Vec::new());
+    let (mut rows, mut warnings): (Vec<ModelRow>, Vec<String>) = (Vec::new(), Vec::new());
     let items = body
         .pointer(&spec.items)
         .and_then(Value::as_array)
@@ -169,6 +179,12 @@ fn read_rows(body: &Value, spec: &ListSpec) -> (Vec<ModelRow>, Vec<String>) {
             ));
             continue;
         };
+        // The engine's own bookkeeping is not a model to pick (the document's `hide`), and a name it
+        // lists twice is one model: a request names it, so two rows could not be told apart.
+        if spec.hide.iter().any(|pattern| pattern.is_match(&id)) || rows.iter().any(|r| r.id == id)
+        {
+            continue;
+        }
         rows.push(ModelRow {
             display: text(&spec.display).unwrap_or_else(|| id.clone()),
             id,

@@ -43,6 +43,26 @@ pub fn recommend_ctx_size(model_size_bytes: u64, total_ram_bytes: u64) -> u32 {
     suggested.clamp(MIN, MAX)
 }
 
+/// What to present an AMD GPU to ROCm as (`HSA_OVERRIDE_GFX_VERSION`), for the architectures the
+/// kernels of PyTorch's wheels are not built for but a sister architecture's run on: an RX 6000 card
+/// (RDNA2, `gfx1031` and the others of its family) as the `gfx1030` the wheels have, and the RDNA3
+/// cards and iGPUs under the `gfx1100` ones. Empty for an architecture that needs nothing, or that
+/// nothing helps (the list is the first that has an answer, so a machine with an iGPU and a card is
+/// given the card's). ComfyUI's own README gives the same two values.
+pub fn rocm_gfx_override(targets: &[String]) -> &'static str {
+    for target in targets {
+        match target.trim() {
+            "gfx1031" | "gfx1032" | "gfx1033" | "gfx1034" | "gfx1035" | "gfx1036" => {
+                return "10.3.0"
+            }
+            "gfx1101" | "gfx1102" | "gfx1103" => return "11.0.0",
+            "gfx90c" => return "9.0.0",
+            _ => {}
+        }
+    }
+    ""
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -77,5 +97,19 @@ mod tests {
     fn the_middle_ratio_halves_the_ceiling() {
         // 4 GB model, 16 GB RAM: ratio 4 -> half of the 8192 ceiling.
         assert_eq!(recommend_ctx_size(4 * GB, 16 * GB), 4096);
+    }
+
+    #[test]
+    fn an_rx_6000_card_is_presented_as_the_architecture_the_wheels_have() {
+        let t = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        assert_eq!(rocm_gfx_override(&t(&["gfx1031"])), "10.3.0");
+        assert_eq!(rocm_gfx_override(&t(&["gfx1030"])), "");
+        assert_eq!(rocm_gfx_override(&t(&["gfx1102"])), "11.0.0");
+        assert_eq!(rocm_gfx_override(&t(&["gfx1100"])), "");
+        assert_eq!(rocm_gfx_override(&t(&["gfx90c"])), "9.0.0");
+        assert_eq!(rocm_gfx_override(&t(&["gfx942"])), "");
+        assert_eq!(rocm_gfx_override(&t(&[])), "");
+        // an iGPU that needs an answer and a card that does not: the answer is the first's
+        assert_eq!(rocm_gfx_override(&t(&["gfx1036", "gfx1100"])), "10.3.0");
     }
 }

@@ -555,6 +555,8 @@ mod tests {
                     }],
                     group: false,
                     scrub_loader_env: false,
+                    mkdir: Vec::new(),
+                    write: Vec::new(),
                     identity: None,
                 })],
                 ready: ready_path.map(|path| ReadyPlan {

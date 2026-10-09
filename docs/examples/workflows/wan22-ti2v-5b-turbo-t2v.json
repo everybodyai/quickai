@@ -1,0 +1,121 @@
+{
+ "1": {
+  "class_type": "UnetLoaderGGUF",
+  "inputs": {
+   "unet_name": "Wan2_2-TI2V-5B-Turbo-Q8_0.gguf"
+  }
+ },
+ "2": {
+  "class_type": "CLIPLoaderGGUF",
+  "inputs": {
+   "clip_name": "umt5-xxl-encoder-Q8_0.gguf",
+   "type": "wan"
+  }
+ },
+ "3": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "Wan2.2_VAE.safetensors"
+  }
+ },
+ "4": {
+  "class_type": "ModelSamplingSD3",
+  "inputs": {
+   "model": [
+    "1",
+    0
+   ],
+   "shift": 8.0
+  }
+ },
+ "5": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "A calm ocean at sunset. Gentle waves roll onto a wide sandy beach, and the golden light of the low sun glitters on the water. A few seagulls glide across the orange sky. The camera slowly pans to the right along the shore.",
+   "clip": [
+    "2",
+    0
+   ]
+  }
+ },
+ "6": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "blurry, low quality, jittery, distorted, watermark, text, static",
+   "clip": [
+    "2",
+    0
+   ]
+  }
+ },
+ "7": {
+  "class_type": "Wan22ImageToVideoLatent",
+  "inputs": {
+   "vae": [
+    "3",
+    0
+   ],
+   "width": 640,
+   "height": 352,
+   "length": 33,
+   "batch_size": 1
+  }
+ },
+ "8": {
+  "class_type": "KSampler",
+  "inputs": {
+   "model": [
+    "4",
+    0
+   ],
+   "seed": 42,
+   "steps": 4,
+   "cfg": 1.0,
+   "sampler_name": "euler",
+   "scheduler": "simple",
+   "positive": [
+    "5",
+    0
+   ],
+   "negative": [
+    "6",
+    0
+   ],
+   "latent_image": [
+    "7",
+    0
+   ],
+   "denoise": 1.0
+  }
+ },
+ "9": {
+  "class_type": "VAEDecodeTiled",
+  "inputs": {
+   "samples": [
+    "8",
+    0
+   ],
+   "vae": [
+    "3",
+    0
+   ],
+   "tile_size": 192,
+   "overlap": 48,
+   "temporal_size": 16,
+   "temporal_overlap": 8
+  }
+ },
+ "10": {
+  "class_type": "SaveWEBM",
+  "inputs": {
+   "images": [
+    "9",
+    0
+   ],
+   "filename_prefix": "wan22-5b-turbo",
+   "codec": "vp9",
+   "fps": 24.0,
+   "crf": 24.0
+  }
+ }
+}

@@ -1,0 +1,6 @@
+search_text_to_video.json	https://huggingface.co/api/models?filter=gguf&sort=downloads&direction=-1&limit=50&pipeline_tag=text-to-video	2026-10-08
+search_umt5.json	https://huggingface.co/api/models?filter=gguf&sort=downloads&direction=-1&limit=50&search=umt5	2026-10-08
+repos/hum-ma__Wan2.2-TI2V-5B-Turbo-GGUF.json	https://huggingface.co/api/models/hum-ma/Wan2.2-TI2V-5B-Turbo-GGUF?blobs=true	2026-10-08
+repos/city96__umt5-xxl-encoder-gguf.json	https://huggingface.co/api/models/city96/umt5-xxl-encoder-gguf?blobs=true	2026-10-08
+repos/QuantStack__Wan2.2-TI2V-5B-GGUF.json	https://huggingface.co/api/models/QuantStack/Wan2.2-TI2V-5B-GGUF?blobs=true	2026-10-08
+repos/biali__ltxv-gguf.json	https://huggingface.co/api/models/biali/ltxv-gguf?blobs=true	2026-10-08

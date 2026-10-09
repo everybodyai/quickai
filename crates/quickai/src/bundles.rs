@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use quickai_core::lookup::present::{safe_file_name, Download};
+use quickai_core::lookup::present::{is_place, safe_file_name, Download};
 use serde::{Deserialize, Serialize};
 
 /// What is added to the weights' file name to make the name of the record.
@@ -35,10 +35,15 @@ struct Record {
 struct RecordPart {
     kind: String,
     label: String,
-    /// The name it is kept under, in the folder of the weights.
+    /// The name it is kept under, in the folder of the weights or, with `dir`, in the folder of that
+    /// name beside the weights' own.
     file: String,
     /// The name it has where it came from.
     name: String,
+    /// The folder of the models folder it is kept in (`text_encoders`), for an engine that finds its
+    /// files by the folder they are in; absent when it is beside the weights.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    dir: Option<String>,
 }
 
 /// A file that goes with a model's weights.
@@ -87,6 +92,7 @@ pub fn write(weights: &Path, download: &Download) -> std::io::Result<()> {
                     label: piece.label.clone(),
                     file: piece.store_as.clone(),
                     name: piece.name.clone(),
+                    dir: piece.place.clone(),
                 })
             })
             .collect(),
@@ -134,13 +140,23 @@ pub fn companions(weights: &Path) -> Vec<Companion> {
         return Vec::new();
     };
     let folder = weights.parent().map(Path::to_path_buf).unwrap_or_default();
+    // the models folder, when the weights are in a folder of it (the folders of one engine are side by side)
+    let root = folder.parent().map(Path::to_path_buf).unwrap_or_default();
     record
         .parts
         .into_iter()
-        // a name of a record is a file of this folder: whatever else it says is not believed
-        .filter(|part| safe_file_name(&part.file) == part.file && !part.kind.is_empty())
+        // a name of a record is a file of this folder, or of a folder beside it that is a plain name:
+        // whatever else it says is not believed
+        .filter(|part| {
+            safe_file_name(&part.file) == part.file
+                && !part.kind.is_empty()
+                && part.dir.as_deref().is_none_or(is_place)
+        })
         .map(|part| Companion {
-            path: folder.join(&part.file),
+            path: match &part.dir {
+                Some(dir) => root.join(dir).join(&part.file),
+                None => folder.join(&part.file),
+            },
             kind: part.kind,
             label: part.label,
             name: part.name,
@@ -148,7 +164,8 @@ pub fn companions(weights: &Path) -> Vec<Companion> {
         .collect()
 }
 
-/// The names of every companion any record in `folder` names.
+/// The names of every companion any record in `folder` names, that is kept beside the weights. (One
+/// that is kept in a folder of its own is not in this folder to be taken for a model.)
 pub fn referenced(folder: &Path) -> BTreeSet<String> {
     let Ok(read_dir) = std::fs::read_dir(folder) else {
         return BTreeSet::new();
@@ -158,6 +175,9 @@ pub fn referenced(folder: &Path) -> BTreeSet<String> {
         let name = entry.file_name().to_string_lossy().into_owned();
         if let Some(weights) = name.strip_suffix(RECORD_SUFFIX) {
             for companion in companions(&folder.join(weights)) {
+                if companion.path.parent() != Some(folder) {
+                    continue;
+                }
                 if let Some(file) = companion.path.file_name() {
                     names.insert(file.to_string_lossy().into_owned());
                 }
@@ -165,6 +185,27 @@ pub fn referenced(folder: &Path) -> BTreeSet<String> {
         }
     }
     names
+}
+
+/// The paths of every companion any record in any of `folders` names.
+fn referenced_paths(folders: &[PathBuf]) -> BTreeSet<PathBuf> {
+    let mut paths = BTreeSet::new();
+    for folder in folders {
+        let Ok(read_dir) = std::fs::read_dir(folder) else {
+            continue;
+        };
+        for entry in read_dir.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if let Some(weights) = name.strip_suffix(RECORD_SUFFIX) {
+                paths.extend(
+                    companions(&folder.join(weights))
+                        .into_iter()
+                        .map(|c| c.path),
+                );
+            }
+        }
+    }
+    paths
 }
 
 /// What deleting a model took away.
@@ -207,10 +248,25 @@ pub fn remove_model(weights: &Path) -> Removed {
         }
     }
     let folder = weights.parent().map(Path::to_path_buf).unwrap_or_default();
-    let still_named = referenced(&folder);
+    // A companion kept in a folder of its own may be named by the record of weights in any folder
+    // beside this one (a VAE is shared by the models of a family, whichever folder their weights are in).
+    let mut folders = vec![folder.clone()];
+    if companions.iter().any(|c| c.path.parent() != Some(&folder)) {
+        if let Some(root) = folder.parent() {
+            folders.extend(
+                std::fs::read_dir(root)
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .map(|e| e.path())
+                    .filter(|p| p.is_dir() && *p != folder),
+            );
+        }
+    }
+    let still_named = referenced_paths(&folders);
     for companion in companions {
         let file = name_of(&companion.path);
-        if still_named.contains(&file) {
+        if still_named.contains(&companion.path) {
             report.kept.push(file);
         } else if companion.path.exists() {
             match std::fs::remove_file(&companion.path) {
@@ -237,6 +293,7 @@ mod tests {
             name: name.to_string(),
             size: Some(1),
             sha256: None,
+            place: None,
         }
     }
 

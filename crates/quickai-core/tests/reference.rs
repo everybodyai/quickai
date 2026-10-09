@@ -272,6 +272,7 @@ hidden = false
 repo = "acme/Alpha-4B-GGUF"
 rev = "0123456789abcdef0123456789abcdef01234567"
 mode = "embedding"
+place = "checkpoints"
 files = [ { file = "Alpha-4B-Q4_K_M.gguf", size = 2500000000, sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", label = "Q4_K_M", best = true } ]
 
 [model.run.llamacpp.companions]
@@ -380,7 +381,7 @@ version = { exec = ["${binary}", "--version"], regex = 'version is (\S+)', as = 
 [acquire]
 root = "${data}/x"
 filter_hint = "h"
-feed = { use = "github_release", repo = "a/b", per_page = 10, show = 5, prereleases = true, api = "https://api.example.com", digest = true }
+feed = { use = "github_release", repo = "a/b", per_page = 10, show = 5, prereleases = true, api = "https://api.example.com", digest = true, archive = "https://mirror.example.com" }
 assets = { by = "keywords", ext = [".zip"], exclude = ["x"], os = { linux = ["l"] }, arch = { x86_64 = ["x"] }, label = "${tag}" }
 install = { use = "archive", binary = { name = "x", search_depth = 4 }, chmod = true, verify = "digest", smoke = ["${binary}", "--version"], skip = [ { when = "gpu.known", glob = "lib/cuda_*" } ] }
 backends = [ { match = "a", label = "A", needs_gpu = "amd" } ]
@@ -391,21 +392,31 @@ name = "x"
 [acquire]
 assets = { by = "names", rules = [ { when = "os == 'linux'", name = "n" } ], label = "${tag}" }
 "#;
+    let python = r#"
+[engine]
+name = "x"
+[acquire]
+root = "${data}/x"
+feed = { use = "github_release", repo = "a/b" }
+assets = { by = "source", label = "${tag}" }
+install = { use = "python_app", binary = { name = "x" }, entry = "main.py", python = { versions = ["3.13", "3.12"] }, verify = "digest", smoke = ["${binary}", "--quick-test-for-ci"], smoke_timeout = "300s", space = "30GiB", pip = [ { id = "torch", label = "PyTorch", when = "has(gpu.vendors, 'amd')", packages = ["torch"], requirements = "requirements.txt", index = "https://download.example.com/whl/rocm", weight = 10 } ], nodes = [ { id = "gguf", label = "GGUF", when = "true", url = "https://example.com/a.tar.gz", sha256 = "sha256:0000000000000000000000000000000000000000000000000000000000000000", into = "custom_nodes/gguf", requirements = "requirements.txt", license = "MIT" } ] }
+"#;
     let lookups = r#"
 [engine]
 name = "x"
 [models]
 lookup = [
   { id = "library", use = "ollama_library", site = "https://ollama.example", bytes_per_parameter = 0.6, show_variants = 16, types = ["chat"] },
-  { id = "hub", use = "huggingface_gguf", site = "https://hub.example", popular = 30, keyword = 20, similar = 20, prefer = ["Q4_K_M"], skip = ["*-of-*"], show_variants = 4, types = ["chat", "vision"] },
+  { id = "hub", use = "huggingface_gguf", site = "https://hub.example", popular = 30, keyword = 20, similar = 20, pipelines = ["text-to-video"], words = ["encoder"], prefer = ["Q4_K_M"], skip = ["*-of-*"], show_variants = 4, types = ["chat", "vision"], alone = ["mmproj"] },
 ]
+acquire = { use = "file", dir = "${data}/x", place = "p", places = ["q"] }
 bundle = [ { id = "vision", label = "with projector", help = "h", parts = [ { kind = "mmproj", label = "projector", match = ["mmproj*.gguf"], prefer = ["F16"] } ] } ]
 mode = [ { id = "embedding", label = "embedding server", help = "h", arg = ["--embeddings"] } ]
 [components.mmproj]
 order = 80
 bind = { arg = ["--mmproj", "${component.path}"] }
 "#;
-    for text in [keywords, names, lookups] {
+    for text in [keywords, names, python, lookups] {
         let table: toml::Table = toml::from_str(text).unwrap();
         let typed =
             read_body::<EngineDoc>(&table).unwrap_or_else(|e| panic!("{}: {}", e.path, e.message));
@@ -420,7 +431,10 @@ bind = { arg = ["--mmproj", "${component.path}"] }
         for attribute in group.attributes {
             let key = format!("{} =", attribute.name);
             assert!(
-                keywords.contains(&key) || names.contains(&key) || lookups.contains(&key),
+                keywords.contains(&key)
+                    || names.contains(&key)
+                    || python.contains(&key)
+                    || lookups.contains(&key),
                 "`{}` of `{}` is not exercised by the variant document above",
                 attribute.name,
                 group.heading

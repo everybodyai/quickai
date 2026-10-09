@@ -2,6 +2,7 @@
 //! section: for llama.cpp the port, the context size and the GPU layers.
 
 use eframe::egui;
+use quickai_core::doc::engine::FieldType;
 use quickai_core::form::{Edit, FormField};
 
 use super::widgets::{self, Reply};
@@ -41,6 +42,14 @@ impl App {
                         }
                     }
                 });
+                // a number says what is wrong with it beside its box; a choice has no room beside it in this row,
+                // so what is wrong with it (ComfyUI's Memory with the GPU off: the two flags cannot be used together)
+                // is said under the row
+                for field in fields.iter().filter(|f| f.ty == FieldType::Choice) {
+                    for problem in widgets::problem_lines(field.error.as_deref()) {
+                        ui.colored_label(widgets::PROBLEM, problem);
+                    }
+                }
             });
         });
         self.values.apply(edits);

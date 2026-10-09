@@ -1,0 +1,152 @@
+[
+ {
+  "downloads": 270879,
+  "id": "city96/umt5-xxl-encoder-gguf",
+  "library_name": "gguf",
+  "likes": 190,
+  "modelId": "city96/umt5-xxl-encoder-gguf",
+  "private": false,
+  "tags": [
+   "gguf",
+   "en",
+   "base_model:google/umt5-xxl",
+   "base_model:quantized:google/umt5-xxl",
+   "license:apache-2.0",
+   "endpoints_compatible",
+   "region:us"
+  ]
+ },
+ {
+  "downloads": 2214,
+  "id": "chatpig/umt5xxl-encoder-gguf",
+  "likes": 13,
+  "modelId": "chatpig/umt5xxl-encoder-gguf",
+  "private": false,
+  "tags": [
+   "gguf",
+   "gguf-node",
+   "base_model:google/umt5-xxl",
+   "base_model:quantized:google/umt5-xxl",
+   "license:apache-2.0",
+   "endpoints_compatible",
+   "region:us"
+  ]
+ },
+ {
+  "downloads": 711,
+  "id": "chatpig/umt5-base-encoder-gguf",
+  "likes": 2,
+  "modelId": "chatpig/umt5-base-encoder-gguf",
+  "private": false,
+  "tags": [
+   "gguf",
+   "gguf-node",
+   "base_model:google/umt5-base",
+   "base_model:quantized:google/umt5-base",
+   "license:apache-2.0",
+   "endpoints_compatible",
+   "region:us"
+  ]
+ },
+ {
+  "downloads": 363,
+  "id": "HighDoping/umt5-xxl-encode-gguf",
+  "likes": 0,
+  "modelId": "HighDoping/umt5-xxl-encode-gguf",
+  "private": false,
+  "tags": [
+   "gguf",
+   "base_model:Able2/umt5-xxl-encode-only",
+   "base_model:quantized:Able2/umt5-xxl-encode-only",
+   "license:apache-2.0",
+   "endpoints_compatible",
+   "region:us"
+  ]
+ },
+ {
+  "downloads": 270,
+  "id": "Nichonauta/umt5-xxl-encoder-GGUF",
+  "library_name": "gguf",
+  "likes": 2,
+  "modelId": "Nichonauta/umt5-xxl-encoder-GGUF",
+  "private": false,
+  "tags": [
+   "gguf",
+   "en",
+   "base_model:google/umt5-xxl",
+   "base_model:quantized:google/umt5-xxl",
+   "license:apache-2.0",
+   "endpoints_compatible",
+   "region:us"
+  ]
+ },
+ {
+  "downloads": 225,
+  "id": "liaqateagle/umt5-xxl-encoder-gguf",
+  "library_name": "gguf",
+  "likes": 0,
+  "modelId": "liaqateagle/umt5-xxl-encoder-gguf",
+  "private": false,
+  "tags": [
+   "gguf",
+   "en",
+   "base_model:google/umt5-xxl",
+   "base_model:quantized:google/umt5-xxl",
+   "license:apache-2.0",
+   "endpoints_compatible",
+   "region:us"
+  ]
+ },
+ {
+  "downloads": 79,
+  "id": "gpt-horse/Copy-umt5-xxl-encoder-gguf",
+  "library_name": "gguf",
+  "likes": 0,
+  "modelId": "gpt-horse/Copy-umt5-xxl-encoder-gguf",
+  "private": false,
+  "tags": [
+   "gguf",
+   "en",
+   "base_model:google/umt5-xxl",
+   "base_model:quantized:google/umt5-xxl",
+   "license:apache-2.0",
+   "endpoints_compatible",
+   "region:us"
+  ]
+ },
+ {
+  "downloads": 67,
+  "id": "Able2/umt5-xxl-encode-only",
+  "library_name": "transformers",
+  "likes": 0,
+  "modelId": "Able2/umt5-xxl-encode-only",
+  "private": false,
+  "tags": [
+   "transformers",
+   "safetensors",
+   "gguf",
+   "umt5",
+   "text2text-generation",
+   "base_model:google/umt5-xxl",
+   "base_model:quantized:google/umt5-xxl",
+   "license:apache-2.0",
+   "endpoints_compatible",
+   "region:us"
+  ]
+ },
+ {
+  "downloads": 12,
+  "id": "Ziyaad30/umt5-xxl-encoder-gguf",
+  "likes": 0,
+  "modelId": "Ziyaad30/umt5-xxl-encoder-gguf",
+  "private": false,
+  "tags": [
+   "gguf",
+   "base_model:Able2/umt5-xxl-encode-only",
+   "base_model:quantized:Able2/umt5-xxl-encode-only",
+   "license:apache-2.0",
+   "endpoints_compatible",
+   "region:us"
+  ]
+ }
+]

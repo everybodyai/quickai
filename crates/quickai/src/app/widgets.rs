@@ -29,7 +29,7 @@ pub enum Reply {
 pub const NAMED: &[&str] = &["runtime_manager", "button"];
 
 /// The red of a message under a field.
-const PROBLEM: egui::Color32 = egui::Color32::from_rgb(192, 57, 43);
+pub(super) const PROBLEM: egui::Color32 = egui::Color32::from_rgb(192, 57, 43);
 
 /// Rows a box of key-value lines shows before it scrolls.
 const KV_ROWS: usize = 4;
@@ -168,6 +168,13 @@ fn combo(ui: &mut egui::Ui, field: &FormField) -> Option<Reply> {
                 ui.selectable_value(&mut chosen, option.clone(), option);
             }
         });
+    // what is wrong with the choice is said under it; in a row (the controls of the main window) it is said under the
+    // row, by whoever drew it, since a sentence beside the box would be off the window
+    if ui.layout().main_dir().is_vertical() {
+        for problem in problem_lines(field.error.as_deref()) {
+            ui.colored_label(PROBLEM, problem);
+        }
+    }
     (chosen != current).then_some(Reply::Set(Value::Str(chosen)))
 }
 

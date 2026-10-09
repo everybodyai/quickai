@@ -108,6 +108,21 @@ pub fn load() -> Recorded {
     }
 }
 
+/// The hosts a real ComfyUI contacted when the page's Download button fetched a model, `host:port`
+/// (`tests/fixtures/comfyui/recorded/egress.txt`, and how it was made, in the README beside it).
+pub fn comfyui_egress() -> Vec<String> {
+    std::fs::read_to_string(
+        super::fixtures_dir()
+            .join("comfyui")
+            .join("recorded")
+            .join("egress.txt"),
+    )
+    .expect("the recording of what ComfyUI contacted is in the repository")
+    .lines()
+    .map(str::to_string)
+    .collect()
+}
+
 impl Recorded {
     pub fn get(&self, name: &str) -> &Rec {
         self.responses

@@ -2,8 +2,8 @@
 //! (`tests/fixtures/huggingface/`, made by `record.sh`) by what is asked for, can be given small
 //! repositories of its own whose files it really serves, and keeps what it was asked.
 //!
-//! - `/api/models?...&search=words`: the recorded list of the most downloaded, narrowed to the
-//!   repositories whose id has every word, in the order it has;
+//! - `/api/models?...&search=words&pipeline_tag=p`: the recorded list of the most downloaded, narrowed
+//!   to the repositories whose id has every word and whose pipeline is `p`, in the order it has;
 //! - `/api/models/<owner>/<name>?blobs=true`: the recorded answer for the six repositories that were
 //!   recorded; for a repository only the list has, one file of a size of its own; for one the fake was
 //!   given (`add_repo`), what it was given;
@@ -43,6 +43,10 @@ struct State {
     lengths: BTreeMap<String, u64>,
     /// Repositories that are listed and are not there when asked for.
     missing: std::collections::BTreeSet<String>,
+    /// Pipelines whose search fails (500).
+    broken_pipelines: std::collections::BTreeSet<String>,
+    /// Pipelines whose search is answered with a page that is not JSON.
+    garbled_pipelines: std::collections::BTreeSet<String>,
 }
 
 pub struct FakeHub {
@@ -57,14 +61,19 @@ fn fixture(rel: &str) -> String {
         .unwrap_or_else(|e| panic!("{rel}: {e}"))
 }
 
-/// The recorded answer for a repository, as a file name has it.
+/// The recorded answer for a repository, as a file name has it: the six of the llama.cpp look-up, and
+/// the four of ComfyUI's (`huggingface/comfyui/`, which keep the checksums the hub states).
 fn recorded_repo(id: &str) -> Option<Value> {
-    let path = super::fixtures_dir()
-        .join("huggingface/repos")
-        .join(format!("{}.json", id.replace('/', "__")));
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
+    ["huggingface/repos", "huggingface/comfyui/repos"]
+        .iter()
+        .find_map(|folder| {
+            let path = super::fixtures_dir()
+                .join(folder)
+                .join(format!("{}.json", id.replace('/', "__")));
+            std::fs::read_to_string(path)
+                .ok()
+                .and_then(|text| serde_json::from_str(&text).ok())
+        })
 }
 
 /// The bytes the fake serves for a file: its repository and its path, over and over, as long as
@@ -113,6 +122,8 @@ impl FakeHub {
             repos: BTreeMap::new(),
             lengths: BTreeMap::new(),
             missing: std::collections::BTreeSet::new(),
+            broken_pipelines: std::collections::BTreeSet::new(),
+            garbled_pipelines: std::collections::BTreeSet::new(),
         }));
         let asked: Arc<Mutex<Vec<Asked>>> = Arc::default();
         let behaviour: Arc<Mutex<Behaviour>> = Arc::default();
@@ -165,12 +176,35 @@ impl FakeHub {
                             .collect()
                     })
                     .unwrap_or_default();
+                let pipeline = query.get("pipeline_tag").cloned();
+                if pipeline
+                    .as_ref()
+                    .is_some_and(|p| data.broken_pipelines.contains(p))
+                {
+                    resp.status(500);
+                    resp.send(b"boom");
+                    return;
+                }
+                if pipeline
+                    .as_ref()
+                    .is_some_and(|p| data.garbled_pipelines.contains(p))
+                {
+                    resp.header("Content-Type", "text/html; charset=utf-8");
+                    resp.send(b"<html><body><h1>Down for maintenance</h1></body></html>");
+                    return;
+                }
+
                 let hits: Vec<&Value> = data
                     .list
                     .iter()
                     .filter(|hit| {
                         let id = hit["id"].as_str().unwrap_or("").to_lowercase();
                         words.iter().all(|w| id.contains(w))
+                    })
+                    .filter(|hit| {
+                        pipeline
+                            .as_deref()
+                            .is_none_or(|p| hit["pipeline_tag"].as_str() == Some(p))
                     })
                     .take(50)
                     .collect();
@@ -296,6 +330,65 @@ impl FakeHub {
         state
             .repos
             .insert(id.to_string(), repo_json(id, pipeline, tags, files));
+    }
+
+    /// A repository of the fake's own whose files carry, in the answer, the SHA-256 of the bytes the fake
+    /// serves for them, as the hub states it for the files it keeps in LFS: a download of one can be
+    /// checked. The files are small (they are hashed here).
+    pub fn add_checked_repo(
+        &self,
+        id: &str,
+        pipeline: Option<&str>,
+        tags: &[&str],
+        files: &[(&str, u64)],
+    ) {
+        self.add_repo(id, pipeline, tags, files);
+        let mut state = self.state.lock().unwrap();
+        let answer = state.repos.get_mut(id).expect("the repository just added");
+        for sibling in answer["siblings"].as_array_mut().unwrap() {
+            let name = sibling["rfilename"].as_str().unwrap().to_string();
+            let size = sibling["size"].as_u64().unwrap();
+            assert!(size <= 16 << 20, "{name} is too big to be hashed here");
+            sibling["lfs"] = json!({
+                "sha256": sha256_hex(&content(id, &name, size as usize)),
+                "size": size,
+            });
+        }
+    }
+
+    /// Makes the hub state, for a file of a repository added with `add_checked_repo`, a checksum that is
+    /// not the one of the bytes it serves: a file that is not what the hub says it is.
+    pub fn corrupt(&self, id: &str, file: &str) {
+        let mut state = self.state.lock().unwrap();
+        let answer = state
+            .repos
+            .get_mut(id)
+            .expect("a repository the fake was given");
+        let sibling = answer["siblings"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|s| s["rfilename"] == file)
+            .expect("a file of it");
+        sibling["lfs"]["sha256"] = json!("0".repeat(64));
+    }
+
+    /// Makes the search of one pipeline (`text-to-video`) fail with 500, and the others go on.
+    pub fn break_pipeline(&self, pipeline: &str) {
+        self.state
+            .lock()
+            .unwrap()
+            .broken_pipelines
+            .insert(pipeline.to_string());
+    }
+
+    /// Makes the search of one pipeline answer with a page that is not JSON, and the others go on.
+    pub fn garble_pipeline(&self, pipeline: &str) {
+        self.state
+            .lock()
+            .unwrap()
+            .garbled_pipelines
+            .insert(pipeline.to_string());
     }
 
     /// Makes a repository one that is listed and not there when it is asked for (404).

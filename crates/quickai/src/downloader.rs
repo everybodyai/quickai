@@ -7,7 +7,7 @@
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use quickai_core::lookup::present::{safe_file_name, Download};
+use quickai_core::lookup::present::{is_place, safe_file_name, Download, Piece};
 use sha2::{Digest, Sha256};
 
 use crate::bundles;
@@ -266,8 +266,10 @@ pub fn spawn_files(
     models_dir: PathBuf,
     wake: impl Fn() + Send + Sync + 'static,
 ) -> Job<String> {
+    // the file the job is named after: the weights, or the one file of a download that has none (a VAE
+    // fetched on its own)
     let weights = download
-        .weights()
+        .primary()
         .map(|w| safe_file_name(&w.store_as))
         .unwrap_or_default();
     let more = download.files.len().saturating_sub(1);
@@ -277,6 +279,15 @@ pub fn spawn_files(
         n => format!("{weights} and {n} more files"),
     };
     Job::spawn(label, "Downloading", wake, move |send| {
+        // the folder each file goes in: the models folder, or a folder of it that the engine keeps
+        // that kind of file in
+        let folder_of = |piece: &Piece| -> Result<PathBuf, String> {
+            match piece.place.as_deref() {
+                None => Ok(models_dir.clone()),
+                Some(place) if is_place(place) => Ok(models_dir.join(place)),
+                Some(place) => Err(format!("`{place}` is not the name of a folder")),
+            }
+        };
         if let Err(e) = std::fs::create_dir_all(&models_dir) {
             send(JobEvent::Failed(format!(
                 "could not create {}: {e}",
@@ -289,8 +300,22 @@ pub fn spawn_files(
         let mut before = 0u64;
         for (index, piece) in download.files.iter().enumerate() {
             let name = safe_file_name(&piece.store_as);
-            let final_path = models_dir.join(&name);
-            let part_path = models_dir.join(format!("{name}.part"));
+            let folder = match folder_of(piece) {
+                Ok(folder) => folder,
+                Err(e) => {
+                    send(JobEvent::Failed(e));
+                    return;
+                }
+            };
+            if let Err(e) = std::fs::create_dir_all(&folder) {
+                send(JobEvent::Failed(format!(
+                    "could not create {}: {e}",
+                    folder.display()
+                )));
+                return;
+            }
+            let final_path = folder.join(&name);
+            let part_path = folder.join(format!("{name}.part"));
             let failed = |what: String| {
                 if index == 0 {
                     JobEvent::Failed(what)
@@ -389,8 +414,17 @@ pub fn spawn_files(
                 return;
             }
             before += written;
+            // where a file went, for an engine that keeps its files by the folder they are in: the
+            // person looking for it in the window finds it nowhere else
+            if let Some(place) = piece.place.as_deref() {
+                send(JobEvent::Status(format!("{name} is in {place}.")));
+            }
         }
-        if let Err(e) = bundles::write(&models_dir.join(&weights), &download) {
+        let weights_folder = download
+            .primary()
+            .and_then(|w| folder_of(w).ok())
+            .unwrap_or_else(|| models_dir.clone());
+        if let Err(e) = bundles::write(&weights_folder.join(&weights), &download) {
             send(JobEvent::Failed(format!(
                 "the files are in the models folder, but the record that pairs them could not be \
                  written: {e}"
@@ -450,6 +484,7 @@ mod tests {
                 name: name.to_string(),
                 size: Some(size),
                 sha256: None,
+                place: None,
             };
         let mut files = vec![piece(
             None,
@@ -913,5 +948,134 @@ mod tests {
         assert_eq!(std::fs::read(&link).unwrap(), b"abc");
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // ---- a file of a kind of its own, fetched by itself (work package 4.13, group Q) ----------------------
+
+    /// The one companion file `VAE/tiny_vae.safetensors` of the fake's `me/tiny-video-GGUF`, as a button of
+    /// a row of its own fetches it: no weights, a folder of its kind, the name it has, and its hash.
+    fn alone_vae(hub: &crate::testkit::fake_hub::FakeHub) -> Download {
+        use crate::testkit::fake_hub::{content, sha256_hex};
+        let bytes = content("me/tiny-video-GGUF", "VAE/tiny_vae.safetensors", 2000);
+        Download {
+            files: vec![Piece {
+                kind: Some("vae".into()),
+                label: "VAE".into(),
+                url: quickai_core::lookup::huggingface::file_url(
+                    &hub.base(),
+                    "me/tiny-video-GGUF",
+                    "main",
+                    "VAE/tiny_vae.safetensors",
+                ),
+                store_as: "tiny_vae.safetensors".into(),
+                name: "tiny_vae.safetensors".into(),
+                size: Some(2000),
+                sha256: Some(sha256_hex(&bytes)),
+                place: Some("vae".into()),
+            }],
+            bundle: None,
+            source: "huggingface:me/tiny-video-GGUF".into(),
+            mode: None,
+        }
+    }
+
+    fn video_hub() -> crate::testkit::fake_hub::FakeHub {
+        let hub = crate::testkit::fake_hub::FakeHub::start();
+        hub.add_repo(
+            "me/tiny-video-GGUF",
+            Some("text-to-video"),
+            &["gguf"],
+            &[
+                ("tiny-video-Q8_0.gguf", 5000),
+                ("VAE/tiny_vae.safetensors", 2000),
+            ],
+        );
+        hub
+    }
+
+    #[test]
+    fn p3_q13_a_file_of_a_kind_of_its_own_is_a_download_named_after_it_kept_in_its_folder_with_no_record(
+    ) {
+        let hub = video_hub();
+        let dir = crate::testkit::scratch("q13");
+        let models = dir.join("models");
+        let download = alone_vae(&hub);
+        assert!(download.weights().is_none());
+        assert_eq!(download.primary().unwrap().store_as, "tiny_vae.safetensors");
+        let mut job = spawn_files(download, models.clone(), || {});
+        assert_eq!(
+            job.label, "tiny_vae.safetensors",
+            "named after its one file, not after nothing"
+        );
+        let (outcome, statuses, progress) = run_job(&mut job);
+        assert_eq!(outcome.unwrap(), "tiny_vae.safetensors");
+        assert_eq!(
+            std::fs::metadata(models.join("vae/tiny_vae.safetensors"))
+                .unwrap()
+                .len(),
+            2000
+        );
+        assert!(
+            statuses.contains(&"tiny_vae.safetensors is in vae.".to_string()),
+            "{statuses:?}"
+        );
+        assert_eq!(progress.last().unwrap(), &(2000, Some(2000)));
+        // nothing pairs it with anything: no record, no part, nothing in the models folder itself
+        let left: Vec<String> = std::fs::read_dir(&models)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(left, ["vae"]);
+        let inside: Vec<String> = std::fs::read_dir(models.join("vae"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(inside, ["tiny_vae.safetensors"]);
+
+        // there already, at its size: it is not fetched again
+        let asked = hub.downloads().len();
+        let (outcome, statuses, _) =
+            run_job(&mut spawn_files(alone_vae(&hub), models.clone(), || {}));
+        assert_eq!(outcome.unwrap(), "tiny_vae.safetensors");
+        assert_eq!(hub.downloads().len(), asked);
+        assert!(
+            statuses
+                .iter()
+                .any(|s| s.contains("already in the models folder")),
+            "{statuses:?}"
+        );
+
+        // a file that is not the one the hub states is not kept, not even as a part
+        let hub = video_hub();
+        let dir = crate::testkit::scratch("q13-wrong");
+        let models = dir.join("models");
+        let mut download = alone_vae(&hub);
+        download.files[0].sha256 = Some("f".repeat(64));
+        let (outcome, _, _) = run_job(&mut spawn_files(download, models.clone(), || {}));
+        let message = outcome.unwrap_err();
+        assert!(
+            message.contains("does not match the checksum") && message.contains("it was not kept"),
+            "{message}"
+        );
+        assert!(
+            !message.contains("was fetched and runs without it"),
+            "it is the one file: {message}"
+        );
+        let inside: Vec<String> = std::fs::read_dir(models.join("vae"))
+            .map(|r| {
+                r.map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert!(inside.is_empty(), "{inside:?}");
+
+        // a folder that is not a plain name is no folder
+        let hub = video_hub();
+        let dir = crate::testkit::scratch("q13-climb");
+        let mut download = alone_vae(&hub);
+        download.files[0].place = Some("../escape".into());
+        let (outcome, _, _) = run_job(&mut spawn_files(download, dir.join("models"), || {}));
+        assert!(outcome.unwrap_err().contains("is not the name of a folder"));
+        assert!(!dir.join("escape").exists());
     }
 }

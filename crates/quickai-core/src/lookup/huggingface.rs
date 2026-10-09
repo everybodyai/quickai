@@ -72,14 +72,35 @@ pub struct Repo {
 /// `&search=...`. The words are what was typed up to a `:` (a tag is not a word of a name), with one
 /// space between, and at most 100 characters.
 pub fn search_url(site: &str, query: Option<&str>) -> String {
-    let base = format!(
+    search_url_in(site, query, None)
+}
+
+/// The same search restricted to the repositories of one pipeline (`text-to-video`), which is how the
+/// plain list of an engine that runs pictures and video is made: the most downloaded GGUF repository
+/// of a language model is no help to it. A pipeline is what the hub calls one: lower case letters,
+/// digits and `-`; anything else is left out of the address, which makes the search unrestricted.
+pub fn search_url_in(site: &str, query: Option<&str>, pipeline: Option<&str>) -> String {
+    let mut url = format!(
         "{}/api/models?filter=gguf&sort=downloads&direction=-1&limit={SEARCH_LIMIT}",
         site.trim().trim_end_matches('/')
     );
-    match query.map(search_words).filter(|w| !w.is_empty()) {
-        Some(words) => format!("{base}&search={}", percent_encode(&words)),
-        None => base,
+    if let Some(pipeline) = pipeline.filter(|p| valid_pipeline(p)) {
+        url.push_str("&pipeline_tag=");
+        url.push_str(pipeline);
     }
+    match query.map(search_words).filter(|w| !w.is_empty()) {
+        Some(words) => format!("{url}&search={}", percent_encode(&words)),
+        None => url,
+    }
+}
+
+/// Whether `text` can be a pipeline tag of the hub (`text-to-video`).
+pub fn valid_pipeline(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 64
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 /// The words of what was typed: up to a `:`, one space between, no more than 100 characters.
@@ -244,6 +265,16 @@ struct Sibling {
     rfilename: String,
     #[serde(default)]
     size: Option<u64>,
+    /// Present for a file the hub keeps in LFS (every large one), with the hash of its bytes. Read
+    /// loosely: a shape that is not the usual one costs the file its hash and nothing else.
+    #[serde(default)]
+    lfs: Option<Value>,
+}
+
+/// A SHA-256 as the hub writes it: 64 hexadecimal digits. Anything else is no hash (a download is
+/// checked against a hash that is one, and not against a word).
+fn valid_sha256(text: &str) -> bool {
+    text.len() == 64 && text.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// The files of a repository from its answer. A repository with no file list is `Unreadable`; a
@@ -259,9 +290,18 @@ pub fn parse_repo(body: &str) -> Result<Repo, ReadError> {
         .iter()
         .filter_map(|s| serde_json::from_value::<Sibling>(s.clone()).ok())
         .filter(|s| valid_file_path(&s.rfilename))
-        .map(|s| RemoteFile {
-            path: s.rfilename,
-            size: s.size,
+        .map(|s| {
+            let file = RemoteFile::new(&s.rfilename, s.size);
+            let hash = s
+                .lfs
+                .as_ref()
+                .and_then(|lfs| lfs.get("sha256"))
+                .and_then(Value::as_str)
+                .filter(|h| valid_sha256(h));
+            match hash {
+                Some(hash) => file.with_sha256(hash),
+                None => file,
+            }
         })
         .take(MAX_FILES)
         .collect();

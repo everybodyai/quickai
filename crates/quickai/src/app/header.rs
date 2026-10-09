@@ -6,6 +6,18 @@ use super::{App, Tab};
 use crate::hardware;
 
 impl App {
+    /// What the ⚙ icon does: opens the settings, or closes them. Closing them by the icon is closing them, as
+    /// the window's own close button and their Close button do, so what was changed in them is written then (it
+    /// was not: a Python or an architecture typed in Settings was lost to anyone who closed the window with the
+    /// icon and then quit).
+    pub(super) fn toggle_settings(&mut self) {
+        if self.show_settings {
+            self.close_settings();
+        } else {
+            self.show_settings = true;
+        }
+    }
+
     /// The title row: the heading, the Main/Live tab strip (only with live traffic on) and the theme,
     /// speed, settings and About icons, then the rule under it.
     pub(super) fn show_header(&mut self, ui: &mut egui::Ui) {
@@ -24,7 +36,7 @@ impl App {
         ui.horizontal(|ui| {
             ui.heading("QuickAI");
 
-            if self.enable_traffic_proxy {
+            if self.traffic_proxy_on() {
                 ui.add_space(12.0);
                 ui.selectable_value(&mut self.active_tab, Tab::Main, "Main");
                 ui.selectable_value(&mut self.active_tab, Tab::Live, "📡 Live")
@@ -79,7 +91,7 @@ impl App {
                     .on_hover_text(settings_hover)
                     .clicked()
                 {
-                    self.show_settings = !self.show_settings;
+                    self.toggle_settings();
                 }
 
                 ui.add_space(6.0);
@@ -94,7 +106,7 @@ impl App {
         });
         ui.add_space(6.0);
 
-        if self.enable_traffic_proxy {
+        if self.traffic_proxy_on() {
             ui.separator();
             ui.add_space(6.0);
         }

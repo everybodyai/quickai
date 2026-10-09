@@ -9,3 +9,7 @@
 # Vendored llama.cpp checkout (its own git repo — built locally via cmake,
 # see README.md "Rebuilding llama.cpp"). Not our source, and huge.
 /llama.cpp/
+
+# What Python writes beside the files it runs (the tests of the bridge, crates/quickai/assets/comfyui)
+__pycache__/
+*.pyc

@@ -12,7 +12,7 @@ use quickai_core::acquire::render_template;
 use quickai_core::doc::engine::{LocateStrategy, Pick};
 use quickai_core::plan::HostFacts;
 
-use super::install::is_leftover;
+use super::install::{is_leftover, is_unfinished};
 
 /// What the strategies need to know about this run.
 pub struct LocateEnv<'a> {
@@ -127,6 +127,8 @@ fn installed(
         .flatten()
         .filter(|entry| !is_leftover(&entry.file_name().to_string_lossy()))
         .filter(|entry| entry.path().is_dir())
+        // an install that stopped is not a build, whatever it is called
+        .filter(|entry| !is_unfinished(&entry.path()))
         .filter_map(|entry| {
             let executable = entry.path().join(relative);
             let modified = entry.metadata().and_then(|m| m.modified()).ok();

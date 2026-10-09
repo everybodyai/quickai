@@ -27,6 +27,7 @@ pub const PROVIDED: &[&str] = &[
     "exec.probe@1",
     "feed.github_release@1",
     "install.archive@1",
+    "install.python_app@1",
     "attach@1",
     "http_call@1",
     "decode@1",
@@ -99,6 +100,7 @@ pub fn shipped_registry(user: &[(&str, &str)]) -> Registry {
 fn build_registry(provided: &[&str], user: &[(&str, &str)], with_catalogs: bool) -> Registry {
     let llama = manifest("engines/llamacpp.toml");
     let ollama = manifest("engines/ollama.toml");
+    let comfyui = manifest("engines/comfyui.toml");
     let vocab = manifest("vocab/core.toml");
     let catalogs = if with_catalogs {
         shipped_catalogs()
@@ -108,6 +110,7 @@ fn build_registry(provided: &[&str], user: &[(&str, &str)], with_catalogs: bool)
     let mut docs: Vec<(String, &str)> = vec![
         ("embedded:engines/llamacpp.toml".to_string(), &llama),
         ("embedded:engines/ollama.toml".to_string(), &ollama),
+        ("embedded:engines/comfyui.toml".to_string(), &comfyui),
         ("embedded:vocab/core.toml".to_string(), &vocab),
     ];
     docs.extend(
@@ -167,6 +170,7 @@ pub fn owned(registry: &Registry, engine: &str, lookup: &str) -> Owned {
         sizes: registry.vocabulary().size_classes().to_vec(),
         bundles: bundles(engine).to_vec(),
         settings: found.kind.read().clone(),
+        places: quickai_core::models::places(engine),
     }
 }
 

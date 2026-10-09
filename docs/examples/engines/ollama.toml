@@ -22,6 +22,7 @@ summary = "A daemon that loads models on demand."
 license = "MIT"
 bundled = false                 # downloaded on request, never shipped in a package
 homepage = "https://ollama.com"
+order = 20
 egress = ["registry.ollama.ai", "hf.co", "*.cdn.hf.co"]    # contacted by the daemon itself when a model is pulled; measured (O21): registry.ollama.ai for a 46 MB and a 271 MB model, hf.co and us.aws.cdn.hf.co for an hf.co/ reference. A name that begins `*.` stands for every host under it
 
 [provides]
@@ -199,7 +200,7 @@ type = "hidden"
 # ---- models: listed, pulled and removed over HTTP -------------------------------------------------------
 [models]
 needs_server = true             # these calls need a daemon, so management mode may start one
-list = { call = { method = "GET", path = "/api/tags" }, items = "/models", map = { id = "/name", display = "/name", size_bytes = "/size", digest = "/digest", capabilities = "/capabilities" }, cache = "${data}/ollama/catalog-cache.json" }     # v0.35.1 lists each model's capabilities here (recorded), so no /api/show per model
+list = { call = { method = "GET", path = "/api/tags" }, items = "/models", map = { id = "/name", display = "/name", size_bytes = "/size", digest = "/digest", capabilities = "/capabilities" }, cache = "${data}/ollama/catalog-cache.json", hide = ["llamacpp:.*"] }     # v0.35.1 lists each model's capabilities here (recorded), so no /api/show per model. v0.40.0 lists a model that is kept in two forms twice and adds its own `llamacpp:<digest>` copy (recorded 2026-10-10 for qwen3-vl:8b): the copy is bookkeeping, not a model to pick, and the duplicate name is folded
 pull = { call = { method = "POST", path = "/api/pull", body = { model = "${ref}" }, stream = "ndjson" }, progress = { key = "/digest", completed = "/completed", total = "/total", status = "/status" } }
 remove = { call = { method = "DELETE", path = "/api/delete", body = { model = "${ref}" } } }
 capabilities = { call = { method = "POST", path = "/api/show", body = { model = "${ref}" } }, pointer = "/capabilities" }   # discovered modalities: "vision" and so on

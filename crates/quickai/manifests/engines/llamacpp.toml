@@ -19,6 +19,7 @@ license = "MIT"
 bundled = true
 homepage = "https://github.com/ggml-org/llama.cpp"
 egress = []                     # QuickAI never passes -hf or --model-url, so the server itself contacts no host
+order = 10                      # the selector shows llama.cpp first: it is what the application is for
 
 [provides]
 apis = ["openai.chat", "openai.completions", "llamacpp.completion", "openai.embeddings"]

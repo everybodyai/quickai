@@ -4,8 +4,6 @@ use eframe::egui;
 
 use super::{App, PendingDelete};
 use crate::bundles;
-use crate::launch;
-use crate::prims::install;
 
 impl App {
     /// Deletes a model: its weights, the record beside them and the files that went with them that no
@@ -64,6 +62,16 @@ impl App {
                 Some(texts) => (texts.confirm_title.clone(), texts.confirm_body(label)),
                 None => ("Delete build?".to_string(), format!("Delete \"{label}\"?")),
             },
+            PendingDelete::Unfinished { label, .. } => match self.runtime_texts() {
+                Some(texts) => (
+                    texts.confirm_unfinished_title.clone(),
+                    texts.confirm_unfinished_body(label),
+                ),
+                None => (
+                    "Delete unfinished install?".to_string(),
+                    format!("Delete \"{label}\"?"),
+                ),
+            },
         };
 
         let mut confirmed = false;
@@ -92,23 +100,13 @@ impl App {
                 Some(PendingDelete::Model { filename, path }) => {
                     self.delete_model_files(&filename, &path);
                 }
+                // removing seventy thousand files takes seconds: a thread of its own does it (the log
+                // says how it went, and the build in use is given up, when it is done)
                 Some(PendingDelete::Build { label, install_dir }) => {
-                    let was_active = self
-                        .bin_override()
-                        .is_some_and(|p| p.starts_with(&install_dir));
-                    if let Some(texts) = self.runtime_texts() {
-                        match install::delete_installed(&install_dir) {
-                            Ok(()) => self.push_log(texts.deleted_log(&label)),
-                            Err(e) => self.push_log(texts.delete_failed_log(&label, &e)),
-                        }
-                    }
-                    if was_active {
-                        self.runtime.input.clear();
-                        self.binary = launch::default_binary(&self.registry, &self.engine);
-                        self.set_bin_override(None);
-                        self.missing_binary_warned = false;
-                        self.save_settings();
-                    }
+                    self.start_delete(label, install_dir, false, ctx);
+                }
+                Some(PendingDelete::Unfinished { label, dir }) => {
+                    self.start_delete(label, dir, true, ctx);
                 }
                 Some(PendingDelete::Listed { name }) => {
                     self.remove_listed_model(&name, ctx);

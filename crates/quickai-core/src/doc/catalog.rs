@@ -69,6 +69,9 @@ pub struct RunDoc {
     pub rev: Option<String>,
     /// One of the engine's `[[models.mode]]`: how the engine is started for this model.
     pub mode: Option<String>,
+    /// The folder of the models folder the weights are kept in, when it is not the one the engine
+    /// keeps weights in (`checkpoints`): for an engine that finds its files by the folder they are in.
+    pub place: Option<String>,
     /// The weights, one entry for each quantization on offer.
     #[serde(default)]
     pub files: Vec<FileDoc>,
