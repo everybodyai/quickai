@@ -22,7 +22,7 @@ impl App {
         let port = self.port();
         // With the proxy on, the engine listens on an internal-only port and the proxy binds the
         // public one; the plan needs that port, so it is found first.
-        let internal_port = if self.enable_traffic_proxy {
+        let internal_port = if self.traffic_proxy_on() {
             match ephemeral_port() {
                 Ok(port) => Some(port),
                 Err(e) => {
@@ -41,13 +41,7 @@ impl App {
             None
         };
         let selection = self.run_selection(model);
-        match launch::plan_selection(
-            &self.registry,
-            &selection,
-            &self.binary,
-            self.machine.clone(),
-            internal_port,
-        ) {
+        match self.plan_run(&selection, internal_port) {
             Ok(plan) => {
                 // a program the application did not find is the person's to allow, once
                 if let Some(foreign) = self.foreign_program(&plan) {
@@ -68,6 +62,20 @@ impl App {
         }
     }
 
+    /// The plan for a run of `selection` on this machine, with the program the window has found. The
+    /// data directory is the one the window works in (a test's own, never the real home's).
+    fn plan_run(
+        &self,
+        selection: &quickai_core::plan::Selection,
+        internal_port: Option<u16>,
+    ) -> Result<quickai_core::plan::RunPlan, Vec<quickai_core::diag::Diagnostic>> {
+        let mut facts = launch::host_facts(&self.binary, self.machine.clone(), internal_port);
+        if let Some(dir) = &self.data_dir_override {
+            facts.data_dir = dir.clone();
+        }
+        quickai_core::plan::plan(&self.registry, selection, &facts)
+    }
+
     /// What a run is asked of the planner: the engine, the model, the values the window holds, and the
     /// files that were fetched with the model, which go on its command line. One that has gone is said
     /// in the log and the model starts without it.
@@ -79,7 +87,7 @@ impl App {
             &self.engine,
             model.map(ModelEntry::info),
             self.values.map(),
-            self.enable_traffic_proxy,
+            self.traffic_proxy_on(),
         );
         if let (Some(model), Some(engine)) = (model, self.engine_doc()) {
             let (attached, notes) = launch::attach_record(selection, model, engine);
@@ -93,7 +101,12 @@ impl App {
 
     /// What the Start button does: start the engine with the model the picker has selected.
     pub(super) fn start_selected(&mut self, ctx: &egui::Context) {
-        let model = self.models.get(self.selected).cloned();
+        // an engine that runs on its own is started with no model: the work it is sent names them
+        let model = if self.runs_alone() {
+            None
+        } else {
+            self.models.get(self.selected).cloned()
+        };
         if !self.binary.is_file() {
             self.missing_binary_warned = true;
             return;
@@ -133,13 +146,7 @@ impl App {
             self.values.map(),
             false,
         );
-        match launch::plan_selection(
-            &self.registry,
-            &selection,
-            &self.binary,
-            self.machine.clone(),
-            None,
-        ) {
+        match self.plan_run(&selection, None) {
             Ok(plan) => {
                 self.save_settings();
                 self.session.load(&plan, &model.display, || {});
@@ -159,9 +166,12 @@ impl App {
         // an engine that lists its own models can start with none: the daemon runs, empty, and the
         // person can pull one
         let missing = self.engine_missing();
-        let can_start = (!self.models.is_empty() || self.lists_models()) && !missing;
+        let alone = self.runs_alone();
+        let can_start = (!self.models.is_empty() || self.lists_models() || alone) && !missing;
         let start_hint = if loadable {
             format!("Load the selected model into the running {server}.")
+        } else if alone {
+            format!("Launch {server} with the settings above.")
         } else {
             format!("Launch {server} with the selected model and the settings above.")
         };
@@ -199,9 +209,13 @@ impl App {
                         state == ServerState::Running,
                         egui::Button::new(web_ui.label.as_str()),
                     )
-                    .on_hover_text(format!(
-                        "Open {server}'s built-in web chat for the running model in your browser."
-                    ))
+                    .on_hover_text(if alone {
+                        format!("Open the running {server} in your browser.")
+                    } else {
+                        format!(
+                            "Open {server}'s built-in web chat for the running model in your browser."
+                        )
+                    })
                     .clicked()
                 {
                     if let Some(port) = self.session.port() {
@@ -213,7 +227,11 @@ impl App {
             }
             if ui
                 .add_enabled(state == ServerState::Running, egui::Button::new("🔌 API"))
-                .on_hover_text("Show how to connect an external app to this running model")
+                .on_hover_text(if alone {
+                    format!("Show how to connect an external app to the running {server}")
+                } else {
+                    "Show how to connect an external app to this running model".to_string()
+                })
                 .clicked()
             {
                 self.show_api_info = !self.show_api_info;
@@ -237,6 +255,9 @@ impl App {
                             self.engine_name()
                         ),
                     }
+                }
+                (ServerState::Running, None, Some(port)) if alone => {
+                    format!("{} running (port {port})", self.engine_name())
                 }
                 _ => state.label().to_string(),
             };

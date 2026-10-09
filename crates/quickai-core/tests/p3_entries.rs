@@ -164,7 +164,7 @@ fn p3_v01_a_model_is_of_the_first_type_whose_rule_holds_and_else_of_the_default(
             Some("image-text-to-video"),
             &[],
             &[],
-            "other",
+            "video",
         ),
         // a tag is a tag whatever its case
         (
@@ -827,6 +827,9 @@ fn p3_v08_the_vocabulary_that_sorts_is_checked_where_it_is_written() {
             "code",
             "reasoning",
             "translation",
+            "video",
+            "image",
+            "text_encoder",
             "other",
             "chat"
         ],
@@ -866,6 +869,9 @@ fn p3_v08_the_vocabulary_that_sorts_is_checked_where_it_is_written() {
             "code",
             "reasoning",
             "translation",
+            "video",
+            "image",
+            "text_encoder",
             "other",
             "chat",
             "legal"

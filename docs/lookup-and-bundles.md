@@ -180,6 +180,37 @@ vision bundle (`ggml-org/SmolVLM-256M-Instruct-GGUF`, 365 MB) and a real `llama-
 
 To try it by hand: `scripts/run.sh --fresh`, **Look up online**; with llama.cpp chosen a vision repository has the two rows.
 
+## 6a. Files that go by themselves, and an engine that is searched by pipeline (WP4.13)
+
+An engine whose files are kept in a folder for each kind (ComfyUI: `diffusion_models`, `text_encoders`, `vae`; [comfyui.md](comfyui.md),
+"Getting models") fetches a text encoder or a VAE as often by itself as with a model, because a workflow names its files one by one.
+Three keys of the look-up say so, and the rest is what is described above:
+
+```toml
+[[models.lookup]]
+id = "hub"
+use = "huggingface_gguf"
+types = ["video", "image", "text_encoder"]
+pipelines = ["text-to-video", "image-to-video", "text-to-image", "image-to-image"]   # the plain list: one search for each
+words = ["encoder"]                  # and for each of these (a text encoder carries no pipeline tag)
+popular = 6                          # repositories looked into for each of those
+alone = ["text_encoder", "vae"]      # kinds of file (parts of a bundle) that also get a row of their own
+```
+
+- **`pipelines` and `words`** make the plain list a few searches instead of one (`&pipeline_tag=text-to-video`, `&search=encoder`; F24),
+  each looking into its own first `popular` repositories, each repository once. Words typed are one search, as before.
+- **`alone`** gives each file of the repository that a part of that kind finds a button in a row of its own (*Get VAE only:*): the
+  quantizations the preferences like and then the smallest, smallest first, as for weights. Such a file keeps the name it has (a
+  workflow someone shared names it so; a file of a *bundle* keeps `<owner>--<repo>--<name>` as before), is kept in the folder of its kind
+  (`[components.<kind>] place`), and is one file: no record is written. A repository that holds only such files has no model row and is
+  offered by them; a file that is not a `.gguf` or `.safetensors`, or is a shard or a draft (`skip`), is not offered.
+- **The checksum.** `?blobs=true` has the SHA-256 of every file in large-file storage (F25); the look-up carries it to the piece, so a
+  download of any look-up result is hashed as it arrives and a file that is not what the hub states is deleted (the same check as the
+  recommended list's). Before WP4.13 a look-up's files were not checked.
+- **The sections.** Two types join the vocabulary, `image` (the pictures pipelines, formerly `other`) and `text_encoder` (a repository in
+  which a part of a bundle finds a text encoder); an engine that does not run them lists them under `other`, as it did.
+- **Where a button's files go** is said in its hover, in a sentence of its own (*It is kept in the vae folder.*).
+
 ## 7. What is not done
 
 - Sharded files (`-00001-of-00004`) are left out, as before: a bundle could fetch all the shards, and the picker would then have to

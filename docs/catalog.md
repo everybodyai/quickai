@@ -86,7 +86,7 @@ is what the model's card says, or a plain fact; there are no claims of being the
 ```toml
 schema = 1
 kind = "catalog"
-id = "chat"                       # a page; the application ships eight, a person adds their own
+id = "chat"                       # a page; the application ships nine, a person adds their own
 title = "Chat"
 verified = "2026-10-07"           # when its facts were checked against the sites
 
@@ -137,6 +137,7 @@ size = 3320000000                 # what the pull downloads, from the registry
   weights, which run alone, and no record. (A look-up's pieces have no hash and are as they were.)
 - **One job, one record.** The bundled download is the look-up's (`downloader::spawn_files`): files in order under one bar, the weights first, the record `<weights>.bundle.json` written last. The
   record now also carries the **mode** (by its id; read back only if it is a plain id, like every name in it), and a model with a mode and no companion has one too. Delete takes it with the model.
+- **An engine that is given no model** (ComfyUI, WP4.11, [comfyui.md](comfyui.md)) keeps each file of a model in the folder of the models folder that ComfyUI looks for that kind in (`[components.<kind>] place` of its document: `diffusion_models`, `text_encoders`, `vae`); the record says where each is (`dir`), a button of the list is marked as installed only when every one of its files is in its folder at the size the list says, and Delete takes them all and keeps what another model uses. Its page is `video`; a workflow names the files as they are on disk (`<owner>--<repo>--<name>` for all but the weights).
 - **Start** (`launch::attach_record`, used by the Start button and by `quickai plan`) adds, for the record beside the selected weights, each companion that is still there and the engine's words for the
   mode, after the fields' arguments and before the person's own extra ones, traced in the plan (`mode embedding`). A projector that has gone, or a mode the engine does not have, is said in the log and the model starts without it.
 
@@ -175,7 +176,7 @@ All on 2026-10-07, on this machine (Linux, CPU only, the pinned llama.cpp b11007
 - **Every model, by the tool** (section 5): the repository exists at its commit and needs no login; each file has the size and SHA-256 the hub reports (the hash of the file in LFS); the licence is on the card (or on
   the card of the model it was made from); the architecture, read from the first bytes of the weights, is in the table of the pinned release; an Ollama name has a manifest, and what a pull downloads is the sum of its layers.
   `scripts/catalog.py check` says so again, offline, from what it learned (`build/.cache/catalog`).
-- **The list against the sites, again, by hand** (`p3_j22`): the 78 llama.cpp runs and the 50 Ollama runs (128 for 81 models) still have the commit, the files, the sizes and the hashes the list says.
+- **The list against the sites, again, by hand** (`p3_j22`): the 78 llama.cpp runs and the 50 Ollama runs (128 for 81 models) still have the commit, the files, the sizes and the hashes the list says. The `video` page (WP4.11, one model, one run for ComfyUI) was read from the hub the same way on 2026-10-08, and its files were fetched by the window's button, hashed again and listed by a ComfyUI started on them.
 - **The list as a document** (`p3_j08` and the rest of group J, `cargo test -p quickai-core --test p3_catalog` and the application's `app/engine.rs`): it loads without a warning, every category has at least three models, every pin is a commit, every model that
   reads pictures or listens has its projector and the bundle that fetches it, 8 to 16 models are "Start here" with one for each need, no more than a twentieth is large, and the two Bonsai pins are the packaging's (`build/config.env`).
 - **The window and what a click does, by the GUI suite** `catalog` (14 cases, [the test repository's docs/17_catalog.md](../../test/docs/17_catalog.md)), against a fake Hugging Face and a fake `llama-server`: opening asks no site anything, the categories and their counts, words, the two rows of a model with a projector, the bundled download as one job and the model alone as the other, a file that is not the one the list was made for refused and not kept, `--embeddings` and `--mmproj` on the command line, a person's documents adding and hiding models, Escape, Ollama's names pulled, a note shown to its end, and every section under the one before it.

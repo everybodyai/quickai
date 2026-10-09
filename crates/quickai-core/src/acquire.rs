@@ -57,6 +57,8 @@ pub fn matching_assets(engine: &Engine, names: &[&str], facts: &HostFacts) -> Ve
                 .map(|(i, _)| i)
                 .collect()
         }
+        // the release's source is not one of its files: the feed makes that build itself
+        Assets::Source { .. } => Vec::new(),
         Assets::Names { .. } => {
             let Some(compiled) = engine.acquire.as_ref() else {
                 return Vec::new();
@@ -81,6 +83,33 @@ pub fn matching_assets(engine: &Engine, names: &[&str], facts: &HostFacts) -> Ve
     }
 }
 
+/// Whether a build of this engine is the source of a release (`assets` of `by = "source"`).
+pub fn builds_from_source(engine: &Engine) -> bool {
+    matches!(
+        engine.doc.acquire.as_ref().and_then(|a| a.assets.as_ref()),
+        Some(Assets::Source { .. })
+    )
+}
+
+/// The name of a release's source archive, which is also what its pin is filed under: `v0.39.0.tar.gz`.
+pub fn source_archive_name(tag: &str) -> String {
+    format!("{tag}.tar.gz")
+}
+
+/// Where the source archive of release `tag` is fetched from: the feed's repository on the host the
+/// feed's `archive` names (`https://github.com` by default). `None` for an engine with no such feed.
+pub fn source_archive_url(engine: &Engine, tag: &str) -> Option<String> {
+    match engine.doc.acquire.as_ref()?.feed.as_ref()? {
+        crate::doc::engine::Feed::GithubRelease { repo, archive, .. } => {
+            let root = archive.as_deref().unwrap_or("https://github.com");
+            Some(format!(
+                "{}/{repo}/archive/refs/tags/{tag}.tar.gz",
+                root.trim_end_matches('/')
+            ))
+        }
+    }
+}
+
 /// The globs an install leaves out on this machine: the `[acquire.install]` `skip` rules whose
 /// condition holds (or that have none), in the document's order.
 pub fn skip_globs(engine: &Engine, facts: &HostFacts) -> Vec<String> {
@@ -98,6 +127,91 @@ pub fn skip_globs(engine: &Engine, facts: &HostFacts) -> Vec<String> {
         })
         .map(|(_, glob)| glob.clone())
         .collect()
+}
+
+/// The pip steps of a `python_app` install that apply to this machine, in the document's order: those
+/// with no condition and those whose condition holds. A condition that cannot be evaluated does not
+/// hold: nothing is installed on a guess.
+pub fn pip_steps<'a>(
+    engine: &'a Engine,
+    facts: &HostFacts,
+) -> Vec<&'a crate::doc::engine::PipStep> {
+    let (Some(acquire), Some(compiled)) = (engine.doc.acquire.as_ref(), engine.acquire.as_ref())
+    else {
+        return Vec::new();
+    };
+    let Some(crate::doc::engine::Install::PythonApp { pip, .. }) = acquire.install.as_ref() else {
+        return Vec::new();
+    };
+    let context = base_context(&Selection::default(), facts);
+    pip.iter()
+        .zip(compiled.pip_when.iter().chain(std::iter::repeat(&None)))
+        .filter(|(step, when)| step.when.is_none() || holds(when, &context))
+        .map(|(step, _)| step)
+        .collect()
+}
+
+/// The node packs of a `python_app` install that apply to this machine, in the document's order.
+pub fn node_packs<'a>(
+    engine: &'a Engine,
+    facts: &HostFacts,
+) -> Vec<&'a crate::doc::engine::NodePack> {
+    let (Some(acquire), Some(compiled)) = (engine.doc.acquire.as_ref(), engine.acquire.as_ref())
+    else {
+        return Vec::new();
+    };
+    let Some(crate::doc::engine::Install::PythonApp { nodes, .. }) = acquire.install.as_ref()
+    else {
+        return Vec::new();
+    };
+    let context = base_context(&Selection::default(), facts);
+    nodes
+        .iter()
+        .zip(compiled.node_when.iter().chain(std::iter::repeat(&None)))
+        .filter(|(pack, when)| pack.when.is_none() || holds(when, &context))
+        .map(|(pack, _)| pack)
+        .collect()
+}
+
+/// Whether a parsed condition holds in `context`; one that is absent (it did not parse) or cannot be
+/// evaluated does not.
+fn holds(when: &Option<crate::expr::Expr>, context: &Value) -> bool {
+    when.as_ref()
+        .is_some_and(|expr| eval(expr, context).is_ok_and(|v| v.truthy()))
+}
+
+/// What installing a build of a `python_app` engine puts on this machine, in a sentence for the window:
+/// `Installs a Python environment with PyTorch for AMD GPUs (ROCm 7.2), what ComfyUI needs and
+/// ComfyUI-GGUF; it needs 30 GiB free.` `None` for an engine that unpacks an archive.
+pub fn install_summary(engine: &Engine, facts: &HostFacts) -> Option<String> {
+    let Some(crate::doc::engine::Install::PythonApp { space, .. }) =
+        engine.doc.acquire.as_ref()?.install.as_ref()
+    else {
+        return None;
+    };
+    let mut parts: Vec<String> = pip_steps(engine, facts)
+        .into_iter()
+        .map(|step| step.label.clone().unwrap_or_else(|| step.id.clone()))
+        .collect();
+    parts.extend(
+        node_packs(engine, facts)
+            .into_iter()
+            .map(|pack| pack.label.clone().unwrap_or_else(|| pack.id.clone())),
+    );
+    let list = match parts.as_slice() {
+        [] => String::new(),
+        [only] => only.clone(),
+        [init @ .., last] => format!("{} and {last}", init.join(", ")),
+    };
+    let room = space
+        .as_deref()
+        .map(|s| format!("; it needs {s} free"))
+        .unwrap_or_default();
+    Some(if list.is_empty() {
+        format!("Installs a Python environment{room}.")
+    } else {
+        format!("Installs a Python environment with {list}{room}.")
+    })
 }
 
 /// An overlay this machine has, and the file that is it.

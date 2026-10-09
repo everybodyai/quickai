@@ -199,6 +199,7 @@ pub(crate) fn base_context(selection: &Selection, facts: &HostFacts) -> Value {
             map([
                 ("known", facts.gpu_known.into()),
                 ("vendors", facts.gpu_vendors.clone().into()),
+                ("targets", facts.gpu_targets.clone().into()),
             ]),
         ),
         (

@@ -16,7 +16,8 @@ use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender};
 use quickai_core::lookup::huggingface::{
-    candidate, parse_repo, parse_search, repo_url, search_url, search_words, similar_terms, Hit,
+    candidate, parse_repo, parse_search, repo_url, search_url, search_url_in, search_words,
+    similar_terms, Hit,
 };
 use quickai_core::lookup::present::{Entry, OwnedRules};
 
@@ -35,6 +36,11 @@ pub struct HubSpec {
     pub popular: usize,
     pub keyword: usize,
     pub similar: usize,
+    /// The pipelines (`text-to-video`) the plain list is made of: one search each, `popular` of the
+    /// repositories of each looked into. None: the most downloaded of any kind.
+    pub pipelines: Vec<String>,
+    /// Words the plain list is also made of (`encoder`): one search each, looked into the same way.
+    pub words: Vec<String>,
 }
 
 /// Starts a look-up in a background thread and returns at once with the receiving end of the channel.
@@ -115,20 +121,18 @@ fn run(
     } else {
         Some(words.as_str())
     };
-    let hits = match fetch(&search_url(&spec.site, first), &request) {
-        Ok(body) => match parse_search(&body) {
-            Ok(hits) => hits,
-            Err(_) => {
-                return fail(format!(
-                    "{host} answered, but its answer is not one this version of QuickAI can read (the \
-                     site may have changed). {}",
-                    capitalize(STILL)
-                ));
-            }
-        },
-        Err(e) => return fail(sentence(&e)),
-    };
-
+    // the plain list of an engine that runs one kind of model is a search for each of its pipelines and for
+    // each of its words; words typed are one search, which neither narrows
+    let searches: Vec<(Option<&str>, Option<&str>)> =
+        if words.is_empty() && !(spec.pipelines.is_empty() && spec.words.is_empty()) {
+            spec.pipelines
+                .iter()
+                .map(|p| (Some(p.as_str()), None))
+                .chain(spec.words.iter().map(|w| (None, Some(w.as_str()))))
+                .collect()
+        } else {
+            vec![(None, first)]
+        };
     let mut seen: HashSet<String> = HashSet::new();
     let mut tally = Tally::default();
     let inspected = if words.is_empty() {
@@ -136,9 +140,41 @@ fn run(
     } else {
         spec.keyword
     };
-    inspect(
-        spec, &request, hits, inspected, &mut seen, &mut tally, rules, &send,
-    );
+    for (n, (pipeline, searched)) in searches.iter().enumerate() {
+        if tally.limited {
+            break;
+        }
+        if let Some(pipeline) = pipeline {
+            send(LookupEvent::Status(format!(
+                "Searching {host} for {pipeline} models..."
+            )));
+        } else if let (Some(word), true) = (searched, words.is_empty()) {
+            send(LookupEvent::Status(format!(
+                "Searching {host} for \"{word}\"..."
+            )));
+        }
+        let url = search_url_in(&spec.site, *searched, *pipeline);
+        let hits = match fetch(&url, &request) {
+            Ok(body) => match parse_search(&body) {
+                Ok(hits) => hits,
+                Err(_) if n > 0 => continue,
+                Err(_) => {
+                    return fail(format!(
+                        "{host} answered, but its answer is not one this version of QuickAI can read (the \
+                         site may have changed). {}",
+                        capitalize(STILL)
+                    ));
+                }
+            },
+            // the first search is the look-up's: its failure is said; a pipeline after it that cannot
+            // be searched loses the models of that pipeline and not the look-up
+            Err(_) if n > 0 => continue,
+            Err(e) => return fail(sentence(&e)),
+        };
+        inspect(
+            spec, &request, hits, inspected, &mut seen, &mut tally, rules, &send,
+        );
+    }
 
     if !words.is_empty() && !tally.limited {
         let terms: Vec<String> = similar_terms(&words)
@@ -306,6 +342,8 @@ mod tests {
             popular: 30,
             keyword: 20,
             similar: 20,
+            pipelines: Vec::new(),
+            words: Vec::new(),
         }
     }
 
@@ -450,6 +488,8 @@ mod tests {
                 popular: 30,
                 keyword: 2,
                 similar: 3,
+                pipelines: Vec::new(),
+                words: Vec::new(),
             },
             "  qwen   coder:7b ".into(),
             rules(),
@@ -773,5 +813,343 @@ mod tests {
             "{:?}",
             qwen.entries.iter().map(|e| &e.name).collect::<Vec<_>>()
         );
+    }
+
+    // ---- the plain list of an engine that runs pictures and video (work package 4.13, group Q) ----------
+
+    /// What ComfyUI's look-up reads what it found with: the documents the application ships.
+    fn comfy_rules() -> OwnedRules {
+        let registry = crate::config::build_registry(&crate::config::ConfigDirs::default());
+        let engine = registry.engine("comfyui").expect("the ComfyUI document");
+        quickai_core::models::lookup_rules(
+            &registry,
+            engine,
+            &quickai_core::models::lookups(engine)[0],
+        )
+    }
+
+    fn comfy_hub() -> FakeHub {
+        let hub = FakeHub::start();
+        hub.add_checked_repo(
+            "me/clip-GGUF",
+            Some("text-to-video"),
+            &["gguf"],
+            &[("clip-Q4_K_M.gguf", 300), ("clip-Q8_0.gguf", 500)],
+        );
+        hub.add_checked_repo(
+            "me/anim-GGUF",
+            Some("image-to-video"),
+            &["gguf"],
+            &[("anim-Q8_0.gguf", 400)],
+        );
+        hub.add_checked_repo(
+            "me/t5-encoder-GGUF",
+            None,
+            &["gguf"],
+            &[("t5-encoder-Q8_0.gguf", 600)],
+        );
+        hub.only(&["me/clip-GGUF", "me/anim-GGUF", "me/t5-encoder-GGUF"]);
+        hub
+    }
+
+    fn comfy_spec(site: &str) -> HubSpec {
+        HubSpec {
+            site: site.to_string(),
+            popular: 6,
+            keyword: 20,
+            similar: 20,
+            pipelines: vec!["text-to-video".into(), "image-to-video".into()],
+            words: vec!["encoder".into()],
+        }
+    }
+
+    fn searches(hub: &FakeHub) -> Vec<String> {
+        hub.paths()
+            .into_iter()
+            .filter(|p| p.starts_with("/api/models?"))
+            .map(|p| p.split("limit=50").nth(1).unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn p3_q12_the_plain_list_is_a_search_for_each_pipeline_and_each_word_and_words_typed_are_one_search(
+    ) {
+        let hub = comfy_hub();
+        let said = collect(&spawn_hub_lookup(
+            comfy_spec(&hub.base()),
+            String::new(),
+            comfy_rules(),
+            || {},
+        ));
+        assert!(said.done && !said.failed, "{said:?}");
+        assert_eq!(
+            searches(&hub),
+            [
+                "&pipeline_tag=text-to-video",
+                "&pipeline_tag=image-to-video",
+                "&search=encoder"
+            ]
+        );
+        let found: Vec<(&str, Option<&str>)> = said
+            .entries
+            .iter()
+            .map(|e| (e.name.as_str(), e.model_type.as_deref()))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ("me/clip-GGUF", Some("video")),
+                ("me/anim-GGUF", Some("video")),
+                ("me/t5-encoder-GGUF", Some("text_encoder"))
+            ]
+        );
+        // it says what it is looking at as it goes
+        assert!(
+            said.statuses
+                .iter()
+                .any(|s| s.ends_with("for text-to-video models...")),
+            "{:?}",
+            said.statuses
+        );
+        assert!(
+            said.statuses
+                .iter()
+                .any(|s| s.ends_with("for \"encoder\"...")),
+            "{:?}",
+            said.statuses
+        );
+        // each repository is looked into once: a repository two searches meet is not read twice
+        let reads = hub
+            .paths()
+            .into_iter()
+            .filter(|p| p.starts_with("/api/models/"))
+            .count();
+        assert_eq!(reads, 3);
+
+        // words typed are one search that neither the pipelines nor the plain words narrow
+        let hub = comfy_hub();
+        let said = collect(&spawn_hub_lookup(
+            comfy_spec(&hub.base()),
+            "clip".into(),
+            comfy_rules(),
+            || {},
+        ));
+        assert!(said.done && !said.failed, "{said:?}");
+        assert_eq!(searches(&hub), ["&search=clip"]);
+        assert_eq!(said.entries.len(), 1);
+
+        // an engine that names none of either has the one plain search it always had
+        let hub = comfy_hub();
+        let mut spec = comfy_spec(&hub.base());
+        spec.pipelines.clear();
+        spec.words.clear();
+        let said = collect(&spawn_hub_lookup(spec, String::new(), comfy_rules(), || {}));
+        assert!(said.done && !said.failed, "{said:?}");
+        assert_eq!(searches(&hub), [""]);
+    }
+
+    #[test]
+    fn p3_q12b_a_pipeline_after_the_first_that_cannot_be_searched_loses_its_models_and_not_the_look_up(
+    ) {
+        // the second pipeline fails: the models of the others are there and nothing says the list is short
+        let hub = comfy_hub();
+        hub.break_pipeline("image-to-video");
+        let said = collect(&spawn_hub_lookup(
+            comfy_spec(&hub.base()),
+            String::new(),
+            comfy_rules(),
+            || {},
+        ));
+        assert!(said.done && !said.failed, "{said:?}");
+        let names: Vec<&str> = said.entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["me/clip-GGUF", "me/t5-encoder-GGUF"]);
+
+        // the first fails: that is the look-up's failure, said once, and no list that looks empty
+        let hub = comfy_hub();
+        hub.break_pipeline("text-to-video");
+        let said = collect(&spawn_hub_lookup(
+            comfy_spec(&hub.base()),
+            String::new(),
+            comfy_rules(),
+            || {},
+        ));
+        assert!(said.failed && said.entries.is_empty(), "{said:?}");
+        assert!(
+            said.statuses
+                .last()
+                .unwrap()
+                .contains("answered with an error (HTTP 500)"),
+            "{:?}",
+            said.statuses
+        );
+        assert_eq!(
+            searches(&hub),
+            ["&pipeline_tag=text-to-video"],
+            "it did not go on"
+        );
+
+        // an answer that is not what the site sends is the same: after the first it costs that pipeline's
+        // models, and the first one it is said as what it is (the site may have changed), not as a short list
+        let hub = comfy_hub();
+        hub.garble_pipeline("image-to-video");
+        let said = collect(&spawn_hub_lookup(
+            comfy_spec(&hub.base()),
+            String::new(),
+            comfy_rules(),
+            || {},
+        ));
+        assert!(said.done && !said.failed, "{said:?}");
+        let names: Vec<&str> = said.entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["me/clip-GGUF", "me/t5-encoder-GGUF"]);
+        let hub = comfy_hub();
+        hub.garble_pipeline("text-to-video");
+        let said = collect(&spawn_hub_lookup(
+            comfy_spec(&hub.base()),
+            String::new(),
+            comfy_rules(),
+            || {},
+        ));
+        assert!(said.failed && said.entries.is_empty(), "{said:?}");
+        assert!(
+            said.statuses
+                .last()
+                .unwrap()
+                .contains("its answer is not one this version of QuickAI can read"),
+            "{:?}",
+            said.statuses
+        );
+        assert_eq!(searches(&hub), ["&pipeline_tag=text-to-video"]);
+    }
+
+    /// Run by hand: the real Hugging Face, asked the way ComfyUI's window asks, still offers the three files
+    /// someone asked for (a video model, its text encoder and its VAE, from three repositories) in the rows
+    /// and with the sizes and checksums the recorded answers say (`tests/fixtures/huggingface/comfyui/`).
+    /// When this fails the site or a repository has changed: record it again with `record.sh` there.
+    #[test]
+    #[ignore = "manual: needs the internet (cargo test -p quickai p3_q14 -- --ignored)"]
+    fn p3_q14_the_real_hub_offers_the_video_model_its_text_encoder_and_its_vae_by_their_names() {
+        let registry = crate::config::build_registry(&crate::config::ConfigDirs::default());
+        let engine = registry.engine("comfyui").expect("the ComfyUI document");
+        let declared = quickai_core::models::lookups(engine)[0].kind.clone();
+        let quickai_core::registry::engine::LookupKind::HuggingFace {
+            site,
+            popular,
+            keyword,
+            similar,
+            pipelines,
+            words,
+            ..
+        } = declared
+        else {
+            panic!("the hub")
+        };
+        let look = |query: &str| {
+            collect(&spawn_hub_lookup(
+                HubSpec {
+                    site: site.clone(),
+                    popular,
+                    keyword,
+                    similar,
+                    pipelines: pipelines.clone(),
+                    words: words.clone(),
+                },
+                query.into(),
+                comfy_rules(),
+                || {},
+            ))
+        };
+        let fetched =
+            |entry: &Entry, label: &str| -> (String, Option<String>, Option<u64>, Option<String>) {
+                let offer = entry
+                    .offers
+                    .iter()
+                    .find(|o| o.label.starts_with(label))
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "{label} in {:?}",
+                            entry.offers.iter().map(|o| &o.label).collect::<Vec<_>>()
+                        )
+                    });
+                let Fetch::Files(download) = &offer.fetch else {
+                    panic!()
+                };
+                let piece = &download.files[0];
+                (
+                    piece.store_as.clone(),
+                    piece.place.clone(),
+                    piece.size,
+                    piece.sha256.clone(),
+                )
+            };
+
+        let turbo = look("wan2.2 ti2v 5b turbo");
+        assert!(turbo.done && !turbo.failed, "{turbo:?}");
+        let entry = turbo
+            .entries
+            .iter()
+            .find(|e| e.name == "hum-ma/Wan2.2-TI2V-5B-Turbo-GGUF")
+            .expect("the Turbo repository");
+        assert_eq!(
+            fetched(entry, "Q8_0"),
+            (
+                "Wan2_2-TI2V-5B-Turbo-Q8_0.gguf".to_string(),
+                Some("diffusion_models".to_string()),
+                Some(5_404_990_176),
+                Some(
+                    "b4d7d1888d5ec2c29046cc443239faad99614cd3d356c61d8192fcac5f4c98fc".to_string()
+                )
+            )
+        );
+
+        let encoder = look("umt5");
+        let entry = encoder
+            .entries
+            .iter()
+            .find(|e| e.name == "city96/umt5-xxl-encoder-gguf")
+            .expect("the text encoder repository");
+        assert_eq!(entry.model_type.as_deref(), Some("text_encoder"));
+        assert_eq!(
+            fetched(entry, "Q8_0"),
+            (
+                "umt5-xxl-encoder-Q8_0.gguf".to_string(),
+                Some("text_encoders".to_string()),
+                Some(6_043_068_256),
+                Some(
+                    "2521d4de0bf9e1cc6549866463ceae85e4ec3239bc6063f7488810be39033bbc".to_string()
+                )
+            )
+        );
+
+        let vae = look("wan2.2 ti2v 5b");
+        let entry = vae
+            .entries
+            .iter()
+            .find(|e| e.name == "QuantStack/Wan2.2-TI2V-5B-GGUF")
+            .expect("the repository that holds the VAE");
+        assert_eq!(
+            fetched(entry, "Wan2.2_VAE"),
+            (
+                "Wan2.2_VAE.safetensors".to_string(),
+                Some("vae".to_string()),
+                Some(1_409_400_960),
+                Some(
+                    "e40321bd36b9709991dae2530eb4ac303dd168276980d3e9bc4b6e2b75fed156".to_string()
+                )
+            )
+        );
+
+        // and the plain list is video and pictures and encoders, not language models
+        let plain = look("");
+        assert!(plain.done && !plain.failed, "{plain:?}");
+        let kinds: std::collections::BTreeSet<&str> = plain
+            .entries
+            .iter()
+            .filter_map(|e| e.model_type.as_deref())
+            .collect();
+        assert!(
+            kinds.contains("video") && kinds.contains("image"),
+            "{kinds:?}"
+        );
+        assert!(!kinds.contains("chat"), "{kinds:?}");
     }
 }

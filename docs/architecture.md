@@ -328,7 +328,7 @@ RunPlan { units: [ Unit { id, engine, role, phases, endpoint, apis, provenance }
 | Phase | What | From |
 |---|---|---|
 | acquire | Make the selection's artifacts exist (download, verify) | recipe components |
-| prepare | Derive what the engine needs: write a file, build a derived model | `[[launch.prepare]]` |
+| prepare | Derive what the engine needs: write a file, build a derived model | `[[launch.prepare]]` (not built; what Phase 4 needed of it, files of the application's own put before a start, is `[[launch.spawn.write]]`, §11.7) |
 | start | Spawn a process, or attach to an endpoint; an ordered list of *strategies* | `[launch]` |
 | ready | Wait until the engine answers | `[launch.ready]` |
 | warm | Load the model when the engine loads lazily | `[[launch.warm]]` |
@@ -433,14 +433,14 @@ manifest was written against. So bindings do not guess from version numbers; the
 | Locate | `locate.setting`, `.installed`, `.next_to_exe`, `.path_search`, `.known_paths`, `.dev_tree` | roots, names, per-OS binary paths | `paths.rs` |
 | Introspect | `exec.probe` (run a command, parse its output: version, `help_flags`) | command, regex | new |
 | Feeds | `feed.github_release` (asset rules by keywords or by exact name, prerelease policy; digests and `feed.static` are not built yet) | repository, counts, rules | `llama_releases.rs` (replaced in Phase 2) |
-| Install | `install.archive` (zip and tar.gz built; tar.zst, verify, entry filters, smoke test and atomic rename are Phase 3) | root, binary name and search depth | `llama_install.rs` (replaced in Phase 2) |
+| Install | `install.archive` (zip and tar.gz built; tar.zst, verify, entry filters, smoke test and atomic rename are Phase 3); `install.python_app` (WP4.11, §11.6: an application written in Python, from the source archive of a release, with an environment of its own, a journal and a lock so that an install that stops can be gone on with) | root, binary name and search depth; the Python versions, the pip steps and the packs of nodes, each with the condition it applies under | `llama_install.rs` (replaced in Phase 2) |
 | Fetch | `fetch.file` (stream to a file with progress and sha256), `net` (the allow-list) | directory, hash | `downloader.rs`, `download_to` |
 | Process | `spawn` (argv, environment, own process group or job object, stop policy), `attach` | program, args, env, stop | `server_manager.rs` |
 | Probe | `probe.http`, `probe.tcp`, `probe.exit` | path, expected status, timeout | `spawn_health_poller` |
 | Calls | `http_call` (method, path, body, timeout; streaming `sse` or `ndjson`; progress and extract mappings by JSON pointer) | everything | new (Ollama) |
 | Files | `write_file` (render a template) | template, path | new |
 | Catalog | `catalog.scan_dir`, `.bundle_dir`, `.engine_list` (an `http_call` plus a mapping), `.curated` (the multi-step Hugging Face look-up that was to be `.hf_gguf` is `lookup.huggingface_gguf`, below) | directories, filters, counts | `models.rs`, `remote.rs` |
-| Look-ups | `lookup.ollama_library` and `lookup.huggingface_gguf` (both built: WP3.15 and WP4.9). Ollama publishes no list a program can read, so the page of its search is read; Hugging Face's search and the files of each repository are asked of its API. Both end in the same kind of result, which `quickai-core::lookup::present` makes into what the window draws: a type from the vocabulary (`[[model_type]]`), a button for each way to fetch it with its size class (`[[size_class]]`), and the bundles that go with it; declared by `[[models.lookup]]` (one button of the model box for each) and `[[models.bundle]]`, see [lookup-and-bundles.md](lookup-and-bundles.md) | the site, how many repositories, which quantizations, which files are not weights | `remote.rs`, the look-up panels of `app.rs` |
+| Look-ups | `lookup.ollama_library` and `lookup.huggingface_gguf` (both built: WP3.15 and WP4.9). Ollama publishes no list a program can read, so the page of its search is read; Hugging Face's search and the files of each repository are asked of its API. Both end in the same kind of result, which `quickai-core::lookup::present` makes into what the window draws: a type from the vocabulary (`[[model_type]]`), a button for each way to fetch it with its size class (`[[size_class]]`), and the bundles that go with it; declared by `[[models.lookup]]` (one button of the model box for each) and `[[models.bundle]]`, see [lookup-and-bundles.md](lookup-and-bundles.md); for an engine that finds its files by the folder each is in (ComfyUI) the same look-up also takes `pipelines` and `words` (what its plain list is searched for: a list of the most downloaded of each pipeline, language models being no help to it) and `alone` (the kinds of file a repository holds that are fetched by themselves, each into the folder of its kind), WP4.13 | the site, how many repositories, which quantizations, which files are not weights | `remote.rs`, the look-up panels of `app.rs` |
 | Components | `[components.<kind>]` of an engine document: the arguments a companion file (a projector) adds to the command line, in the order of the fields' (WP4.9; the rest of §6.3's design for a component is Phase 4) | `bind.arg`, `order` | none (a file path given with `extra_args`) |
 | Rules | `input_rules`, `diagnostic_rules`, `discover` (globs) | patterns, hints | `app.rs` branches |
 | Decode | `decode` (framing sse, ndjson or json; JSON pointers; chat-message shape) | pointers | `proxy.rs` |
@@ -653,8 +653,17 @@ A port that answers is attached to only if it answers like Ollama (`GET /api/ver
 ### 11.4 Jobs
 
 One `Job { rx, label, verb, downloaded, total }` replaces `DownloadHandle` and `InstallHandle`, which have
-identical fields. Kinds: artifact download, runtime install, model pull. `Status(String)` events carry the
-engine's own words (`pulling manifest`, `verifying sha256 digest`) to the log pane.
+identical fields. Kinds: artifact download, runtime install, model pull, delete. `Status(String)` events carry the
+engine's own words (`pulling manifest`, `verifying sha256 digest`) to the log pane; `Detail(String)` (WP4.11) says
+what the job is doing right now (the step, the file, how far, how fast, how long it has been quiet): it replaces the one
+before and is not logged, and the window shows it under the bar.
+
+**The window only reads.** A frame drains the channels of its jobs and draws; it does not wait for the disk, a process or
+the network. What is read from the disk for a panel (the builds installed, the installs that stopped) is read by a
+thread of its own, one at a time, and the frame takes in the answer when it is there; a delete of a tree of seventy
+thousand files is a job. A job's wake-up asks for a repaint soon (`request_repaint_after`) and not at once: an install says
+something many times a second. A thread looks at the window while something runs and writes down, in a file in the
+data directory, the times it did not answer (`app/stall.rs`, WP4.11).
 
 ### 11.5 The install pipeline
 
@@ -691,6 +700,57 @@ click "Download"                              the only trigger
   wanted entries need be fetched (about 0.11 GB instead of 1.47 GB). A `.tar.zst` is a stream and cannot be
   ranged: a Linux user without Ollama pays the full 1.44 GB, which is why finding an installed Ollama and
   attaching matter more there.
+
+### 11.6 An application installed from its source
+
+`install.python_app@1` (WP4.11, the first user is [`comfyui.toml`](examples/engines/comfyui.toml), and
+[comfyui.md](comfyui.md) says what it is for) installs what has no executable to unpack: the source of a release and an
+environment made for it.
+
+```
+click "Install"
+  ├─ preflight   the Python (found, never installed), the room the document asks for less what an earlier attempt wrote
+  ├─ claim       <root>/<tag>.partial/, a lock on its .quickai-install.lock; the journal read, or begun
+  ├─ source      the archive of the tag, its sha256 against the pin (the tested tag) or a note that it is not checked, unpacked as app/
+  ├─ nodes       each pack, its archive against its own pin, unpacked inside app/
+  ├─ venv        <python> -m venv venv/
+  ├─ pip         each step that applies to this machine (the conditions of the document), --only-binary=:all:, temporary files inside the directory
+  ├─ launcher    a script beside app/ and venv/ (the build's executable, as the document's locate expects)
+  ├─ check       the launcher with the document's smoke arguments: always, even for an install gone on with
+  └─ rename      <tag>.partial → <tag>, and then the journal is removed
+```
+
+- **A journal.** The directory records which steps are done and a fingerprint of the plan (the tag, the source's
+  address, the Python's path and version, every pip step and every pack). A step is written down when it ends; one whose
+  files are gone is not done, and nor is any after it.
+- **What an install that stops leaves.** A cancel by the person leaves nothing, and so does a failure before the
+  environment exists. A failure after it (pip, the check, the move into place) and a kill leave the directory, and the
+  next install of the same plan does the steps that are left. A plan that is not the same is not believed.
+- **Not a build.** A directory with a journal is not a build whatever its name: `list_installed` and `locate.installed`
+  skip it, the manager lists it as an install that stopped (Continue, Delete), and the next install of its tag takes it up
+  under any name. The journal goes after the rename, so a directory that is whole has none.
+- **A lock, not a pid.** An advisory lock on a file of the directory is held while an install works in it and is let go
+  by the system when the process ends, however it ends; a second window is refused, the sweep of leftovers skips what is
+  in use, and a list of what stopped does not show it. The lock is asked for a few times before a directory is said to be in
+  use: a program that another thread is starting holds a copy of every open file until it runs (engine-facts F15).
+- **What a person sees.** Under the bar: the step (`Step 4 of 7 · ...`), what pip is doing, how far a download is and how
+  fast, how long an unpacking has taken, and a silence once it is long. pip is the child of the install thread (its own
+  process group, SIGTERM when its parent dies), so a window that is closed or killed takes it with it.
+
+### 11.7 Files of the application's own, put before a program starts
+
+A program that reads extensions from a folder has to be given the folder, and a build that was made before the extension
+existed has to have it too, so it is not a part of the install. `[[launch.spawn.write]]` (`asset`, `to`) names a file or a
+folder of the application's own (`crates/quickai/assets/`, compiled in with `include_dir`; `KnownPrimitives::with_assets` lists
+what there is, so a name that is not one is a load error with the nearest as a hint, like a widget that is not) and a template for where it goes; the plan carries it as
+`SpawnPlan.write` (`plan --explain`: `write <to>   (the application's own <asset>)`) and the supervisor
+puts it, after the `mkdir` and before the program starts, **at every start** (`assets::put`): a file that is there and has the same
+content is left alone, any other is written whole (a temporary file, then a rename), a file that is not the application's is not touched
+and not removed, what Python writes beside a file it has run (`__pycache__`) is no part of an asset, and a place that cannot be written
+stops the start with a sentence (`Could not put …`), because the program is told to read what is not there. The first user is
+ComfyUI's bridge for the page's Download button ([comfyui.md](comfyui.md), C85): `extensions/quickai_bridge/` and the YAML that makes
+ComfyUI read it, written beside the models folder and not in the build. A document of the person's own can only name what the
+application has; that the files are the application's own is what keeps a patch from writing a file of its choosing.
 
 ## 12. Security and privacy
 

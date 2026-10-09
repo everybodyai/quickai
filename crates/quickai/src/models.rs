@@ -192,6 +192,29 @@ pub fn say_modes(models: &mut [ModelEntry], labels: &[(String, String)]) {
 /// record beside some weights names as a companion, and a file whose name `hide` says is one (a
 /// projector dropped into the folder by hand is not a model either).
 pub fn discover_models(models_dir: &Path, hide: &[String]) -> Vec<ModelEntry> {
+    discover_models_of(models_dir, &[".gguf".to_string()], hide)
+}
+
+/// The models of the places an engine's document names (`[[models.sources]]`), each with the endings
+/// of its own, in the order the document gives them, a file name once.
+pub fn discover_in_sources(
+    sources: &[quickai_core::models::FileSource],
+    hide: &[String],
+) -> Vec<ModelEntry> {
+    let mut models: Vec<ModelEntry> = Vec::new();
+    for source in sources {
+        for model in discover_models_of(Path::new(&source.path), &source.ext, hide) {
+            if !models.iter().any(|m| m.filename == model.filename) {
+                models.push(model);
+            }
+        }
+    }
+    models.sort_by(|a, b| a.filename.cmp(&b.filename));
+    models
+}
+
+/// The models of one folder that end in one of `exts` (with the dot, in lower case; any when none).
+fn discover_models_of(models_dir: &Path, exts: &[String], hide: &[String]) -> Vec<ModelEntry> {
     let Ok(read_dir) = std::fs::read_dir(models_dir) else {
         return Vec::new();
     };
@@ -200,7 +223,13 @@ pub fn discover_models(models_dir: &Path, hide: &[String]) -> Vec<ModelEntry> {
     let mut paths: Vec<PathBuf> = read_dir
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
-        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("gguf"))
+        .filter(|p| p.is_file())
+        .filter(|p| {
+            exts.is_empty()
+                || p.extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| exts.contains(&format!(".{}", e.to_ascii_lowercase())))
+        })
         .filter(|p| {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
             !named.contains(name) && !glob::matches_any(hide, name)
@@ -275,6 +304,7 @@ mod tests {
             name: name.to_string(),
             size: None,
             sha256: None,
+            place: None,
         };
         crate::bundles::write(
             &dir.join(weights),

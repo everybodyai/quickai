@@ -38,6 +38,9 @@ pub struct KnownPrimitives {
     /// The names a field's `ui.widget` may have. `None` when the application did not say, which is
     /// how a registry built to test something else has it: no widget name is held to anything.
     widgets: Option<BTreeSet<String>>,
+    /// The names of the files and folders of the application's own that `launch.spawn.write` may name.
+    /// `None` when the application did not say: no name is held to anything.
+    assets: Option<BTreeSet<String>>,
 }
 
 impl KnownPrimitives {
@@ -50,6 +53,7 @@ impl KnownPrimitives {
                 .map(|i| PrimitiveRef::parse(i).unwrap_or_else(|e| panic!("bad primitive id: {e}")))
                 .collect(),
             widgets: None,
+            assets: None,
         }
     }
 
@@ -57,6 +61,18 @@ impl KnownPrimitives {
     pub fn with_widgets(mut self, names: &[&str]) -> Self {
         self.widgets = Some(names.iter().map(|n| (*n).to_string()).collect());
         self
+    }
+
+    /// Says which files and folders the application has of its own: a `launch.spawn.write` that names
+    /// another is a load error.
+    pub fn with_assets(mut self, names: &[String]) -> Self {
+        self.assets = Some(names.iter().cloned().collect());
+        self
+    }
+
+    /// The names a `launch.spawn.write` may use, when the application said.
+    pub fn asset_names(&self) -> Option<&BTreeSet<String>> {
+        self.assets.as_ref()
     }
 
     pub fn supports(&self, p: &PrimitiveRef) -> bool {
@@ -162,8 +178,12 @@ impl Registry {
         self.engines.get(id)
     }
 
+    /// The engines in the order the selector shows them: by the `order` of their documents (default 100),
+    /// then by id.
     pub fn engines(&self) -> impl Iterator<Item = &Engine> {
-        self.engines.values()
+        let mut engines: Vec<&Engine> = self.engines.values().collect();
+        engines.sort_by_key(|e| (e.doc.engine.order.unwrap_or(100), e.id.as_str()));
+        engines.into_iter()
     }
 
     /// The APIs the vocabulary documents define.

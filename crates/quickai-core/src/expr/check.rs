@@ -216,7 +216,11 @@ mod tests {
             ),
             (
                 "gpu",
-                Type::object([("known", Type::Bool), ("vendors", Type::list_of(Type::Str))]),
+                Type::object([
+                    ("known", Type::Bool),
+                    ("vendors", Type::list_of(Type::Str)),
+                    ("targets", Type::list_of(Type::Str)),
+                ]),
             ),
             (
                 "runtime",

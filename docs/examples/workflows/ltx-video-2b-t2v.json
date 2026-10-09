@@ -1,0 +1,161 @@
+{
+ "1": {
+  "class_type": "UnetLoaderGGUF",
+  "inputs": {
+   "unet_name": "ltxv-2b-0.9.8-distilled-q6_k.gguf"
+  }
+ },
+ "2": {
+  "class_type": "CLIPLoaderGGUF",
+  "inputs": {
+   "clip_name": "biali--ltxv-gguf--t5xxl_fp16-q4_0.gguf",
+   "type": "ltxv"
+  }
+ },
+ "3": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "biali--ltxv-gguf--ltxv_0.9.5_vae_fp16.safetensors"
+  }
+ },
+ "4": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "A calm ocean at sunset. Gentle waves roll onto a wide sandy beach, and the golden light of the low sun glitters on the water. A few seagulls glide across the orange sky. The camera slowly pans to the right along the shoreline. Cinematic, photorealistic, natural colors, smooth motion.",
+   "clip": [
+    "2",
+    0
+   ]
+  }
+ },
+ "5": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "worst quality, inconsistent motion, blurry, jittery, distorted, watermark, text",
+   "clip": [
+    "2",
+    0
+   ]
+  }
+ },
+ "6": {
+  "class_type": "LTXVConditioning",
+  "inputs": {
+   "positive": [
+    "4",
+    0
+   ],
+   "negative": [
+    "5",
+    0
+   ],
+   "frame_rate": 24.0
+  }
+ },
+ "7": {
+  "class_type": "EmptyLTXVLatentVideo",
+  "inputs": {
+   "width": 512,
+   "height": 288,
+   "length": 97,
+   "batch_size": 1
+  }
+ },
+ "8": {
+  "class_type": "ModelSamplingLTXV",
+  "inputs": {
+   "model": [
+    "1",
+    0
+   ],
+   "max_shift": 2.05,
+   "base_shift": 0.95,
+   "latent": [
+    "7",
+    0
+   ]
+  }
+ },
+ "9": {
+  "class_type": "LTXVScheduler",
+  "inputs": {
+   "steps": 8,
+   "max_shift": 2.05,
+   "base_shift": 0.95,
+   "stretch": true,
+   "terminal": 0.1,
+   "latent": [
+    "7",
+    0
+   ]
+  }
+ },
+ "10": {
+  "class_type": "KSamplerSelect",
+  "inputs": {
+   "sampler_name": "euler"
+  }
+ },
+ "11": {
+  "class_type": "SamplerCustom",
+  "inputs": {
+   "model": [
+    "8",
+    0
+   ],
+   "add_noise": true,
+   "noise_seed": 42,
+   "cfg": 1.0,
+   "positive": [
+    "6",
+    0
+   ],
+   "negative": [
+    "6",
+    1
+   ],
+   "sampler": [
+    "10",
+    0
+   ],
+   "sigmas": [
+    "9",
+    0
+   ],
+   "latent_image": [
+    "7",
+    0
+   ]
+  }
+ },
+ "12": {
+  "class_type": "VAEDecodeTiled",
+  "inputs": {
+   "samples": [
+    "11",
+    0
+   ],
+   "vae": [
+    "3",
+    0
+   ],
+   "tile_size": 192,
+   "overlap": 48,
+   "temporal_size": 16,
+   "temporal_overlap": 8
+  }
+ },
+ "13": {
+  "class_type": "SaveWEBM",
+  "inputs": {
+   "images": [
+    "12",
+    0
+   ],
+   "filename_prefix": "ltx",
+   "codec": "vp9",
+   "fps": 24.0,
+   "crf": 24.0
+  }
+ }
+}

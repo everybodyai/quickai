@@ -17,15 +17,35 @@
 //! rename       <label>.partial -> <label>, so a build is there whole or not at all
 //! ```
 //!
-//! What a killed install leaves (`.part`, `.partial`) is never a build and is cleared by the next.
+//! What a killed install leaves (`.part`, `.partial`) is never a build and is cleared by the next, except
+//! for an install of an application that was far enough on to be gone on with, which keeps a journal
+//! of its steps (`journal.rs`) and is listed for continuing or deleting.
 
 mod extract;
+mod journal;
+mod python_app;
 mod zstd;
+
+pub use journal::{is_unfinished, list_unfinished, Unfinished};
+#[cfg(test)]
+pub use journal::{Journal, StepRecord};
+
+/// Holds the lock of the directory of an install, as an install working in it does: for a test of what is
+/// said of a directory that is in use.
+#[cfg(test)]
+pub fn hold_for_test(dir: &Path) -> impl Sized {
+    journal::claim(dir).expect("a directory nothing is working in")
+}
+#[cfg(test)]
+pub use python_app::{find_python, Where};
+pub use python_app::{NodePlan, PipPlan, PythonApp, CANCELLED};
 
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use quickai_core::doc::engine::{Install, Verify};
@@ -35,7 +55,7 @@ use sha2::{Digest, Sha256};
 
 use crate::hardware::format_bytes;
 use crate::jobs::{Job, JobEvent};
-use crate::runtime::process::{run_captured, without_package_loader_env, RunFailure};
+use crate::runtime::process::{run_captured_until, without_package_loader_env, RunFailure};
 use extract::{extract, ArchiveKind};
 
 const CHUNK: usize = 256 * 1024;
@@ -48,8 +68,8 @@ const UNPACKED_DENOMINATOR: u64 = 5;
 const SPACE_MARGIN: u64 = 256 * 1024 * 1024;
 
 /// What an install in progress leaves in the root, and nothing else does.
-const PARTIAL: &str = ".partial";
-const PART: &str = ".part";
+pub(super) const PARTIAL: &str = ".partial";
+pub(super) const PART: &str = ".part";
 
 /// Where an engine's builds live and how to recognise an installed one.
 #[derive(Clone, Debug)]
@@ -73,6 +93,21 @@ pub struct InstallSpec {
     pub smoke: Option<Smoke>,
     /// How much room there is at a path. A parameter so that a test can say "none".
     pub free_space: fn(&Path) -> Option<u64>,
+    /// What the install is: unpacking an archive, or building an application from its source.
+    pub kind: InstallKind,
+    /// Set by the interface to stop an install that is running: the download stops, the program it
+    /// started is killed, and nothing is left behind.
+    pub cancel: Arc<AtomicBool>,
+}
+
+/// What an install does.
+#[derive(Clone, Debug, Default)]
+pub enum InstallKind {
+    /// Unpack a release archive and find the executable in it (`install.archive@1`).
+    #[default]
+    Archive,
+    /// Install an application written in Python from its source (`install.python_app@1`).
+    PythonApp(Box<PythonApp>),
 }
 
 /// The program (the build's executable) is run with these arguments.
@@ -94,6 +129,8 @@ impl Default for InstallSpec {
             skip: Vec::new(),
             smoke: None,
             free_space: system_free_space,
+            kind: InstallKind::Archive,
+            cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -103,29 +140,102 @@ impl InstallSpec {
     /// `root`, no executable named).
     pub fn from_engine(engine: &Engine, facts: &HostFacts) -> Option<InstallSpec> {
         let acquire = engine.doc.acquire.as_ref()?;
-        let Install::Archive {
-            binary,
-            chmod,
-            verify,
-            smoke,
-            ..
-        } = acquire.install.as_ref()?;
-        let binary = binary.as_ref()?;
-        let root = quickai_core::acquire::root_dir(engine, facts)?;
-        Some(InstallSpec {
-            root: PathBuf::from(root),
-            binary: binary_file_name(&binary.name),
-            search_depth: binary.search_depth,
-            chmod: *chmod,
-            fallback_label: format!("{}-build", binary.name),
-            verify: *verify,
-            skip: quickai_core::acquire::skip_globs(engine, facts),
-            smoke: smoke.as_ref().map(|command| Smoke {
-                args: command.iter().skip(1).cloned().collect(),
-                timeout: Duration::from_secs(15),
-            }),
-            free_space: system_free_space,
-        })
+        let root = PathBuf::from(quickai_core::acquire::root_dir(engine, facts)?);
+        match acquire.install.as_ref()? {
+            Install::Archive {
+                binary,
+                chmod,
+                verify,
+                smoke,
+                ..
+            } => {
+                let binary = binary.as_ref()?;
+                Some(InstallSpec {
+                    root,
+                    binary: binary_file_name(&binary.name),
+                    search_depth: binary.search_depth,
+                    chmod: *chmod,
+                    fallback_label: format!("{}-build", binary.name),
+                    verify: *verify,
+                    skip: quickai_core::acquire::skip_globs(engine, facts),
+                    smoke: smoke.as_ref().map(|command| Smoke {
+                        args: command.iter().skip(1).cloned().collect(),
+                        timeout: Duration::from_secs(15),
+                    }),
+                    ..Default::default()
+                })
+            }
+            Install::PythonApp {
+                binary,
+                entry,
+                python,
+                verify,
+                smoke,
+                smoke_timeout,
+                space,
+                ..
+            } => {
+                let label = |text: &Option<String>, fallback: &str| {
+                    text.clone().unwrap_or_else(|| fallback.to_string())
+                };
+                let app = PythonApp {
+                    entry: entry.clone(),
+                    versions: python.versions.clone(),
+                    python: None,
+                    pip: quickai_core::acquire::pip_steps(engine, facts)
+                        .into_iter()
+                        .map(|step| PipPlan {
+                            id: step.id.clone(),
+                            label: label(&step.label, &step.id),
+                            packages: step.packages.clone(),
+                            requirements: step.requirements.clone(),
+                            index: step.index.clone(),
+                            weight: step.weight.unwrap_or(1),
+                        })
+                        .collect(),
+                    nodes: quickai_core::acquire::node_packs(engine, facts)
+                        .into_iter()
+                        .map(|pack| NodePlan {
+                            id: pack.id.clone(),
+                            label: label(&pack.label, &pack.id),
+                            url: pack.url.clone(),
+                            sha256: pack.sha256.clone(),
+                            into: pack.into.clone(),
+                            requirements: pack.requirements.clone(),
+                        })
+                        .collect(),
+                    space: space
+                        .as_deref()
+                        .and_then(quickai_core::lookup::size::parse_size),
+                };
+                Some(InstallSpec {
+                    root,
+                    binary: launcher_file_name(&binary.name),
+                    search_depth: 0,
+                    chmod: true,
+                    fallback_label: format!("{}-build", binary.name),
+                    verify: *verify,
+                    smoke: smoke.as_ref().map(|command| Smoke {
+                        args: command.iter().skip(1).cloned().collect(),
+                        timeout: smoke_timeout
+                            .as_deref()
+                            .and_then(|text| quickai_core::doc::duration::parse_duration(text).ok())
+                            .unwrap_or(Duration::from_secs(120)),
+                    }),
+                    kind: InstallKind::PythonApp(Box::new(app)),
+                    ..Default::default()
+                })
+            }
+        }
+    }
+
+    /// A Python the person chose for an install that builds an environment: used whatever else is
+    /// on the machine. An install that unpacks an archive has no use for one.
+    pub fn with_python(mut self, python: Option<PathBuf>) -> InstallSpec {
+        if let InstallKind::PythonApp(app) = &mut self.kind {
+            app.python = python;
+        }
+        self
     }
 
     /// The directory a build with this label is installed in.
@@ -187,6 +297,15 @@ pub fn binary_file_name(name: &str) -> String {
     }
 }
 
+/// `comfyui` on Unix, `comfyui.cmd` on Windows: a launcher is a script and not a program.
+pub fn launcher_file_name(name: &str) -> String {
+    if cfg!(windows) {
+        format!("{name}.cmd")
+    } else {
+        name.to_string()
+    }
+}
+
 /// Walks `dir` looking for a file called `name`, up to `depth` levels down. Best-effort: an
 /// unreadable subdirectory is skipped rather than failing the whole search.
 pub fn find_binary(dir: &Path, name: &str, depth: u32) -> Option<PathBuf> {
@@ -211,6 +330,7 @@ pub fn find_binary(dir: &Path, name: &str, depth: u32) -> Option<PathBuf> {
 
 /// One build installed by an earlier run, as found on disk — independent of whatever the feed
 /// currently lists, so it can be selected again (or deleted) after it has aged out of that list.
+#[derive(Clone, Debug)]
 pub struct InstalledBuild {
     pub label: String,
     pub binary_path: PathBuf,
@@ -242,6 +362,8 @@ pub fn list_installed(spec: &InstallSpec) -> Vec<InstalledBuild> {
             p.file_name()
                 .is_some_and(|n| !is_leftover(&n.to_string_lossy()))
         })
+        // an install that stopped is not a build, whatever it is called
+        .filter(|p| !journal::is_unfinished(p))
         .filter_map(|install_dir| {
             let binary_path = find_binary(&install_dir, &spec.binary, spec.search_depth)?;
             let label = install_dir.file_name()?.to_string_lossy().into_owned();
@@ -265,7 +387,7 @@ pub fn list_installed(spec: &InstallSpec) -> Vec<InstalledBuild> {
 }
 
 /// Total size of every regular file under `dir`: roughly what deleting it would free.
-fn dir_size(dir: &Path) -> u64 {
+pub(super) fn dir_size(dir: &Path) -> u64 {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
     };
@@ -341,8 +463,8 @@ pub fn spawn_install_build(
 
 /// What a failed or killed install must not leave behind: removed when it goes out of scope
 /// unless the install finished.
-struct Leftovers {
-    paths: Vec<PathBuf>,
+pub(super) struct Leftovers {
+    pub(super) paths: Vec<PathBuf>,
 }
 
 impl Drop for Leftovers {
@@ -364,6 +486,9 @@ pub fn install_blocking(
     request: &InstallRequest,
     send: &dyn Fn(JobEvent<PathBuf>),
 ) -> Result<PathBuf, String> {
+    if let InstallKind::PythonApp(app) = &spec.kind {
+        return python_app::install(spec, app, request, send);
+    }
     let final_dir = spec.install_dir(&request.label);
     if let Some(existing) = find_binary(&final_dir, &spec.binary, spec.search_depth) {
         return Ok(existing);
@@ -415,6 +540,7 @@ pub fn install_blocking(
             &part,
             fetched,
             grand_total.or(source.size),
+            &spec.cancel,
             send,
         )?;
         fetched += download.bytes;
@@ -462,7 +588,7 @@ pub fn install_blocking(
     }
     if let Some(smoke) = &spec.smoke {
         send(JobEvent::Status("Checking that it runs".to_string()));
-        run_smoke(&found, smoke)?;
+        run_smoke(&found, smoke, &spec.cancel)?;
     }
 
     // whole at last: make it the build
@@ -480,7 +606,10 @@ pub fn install_blocking(
 /// The digest a download must have, if it has to have one. The host's and the document's agree or
 /// the file is refused: it changed after it was tested, and which of them is right does not
 /// matter.
-fn expected_digest(spec: &InstallSpec, source: &Source) -> Result<Option<String>, String> {
+pub(super) fn expected_digest(
+    spec: &InstallSpec,
+    source: &Source,
+) -> Result<Option<String>, String> {
     if spec.verify == Verify::None {
         return Ok(None);
     }
@@ -513,6 +642,19 @@ fn check_room(spec: &InstallSpec, request: &InstallRequest) -> Result<(), String
         return Ok(());
     };
     let needed = total + total / UNPACKED_DENOMINATOR * UNPACKED_NUMERATOR + SPACE_MARGIN;
+    check_free(spec, needed)
+}
+
+/// As `check_room`, for an install that knows by itself how much it needs (a Python environment is
+/// many times its download): `needed` bytes, or nothing is asked when the document gave none.
+pub(super) fn check_room_for(spec: &InstallSpec, needed: Option<u64>) -> Result<(), String> {
+    match needed {
+        Some(needed) => check_free(spec, needed),
+        None => Ok(()),
+    }
+}
+
+fn check_free(spec: &InstallSpec, needed: u64) -> Result<(), String> {
     match (spec.free_space)(&spec.root) {
         Some(free) if free < needed => Err(format!(
             "not enough free space where {} is: about {} is needed (the download and what it unpacks to) and {} is free",
@@ -525,8 +667,10 @@ fn check_room(spec: &InstallSpec, request: &InstallRequest) -> Result<(), String
 }
 
 /// What an install in progress leaves in `root` (only one runs at a time): removed before the next
-/// starts, so a killed one does not leave gigabytes behind for ever.
-fn sweep_leftovers(root: &Path) {
+/// starts, so a killed one does not leave gigabytes behind for ever. Not the install of an application
+/// that stopped with a journal, which is the person's to continue or delete, nor one that another window
+/// is working in.
+pub(super) fn sweep_leftovers(root: &Path) {
     let Ok(entries) = std::fs::read_dir(root) else {
         return;
     };
@@ -534,6 +678,9 @@ fn sweep_leftovers(root: &Path) {
         let name = entry.file_name().to_string_lossy().into_owned();
         if is_leftover(&name) {
             let path = entry.path();
+            if journal::is_unfinished(&path) || journal::is_busy(&path) {
+                continue;
+            }
             if path.is_dir() {
                 let _ = std::fs::remove_dir_all(path);
             } else {
@@ -545,7 +692,7 @@ fn sweep_leftovers(root: &Path) {
 
 /// Renames the staging directory to the build's. On Windows a virus scanner can hold a file of it
 /// for a moment, and the rename is tried again for a second.
-fn rename_into_place(staging: &Path, final_dir: &Path) -> Result<(), String> {
+pub(super) fn rename_into_place(staging: &Path, final_dir: &Path) -> Result<(), String> {
     let mut tries = 0;
     loop {
         match std::fs::rename(staging, final_dir) {
@@ -567,11 +714,11 @@ fn rename_into_place(staging: &Path, final_dir: &Path) -> Result<(), String> {
 
 /// Runs the unpacked executable once with the document's arguments: it must exit with success
 /// within the time. A program that cannot even do that is not installed.
-fn run_smoke(binary: &Path, smoke: &Smoke) -> Result<(), String> {
+pub(super) fn run_smoke(binary: &Path, smoke: &Smoke, cancel: &AtomicBool) -> Result<(), String> {
     let mut command = Command::new(binary);
     command.args(&smoke.args);
     without_package_loader_env(&mut command);
-    let ran = match run_captured(&mut command, smoke.timeout) {
+    let ran = match run_captured_until(&mut command, smoke.timeout, cancel) {
         Ok(ran) => ran,
         Err(RunFailure::Start(e)) => {
             return Err(format!(
@@ -588,6 +735,7 @@ fn run_smoke(binary: &Path, smoke: &Smoke) -> Result<(), String> {
         Err(RunFailure::Wait(e)) => {
             return Err(format!("could not wait for the unpacked program: {e}"))
         }
+        Err(RunFailure::Stopped) => return Err(CANCELLED.to_string()),
     };
     if ran.status.success() {
         return Ok(());
@@ -608,19 +756,20 @@ fn run_smoke(binary: &Path, smoke: &Smoke) -> Result<(), String> {
 }
 
 /// What a download came to.
-struct Downloaded {
-    bytes: u64,
-    sha256: String,
+pub(super) struct Downloaded {
+    pub(super) bytes: u64,
+    pub(super) sha256: String,
 }
 
 /// Streams `url` into `dest`, reporting progress as it goes (`before` bytes of the whole job were
 /// fetched already) and working out the sha256 of what arrives, so the digest is known the moment
 /// the last byte is. A body that ends short of the length the server announced is an error.
-fn download(
+pub(super) fn download(
     url: &str,
     dest: &Path,
     before: u64,
     total: Option<u64>,
+    cancel: &AtomicBool,
     send: &dyn Fn(JobEvent<PathBuf>),
 ) -> Result<Downloaded, String> {
     let resp = ureq::get(url)
@@ -637,6 +786,9 @@ fn download(
     let mut hasher = Sha256::new();
     let mut bytes: u64 = 0;
     loop {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(CANCELLED.to_string());
+        }
         let n = reader
             .read(&mut buf)
             .map_err(|e| format!("download error: {e}"))?;
@@ -1036,6 +1188,7 @@ mod tests {
             &root.join("big.part"),
             0,
             None,
+            &AtomicBool::new(false),
             &|event| {
                 if let JobEvent::Progress { downloaded, total } = event {
                     seen.lock().unwrap().push((downloaded, total));

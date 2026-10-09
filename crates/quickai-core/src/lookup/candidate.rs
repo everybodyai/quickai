@@ -46,6 +46,9 @@ pub struct RemoteFile {
     /// Its path in the repository (`MTP/mtp-x.gguf`).
     pub path: String,
     pub size: Option<u64>,
+    /// What the bytes of the file hash to (lower case hexadecimal), when the site says: the hub states
+    /// it for every large file it keeps (the ones in LFS), and a download checks it as the bytes arrive.
+    pub sha256: Option<String>,
 }
 
 impl RemoteFile {
@@ -53,7 +56,14 @@ impl RemoteFile {
         RemoteFile {
             path: path.to_string(),
             size,
+            sha256: None,
         }
+    }
+
+    /// The same file, with the hash the site stated for it.
+    pub fn with_sha256(mut self, sha256: &str) -> Self {
+        self.sha256 = Some(sha256.to_ascii_lowercase());
+        self
     }
 
     /// The last component of its path.

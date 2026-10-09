@@ -29,6 +29,7 @@ pub const PROVIDED: &[&str] = &[
     "lookup.ollama_library@1",
     "lookup.huggingface_gguf@1",
     "install.archive@1",
+    "install.python_app@1",
     "spawn@1",
     "attach@1",
     "probe.http@1",
@@ -36,8 +37,10 @@ pub const PROVIDED: &[&str] = &[
     "decode@1",
 ];
 
-/// The primitives this build provides and the widgets its interface draws, which is what documents
-/// are held to when they load.
+/// The primitives this build provides, the widgets its interface draws and the files it carries, which is
+/// what documents are held to when they load.
 pub fn known() -> KnownPrimitives {
-    KnownPrimitives::new(PROVIDED).with_widgets(crate::app::NAMED_WIDGETS)
+    KnownPrimitives::new(PROVIDED)
+        .with_widgets(crate::app::NAMED_WIDGETS)
+        .with_assets(&crate::assets::names())
 }

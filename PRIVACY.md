@@ -1,11 +1,11 @@
 # Privacy policy: QuickAI
 
-_Last updated: 2026-10-07_
+_Last updated: 2026-10-08_
 
 QuickAI ("the app") is a desktop program for running language models on your own computer: you pick a model,
 start it, and chat with it in your browser or from another program on the same machine. It can run them with
-llama.cpp (which comes with the app) or, if you choose it in ⚙ Settings, with Ollama (which does not: the app
-downloads it only when you ask). This policy covers the
+llama.cpp (which comes with the app) or, if you choose it in ⚙ Settings, with Ollama, or with ComfyUI for pictures
+and video (neither of which comes with the app: it downloads them only when you ask). This policy covers the
 app however you install it: the Microsoft Store, GitHub Releases (tar.gz, AppImage or zip), Snap, Homebrew,
 Scoop, Chocolatey or the AUR.
 
@@ -14,8 +14,8 @@ Scoop, Chocolatey or the AUR.
 The app itself does not collect, store or send personal information to its developer or to anyone else. It has no
 accounts, no analytics or telemetry, no advertising, no crash reporting and no automatic update check of its own.
 Your prompts and the model's replies are processed on your own computer and are never uploaded. The app talks to
-the internet only when you ask it to, to search for or download a model, a llama.cpp build or an Ollama build, or
-to look Ollama's library up (see [When the app uses the internet](#when-the-app-uses-the-internet)). Some of the stores and package managers you can
+the internet only when you ask it to, to search for or download a model, a llama.cpp build, an Ollama build or a
+ComfyUI build, or to look Ollama's library up (see [When the app uses the internet](#when-the-app-uses-the-internet)). Some of the stores and package managers you can
 install it through do their own data collection, independent of anything the app does; see
 [Stores and package managers](#stores-and-package-managers) below.
 
@@ -41,6 +41,19 @@ install it through do their own data collection, independent of anything the app
   If an Ollama of your own is already running on the port, QuickAI uses it, changes nothing about how it was
   started, and leaves it running when you press **Stop**. Prompts and replies travel only between your client and
   the local Ollama, as with llama-server, and the live traffic view works the same way.
+- **ComfyUI, if you choose it.** ComfyUI is a separate program, GPL-3.0-licensed, that makes pictures and video from
+  workflows you build in its own web page, and QuickAI downloads it on request (⚙ Settings, **Look up ComfyUI
+  builds**) and never ships it. It is installed as source, with a Python environment of its own, under
+  `~/.quickai/comfyui/<release>` (about 17 GB, most of it PyTorch); packages are installed only as built wheels, so no
+  package runs a build script on your computer. QuickAI starts it so that it listens on `127.0.0.1` only and, unless
+  you change **The page's network** setting, with `--offline`, so that the page it serves contacts no other site;
+  its folders are under `~/.quickai/comfyui` (`models`, `output`, `input`, `user`, `temp`). An install that is interrupted keeps what it did in a directory beside the builds, with a small
+  record of its steps (`.quickai-install.json`) and a lock file; **Unfinished installs** in ⚙ Settings lists it, and
+  it is yours to continue or delete. If a ComfyUI of your own is already running on the port, QuickAI uses it and
+  changes nothing about how it was started. Every time QuickAI starts ComfyUI it also writes a small folder of
+  its own beside the models folder (`~/.quickai/comfyui/extensions/quickai_bridge`) and a file that tells ComfyUI to
+  read it: with it, the **Download** button of ComfyUI's page puts a model in the models folder (see
+  [When the app uses the internet](#when-the-app-uses-the-internet)); it has no other effect.
 - **The optional live traffic view.** Off by default. If you turn on "Show live conversation traffic" in
   ⚙ Settings, the app puts a small proxy on your computer (also on `127.0.0.1` only) between your clients and
   `llama-server`, so the **📡 Live** tab can show the chat requests and replies passing through. What it captures
@@ -48,6 +61,12 @@ install it through do their own data collection, independent of anything the app
   press **Clear all** or quit the app.
 - **The log pane.** The pane at the bottom of the window shows the command line the app used to start
   `llama-server` and what `llama-server` prints, the last 2000 lines at most, in memory only. It is not saved.
+- **When the window stops answering.** While an install, a download, a delete or a look-up runs, a thread of the app
+  looks once a second at whether the window is still drawing. If it is not for five seconds, the app appends to
+  `~/.quickai/ui-stalls.log` when, for how long, what the window's thread was waiting in (its state, a kernel
+  function, a system call), and figures about the computer's memory, swap and disk pressure at that moment, and
+  later when the window answered again. It records no prompt, file name or address, it stays on your computer, and
+  you can delete it.
 - **Your hardware.** To suggest a model and estimate its speed, the app reads how much memory your computer has.
   At startup it also asks your operating system which graphics adapters are installed (by running `lspci` on
   Linux, a short PowerShell command on Windows or `system_profiler` on macOS, on your computer) so that it can warn
@@ -76,9 +95,12 @@ only when you press a button, or Enter in a box, for one of these:
 - **Searching for a model.** **Look up online**, or typing a name into the Model box (anything that is neither a
   link nor the path of an existing file is treated as a search) and pressing Enter or **Search**. The app asks
   Hugging Face (`huggingface.co`) for popular GGUF models and, for each repository it shows, for its tags and the
-  names and sizes of its files (one request each: a look-up makes about thirty). The words you typed are part of
-  the request. No cookie is kept and nothing is sent but the request and a `User-Agent` that says `quickai`.
-  Hugging Face sees your IP address and handles it under its own [privacy policy](https://huggingface.co/privacy).
+  names, sizes and checksums of its files (one request each: a look-up makes about thirty). The words you typed are
+  part of the request. With ComfyUI chosen the plain list is made of a few searches instead of one (the most
+  downloaded GGUF models of text-to-video, image-to-video, text-to-image and image-to-image, and of text encoders,
+  about thirty-five requests in all). No cookie is kept and nothing is sent but the request and a `User-Agent` that
+  says `quickai`. Hugging Face sees your IP address and handles it under its own
+  [privacy policy](https://huggingface.co/privacy).
 - **The recommended models.** **Recommended** opens a list that is part of the application: opening it, searching it and
   closing it contact no one. A button of it fetches what it says (below), from the host the list names: Hugging Face
   for files, and for Ollama the name is pulled by Ollama itself from its registry (`registry.ollama.ai`). Every file is
@@ -87,7 +109,11 @@ only when you press a button, or Enter in a box, for one of these:
   address: Hugging Face for results, or whatever address you entered. That server sees your IP address and the
   request. A result that comes with a second file (a vision model's projector) fetches both from the same place,
   one after the other; QuickAI writes a small record of the pair (`<model>.bundle.json`) beside the model in
-  `~/.quickai/models` and nothing else leaves your machine.
+  `~/.quickai/models` and nothing else leaves your machine. A file of a result is checked against the SHA-256 that
+  Hugging Face states for it, and one that does not match is deleted. With ComfyUI chosen the box takes the address of
+  one `.gguf` or `.safetensors` file (a link to its page on Hugging Face is turned into the link to the file) and
+  keeps it in the folder of the models folder you choose or its name suggests; Hugging Face sends the file on to a
+  download server (`*.cdn.hf.co`), which sees your IP address and the name of the file too.
 - **llama.cpp builds.** ⚙ Settings, **Look up llama.cpp builds** asks GitHub's API (`api.github.com`) for llama.cpp's
   recent releases; the request identifies itself as `quickai`. Installing one of them, or entering a direct
   download link in the `llama-server` box, downloads that archive from GitHub or from the address you gave. GitHub
@@ -117,6 +143,25 @@ only when you press a button, or Enter in a box, for one of these:
   contacted nothing else); those servers see your IP address and the name. A size chosen in the results of the
   look-up above is pulled the same way, as `name:size`. Nothing is pulled, listed or started just because Ollama was
   chosen.
+- **ComfyUI builds.** With ComfyUI chosen, ⚙ Settings, **Look up ComfyUI builds** asks GitHub's API
+  (`api.github.com`) for the releases of `Comfy-Org/ComfyUI`; installing one downloads the source of that release,
+  and of the pack of GGUF nodes (`city96/ComfyUI-GGUF`), from GitHub (`github.com`, which sends the archive from
+  `codeload.github.com`), and the app checks each against the checksum recorded in the app (a release other than the
+  one it was tested with has none, and the log says it was not checked). Then **pip**, run by the app inside the
+  environment it made, downloads PyTorch from the PyTorch package index (`download.pytorch.org`, whose files come from
+  `download-r2.pytorch.org`) and what ComfyUI needs from the Python Package Index (`pypi.org`, and
+  `files.pythonhosted.org` for the files). Those servers see your IP address and the names of the packages, which
+  are the same for everyone. Nothing is downloaded just because ComfyUI was chosen.
+- **The Download button of ComfyUI's page.** A workflow can name the models it needs, and ComfyUI's page then lists
+  the ones you do not have, each with a **Download** button. In a browser that button only asks the browser to save
+  the file in its own folder. With ComfyUI started by QuickAI it asks **ComfyUI** to do it, and only when you press
+  it: ComfyUI fetches that one file from Hugging Face (`huggingface.co`, which sends it on to a download server,
+  `*.cdn.hf.co`; measured, and nothing else was contacted) into the folder of its kind in the models folder, under the
+  name the workflow gives it, and checks it against the checksum Hugging Face states. Those servers see your IP
+  address and the name of the file. Only `.safetensors` and `.gguf` files, only from `huggingface.co`, and only a request
+  from this computer are carried out; for anything else the page does what it does without QuickAI, which is to leave
+  the file to your browser. Nothing is fetched just because a workflow was opened, and **The page's network** setting
+  does not change this: it is about what the page itself may contact.
 
 Each of these is an ordinary web request (HTTPS, or plain HTTP if you type an `http://` address) from your computer
 straight to that server. The developer of QuickAI is not involved in them and receives nothing.

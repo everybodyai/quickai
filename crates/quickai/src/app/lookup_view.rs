@@ -81,6 +81,8 @@ impl App {
                 popular,
                 keyword,
                 similar,
+                pipelines,
+                words,
                 ..
             } => spawn_hub_lookup(
                 HubSpec {
@@ -88,6 +90,8 @@ impl App {
                     popular: *popular,
                     keyword: *keyword,
                     similar: *similar,
+                    pipelines: pipelines.clone(),
+                    words: words.clone(),
                 },
                 query,
                 rules,
@@ -102,6 +106,10 @@ impl App {
             entries: Vec::new(),
             size: self.lookup.size.take(),
         };
+        // an engine that keeps its files in folders of their own says which results it has already
+        if self.runs_alone() {
+            self.refresh_catalog_have();
+        }
     }
 
     /// Drains what the look-up has said since the last frame.
@@ -147,6 +155,7 @@ impl App {
             return;
         }
         let ctx = ctx.clone();
+        self.bench_fetching(&download);
         self.download = Some(downloader::spawn_files(
             download,
             self.models_dir.clone(),
@@ -188,6 +197,20 @@ impl App {
         let entries = std::mem::take(&mut self.lookup.entries);
         let mut size = self.lookup.size.clone();
         let mut chosen: Option<Fetch> = None;
+        // An engine that keeps its files in folders of their own knows which of them are there: a button
+        // whose files all are, at the size the hub says, is marked and does nothing. llama.cpp's results
+        // are what they always were.
+        let have = self.runs_alone().then(|| self.catalog.have.clone());
+        let installed_fn = |offer: &Offer| {
+            have.as_ref()
+                .is_some_and(|have| super::catalog_view::installed(offer, have, &[]))
+        };
+        let fit_fn = |_: &Offer| Fit::Comfortable;
+        let decor = have.as_ref().map(|_| Decor {
+            installed: &installed_fn,
+            fit: &fit_fn,
+            ram: 0,
+        });
         egui::CollapsingHeader::new(format!("Results ({})", entries.len()))
             .default_open(true)
             .show(ui, |ui| {
@@ -229,7 +252,7 @@ impl App {
                                 &bundle_labels,
                                 busy,
                                 &mut chosen,
-                                None,
+                                decor.as_ref(),
                             );
                         }
                     });
@@ -344,20 +367,21 @@ pub(super) fn show_entry(
             ui.add(egui::Label::new(egui::RichText::new(&entry.description).small()).wrap());
         }
         // the rows, in the order the entry has them (a look-up puts the model alone first, the list the bundles)
-        let mut groups: Vec<Option<&str>> = Vec::new();
+        let mut groups: Vec<Row<'_>> = Vec::new();
         for offer in shown.iter().map(|i| &entry.offers[*i]) {
-            let group = offer.bundle.as_deref();
+            let group = row_of(offer);
             if !groups.contains(&group) {
                 groups.push(group);
             }
         }
         let has_bundles = entry.offers.iter().any(|o| o.bundle.is_some());
+        let has_only = entry.offers.iter().any(|o| o.only().is_some());
         for group in groups {
             ui.horizontal_wrapped(|ui| {
                 let in_group: Vec<&Offer> = shown
                     .iter()
                     .map(|i| &entry.offers[*i])
-                    .filter(|o| o.bundle.as_deref() == group)
+                    .filter(|o| row_of(o) == group)
                     .collect();
                 let entry_bundles: Vec<&str> = entry
                     .offers
@@ -366,11 +390,23 @@ pub(super) fn show_entry(
                     .collect::<std::collections::BTreeSet<_>>()
                     .into_iter()
                     .collect();
-                let words = ui.label(
-                    egui::RichText::new(row_label(group, has_bundles, &in_group, bundle_labels))
-                        .small(),
-                );
-                let hover = row_hover(group, &entry_bundles, bundle_labels);
+                let (label, hover) = match group {
+                    Row::Only(_) => (only_label(&in_group), only_hover(&in_group)),
+                    // beside a file of a kind by itself the model's own row says that it is the model
+                    Row::Model if has_only && !has_bundles => (
+                        "Get model:".to_string(),
+                        String::new(),
+                    ),
+                    Row::Model => (
+                        row_label(None, has_bundles, &in_group, bundle_labels),
+                        row_hover(None, &entry_bundles, bundle_labels),
+                    ),
+                    Row::Bundle(id) => (
+                        row_label(Some(id), has_bundles, &in_group, bundle_labels),
+                        row_hover(Some(id), &entry_bundles, bundle_labels),
+                    ),
+                };
+                let words = ui.label(egui::RichText::new(label).small());
                 if !hover.is_empty() {
                     words.on_hover_text(hover);
                 }
@@ -413,6 +449,53 @@ pub(super) fn show_entry(
         }
         ui.add_space(6.0);
     });
+}
+
+/// The row of buttons an offer is in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Row<'a> {
+    /// The weights alone.
+    Model,
+    /// The weights with the files of a bundle, by its id.
+    Bundle(&'a str),
+    /// A file of a kind of its own (a VAE, a text encoder), fetched without any model, by its kind.
+    Only(&'a str),
+}
+
+fn row_of(offer: &Offer) -> Row<'_> {
+    if let Some(piece) = offer.only() {
+        return Row::Only(piece.kind.as_deref().unwrap_or_default());
+    }
+    match offer.bundle.as_deref() {
+        Some(id) => Row::Bundle(id),
+        None => Row::Model,
+    }
+}
+
+/// The words in front of the row of a kind of file by itself: `Get VAE only:`.
+fn only_label(offers: &[&Offer]) -> String {
+    let what = offers
+        .first()
+        .and_then(|o| o.only())
+        .map_or("file", |piece| piece.label.as_str());
+    format!("Get {what} only:")
+}
+
+/// What a person who rests the pointer on those words is told: that it is the file and not a model, and
+/// where it is kept.
+fn only_hover(offers: &[&Offer]) -> String {
+    let Some(piece) = offers.first().and_then(|o| o.only()) else {
+        return String::new();
+    };
+    let place = piece
+        .place
+        .as_deref()
+        .map(|p| format!(" in the {p} folder"))
+        .unwrap_or_default();
+    format!(
+        "Just the {}, without a model: it is kept{place} under the name it has, and a workflow that needs one names it by that name.",
+        piece.label
+    )
 }
 
 /// What a curated entry says of itself besides its name, in short words: what it reads and what

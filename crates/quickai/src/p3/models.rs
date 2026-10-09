@@ -59,8 +59,12 @@ remove = { call = { method = "DELETE", path = "/api/delete", body = { model = "$
 "#;
 
 fn registry() -> Registry {
+    registry_of(DOC)
+}
+
+fn registry_of(doc: &str) -> Registry {
     use quickai_core::config::{load, Layer, LoadOptions, MemorySource};
-    let source = MemorySource::new(&[("embedded:engines/acme.toml", DOC)]);
+    let source = MemorySource::new(&[("embedded:engines/acme.toml", doc)]);
     let registry = Registry::build(
         load(&[(Layer::Embedded, &source)], &LoadOptions::default()),
         &crate::prims::known(),
@@ -340,4 +344,81 @@ fn p3_m06c_the_document_gives_the_calls_the_built_in_specs_make() {
         .collect();
     assert_eq!(bodies, [Some(json!({"model": "qwen3:4b"}))]);
     assert!(fake.model_names().iter().any(|n| n == "qwen3:4b"));
+}
+
+#[test]
+fn p3_m06f_a_name_listed_twice_is_one_model_and_what_the_document_hides_is_not_listed() {
+    let dir = crate::testkit::scratch("m06f");
+    let fake = FakeOllama::start();
+    fake.add_model("bonsai-q1", 248_302_385)
+        .add_model_in_two_forms("qwen3-vl:8b", 6_140_415_879, 6_188_820_378);
+    let names = |rows: &[crate::prims::engine_models::ModelRow]| -> Vec<String> {
+        rows.iter().map(|r| r.id.clone()).collect()
+    };
+
+    // listing it again replaces its rows
+    fake.add_model_in_two_forms("qwen3-vl:8b", 6_140_415_879, 6_188_820_378);
+
+    // what the engine says: three rows for the one model, as the recording of v0.40.0 has it
+    let raw = call(
+        &endpoint(fake.port()),
+        &Call {
+            method: "GET".into(),
+            path: "/api/tags".into(),
+            body: None,
+            framing: Framing::Json,
+            timeout: std::time::Duration::from_secs(5),
+        },
+    )
+    .unwrap();
+    let raw_names: Vec<&str> = raw.body["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(raw_names.len(), 4, "{raw_names:?}");
+    assert_eq!(raw_names.iter().filter(|n| **n == "qwen3-vl:8b").count(), 2);
+    assert!(raw_names.iter().any(|n| n.starts_with("llamacpp:")));
+
+    // an engine whose document hides nothing: the name once (the first row, the engine's own order),
+    // and the other form's name, which is a name of its own
+    let plain = list_models(&endpoint(fake.port()), &list_spec(&registry(), &dir)).unwrap();
+    assert_eq!(plain.rows.len(), 3, "{:?}", names(&plain.rows));
+    assert_eq!(plain.rows[0].id, "qwen3-vl:8b");
+    assert_eq!(plain.rows[0].size_bytes, Some(6_140_415_879));
+    assert!(plain.rows[1].id.starts_with("llamacpp:"));
+    assert!(plain.warnings.is_empty(), "{:?}", plain.warnings);
+
+    // an engine whose document says what is its bookkeeping: that is not listed, and not kept
+    let doc = DOC.replace(
+        r#"cache = "${data}/acme/catalog-cache.json" }"#,
+        r#"cache = "${data}/acme/catalog-cache.json", hide = ["llamacpp:.*"] }"#,
+    );
+    assert_ne!(doc, DOC, "the document has a list to give a policy to");
+    let hiding = registry_of(&doc);
+    let spec = list_spec(&hiding, &dir);
+    let listed = list_models(&endpoint(fake.port()), &spec).unwrap();
+    assert_eq!(
+        names(&listed.rows),
+        ["qwen3-vl:8b", "bonsai-q1:latest"],
+        "once each, and the engine's copy is not there"
+    );
+    assert_eq!(listed.rows[0].size_bytes, Some(6_140_415_879));
+    assert!(listed.warnings.is_empty(), "{:?}", listed.warnings);
+    let kept = crate::prims::engine_models::read_cache(spec.cache.as_deref().unwrap()).unwrap();
+    assert_eq!(
+        kept, listed.rows,
+        "what is shown stopped is what is shown running"
+    );
+
+    // the whole name has to match: a model that only has the word in it is a model
+    fake.add_model("my-llamacpp:7b", 1_000_000_000);
+    let more = list_models(&endpoint(fake.port()), &spec).unwrap();
+    assert!(
+        more.rows.iter().any(|r| r.id == "my-llamacpp:7b"),
+        "{:?}",
+        names(&more.rows)
+    );
+    assert_eq!(more.rows.len(), 3);
 }

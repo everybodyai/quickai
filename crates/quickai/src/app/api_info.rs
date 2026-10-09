@@ -24,14 +24,21 @@ impl App {
                 size_bytes: 0,
             }),
             self.values.map(),
-            self.enable_traffic_proxy,
+            self.traffic_proxy_on(),
         );
         let Some(panel) = api_panel(&self.registry, &selection, &self.form_facts()) else {
             return;
         };
         ui.add_space(6.0);
         ui.group(|ui| {
-            ui.label(egui::RichText::new("Connect an app to this model").strong());
+            ui.label(
+                egui::RichText::new(if self.runs_alone() {
+                    format!("Connect an app to {}", self.engine_name())
+                } else {
+                    "Connect an app to this model".to_string()
+                })
+                .strong(),
+            );
             ui.horizontal(|ui| {
                 ui.label("Base URL:");
                 ui.code(&panel.base_url);

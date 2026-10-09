@@ -48,6 +48,25 @@ impl App {
         self.registry.engine(&self.engine)
     }
 
+    /// Whether the engine starts on its own, with no model chosen (ComfyUI): its models are used by
+    /// the work a client sends it, and the window has no model to pick before Start.
+    pub(super) fn runs_alone(&self) -> bool {
+        self.engine_doc()
+            .is_some_and(|e| !e.doc.provides.needs_model)
+    }
+
+    /// Whether the engine serves any API whose traffic the Live tab can read (a conversation).
+    pub(super) fn reads_traffic(&self) -> bool {
+        launch::engine_reads_traffic(&self.registry, &self.engine)
+    }
+
+    /// Whether the live-traffic proxy goes in front of the engine on the next start: the person asked
+    /// for it, and there is a conversation for it to show. A proxy in front of an engine whose traffic
+    /// is not read would only be a hop that its web page's connections have to survive.
+    pub(super) fn traffic_proxy_on(&self) -> bool {
+        self.enable_traffic_proxy && self.reads_traffic()
+    }
+
     /// What the window calls the engine (`llama.cpp`, `Ollama`).
     pub(super) fn engine_name(&self) -> String {
         self.engine_doc()
@@ -96,6 +115,7 @@ impl App {
         self.session.is_active()
             || self.download.is_some()
             || self.runtime.install.is_some()
+            || self.runtime.delete.is_some()
             || self.named.pull.is_some()
     }
 
@@ -119,9 +139,11 @@ impl App {
         if let Some(dir) = &self.data_dir_override {
             self.host_facts.data_dir = dir.clone();
         }
+        self.look_for_stopped_installs();
         self.missing_binary_warned = false;
         self.lookup = super::lookup_view::LookupView::default();
         self.catalog = super::catalog_view::CatalogView::default();
+        self.bench = super::workbench::Bench::default();
         self.model_input.clear();
         self.show_api_info = false;
         self.named = NamedModels::default();
@@ -134,13 +156,45 @@ impl App {
             self.models_dir = self
                 .models_dir_override
                 .clone()
-                .unwrap_or_else(paths::user_models_dir);
+                .unwrap_or_else(|| self.default_models_dir());
             let _ = std::fs::create_dir_all(&self.models_dir);
             self.models_dir_input = self.models_dir.display().to_string();
             self.models = self.scan_models();
         }
         self.selected = self.remembered_model().unwrap_or(0);
         self.refresh_recommendation();
+    }
+
+    /// The models folder when the person has not chosen one: the engine's own, if its document says
+    /// where its models are kept (ComfyUI's, under its own folder), else the one folder every
+    /// engine of files has always shared.
+    pub(super) fn default_models_dir(&self) -> PathBuf {
+        if let Some(engine) = self.engine_doc() {
+            let mut selection = self.form_selection();
+            selection
+                .values
+                .remove(&format!("{}.models_dir", self.engine));
+            if let Some(dir) =
+                quickai_core::models::files_dir(engine, &selection, &self.form_facts())
+            {
+                return PathBuf::from(dir);
+            }
+        }
+        paths::user_models_dir()
+    }
+
+    /// The places the engine's models are found, when its document names them (`[[models.sources]]`),
+    /// with the models folder as the window holds it now.
+    pub(super) fn model_sources(&self) -> Vec<quickai_core::models::FileSource> {
+        let Some(engine) = self.engine_doc() else {
+            return Vec::new();
+        };
+        let mut selection = self.form_selection();
+        selection.values.insert(
+            format!("{}.models_dir", self.engine),
+            quickai_core::value::Value::from(self.models_dir.display().to_string()),
+        );
+        quickai_core::models::file_sources(engine, &selection, &self.form_facts())
     }
 
     /// Where the model the engine had selected last time is in the list now.
@@ -587,25 +641,24 @@ mod tests {
         let mut output = ctx.run_ui(raw, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
                 app.show_header(ui);
-                app.show_model_bar(ui, false);
-                app.show_acquire(ui, false);
+                app.show_models_area(ui, false);
                 app.show_controls(ui);
                 app.show_run_bar(ui, state, false);
                 app.show_api_info_panel(ui, state);
                 app.show_diagnostics(ui, state);
                 app.show_log_pane(ui);
             });
+            // (the question of a delete is asked in the Settings window, where its button is)
             app.show_settings_window(ui.ctx());
             app.show_catalog_window(ui.ctx());
-            app.show_confirm_delete_modal(ui.ctx());
         });
         output.textures_delta.clear();
     }
 
     #[test]
-    fn p3_e26b_every_panel_draws_for_both_engines_in_the_states_a_window_can_be_in() {
+    fn p3_e26b_every_panel_draws_for_every_engine_in_the_states_a_window_can_be_in() {
         let ctx = egui::Context::default();
-        for engine in ["llamacpp", "ollama"] {
+        for engine in ["llamacpp", "ollama", "comfyui"] {
             let dir = crate::testkit::scratch(&format!("e26-{engine}"));
             let mut settings = Settings::default();
             settings.set_chosen_engine(engine);
@@ -628,6 +681,7 @@ mod tests {
             // and with the models gone, or a removal waiting for a yes
             app.models.clear();
             draw_everything(&mut app, &ctx, ServerState::Idle);
+            app.show_settings = true;
             app.pending_delete = Some(PendingDelete::Listed {
                 name: "qwen3:4b".into(),
             });
@@ -1960,6 +2014,7 @@ mod tests {
             name: name.to_string(),
             size: Some(1000),
             sha256: None,
+            place: None,
         };
         let download = Download {
             files: vec![
@@ -2847,6 +2902,7 @@ size = 2500000000
             name: name.into(),
             size,
             sha256: None,
+            place: None,
         };
         let offer = |files: Vec<Piece>| Offer {
             bundle: None,

@@ -115,7 +115,9 @@ fn p3_j01_a_catalog_document_is_read_with_what_it_says_and_sensible_defaults() {
             files,
             companions,
             bundle,
+            place,
         }) => {
+            assert_eq!(*place, None);
             assert_eq!(repo, "acme/Alpha-4B-GGUF");
             assert_eq!(rev, REV);
             assert_eq!(*mode, None);
@@ -1184,6 +1186,9 @@ fn p3_j12_llamacpps_document_says_how_it_serves_embeddings_and_reranking() {
             "documents",
             "embedding",
             "audio",
+            "video",
+            "image",
+            "text_encoder",
             "other"
         ]
     );
@@ -1218,11 +1223,13 @@ fn p3_j08_the_list_the_application_ships_is_valid_complete_and_pinned() {
     );
 
     // every category has something, and the vocabulary's other models are not what the list is for
+    // (the video page is ComfyUI's, and holds the models that were run on this machine: docs/comfyui.md;
+    // pictures and text encoders are what ComfyUI's look-up sorts into, and the list has none of either)
     for t in r
         .vocabulary()
         .model_types()
         .iter()
-        .filter(|t| t.id != "other")
+        .filter(|t| !["other", "video", "image", "text_encoder"].contains(&t.id.as_str()))
     {
         let n = models.iter().filter(|m| m.kind == t.id).count();
         assert!(n >= 3, "the page `{}` has {n} models", t.id);
@@ -1298,13 +1305,63 @@ fn p3_j08_the_list_the_application_ships_is_valid_complete_and_pinned() {
             m.id
         );
         assert!(
-            m.runs.contains_key("llamacpp") || m.runs.contains_key("ollama"),
+            m.runs.contains_key("llamacpp")
+                || m.runs.contains_key("ollama")
+                || m.runs.contains_key("comfyui"),
             "{}",
             m.id
         );
         start += usize::from(m.start);
         for (engine, run) in &m.runs {
             match run {
+                // a model ComfyUI runs: pinned the same way, in the formats ComfyUI reads, with the files
+                // that go with it fetched as one download into their folders
+                Run::Files(run) if engine == "comfyui" => {
+                    assert!(
+                        run.rev.len() == 40 && run.rev.chars().all(|c| c.is_ascii_hexdigit()),
+                        "{}: `{}` is not a commit",
+                        m.id,
+                        run.rev
+                    );
+                    for f in run
+                        .files
+                        .iter()
+                        .chain(run.companions.iter().map(|(_, f)| f))
+                    {
+                        assert!(
+                            f.size.is_some_and(|s| s > 0),
+                            "{}: {} has no size",
+                            m.id,
+                            f.path
+                        );
+                        assert!(
+                            f.sha256.as_ref().is_some_and(|h| h.len() == 64),
+                            "{}: {} has no hash",
+                            m.id,
+                            f.path
+                        );
+                        let lower = f.path.to_lowercase();
+                        assert!(
+                            lower.ends_with(".gguf") || lower.ends_with(".safetensors"),
+                            "{}",
+                            f.path
+                        );
+                    }
+                    let kinds: Vec<&str> = run.companions.iter().map(|(k, _)| k.as_str()).collect();
+                    assert_eq!(
+                        kinds,
+                        ["text_encoder", "vae"],
+                        "{}: a video model needs both",
+                        m.id
+                    );
+                    assert_eq!(run.bundle.as_deref(), Some("video"), "{}", m.id);
+                    assert_eq!(run.mode, None, "{}", m.id);
+                    assert_eq!(
+                        m.kind, "video",
+                        "{}: ComfyUI's page is the video page",
+                        m.id
+                    );
+                }
                 Run::Files(run) => {
                     assert_eq!(engine, "llamacpp");
                     // pinned: the commit the files were checked at, and what each file is

@@ -28,6 +28,7 @@ use resolve::{port_value, public_port, resolve_fields, Resolved};
 pub use types::{
     apply_env, is_secret_name, AttachPlan, CallPlan, Endpoint, EnvMode, EnvOp, Gateway,
     IdentityPlan, LivenessPlan, ReadyPlan, RunPlan, SpawnPlan, Start, StopPlan, Traced, Unit,
+    WriteStep,
 };
 
 /// The model a run is about.
@@ -110,6 +111,9 @@ pub struct HostFacts {
     pub cpus: u32,
     pub gpu_known: bool,
     pub gpu_vendors: Vec<String>,
+    /// The architectures of the AMD GPUs the kernel driver reports (`gfx1031`), when it can be
+    /// asked (Linux). Empty means it could not be told, not that there is no GPU.
+    pub gpu_targets: Vec<String>,
     /// The engine's executable, when one was found.
     pub binary: Option<String>,
     pub runtime_build: Option<i64>,
@@ -565,7 +569,7 @@ fn plan_spawn(
         && engine
             .fields
             .iter()
-            .all(|f| f.public_port || f.arg.is_none() && !f.arg_split)
+            .all(|f| f.public_port || f.arg.is_none() && !f.arg_split && f.arg_by_value.is_empty())
     {
         // nothing more to say: an engine that runs without a model is planned as it is
     }
@@ -582,7 +586,7 @@ fn plan_spawn(
         .fields
         .iter()
         .enumerate()
-        .filter(|(_, f)| f.arg.is_some() || f.arg_split)
+        .filter(|(_, f)| f.arg.is_some() || f.arg_split || !f.arg_by_value.is_empty())
         .map(|(i, f)| (f.order, i, Binding::Field(i, f)))
         .collect();
     bound.extend(
@@ -665,6 +669,14 @@ fn plan_spawn(
                         origin: origin.clone(),
                     });
                 }
+            }
+        }
+        if let Some(words) = field.arg_by_value.get(&r.value.to_string()) {
+            for word in words {
+                arguments.push(Traced {
+                    value: word.clone(),
+                    origin: origin.clone(),
+                });
             }
         }
         if field.arg_split {
@@ -761,6 +773,24 @@ fn plan_spawn(
         // A program QuickAI does not ship is a downloaded one, with libraries of its own.
         scrub_loader_env: !engine.doc.engine.bundled,
         identity: None,
+        mkdir: spawn
+            .mkdir
+            .iter()
+            .filter_map(|template| {
+                render(template, spawn_path.clone().key("mkdir"), context, errors)
+            })
+            .collect(),
+        write: spawn
+            .write
+            .iter()
+            .filter_map(|entry| {
+                let to = render(&entry.to, spawn_path.clone().key("write"), context, errors)?;
+                Some(WriteStep {
+                    asset: entry.asset.clone(),
+                    to,
+                })
+            })
+            .collect(),
     })
 }
 

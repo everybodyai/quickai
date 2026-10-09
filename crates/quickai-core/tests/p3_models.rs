@@ -345,6 +345,41 @@ fn p3_m04b_the_warm_up_names_the_model_exactly_as_the_engine_lists_it() {
     assert!(none.units[0].warm.is_empty());
 }
 
+#[test]
+fn p3_m06e_the_documents_hide_policy_comes_out_of_the_list_call_and_a_bad_pattern_is_reported() {
+    // an engine that says nothing hides nothing
+    let plain = registry(MODELS);
+    let call = list_call(plain.engine("acme").unwrap(), &facts())
+        .expect("lists")
+        .expect("renders");
+    assert!(call.hide.is_empty(), "{:?}", call.hide);
+
+    // an engine that names its bookkeeping: the patterns come out as written
+    let list = r#"cache = "${data}/acme/catalog-cache.json" }"#;
+    let hiding = MODELS.replace(
+        list,
+        r#"cache = "${data}/acme/catalog-cache.json", hide = ["llamacpp:.*", "internal-[0-9]+"] }"#,
+    );
+    let hiding = registry(&hiding);
+    assert!(hiding.diagnostics.is_empty(), "{:#?}", hiding.diagnostics);
+    let call = list_call(hiding.engine("acme").unwrap(), &facts())
+        .expect("lists")
+        .expect("renders");
+    assert_eq!(call.hide, ["llamacpp:.*", "internal-[0-9]+"]);
+
+    // a pattern that does not compile is an error where it is, and the engine is not used
+    let errors = errors_of(
+        list,
+        r#"cache = "${data}/acme/catalog-cache.json", hide = ["llamacpp:("] }"#,
+    );
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(errors[0].0.is_some(), "it says which line: {errors:?}");
+    assert!(
+        errors[0].1.contains("`llamacpp:(` is not a valid pattern"),
+        "{errors:?}"
+    );
+}
+
 /// The `[models]` section of the Ollama example, up to the next section of its own.
 fn example_models_section() -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -370,6 +405,11 @@ fn p3_m06d_the_ollama_examples_models_section_is_read_with_nothing_ignored() {
         registry.diagnostics
     );
     let engine = registry.engine("acme").expect("loaded");
+    // Ollama's own bookkeeping is not offered as a model (the policy of this engine, M06e)
+    let listed = list_call(engine, &facts())
+        .expect("lists")
+        .expect("renders");
+    assert_eq!(listed.hide, ["llamacpp:.*"]);
     // and the rules do what the model box test of the plan says (M01), on the document's own words
     let classify = |input: &str| engine.classify_input(input, &|p| p.starts_with("/home/u/"));
     assert_eq!(

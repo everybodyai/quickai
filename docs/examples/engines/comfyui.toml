@@ -1,0 +1,413 @@
+# ComfyUI as a document: a server that makes pictures and video from workflows, installed from its
+# source with a Python environment of its own, and managed the way Ollama is (docs/comfyui.md).
+#
+# This is the document the application ships (docs/examples/engines/comfyui.toml has the same
+# content, and a test keeps them equal); a document of the same id in the user's configuration
+# directory patches it. What is different from Ollama is in the data: a build is the source of a
+# release plus the environment the installer makes for it (`install.python_app@1`), the engine runs
+# with no model chosen (`needs_model = false`: its models are used by the workflows a client sends),
+# and its models are files that are kept in the folders ComfyUI looks in (`[components.*] place`).
+# The page it serves is given what ComfyUI Desktop gives it, a host that fetches the models a workflow
+# needs into the models folder (`[[launch.spawn.write]]`, below), instead of the browser's own folder.
+#
+# Models come to its folders three ways: the recommended list (one click, every file checked against a pinned hash),
+# the window's "Look up online" and box (GGUF repositories of the hub, and a link to any file, each file put in the
+# folder of its kind), and the page's own Download button (the bridge above, for what a workflow names).
+#
+# Facts behind it: docs/engine-facts.md (F1 to F23, measured with the release and the PyTorch named
+# below on an AMD RX 6700 XT).
+schema = 1
+kind = "engine"
+id = "comfyui"
+requires = { primitives = ["locate.setting@1", "locate.installed@1", "feed.github_release@1", "install.python_app@1", "spawn@1", "attach@1", "probe.http@1", "decode@1", "lookup.huggingface_gguf@1"] }
+
+[engine]
+name = "ComfyUI"
+server_name = "ComfyUI"
+summary = "Makes pictures and video from workflows built in its own web page."
+license = "GPL-3.0"
+bundled = false                 # downloaded on request, never shipped in a package: it is GPL, and a program of its own
+homepage = "https://github.com/Comfy-Org/ComfyUI"
+order = 30
+egress = ["huggingface.co", "*.cdn.hf.co"]     # only when the person presses Download in its page, for a model a workflow names, and not with `page_downloads = "browser"`: the file is fetched by ComfyUI itself (the bridge, below) from the hub and from the download server the hub sends it to (F22). The page itself may contact no other site (--offline)
+
+[provides]
+apis = ["comfyui.workflow"]
+web_ui = { path = "/", label = "Open ComfyUI" }
+accepts = { formats = ["gguf", "safetensors"] }       # models are files of these formats
+model_name_matters = false
+default_port = 8188
+needs_model = false             # it starts on its own; the workflow a client sends names the models it uses
+
+[locate]
+strategies = [
+  { use = "setting", field = "bin_override" },
+  { use = "installed", root = "${data}/comfyui", pick = "newest", binary = { linux = "comfyui", macos = "comfyui", windows = "comfyui.cmd" } },
+]
+
+# ---- builds ----------------------------------------------------------------------------------------
+# A build is the source of a release of the repository (there is no file of it to download: GitHub makes
+# the archive of the tag), with an environment installed beside it. The release the document was tested
+# with is offered first, and the only one whose archive has a digest to be checked against.
+[acquire]
+root = "${data}/comfyui"
+feed = { use = "github_release", repo = "Comfy-Org/ComfyUI", per_page = 10, show = 5, prereleases = false }
+assets = { by = "source", label = "${tag}" }
+tested = { tag = "v0.39.0" }
+filter_hint = "e.g. v0.39"
+
+[acquire.pins]                  # recorded 2026-10-08 from https://github.com/Comfy-Org/ComfyUI/archive/refs/tags/v0.39.0.tar.gz
+"v0.39.0.tar.gz" = "sha256:095d95805bdf36e73bbd15d6d2ee15fa627708679a2e67b5f467db4c57e7ff0a"
+
+# How the source becomes a program: a Python of 3.10 or newer makes an environment, the packages go into it
+# (only as wheels: no package gets to run a build script on the person's machine), and a launcher is written
+# beside them. PyTorch is most of the 17 GB and of the time, and which one depends on the graphics card.
+[acquire.install]
+use = "python_app"
+binary = { name = "comfyui" }
+entry = "main.py"
+python = { versions = ["3.13", "3.12", "3.14", "3.11", "3.10"] }     # ComfyUI's README: 3.13 is very well supported, 3.12 and 3.14 work
+verify = "digest"
+smoke = ["${binary}", "--quick-test-for-ci", "--cpu"]        # loads every node and ends: the environment holds what the program imports
+smoke_timeout = "300s"
+space = "30GiB"                 # measured: the environment is 17 GB, and PyTorch's wheel (6 GB) is on the disk as well while it is unpacked
+
+[[acquire.install.pip]]
+id = "torch_amd"
+label = "PyTorch for AMD GPUs (ROCm 7.2)"
+when = "os == 'linux' and has(gpu.vendors, 'amd') and not has(gpu.vendors, 'nvidia')"
+packages = ["torch", "torchvision"]
+index = "https://download.pytorch.org/whl/rocm7.2"          # the one index: a second one could offer a newer torch built for something else
+weight = 12
+
+[[acquire.install.pip]]
+id = "torch_nvidia"
+label = "PyTorch for NVIDIA GPUs (CUDA 13)"
+when = "has(gpu.vendors, 'nvidia') and os != 'macos'"
+packages = ["torch", "torchvision"]
+index = "https://download.pytorch.org/whl/cu130"
+weight = 12
+
+[[acquire.install.pip]]
+id = "torch_cpu"
+label = "PyTorch for the processor"
+when = "os != 'macos' and not has(gpu.vendors, 'nvidia') and not (os == 'linux' and has(gpu.vendors, 'amd'))"
+packages = ["torch", "torchvision"]
+index = "https://download.pytorch.org/whl/cpu"
+weight = 6
+
+[[acquire.install.pip]]
+id = "torch_mac"
+label = "PyTorch for the Mac"
+when = "os == 'macos'"
+packages = ["torch", "torchvision"]
+weight = 6
+
+[[acquire.install.pip]]
+id = "requirements"
+label = "what ComfyUI needs"
+requirements = "requirements.txt"
+weight = 4
+
+# GGUF files (the quantized models of the recommended list) are read through this pack of nodes, pinned to one
+# commit: ComfyUI loads only safetensors by itself.
+[[acquire.install.nodes]]
+id = "gguf"
+label = "ComfyUI-GGUF"
+url = "https://github.com/city96/ComfyUI-GGUF/archive/6ea2651e7df66d7585f6ffee804b20e92fb38b8a.tar.gz"
+sha256 = "sha256:688126d5c2b8c4ff061f56b23c3c6791ac01dc366e98d41ef1aaef374c36f283"     # recorded 2026-10-08
+into = "custom_nodes/ComfyUI-GGUF"
+requirements = "requirements.txt"
+license = "Apache-2.0"
+
+# ---- starting it -------------------------------------------------------------------------------------
+[launch]
+strategies = ["attach_if_running", "spawn"]
+strategy_field = "mode"
+
+[launch.attach]
+endpoint = "127.0.0.1:${public_port}"      # a ComfyUI that is already running is on the port the settings give
+identity = { path = "/system_stats", pointer = "/system/comfyui_version" }
+liveness = { path = "/system_stats", every = "5s", failures = 3 }
+
+[launch.spawn]
+program = "${runtime.binary}"
+# Everything the person's data is kept in is told to it, so that a build can be deleted or replaced and nothing is lost.
+args = [
+  "--listen", "127.0.0.1", "--port", "${listen_port}", "--disable-auto-launch",
+  "--models-directory", "${field.models_dir}",
+  "--output-directory", "${field.output_dir}",
+  "--input-directory", "${data}/comfyui/input",
+  "--user-directory", "${data}/comfyui/user",
+  "--temp-directory", "${data}/comfyui/temp",
+  "--database-url", "sqlite:///${data}/comfyui/user/comfyui.db",
+  "--extra-model-paths-config", "${data}/comfyui/extra_model_paths.yaml",     # makes `extensions`, beside it, a folder of custom nodes
+]
+mkdir = ["${field.models_dir}", "${field.output_dir}", "${data}/comfyui/input", "${data}/comfyui/user", "${data}/comfyui/temp"]     # it refuses a folder that is not there
+# The page's "Download" button (on a model a workflow needs and the machine lacks) saves with the browser, in the
+# browser's folder, unless a host program takes it (F17, F18). QuickAI is that host: a folder of custom nodes of its
+# own, with no node in it, has the routes that fetch the file into the models folder and the script that gives the
+# page its host (F19 to F23). It is written at every start, so that a build made before it was has it as a new one does,
+# and it is kept beside the models folder, not in the build, so that a build can still be deleted and nothing is lost.
+write = [
+  { asset = "comfyui/extra_model_paths.yaml", to = "${data}/comfyui/extra_model_paths.yaml" },
+  { asset = "comfyui/quickai_bridge", to = "${data}/comfyui/extensions/quickai_bridge" },
+]
+env = [
+  { name = "PYTHONUNBUFFERED", value = "1" },                    # its log reaches the window as it is written
+]
+group = true                    # own process group: what it starts goes with it
+stop = { policy = "graceful", grace = "10s", exit_grace = "2s" }
+
+[launch.ready]
+probe = { use = "http", path = "/system_stats", expect = 200 }
+timeout = "120s"
+interval = "1s"
+on_timeout = "wait"             # the first start imports PyTorch from a cold disk and loads every node: say so and go on waiting
+
+# ---- models: files in the folders ComfyUI looks in ------------------------------------------------------
+# ComfyUI has no command line for models: a workflow names a file, and the file is in the folder of its kind.
+# A model of the recommended list is a diffusion model and the files that go with it, each kept in its own
+# folder of the models folder (`place`); the picker of this window lists the diffusion models.
+[models]
+[[models.sources]]
+use = "scan_dir"
+path = "${field.models_dir}/diffusion_models"
+ext = [".gguf", ".safetensors"]
+writable = true
+
+[[models.sources]]
+use = "scan_dir"
+path = "${field.models_dir}/checkpoints"
+ext = [".safetensors", ".ckpt"]
+writable = true
+
+# The window's "Look up online" and its box search the GGUF repositories of the hub this names, and the recommended list
+# fetches its files from it (so that a person who points it at a mirror points both at it). A ComfyUI workflow names its
+# files one by one, so what is offered is files and not only models: the weights of a model go in `diffusion_models`, and
+# the text encoder and the VAE that a repository holds are offered on their own (`alone`), each in its own folder
+# (`[components.<kind>] place`), because a person who has the model needs just those. The plain list is the most
+# downloaded of each pipeline, not of GGUF at large (that is language models, which ComfyUI does not run).
+[[models.lookup]]
+id = "hub"
+use = "huggingface_gguf"
+site = "https://huggingface.co"
+types = ["video", "image", "text_encoder"]
+pipelines = ["text-to-video", "image-to-video", "text-to-image", "image-to-image"]
+words = ["encoder"]             # text encoders carry no pipeline tag: the plain list searches for them by name as well
+popular = 6                     # of each search
+alone = ["text_encoder", "vae"]
+prefer = ["Q8_0", "Q6_K", "Q5_K_M", "Q4_K_M", "Q4_0", "Q3_K_M"]     # closest to the original first: the sizes are on the buttons
+
+[models.acquire]
+use = "file"
+dir = "${field.models_dir}"
+place = "diffusion_models"      # the folder the weights of a model go in, unless the list says another
+places = ["checkpoints", "controlnet", "clip_vision", "upscale_models", "embeddings"]     # and the others a file given by hand can go in (with those of the kinds below)
+
+[[models.bundle]]
+id = "video"
+label = "with text encoder and VAE"
+help = "A video model is run with a text encoder, which reads the prompt, and a VAE, which makes the picture of what the model made. All three are fetched, each into the folder ComfyUI looks for it in."
+parts = [
+  { kind = "text_encoder", label = "text encoder", match = ["umt5*", "*t5*.gguf", "*t5*.safetensors", "*text_encoder*", "*encoder*.gguf"] },
+  { kind = "vae", label = "VAE", match = ["*vae*.safetensors"] },
+]
+
+[components.text_encoder]
+place = "text_encoders"
+
+[components.vae]
+place = "vae"
+
+[components.lora]
+place = "loras"
+
+# ---- what the API panel says -------------------------------------------------------------------------------
+[traffic]
+apis = []                       # nothing to read: a workflow is not a conversation
+
+[api_info]
+base_url = "http://127.0.0.1:${public_port}"
+extra_urls = [
+  { label = "Queue a workflow (POST)", url = "http://127.0.0.1:${public_port}/prompt" },
+  { label = "What was made (GET)", url = "http://127.0.0.1:${public_port}/history" },
+  { label = "Progress (WebSocket)", url = "ws://127.0.0.1:${public_port}/ws" },
+]
+api_key = { value = "none", note = "ComfyUI doesn't require one." }
+example = "comfyui.workflow"
+
+# ---- settings ----------------------------------------------------------------------------------------------
+[[field]]
+id = "mode"
+label = "When ComfyUI is already running"
+type = "choice"
+options = ["auto", "attach", "spawn"]
+default = "auto"
+help = "auto: use the ComfyUI that answers on this port, otherwise start one. attach: never start one. spawn: always start our own."
+enabled_when = "not session.running"
+ui = { section = "advanced", order = 1 }
+
+[[field]]
+id = "port"
+label = "Port"
+type = "port"
+default = 8188
+help = "The port ComfyUI listens on, on this machine only (127.0.0.1)."
+bind.port = "public"
+enabled_when = "not session.running"
+ui = { section = "primary", order = 10 }
+
+[[field]]
+id = "gpu"
+label = "GPU"
+type = "choice"
+options = ["auto", "off"]
+default = "auto"
+help = "auto: use the graphics card if PyTorch can. off: do everything on the processor (--cpu): slow."
+bind.arg_by_value = { off = ["--cpu"] }
+derive = { gpu_offload = "value != 'off'" }
+applies = "spawn_only"
+enabled_when = "not session.running"
+ui = { section = "primary", order = 20 }
+
+[[field]]
+id = "memory"
+label = "Memory"
+type = "choice"
+options = ["auto", "low", "none", "high"]
+default = "auto"
+help = "How ComfyUI shares the graphics memory with the rest of the machine. auto: its own choice, which suits most cards. low (--lowvram) and none (--novram) keep less of a model in graphics memory, for a card that runs out; high (--highvram) keeps it all there."
+bind.arg_by_value = { low = ["--lowvram"], none = ["--novram"], high = ["--highvram"] }
+validate = [ { check = "field.gpu != 'off' or value == 'auto'", message = "Memory is about the graphics card: choose auto, or turn the GPU on." } ]
+applies = "spawn_only"
+enabled_when = "not session.running"
+ui = { section = "primary", order = 30 }
+
+[[field]]
+id = "network"
+label = "The page's network"
+type = "choice"
+options = ["offline", "online"]
+default = "offline"
+help = "offline: the web page ComfyUI serves may not contact any other site, and the nodes that call paid services are off (--offline). online: it may, as it does when ComfyUI is started by hand."
+bind.arg_by_value = { offline = ["--offline"] }
+applies = "spawn_only"
+enabled_when = "not session.running"
+ui = { section = "advanced", order = 5 }
+
+# What the folder of custom nodes written at every start (`[[launch.spawn.write]]`) does is the person's to choose: its script
+# gives the page's "Download" button a host that fetches into the models folder, and `browser` takes it away (no route, no
+# script, no host contacted), which is what a ComfyUI started by hand does. The nodes' folder is loaded either way, so the
+# flag that names its file is never a flag whose file is not there.
+[[field]]
+id = "page_downloads"
+label = "The page's Download button"
+type = "choice"
+options = ["install", "browser"]
+default = "install"
+help = "install: when you press Download on a model the page says is missing, ComfyUI fetches the file into the models folder, from huggingface.co (only .safetensors files; anything else is left to the browser). browser: the button saves with the browser, in its own folder, as it does without QuickAI, and ComfyUI contacts no site."
+bind.env = [ { name = "QUICKAI_PAGE_DOWNLOADS", value = "${value}" } ]
+applies = "spawn_only"
+enabled_when = "not session.running"
+ui = { section = "advanced", order = 7 }
+
+# ROCm has kernels for a few architectures, and PyTorch stops at once on a card it has none for. The cards of one
+# family run the kernels of its sister, if they are presented as it: an RX 6000 as 10.3.0 and an RX 7000 as 11.0.0
+# (ComfyUI's README says the same). The default is worked out from what the driver says the card is.
+[[field]]
+id = "gfx_override"
+label = "Present the GPU as"
+type = "text"
+default = { fn = "rocm_gfx_override", args = ["gpu.targets"] }
+optional = true
+help = "AMD cards only: the version of ROCm's architecture to present the card as (HSA_OVERRIDE_GFX_VERSION), such as 10.3.0 for an RX 6000 card or 11.0.0 for an RX 7000 one. Empty for a card PyTorch supports as it is. Write none to set nothing when this machine would set it by itself."
+bind.env = [ { name = "HSA_OVERRIDE_GFX_VERSION", value = "${value}", when = "value != '' and value != 'none'" } ]
+applies = "spawn_only"
+enabled_when = "not session.running"
+ui = { section = "advanced", order = 6, hint = "e.g. 10.3.0" }
+
+[[field]]
+id = "models_dir"
+label = "Models folder"
+type = "dir"
+default = "${data}/comfyui/models"
+help = "Where the models are kept, in the folders ComfyUI looks in: diffusion_models, checkpoints, text_encoders, vae, loras..."
+applies = "spawn_only"
+enabled_when = "not session.running"
+ui = { section = "app", order = 1 }
+
+[[field]]
+id = "output_dir"
+label = "Output folder"
+type = "dir"
+default = "${data}/comfyui/output"
+help = "Where the pictures and videos ComfyUI makes are saved."
+applies = "spawn_only"
+enabled_when = "not session.running"
+ui = { section = "advanced", order = 11 }
+
+[[field]]
+id = "python"
+label = "Python for the install"
+type = "file"
+optional = true
+help = "The Python that makes ComfyUI's environment when it is installed, if you do not want the one QuickAI finds (3.13, 3.12, 3.14, 3.11 or 3.10, in that order). It needs the venv module: on Debian and Ubuntu the package python3-venv."
+ui = { section = "advanced", order = 12, hint = "e.g. /usr/bin/python3.12" }
+
+[[field]]
+id = "extra_args"
+label = "Extra command-line arguments"
+type = "text"
+default = ""
+help = "Appended to the ComfyUI command, after the built-in options. Space-separated; wrap a value containing spaces in double quotes. An unknown flag makes ComfyUI refuse to start: the log pane says so."
+bind.arg_split = true
+ui = { section = "advanced", order = 90, hint = "e.g. --preview-method auto" }
+
+[[field]]
+id = "extra_env"
+label = "Extra environment (KEY=VALUE per line)"
+type = "kv_lines"
+default = ""
+help = "Variables for ComfyUI, one KEY=VALUE per line; a line that starts with # is a comment."
+bind.env_lines = { protect = ["HSA_OVERRIDE_GFX_VERSION"] }
+applies = "spawn_only"
+enabled_when = "not session.running"
+ui = { section = "advanced", order = 91 }
+
+[[field]]
+id = "bin_override"
+label = "ComfyUI launcher"
+type = "runtime_path"
+help = "Override the launcher QuickAI finds: a program that runs ComfyUI's main.py and passes its arguments on. Leave blank to use the installed build."
+ui = { section = "advanced", widget = "runtime_manager", order = 2, hint = "Local launcher path..." }
+
+# ---- advice for a run that went wrong ------------------------------------------------------------------------
+[[diagnostic]]
+when = { log_matches = '(?i)address already in use|errno 98' }
+hint = "Another program is using port ${field.port}. Pick another port."
+action = "focus_field:port"
+
+[[diagnostic]]
+when = { exited_during = "starting", log_matches = 'signal: 11' }
+hint = "ComfyUI crashed as it started, the way PyTorch does on an AMD card it has no code for. Present the card as a supported one in \"Present the GPU as\" under Settings (10.3.0 for an RX 6000 card, 11.0.0 for an RX 7000 one), and start again."
+action = "focus_field:gfx_override"
+
+[[diagnostic]]
+when = { log_matches = '(?i)invalid device function|no kernel image|hipErrorNoBinaryForGpu' }
+hint = "PyTorch has no code for this graphics card. Present it as a supported one in \"Present the GPU as\" under Settings (10.3.0 for an RX 6000 card, 11.0.0 for an RX 7000 one), or turn the GPU off."
+action = "focus_field:gfx_override"
+
+[[diagnostic]]
+when = { log_matches = '(?i)out of memory|OOM' }
+hint = "The graphics card ran out of memory. Make the picture or the video smaller, or set Memory to low under Settings."
+action = "focus_field:memory"
+
+[[diagnostic]]
+when = { exited_during = "starting", log_matches = "(?i)unrecognized arguments|not allowed with argument|invalid choice" }
+hint = "ComfyUI did not accept its options: one of them is not one it knows, or two of them cannot be used together. Check the extra command-line arguments under Settings."
+action = "focus_field:extra_args"
+
+[[diagnostic]]
+when = { log_matches = "(?i)No module named|ModuleNotFoundError" }
+hint = "ComfyUI is missing a Python package. If it is a build you made yourself, install ComfyUI again from Settings."

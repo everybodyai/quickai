@@ -104,7 +104,7 @@ impl App {
             &self.engine,
             self.selected_model_info(),
             self.values.map(),
-            self.enable_traffic_proxy,
+            self.traffic_proxy_on(),
         );
         let hints = advice(
             &self.registry,

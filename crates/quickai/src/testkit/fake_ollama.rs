@@ -206,6 +206,34 @@ impl FakeOllama {
         self
     }
 
+    /// Lists a model the way Ollama v0.40.0 does once it has loaded one it keeps in two forms (recorded
+    /// 2026-10-10 for `qwen3-vl:8b`): its name, then its name a second time with the other form's size
+    /// and digest, then the other form's own name, `llamacpp:<digest>`.
+    pub fn add_model_in_two_forms(&self, name: &str, size: u64, second_size: u64) -> &Self {
+        let name = with_tag(name);
+        let second = digest_of(&format!("{name}, the second form"));
+        let mut state = self.state.lock().unwrap();
+        // listed again, the three rows are replaced, not added to
+        state
+            .models
+            .retain(|m| m.name != name && m.digest != second);
+        let capabilities = vec!["completion".to_string(), "vision".into(), "tools".into()];
+        // listed newest first, so the last one pushed is the first one listed
+        for (listed, size, digest) in [
+            (format!("llamacpp:{second}"), second_size, second.clone()),
+            (name.clone(), second_size, second),
+            (name.clone(), size, digest_of(&name)),
+        ] {
+            state.models.push(Model {
+                name: listed,
+                size,
+                digest,
+                capabilities: capabilities.clone(),
+            });
+        }
+        self
+    }
+
     /// Calls `hook` with every request as it arrives, before it is answered (to look at the world
     /// at that moment: is the daemon's process still alive when it is asked to unload?).
     pub fn on_request(&self, hook: impl Fn(&Logged) + Send + Sync + 'static) -> &Self {

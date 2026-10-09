@@ -159,6 +159,12 @@ pub static FUNCS: &[Func] = &[
         call: recommend_ctx_size,
     },
     Func {
+        name: "rocm_gfx_override",
+        params: &[Param::List],
+        ret: Ret::Str,
+        call: rocm_gfx_override,
+    },
+    Func {
         name: "runtime.has_flag",
         params: &[Param::Str],
         ret: Ret::Bool,
@@ -375,6 +381,16 @@ fn recommend_ctx_size(_: &Value, args: &[Value]) -> Result<Value, String> {
     Ok(Value::Int(i64::from(
         crate::heuristics::recommend_ctx_size(size, ram),
     )))
+}
+
+fn rocm_gfx_override(_: &Value, args: &[Value]) -> Result<Value, String> {
+    let targets: Vec<String> = list(&args[0])?
+        .iter()
+        .filter_map(|t| t.as_str().map(str::to_string))
+        .collect();
+    Ok(Value::Str(
+        crate::heuristics::rocm_gfx_override(&targets).to_string(),
+    ))
 }
 
 fn runtime_has_flag(ctx: &Value, args: &[Value]) -> Result<Value, String> {

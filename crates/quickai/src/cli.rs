@@ -43,7 +43,8 @@ QuickAI headless commands
                [--ctx-size N] [--gpu-layers N] [--extra-args TEXT] [--proxy]
       Print the run plan for a selection. Values not given come from the engine's field defaults.
       --engine ID   the engine (default llamacpp); for one that lists its models by name, such as
-                    ollama, --model is a name and may be left out
+                    ollama, --model is a name and may be left out; one that runs on its own, such
+                    as comfyui, is given no model at all
       --explain     (default) the plan as text, with the origin of every argument
       --json        the plan as JSON
 
@@ -263,7 +264,17 @@ fn plan_command(
     };
     // an engine that lists its models by name is given one by name (or none: it runs empty)
     let lists_models = engine_doc.models.as_ref().is_some_and(|m| m.list.is_some());
-    let model = if lists_models {
+    // one that runs on its own (ComfyUI) is given none: the work a client sends it names the files it uses
+    let needs_model = engine_doc.doc.provides.needs_model;
+    let model = if !needs_model {
+        if parsed.model.is_some() {
+            let _ = writeln!(
+                err,
+                "quickai: {engine} runs with no model, so --model is ignored"
+            );
+        }
+        None
+    } else if lists_models {
         parsed.model.as_ref().map(|name| {
             let name = name.to_string_lossy().into_owned();
             quickai_core::plan::ModelInfo {
@@ -300,7 +311,7 @@ fn plan_command(
     let mut selection = Selection::new(&engine);
     selection.model = model;
     // what the record beside a model's weights adds: its projector, and the mode it is started in
-    if !lists_models {
+    if needs_model && !lists_models {
         if let Some(path) = selection
             .model
             .as_ref()
@@ -330,12 +341,14 @@ fn plan_command(
     if let Some(binary) = &parsed.binary {
         selection = selection.set(&key("bin_override"), binary.as_str());
     }
-    if parsed.proxy {
+    // the window puts the proxy only in front of an engine whose traffic is read; so does the plan
+    let proxy = parsed.proxy && launch::engine_reads_traffic(&registry, &engine);
+    if proxy {
         selection = selection.set(quickai_core::plan::TRAFFIC_PROXY_KEY, true);
     }
 
     let binary = launch::locate_binary(&registry, &engine, parsed.binary.as_deref());
-    let internal_port = if parsed.proxy {
+    let internal_port = if proxy {
         match crate::runtime::process::ephemeral_port() {
             Ok(port) => Some(port),
             Err(e) => {
@@ -421,7 +434,7 @@ mod tests {
         assert_eq!(code, 0, "{out}{err}");
         assert_eq!(
             out,
-            "config: 0 errors, 0 warnings; engines: llamacpp, ollama\n"
+            "config: 0 errors, 0 warnings; engines: llamacpp, ollama, comfyui\n"
         );
     }
 
@@ -667,5 +680,66 @@ mod tests {
         let parsed = parse_plan_args(&args(&["--proxy", "--ctx-size", "512"])).unwrap();
         assert!(parsed.proxy && parsed.model.is_none());
         assert_eq!(parsed.ctx_size, Some(512));
+    }
+
+    #[test]
+    fn the_plan_of_an_engine_that_runs_on_its_own_has_no_model() {
+        // ComfyUI is started with none, whatever models the folders hold: the header says so, the JSON has
+        // none, and a --model that is given is said to be ignored
+        let dirs = ConfigDirs::default();
+        let (code, text, err) = run_capture(&["plan", "--engine", "comfyui"], &dirs);
+        assert_eq!(code, 0, "{text}{err}");
+        assert!(text.starts_with("plan: (no model) on comfyui\n"), "{text}");
+        assert_eq!(err, "");
+        let (code, json, _) = run_capture(&["plan", "--engine", "comfyui", "--json"], &dirs);
+        assert_eq!(code, 0);
+        let plan: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(plan["model"], serde_json::Value::Null, "{json}");
+        let (code, _, err) =
+            run_capture(&["plan", "--engine", "comfyui", "--model", "x.gguf"], &dirs);
+        assert_eq!(code, 0);
+        assert!(
+            err.contains("comfyui runs with no model, so --model is ignored"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn the_proxy_is_planned_only_for_an_engine_whose_traffic_is_read() {
+        let dirs = ConfigDirs::default();
+        let (code, json, err) =
+            run_capture(&["plan", "--engine", "comfyui", "--json", "--proxy"], &dirs);
+        assert_eq!(code, 0, "{json}{err}");
+        let plan: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(plan["gateway"], serde_json::Value::Null, "{json}");
+        assert_eq!(plan["public_port"], 8188);
+        // the engine listens on the public port itself
+        let args: Vec<&str> = plan["units"][0]["start"][1]["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["value"].as_str().unwrap())
+            .collect();
+        let at = args.iter().position(|a| *a == "--port").unwrap();
+        assert_eq!(args[at + 1], "8188");
+
+        // llama.cpp's conversation is read through it
+        let dir = scratch("proxy-llama");
+        let model = dir.join("m.gguf");
+        std::fs::write(&model, b"x").unwrap();
+        let (code, json, err) = run_capture(
+            &[
+                "plan",
+                "--json",
+                "--proxy",
+                "--model",
+                &model.display().to_string(),
+            ],
+            &dirs,
+        );
+        assert_eq!(code, 0, "{json}{err}");
+        let plan: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(plan["gateway"].is_object(), "{json}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

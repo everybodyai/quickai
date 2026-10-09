@@ -133,6 +133,11 @@ fn files_offers(run: &FilesRun, ctx: &Context<'_>) -> Option<Vec<Offer>> {
         name: name_of(file).to_string(),
         size: file.size,
         sha256: file.sha256.clone(),
+        // the folder the list says for the weights of this model; the engine's own is put on later
+        place: match kind {
+            None => run.place.clone(),
+            Some(_) => None,
+        },
     };
     // what each companion is called in a sentence: the bundle's own word for the part
     let bundle = run

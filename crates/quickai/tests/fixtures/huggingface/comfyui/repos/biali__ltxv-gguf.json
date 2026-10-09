@@ -1,0 +1,1192 @@
+{
+ "disabled": false,
+ "downloads": 799,
+ "gated": false,
+ "id": "biali/ltxv-gguf",
+ "likes": 0,
+ "modelId": "biali/ltxv-gguf",
+ "pipeline_tag": "image-to-video",
+ "private": false,
+ "siblings": [
+  {
+   "rfilename": ".gitattributes",
+   "size": 11744
+  },
+  {
+   "rfilename": "LICENSE",
+   "size": 15979
+  },
+  {
+   "rfilename": "README.md",
+   "size": 8219
+  },
+  {
+   "lfs": {
+    "sha256": "136c380cc81f903d0a9ca3344da79196d54bcdb4cf99733239e55165e4bb0235"
+   },
+   "rfilename": "ltx-video-2b-v0.9-bf16.gguf",
+   "size": 3935498752
+  },
+  {
+   "lfs": {
+    "sha256": "a716f4a2e48f6e2f1ee84a57d566c751ab2887287083809727ceb4c7d608181d"
+   },
+   "rfilename": "ltx-video-2b-v0.9-f16.gguf",
+   "size": 3935498752
+  },
+  {
+   "lfs": {
+    "sha256": "974706d36f2cb2250af22aff36e1c8205ceebc09bf9786d3a7ecf204c65f15ab"
+   },
+   "rfilename": "ltx-video-2b-v0.9-f32.gguf",
+   "size": 7693595104
+  },
+  {
+   "lfs": {
+    "sha256": "f010364aa0798c03cf239d55f01e299baa88f2bf94cd8aa9f8411a68f0b5cafe"
+   },
+   "rfilename": "ltx-video-2b-v0.9-q2_k.gguf",
+   "size": 659702272
+  },
+  {
+   "lfs": {
+    "sha256": "8b3ff90f69e29724efd84c1d9cdd0a8ea4526a33002229c9ff51d2abcf8b42f2"
+   },
+   "rfilename": "ltx-video-2b-v0.9-q3_k_l.gguf",
+   "size": 830650880
+  },
+  {
+   "lfs": {
+    "sha256": "abd679aa5b4ed4ee013f21dc1dee394c6551137a4a4d1da1e42afa41dbae22b4"
+   },
+   "rfilename": "ltx-video-2b-v0.9-q3_k_m.gguf",
+   "size": 1079439872
+  },
+  {
+   "lfs": {
+    "sha256": "55385a1796768b6038adf56f9f19ac576465f4be75edfe4b178784ede6ce7818"
+   },
+   "rfilename": "ltx-video-2b-v0.9-q3_k_s.gguf",
+   "size": 984805888
+  },
+  {
+   "lfs": {
+    "sha256": "e188c74d1a529d39a7cb21e34551d46141f08a47262c75c716fdb23fed09d397"
+   },
+   "rfilename": "ltx-video-2b-v0.9-q4_0.gguf",
+   "size": 1263727104
+  },
+  {
+   "lfs": {
+    "sha256": "ccf0035ac6e66c56e014a6ac9b77e7ff5e924dc665a330e721b64b0a9c46e804"
+   },
+   "rfilename": "ltx-video-2b-v0.9-q4_1.gguf",
+   "size": 1351807488
+  },
+  {
+   "lfs": {
+    "sha256": "c78e0bdac228d646d490c711afbe052813f62d89837926fc2f4155890bc51a37"
+   },
+   "rfilename": "ltx-video-2b-v0.9-q4_k_m.gguf",
+   "size": 1416032768
+  },
+  {
+   "lfs": {
+    "sha256": "ede108081ee0e0dd4e5f0c2c7b120956c93a0b27862998f2fbf0196a079fbcf2"
+   },
+   "rfilename": "ltx-video-2b-v0.9-q4_k_s.gguf",
+   "size": 1295184384
+  },
+  {
+   "lfs": {
+    "sha256": "da8983f9e0587398b5e8987cfd2a900669232fcc76552f13365ee58fe3bb27d4"
+   },
+   "rfilename": "ltx-video-2b-v0.9-q5_0.gguf",
+   "size": 1498608128
+  },
+  {
+   "lfs": {
+    "sha256": "c7ca5e9af3fb1a4546f41b5367c80f1d832a7f3d3251e1320ff7ee9e60d37c01"
+   },
+   "rfilename": "ltx-video-2b-v0.9-q5_1.gguf",
+   "size": 1586688512
+  },
+  {
+   "lfs": {
+    "sha256": "f548045280d4c3cc6c80200ef69a1742dc0b42e30e0425b936830863c09c1c22"
+   },
+   "rfilename": "ltx-video-2b-v0.9-q5_k_m.gguf",
+   "size": 1562833408
+  },
+  {
+   "lfs": {
+    "sha256": "596ea571d62f9d2140eed8cfc7b3c15de87a4e88f46b79e5014cd41997c19a51"
+   },
+   "rfilename": "ltx-video-2b-v0.9-q5_k_s.gguf",
+   "size": 1469248000
+  },
+  {
+   "lfs": {
+    "sha256": "7849052898e35cb2bc692b1e06a18e315e86eb14a0f6ade0eb65e9c035ffbafd"
+   },
+   "rfilename": "ltx-video-2b-v0.9-q6_k.gguf",
+   "size": 1718809088
+  },
+  {
+   "lfs": {
+    "sha256": "7fdfbbf3c4950faf710ee32dbaf5b0ac1885a3a2dc48235caaa9492bb3338285"
+   },
+   "rfilename": "ltx-video-2b-v0.9-q8_0.gguf",
+   "size": 2173891072
+  },
+  {
+   "lfs": {
+    "sha256": "719dc9a6e4fa83bbaafbaadae2a468431a2fd9d98bc29b5054fda931149542f6"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-f16.gguf",
+   "size": 3848819200
+  },
+  {
+   "lfs": {
+    "sha256": "11ac80c75fb891e5a93a4033d4e0db78698407e9376d671dbf5a7a173797018a"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-q2_k.gguf",
+   "size": 635470336
+  },
+  {
+   "lfs": {
+    "sha256": "8b3ff90f69e29724efd84c1d9cdd0a8ea4526a33002229c9ff51d2abcf8b42f2"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-q3_k_l.gguf",
+   "size": 830650880
+  },
+  {
+   "lfs": {
+    "sha256": "992ffffba4f11083de1e7f8440371f6bb2b3827e344d6287436ad50828dc4d74"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-q3_k_m.gguf",
+   "size": 830650880
+  },
+  {
+   "lfs": {
+    "sha256": "b7fe244dcdde6c0bca578d0d8fbd8e86bdc626ca8d11223defabb090d280cdb1"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-q3_k_s.gguf",
+   "size": 830650880
+  },
+  {
+   "lfs": {
+    "sha256": "7aeb062d252dcdd481a727e8ab46aebf31c508ee67995a199576e854ce799738"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-q4_0.gguf",
+   "size": 1085886976
+  },
+  {
+   "lfs": {
+    "sha256": "f4a9a4b7cba1311668b85b7beecf8083f176484aaa66414ef2d5ad10e65dec7c"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-q4_1.gguf",
+   "size": 1206014464
+  },
+  {
+   "lfs": {
+    "sha256": "a230fc57d429af41d9a4bf0452b621bfccc374808e0db2778bc463b0ba041738"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-q4_k_m.gguf",
+   "size": 1326158336
+  },
+  {
+   "lfs": {
+    "sha256": "119664ec8b33f7928ba00ab319ee9eb5e9edc4234c2216b258d01615170867a6"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-q4_k_s.gguf",
+   "size": 1085919744
+  },
+  {
+   "lfs": {
+    "sha256": "0374acc38852ce06bd9bea6cd0dddc7b6b6f3a7cc163e1f0c8093634be5adf6b"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-q5_0.gguf",
+   "size": 1326141952
+  },
+  {
+   "lfs": {
+    "sha256": "e143968f14c8081408cea3313853415e43525fe47da9ba93fee38ffbe3dae346"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-q5_1.gguf",
+   "size": 1446269440
+  },
+  {
+   "lfs": {
+    "sha256": "f1b85f3667ff31a222014d699a3e72a7eefc72e68dfc5590081abaf1c502af46"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-q5_k_s.gguf",
+   "size": 1326158336
+  },
+  {
+   "lfs": {
+    "sha256": "841e3fe1371b91807b7f371134f6ff59e738a4b097e9ebb40ce99edf2cd3e0c3"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-q6_k.gguf",
+   "size": 1581476352
+  },
+  {
+   "lfs": {
+    "sha256": "b1c72bcf0e8dafd6f36e7015b6b5d79db413916cff29a22cfb12e3d6a8c4df5c"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-q8_0.gguf",
+   "size": 2046906880
+  },
+  {
+   "lfs": {
+    "sha256": "d5c62399a090b59384d88854104a2c236994024825a3b483cbfe2e2385cb797d"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-f16.gguf",
+   "size": 3848819168
+  },
+  {
+   "lfs": {
+    "sha256": "eda6f003ac3c6d6ad72e10d2c65d5bcca20922e91d04e1e3ea1c1df9268a8baf"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-f32.gguf",
+   "size": 7692898816
+  },
+  {
+   "lfs": {
+    "sha256": "1294c114e9ed60070d7f92a7525fc5f2d1d9718f4e911a6d43d650c34c19696b"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-q2_k.gguf",
+   "size": 635470336
+  },
+  {
+   "lfs": {
+    "sha256": "f5c2f6fb81da36e5abaf174f8f14980643974b0a10dc2e401df063a172be2925"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-q3_k_l.gguf",
+   "size": 830650880
+  },
+  {
+   "lfs": {
+    "sha256": "e1c81c510761346a1160a5e1d72f4a577a617c400c0168deeb77021ec30d8acd"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-q3_k_m.gguf",
+   "size": 830650880
+  },
+  {
+   "lfs": {
+    "sha256": "19cfdfd7fba2a8463239d109a12e1258cb26446b88f4fb385893dffaa27e12cf"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-q3_k_s.gguf",
+   "size": 830650880
+  },
+  {
+   "lfs": {
+    "sha256": "3b608cbf05885fac97bdb7025683b3f475c2b94088f130e08fb3ffae235fe2ef"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-q4_0.gguf",
+   "size": 1085886976
+  },
+  {
+   "lfs": {
+    "sha256": "b9955ba06325df210a3cac8da781911ca41c10704f50900fe1a5ec41b1a8337d"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-q4_1.gguf",
+   "size": 1206014464
+  },
+  {
+   "lfs": {
+    "sha256": "859432beb855baea089d5cc2cb00bec4aca667f0985ec9a78d32d797d276cb31"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-q4_k_m.gguf",
+   "size": 1085919744
+  },
+  {
+   "lfs": {
+    "sha256": "572fa47a6ec47e74f29055a959eb524178161d7438a8b49a9e29aee7ca0e89e5"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-q4_k_s.gguf",
+   "size": 1085919744
+  },
+  {
+   "lfs": {
+    "sha256": "d1db35fcc9aa9c19023f18dbbdfcb30a3f820eafbb40c1ec86c464b7cf306f05"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-q5_0.gguf",
+   "size": 1326141952
+  },
+  {
+   "lfs": {
+    "sha256": "18e11117fd8b66d8aa9a2de97945dabac15ea82890462505b29d05737a99a91d"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-q5_1.gguf",
+   "size": 1446269440
+  },
+  {
+   "lfs": {
+    "sha256": "32474d0f222ad6f8e37930fdd02ecbd65d0d8ce394df978b110642cfabb80e2a"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-q5_k_m.gguf",
+   "size": 1326158336
+  },
+  {
+   "lfs": {
+    "sha256": "4072cdab03dca4e5ae21ca56c38e48ea518ab27d6f635c2f94b566b15b0a0d6c"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-q5_k_s.gguf",
+   "size": 1326158336
+  },
+  {
+   "lfs": {
+    "sha256": "480c4a23da6de3aebc4946f61055726d8af53fc23cb9b9a13328e4dd14b44041"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-q6_k.gguf",
+   "size": 1581476352
+  },
+  {
+   "lfs": {
+    "sha256": "c2215b9ab99ecb12bc23bf1a13ec3d36156344a2f5375bd46d2e86df6c1c277f"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-r2-q8_0.gguf",
+   "size": 2046906880
+  },
+  {
+   "lfs": {
+    "sha256": "7f47f33c007aa60cfcc6ee2caf4f6c397f2c9b68cb1f705ada39232c25734dba"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-f16.gguf",
+   "size": 3846824192
+  },
+  {
+   "lfs": {
+    "sha256": "fe4c558a213ac5fa88560e63e020687fed507163605617f2dad6315ad489bb61"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-q2_k.gguf",
+   "size": 633475328
+  },
+  {
+   "lfs": {
+    "sha256": "ded89bb32bd270585ceab3716d238d78f65892dc76728ef261774679f39d6817"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-q3_k_l.gguf",
+   "size": 828655872
+  },
+  {
+   "lfs": {
+    "sha256": "8d710510400aaa64aa825eda247d02268a53a0341f362fcffb70eaf4036273eb"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-q3_k_m.gguf",
+   "size": 828655872
+  },
+  {
+   "lfs": {
+    "sha256": "e390ce110704ba4e210dd631568ad0fb86213176a74e3f8d6ec3b8c216f2e879"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-q3_k_s.gguf",
+   "size": 828655872
+  },
+  {
+   "lfs": {
+    "sha256": "559f933e8fb173de98384c60e8ca02daba21fc79060fdfbb8a1b36ed47acc084"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-q4_0.gguf",
+   "size": 1083891968
+  },
+  {
+   "lfs": {
+    "sha256": "aa541691a4dbcaf3c9dfec990b83b832e12eb888ad9cd4989ba20cb4612406c3"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-q4_1.gguf",
+   "size": 1204019456
+  },
+  {
+   "lfs": {
+    "sha256": "92dd148d908db994bee0c11f06385c8134fb3d1870718bf645a2fbe5610c91ad"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-q4_k_m.gguf",
+   "size": 1083924736
+  },
+  {
+   "lfs": {
+    "sha256": "6646f40de07fd95c4fe33839f14669868f8868a59ec8e70867fc086432213e0c"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-q4_k_s.gguf",
+   "size": 1083924736
+  },
+  {
+   "lfs": {
+    "sha256": "58b955cb2ae5a919f4aec1e73c667da5a8578423c4be8506301a59f66ece86b4"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-q5_0.gguf",
+   "size": 1324146944
+  },
+  {
+   "lfs": {
+    "sha256": "3eeac784fdf47c4f3892e8ffdbc98393e622dcb131700822ab8aeeb7d0606028"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-q5_1.gguf",
+   "size": 1444274432
+  },
+  {
+   "lfs": {
+    "sha256": "c3a4adba2c0ac7747f33882c961a7fb9102200c3b2846e1189a68383ee9cab59"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-q5_k_m.gguf",
+   "size": 1324163328
+  },
+  {
+   "lfs": {
+    "sha256": "f627a9df4a25287a3323f0a5da9e46de051089eaeac0467e6e63e3c1eff5ffe5"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-q5_k_s.gguf",
+   "size": 1324163328
+  },
+  {
+   "lfs": {
+    "sha256": "469a908fd71e2394c6ec9e49b52f0b5de8a2909cb67911246aecf0d80fc3a02f"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-q6_k.gguf",
+   "size": 1579481344
+  },
+  {
+   "lfs": {
+    "sha256": "cec237480f7a106c28675687748ed1960765ac1dcc4612d593438222b2e5eedb"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1-revised-q8_0.gguf",
+   "size": 2044911872
+  },
+  {
+   "lfs": {
+    "sha256": "a23200896c5eddf215c7cb9517820c5763a2b054eb62ba86cbce6b871a4577e3"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1.safetensors",
+   "size": 5716863844
+  },
+  {
+   "lfs": {
+    "sha256": "743455ef247e7150f9597b0534c754e5fe2f32104e95e8b5101c9dec18fdb0bd"
+   },
+   "rfilename": "ltx-video-2b-v0.9.1_fp8_e4m3fn.safetensors",
+   "size": 2342704025
+  },
+  {
+   "lfs": {
+    "sha256": "86fbab8c262124aa20af2d174c2eff638767d100605699f6b89e5ef78c5e76f9"
+   },
+   "rfilename": "ltx-video-2b-v0.9.5-fp32-bf16.gguf",
+   "size": 3849515520
+  },
+  {
+   "lfs": {
+    "sha256": "b456816c7a6df38c9915c55622b1b506a2a06253eae5ebbc7e3736d6c592cc27"
+   },
+   "rfilename": "ltx-video-2b-v0.9.5-fp32-f32.gguf",
+   "size": 7693595136
+  },
+  {
+   "lfs": {
+    "sha256": "a2bfa830f9876c2e3adf793ce57c632693700fe99864472b0eb4a87b587e6f37"
+   },
+   "rfilename": "ltx-video-2b-v0.9.5-fp32-q2_k.gguf",
+   "size": 636166656
+  },
+  {
+   "lfs": {
+    "sha256": "d906360d3d1b6055ff5b164b32ecb635951f42eb31f61862c4efe89c6eb99e51"
+   },
+   "rfilename": "ltx-video-2b-v0.9.5-fp32-q3_k_m.gguf",
+   "size": 831347200
+  },
+  {
+   "lfs": {
+    "sha256": "9f39815939425eac7f77896d2c398204668754d5daeabd9ef4987192f8f0fef4"
+   },
+   "rfilename": "ltx-video-2b-v0.9.5-fp32-q4_0.gguf",
+   "size": 1086583296
+  },
+  {
+   "lfs": {
+    "sha256": "2e7e2e1e4f201c29154d420ffadf400e24a645c31cd524d3d477c075b48f4cca"
+   },
+   "rfilename": "ltx-video-2b-v0.9.5-fp32-q4_1.gguf",
+   "size": 1206710784
+  },
+  {
+   "lfs": {
+    "sha256": "1c51563edc6093ce7b9555d0a67c8d2293220ac80c0a26117c57b52fe7306a15"
+   },
+   "rfilename": "ltx-video-2b-v0.9.5-fp32-q4_k_m.gguf",
+   "size": 1086616064
+  },
+  {
+   "lfs": {
+    "sha256": "6e8d90e6c3efa8cb18fbd4af0d00ecbde059626747df6d812b47d0a4cb1f3d53"
+   },
+   "rfilename": "ltx-video-2b-v0.9.5-fp32-q5_0.gguf",
+   "size": 1326838272
+  },
+  {
+   "lfs": {
+    "sha256": "63f438f54669c0c63bb9b1a19490620f8e542c3314da66b7d6b2c950be0f7200"
+   },
+   "rfilename": "ltx-video-2b-v0.9.5-fp32-q5_1.gguf",
+   "size": 1446965760
+  },
+  {
+   "lfs": {
+    "sha256": "c939763759300a9b132666354fcc7343ec105ead510048a8a33922aa3dfca1eb"
+   },
+   "rfilename": "ltx-video-2b-v0.9.5-fp32-q5_k_m.gguf",
+   "size": 1326854656
+  },
+  {
+   "lfs": {
+    "sha256": "58f7c283e37a587e57d624bd3e9ecdc6c7e3c5fa251d1291a37c79651f538a9d"
+   },
+   "rfilename": "ltx-video-2b-v0.9.5-fp32-q6_k.gguf",
+   "size": 1582172672
+  },
+  {
+   "lfs": {
+    "sha256": "1f8b6218d224c54d948c81705a89ed42c4283d49470b88e9e6e6f5ef1a03e421"
+   },
+   "rfilename": "ltx-video-2b-v0.9.5-fp32-q8_0.gguf",
+   "size": 2047603200
+  },
+  {
+   "lfs": {
+    "sha256": "45369c2ae94e3949b127ef99ca9fe173b077f1ca0fecf8185e4115afcbc09581"
+   },
+   "rfilename": "ltx-video-2b-v0.9.safetensors",
+   "size": 9370442108
+  },
+  {
+   "lfs": {
+    "sha256": "743455ef247e7150f9597b0534c754e5fe2f32104e95e8b5101c9dec18fdb0bd"
+   },
+   "rfilename": "ltx-video-2b-v0.9_fp8_e4m3fn.safetensors",
+   "size": 2342704025
+  },
+  {
+   "lfs": {
+    "sha256": "17d8f8979d2303898b7320d7fbbd0b0f07cff2fcb86acae53653de4948a1ee92"
+   },
+   "rfilename": "ltx-video-vae.safetensors",
+   "size": 838411946
+  },
+  {
+   "lfs": {
+    "sha256": "b147d4c2f9498a1f84c9572db7c4915334e2071d47c5d4395dc4e96aac6f5ad4"
+   },
+   "rfilename": "ltxv-0.9-vae_fp8_e4m3fn.safetensors",
+   "size": 419218209
+  },
+  {
+   "lfs": {
+    "sha256": "419c88318dfa1528cc69c5fe35d87240e5f42c4ca3ab57f0ef1659fc79d1b5d2"
+   },
+   "rfilename": "ltxv-0.9.1-vae.safetensors",
+   "size": 1869999676
+  },
+  {
+   "lfs": {
+    "sha256": "c73fbf805c7d80374333aebc2c000188d9f47ca13d20d2b59e90a08dae757614"
+   },
+   "rfilename": "ltxv-13b-0.9.7-dev-fp32-q4_0.gguf",
+   "size": 8079844352
+  },
+  {
+   "lfs": {
+    "sha256": "8e46509b37fc27e93bcd9678b167c00cdba6080f63b348301d5c61c846aca43f"
+   },
+   "rfilename": "ltxv-13b-0.9.7-dev-fp32-q5_0.gguf",
+   "size": 9690457088
+  },
+  {
+   "lfs": {
+    "sha256": "c4636b5de342e4a98147b216976296f3783313a37238e0d6bb8a45fd0b4eaa48"
+   },
+   "rfilename": "ltxv-13b-0.9.7-dev-fp32-q8_0.gguf",
+   "size": 14320968704
+  },
+  {
+   "lfs": {
+    "sha256": "0e5734d53392da7d1fa3b0efeabb9ddbb3db6fb81a88499bacb060d7b346f0fc"
+   },
+   "rfilename": "ltxv-13b-0.9.7-distilled-fp32-q4_0.gguf",
+   "size": 8079844352
+  },
+  {
+   "lfs": {
+    "sha256": "663e6e5e05d593256fce1e376e80331a3d8d9a1cd8e78b0144a86ef28e69b6cc"
+   },
+   "rfilename": "ltxv-13b-0.9.7-distilled-fp32-q8_0.gguf",
+   "size": 14320968704
+  },
+  {
+   "lfs": {
+    "sha256": "266601a839a577798173df2e7374ec3cc62e3744a4bb04b01128e8ebb359253a"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-iq4_nl.gguf",
+   "size": 7878517760
+  },
+  {
+   "lfs": {
+    "sha256": "c5915d2c8922f442019222c52d56ab60c82b037f1828f7bc59707dd27867edbc"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-iq4_xs.gguf",
+   "size": 7475864576
+  },
+  {
+   "lfs": {
+    "sha256": "f17f53b472b91739f87024f641f4f14ae2675cf6f9aa10082727216a057dcf95"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-q2_k.gguf",
+   "size": 5022196736
+  },
+  {
+   "lfs": {
+    "sha256": "ceeabadddaf69b22cb6af0632f2e2dc62a05b4c72dcd794c2d478eacb64b816e"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-q3_k_l.gguf",
+   "size": 7412950016
+  },
+  {
+   "lfs": {
+    "sha256": "c1cac516f292e11a9182fa000b0195335139d70b5b62da59941cdb5e02ab1112"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-q3_k_m.gguf",
+   "size": 6813164544
+  },
+  {
+   "lfs": {
+    "sha256": "4086e3f91c042147c47eae9cc72c719659723bfddaaf0eabd0834c21ab00ce4c"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-q3_k_s.gguf",
+   "size": 6167241728
+  },
+  {
+   "lfs": {
+    "sha256": "853f735fdf934f5fc33d588fd4da13c06e4351a8785b129429372140a666ffbe"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-q4_0.gguf",
+   "size": 8079844352
+  },
+  {
+   "lfs": {
+    "sha256": "fc01d94c3f66898c80e9bb0ee6ef816a3b70e8518514b6e867d71e443d2fdc4e"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-q4_1.gguf",
+   "size": 8683824128
+  },
+  {
+   "lfs": {
+    "sha256": "7c44f63982abb64a3f7dc8114eb69f840b6b73c5db08b32150b4f365b14698b1"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-q4_k_m.gguf",
+   "size": 9124226048
+  },
+  {
+   "lfs": {
+    "sha256": "c8269aa8393d45e2d01a515e8fc86e7064bf6aae3daa4d58b470e7cdaead5882"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-q4_k_s.gguf",
+   "size": 8289559552
+  },
+  {
+   "lfs": {
+    "sha256": "dc45cf776df9c8f6e7e1bc17fbd46c156dfdd5ec2ca12e971ebf52b73bcd7b76"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-q5_0.gguf",
+   "size": 9690457088
+  },
+  {
+   "lfs": {
+    "sha256": "5a646a1729afbd98c7ba52a0bb72faa3e0f4d76a382a94dd7ef21b6e2d6a1b21"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-q5_1.gguf",
+   "size": 10294436864
+  },
+  {
+   "lfs": {
+    "sha256": "cab8f79ba900a36f3359b007c449a966d93996477237adc6a86fc34afd553a0e"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-q5_k_m.gguf",
+   "size": 10130859008
+  },
+  {
+   "lfs": {
+    "sha256": "6a6f77f7c3197b03869cf3a471c9deaa7fe49d78523a62821759f23f39ff8e13"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-q5_k_s.gguf",
+   "size": 9489130496
+  },
+  {
+   "lfs": {
+    "sha256": "eab2f0e0b79a94cfa30792bdcc687d1b645a5848738c949fdc0f63a4e3682098"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-q6_k.gguf",
+   "size": 11200406528
+  },
+  {
+   "lfs": {
+    "sha256": "94b004451173fceb8ab802146b74087c560dcac3abf23ff45bc3406bd2b9d009"
+   },
+   "rfilename": "ltxv-13b-0.9.8-dev-q8_0.gguf",
+   "size": 14320968704
+  },
+  {
+   "lfs": {
+    "sha256": "55257f772b64c8d0dddf8cb7a77dc943ca0c6049f326bab7f0d548f995827f88"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-iq4_nl.gguf",
+   "size": 7572333568
+  },
+  {
+   "lfs": {
+    "sha256": "e05966269c2fb7b934f481b4bd57bb71dd9d1f3d353194356fe893193165e5f7"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-iq4_xs.gguf",
+   "size": 7169680384
+  },
+  {
+   "lfs": {
+    "sha256": "e0105abe6e84d8c45ec781576d66c18e902e216ff59e72d305e8e42978b99971"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-q2_k.gguf",
+   "size": 4716012544
+  },
+  {
+   "lfs": {
+    "sha256": "c7762b241789be62d664621703ee7256e7dd90366f0e26bf556a36e852defa24"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-q3_k_l.gguf",
+   "size": 7106765824
+  },
+  {
+   "lfs": {
+    "sha256": "8e125a4b8f28baa5fb7d0a2615d4a487b4bdce3be68387411a3a3122ec8a9923"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-q3_k_m.gguf",
+   "size": 6506980352
+  },
+  {
+   "lfs": {
+    "sha256": "20457da49d0915aca78cb3826703e2fa3cae9e6e12b57c90f5d41e632992d61d"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-q3_k_s.gguf",
+   "size": 5861057536
+  },
+  {
+   "lfs": {
+    "sha256": "e56f4e2dbcd524875b74f473f38ca6276502783966e85c34f532270075e3e638"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-q4_0.gguf",
+   "size": 7773660160
+  },
+  {
+   "lfs": {
+    "sha256": "6a58345fd015825d68e921c59bb9b206e98f23bb2cb82e96138f96ba72d6bfea"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-q4_1.gguf",
+   "size": 8377639936
+  },
+  {
+   "lfs": {
+    "sha256": "849c8e22040fd8cc8eb153e0588e4b9f35dcdfadb1806fa02c306bd8763ecc2c"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-q4_k_m.gguf",
+   "size": 8818041856
+  },
+  {
+   "lfs": {
+    "sha256": "c71b84d86b59100b639084416de4649bac8f0f6938c1c615e3b998fde4747949"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-q4_k_s.gguf",
+   "size": 7983375360
+  },
+  {
+   "lfs": {
+    "sha256": "eeb6e160a36c2d427675db760e25f9713ce27b043ab6407ab62cb559cac2d45f"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-q5_0.gguf",
+   "size": 9384272896
+  },
+  {
+   "lfs": {
+    "sha256": "d30e3b39f1eba1d8811c8004f43bc5d6d5cb2b1b5f472ff52ca27208e5995672"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-q5_1.gguf",
+   "size": 9988252672
+  },
+  {
+   "lfs": {
+    "sha256": "1853dd508a642c70737c982bb35899fbb516651455560fb7cf3389a4dbea2e0e"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-q5_k_m.gguf",
+   "size": 9824674816
+  },
+  {
+   "lfs": {
+    "sha256": "c25506030f6ff47cf16bba86934038e73de6d5d386e3063076f9251005457a24"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-q5_k_s.gguf",
+   "size": 9182946304
+  },
+  {
+   "lfs": {
+    "sha256": "2b93f092d37a52827557c00e88383fadbc2c8f98f3bfbe8e602adfb2c378aecd"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-q6_k.gguf",
+   "size": 10894222336
+  },
+  {
+   "lfs": {
+    "sha256": "d143df2311e68e076a7bc0f949cf568b78988b059c8e207b3111616b36493412"
+   },
+   "rfilename": "ltxv-13b-0.9.8-distilled-q8_0.gguf",
+   "size": 14014784512
+  },
+  {
+   "lfs": {
+    "sha256": "2f93f6a6c8db6c299e12808c3ecc9fae228dce2c556344b3625c288c5073d0bc"
+   },
+   "rfilename": "ltxv-2b-0.9.6-dev-fp32-q4_0.gguf",
+   "size": 1263727104
+  },
+  {
+   "lfs": {
+    "sha256": "16df3ac605f29b7723835a6ce013f23061a9b8bb7807c2e73eca64856ea43ee9"
+   },
+   "rfilename": "ltxv-2b-0.9.6-dev-fp32-q5_0.gguf",
+   "size": 1498608128
+  },
+  {
+   "lfs": {
+    "sha256": "f5410b4519e5f6f300c6ac614c25ebe1d3b9f7b9eea1811e6b3632dcd116f804"
+   },
+   "rfilename": "ltxv-2b-0.9.6-dev-fp32-q8_0.gguf",
+   "size": 2173891072
+  },
+  {
+   "lfs": {
+    "sha256": "6e62bd38b6d05493f1926686f77a33259717a46f105534f2c7583bde686d4f50"
+   },
+   "rfilename": "ltxv-2b-0.9.6-distilled-fp32-q4_0.gguf",
+   "size": 1263727104
+  },
+  {
+   "lfs": {
+    "sha256": "e603cff1eb86fb5c612d1cace7ff596143b6744446c8fc8f731af6efb8bcf463"
+   },
+   "rfilename": "ltxv-2b-0.9.6-distilled-fp32-q5_0.gguf",
+   "size": 1498608128
+  },
+  {
+   "lfs": {
+    "sha256": "873264f0e455e8c236889aaa221e0d2ea80ea1f7b2288ca2fde844f798220670"
+   },
+   "rfilename": "ltxv-2b-0.9.6-distilled-fp32-q8_0.gguf",
+   "size": 2173891072
+  },
+  {
+   "lfs": {
+    "sha256": "846cef20692059f441e7a20d9c83b548a1235dd36244a3152c3b8076d6c6380e"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-iq4_nl.gguf",
+   "size": 1234366976
+  },
+  {
+   "lfs": {
+    "sha256": "80c1ee15bfbb7042b8379e5e028caba9ba55f1257328f5279b984573b83e5dc7"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-iq4_xs.gguf",
+   "size": 1175646720
+  },
+  {
+   "lfs": {
+    "sha256": "c6375da278fd35ff5d0cbd89819671b335b570872223b0c2e55ab64c72c85d1f"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-q2_k.gguf",
+   "size": 817820160
+  },
+  {
+   "lfs": {
+    "sha256": "e00bb6b2d55328ff51a92680dac6a7699d8b80ebbe4fbec0e650ac1724df7f52"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-q3_k_l.gguf",
+   "size": 1166471680
+  },
+  {
+   "lfs": {
+    "sha256": "9737e189ecd3531881a84b31c3ce5adfa17f9e91532b3d24e1135022901a8d28"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-q3_k_m.gguf",
+   "size": 1079439872
+  },
+  {
+   "lfs": {
+    "sha256": "d8c40b5e4d46f1248b33f8ff704ef8f94dd364df3ba5fbd623a41f0c75fa0548"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-q3_k_s.gguf",
+   "size": 984805888
+  },
+  {
+   "lfs": {
+    "sha256": "463df2f5e26fae30ca8a15edc8b1fc55e73728ea44e30660d796bc6776a7402c"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-q4_0.gguf",
+   "size": 1263727104
+  },
+  {
+   "lfs": {
+    "sha256": "863e991cc10600cd4379b2e68e2d5b10183fc7ae35ef46a0d317461ee156d8fa"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-q4_1.gguf",
+   "size": 1351807488
+  },
+  {
+   "lfs": {
+    "sha256": "87700dd5a8f9ab4c769774ba493394195b47f405efb05fc4cc271f6b9c615362"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-q4_k_m.gguf",
+   "size": 1416032768
+  },
+  {
+   "lfs": {
+    "sha256": "83f2dc220d7f6ab97bd45585db1b864d7122d6b3ed24ee02c6b5036f061659f1"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-q4_k_s.gguf",
+   "size": 1295184384
+  },
+  {
+   "lfs": {
+    "sha256": "d1862e03a6c5549d63739f0b21a2ddfdc12c23235567a060106020e49f5c5a18"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-q5_0.gguf",
+   "size": 1498608128
+  },
+  {
+   "lfs": {
+    "sha256": "234434b5320394de180af6d070b75c33c0e02eab7e4bc7f459c5bf56048e64aa"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-q5_1.gguf",
+   "size": 1586688512
+  },
+  {
+   "lfs": {
+    "sha256": "760cef81a14b842eb4b4c460da584e49019ab4490f9f0c65c1c6cd58f4c85f56"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-q5_k_m.gguf",
+   "size": 1562833408
+  },
+  {
+   "lfs": {
+    "sha256": "d22b483a81d3d148763d7e1c3976c68ce6a1731572212fdea8e06acfd9cba8f9"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-q5_k_s.gguf",
+   "size": 1469248000
+  },
+  {
+   "lfs": {
+    "sha256": "5e09525d2d5c3ef7c7469c4b8c643e0f31a6de3ab0b10eb17ca75f2235df4161"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-q6_k.gguf",
+   "size": 1718809088
+  },
+  {
+   "lfs": {
+    "sha256": "a0637b06a43fea8d71af2c7bf912c8c8a36d61654966054621f80f2c39e6faca"
+   },
+   "rfilename": "ltxv-2b-0.9.8-distilled-q8_0.gguf",
+   "size": 2173891072
+  },
+  {
+   "lfs": {
+    "sha256": "419c88318dfa1528cc69c5fe35d87240e5f42c4ca3ab57f0ef1659fc79d1b5d2"
+   },
+   "rfilename": "ltxv_0.9.1_vae_fp16.safetensors",
+   "size": 1869999676
+  },
+  {
+   "lfs": {
+    "sha256": "28a200fbda3c6b8a66613d9d4f53eddbba918ff34cf9bd64bb4857640c207bdb"
+   },
+   "rfilename": "ltxv_0.9.1_vae_fp32.safetensors",
+   "size": 3739945400
+  },
+  {
+   "lfs": {
+    "sha256": "4e157b8da5b74bbfda1c25ef2c787513f3e292442d515916dcd83e6835bbf029"
+   },
+   "rfilename": "ltxv_0.9.5_vae_fp16.safetensors",
+   "size": 2493868876
+  },
+  {
+   "lfs": {
+    "sha256": "97cd92da7220019d4bd1ef80d8113ebc41dbd3de00a804a2f26f584140f28a6e"
+   },
+   "rfilename": "ltxv_0.9.5_vae_fp32.safetensors",
+   "size": 4987685376
+  },
+  {
+   "lfs": {
+    "sha256": "126c45eaef59fbd250520ccb5185b4249389dfdf83f5e2fe7a51596da28ad8ae"
+   },
+   "rfilename": "ltxv_0.9.5_vae_fp8_e4m3fn.safetensors",
+   "size": 1246943402
+  },
+  {
+   "lfs": {
+    "sha256": "17d8f8979d2303898b7320d7fbbd0b0f07cff2fcb86acae53653de4948a1ee92"
+   },
+   "rfilename": "ltxv_0.9_vae_fp16.safetensors",
+   "size": 838411946
+  },
+  {
+   "lfs": {
+    "sha256": "e4b6b8687b366d1953814b8a3a431ec95baabc37a3cafa72a326016b7761933c"
+   },
+   "rfilename": "ltxv_0.9_vae_fp32.safetensors",
+   "size": 1676800476
+  },
+  {
+   "lfs": {
+    "sha256": "b147d4c2f9498a1f84c9572db7c4915334e2071d47c5d4395dc4e96aac6f5ad4"
+   },
+   "rfilename": "ltxv_0.9_vae_fp8.safetensors",
+   "size": 419218209
+  },
+  {
+   "lfs": {
+    "sha256": "f9bf3cb5f165bbaa1a60d5ef53da9292cd9f182243e0278ea07f428c4eafd3c5"
+   },
+   "rfilename": "ltxv_vae_fp32-f16.gguf",
+   "size": 838488384
+  },
+  {
+   "lfs": {
+    "sha256": "cb9c132724d090174b51eb79836685fb67a626aedcaa04f9d796866ff56dfb4f"
+   },
+   "rfilename": "samples\\ComfyUI_00001_.webp",
+   "size": 1294074
+  },
+  {
+   "lfs": {
+    "sha256": "e4dfef51dd857470afb68fa5236bc0bd1c0f3a29e381947317ea717f6ca245ad"
+   },
+   "rfilename": "samples\\ComfyUI_00002_.webp",
+   "size": 1211936
+  },
+  {
+   "lfs": {
+    "sha256": "3cb8f99456333acdfc03bb50039739a48273720690b8ef4d17ea633eb7d8ee59"
+   },
+   "rfilename": "samples\\ComfyUI_00003_.webp",
+   "size": 1717910
+  },
+  {
+   "lfs": {
+    "sha256": "9d621b7c1ff3d006bdb067e24a4273654f47e78683dbaa30200904ab2f2bfaf3"
+   },
+   "rfilename": "samples\\ComfyUI_00004_.webp",
+   "size": 1922872
+  },
+  {
+   "lfs": {
+    "sha256": "16af35c4d5c3b555f53564f663823b4664ddb299639b5ef707e6e46ffc6e0435"
+   },
+   "rfilename": "samples\\ComfyUI_00005_.webp",
+   "size": 1976934
+  },
+  {
+   "lfs": {
+    "sha256": "740435fbb86bf8cc4f6112e9697c96bd3e23fb7f0e25c7379deaa3ce70e46482"
+   },
+   "rfilename": "samples\\ComfyUI_00006_.webp",
+   "size": 2433470
+  },
+  {
+   "lfs": {
+    "sha256": "0f02de76ec42eb6c03f323cd31beac95eaeb2eea75d190cb51b94ddd8ea7f3c0"
+   },
+   "rfilename": "samples\\ComfyUI_00007_.webp",
+   "size": 1792704
+  },
+  {
+   "lfs": {
+    "sha256": "ef428b24ddbc407dea048f756f45da86d487c8c026d6d73cc095794a871e4aad"
+   },
+   "rfilename": "samples\\ComfyUI_00008_.webp",
+   "size": 1700098
+  },
+  {
+   "lfs": {
+    "sha256": "6c5b0ce08555baa66b1088a4d44698863b28540e5cf550482905d3a544e185e7"
+   },
+   "rfilename": "samples\\ComfyUI_00009_.webp",
+   "size": 1937198
+  },
+  {
+   "lfs": {
+    "sha256": "d63c20006ff77787d4997bac9bdddf847ca276a10d327c7ec793e7900a01203b"
+   },
+   "rfilename": "samples\\ComfyUI_00010_.webp",
+   "size": 2227608
+  },
+  {
+   "lfs": {
+    "sha256": "624d7fa99b0e12a83475d077713c955e3ad8413039f1ab0f0a96b6382c286621"
+   },
+   "rfilename": "samples\\ComfyUI_00011_.webp",
+   "size": 3510448
+  },
+  {
+   "lfs": {
+    "sha256": "2f4188c53ef52210fe4a0bfe2ca7be1a307e26990927ba127f88d7e4e2e9267f"
+   },
+   "rfilename": "samples\\ComfyUI_00012_.webp",
+   "size": 1844410
+  },
+  {
+   "lfs": {
+    "sha256": "6be2b0b7e2de7cf2919340c88cb802a103a997ce46c53131cec91958c1db1af4"
+   },
+   "rfilename": "t5xxl_fp16-q4_0.gguf",
+   "size": 2896123072
+  },
+  {
+   "lfs": {
+    "sha256": "7d330da4816157540d6bb7838bf63a0f02f573fc48ca4d8de34bb0cbfd514f09"
+   },
+   "rfilename": "t5xxl_fp8_e4m3fn.safetensors",
+   "size": 4893934904
+  },
+  {
+   "rfilename": "workflow-ltxv-gguf.json",
+   "size": 4530
+  },
+  {
+   "rfilename": "workflow-ltxv-safetensors.json",
+   "size": 4345
+  },
+  {
+   "rfilename": "workflow-ltxv0.9.1-gguf.json",
+   "size": 5105
+  },
+  {
+   "rfilename": "workflow-ltxv0.9.5-gguf.json",
+   "size": 7292
+  }
+ ],
+ "tags": [
+  "gguf",
+  "gguf-node",
+  "gguf-connector",
+  "image-to-video",
+  "en",
+  "base_model:Lightricks/LTX-Video",
+  "base_model:quantized:Lightricks/LTX-Video",
+  "license:other",
+  "region:us"
+ ]
+}

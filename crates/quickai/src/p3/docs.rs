@@ -38,6 +38,67 @@ fn p3_x01_the_privacy_text_says_what_ollama_contacts_what_it_writes_and_when() {
 }
 
 #[test]
+fn p3_x07_the_privacy_text_and_the_licences_say_what_the_comfyui_install_contacts_writes_and_is() {
+    let privacy = text("PRIVACY.md");
+    for needle in [
+        "ComfyUI",
+        "Comfy-Org/ComfyUI",
+        "city96/ComfyUI-GGUF",
+        "codeload.github.com",
+        "download.pytorch.org",
+        "download-r2.pytorch.org",
+        "pypi.org",
+        "files.pythonhosted.org",
+        "~/.quickai/comfyui",
+        "--offline",
+        ".quickai-install.json",
+        "ui-stalls.log",
+    ] {
+        assert!(
+            privacy.contains(needle),
+            "PRIVACY.md does not mention `{needle}`"
+        );
+    }
+    // the hosts of the install are the ones the document's own addresses name
+    let registry = build_registry(&ConfigDirs::default());
+    let engine = registry.engine("comfyui").expect("the ComfyUI document");
+    let acquire = engine.doc.acquire.as_ref().expect("an [acquire] section");
+    let mut addresses: Vec<String> = acquire
+        .install
+        .iter()
+        .flat_map(|install| match install {
+            quickai_core::doc::engine::Install::PythonApp { pip, nodes, .. } => pip
+                .iter()
+                .filter_map(|step| step.index.clone())
+                .chain(nodes.iter().map(|pack| pack.url.clone()))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        })
+        .collect();
+    addresses.push(
+        quickai_core::acquire::source_archive_url(engine, "v1").expect("the address of a source"),
+    );
+    for address in addresses {
+        let host = address
+            .split("//")
+            .nth(1)
+            .and_then(|rest| rest.split('/').next())
+            .expect("a host");
+        assert!(
+            privacy.contains(host),
+            "the install fetches from {host}, which PRIVACY.md does not name"
+        );
+    }
+    let licences = text("THIRD_PARTY_LICENSES.md");
+    let at = licences
+        .find("**ComfyUI**")
+        .expect("THIRD_PARTY_LICENSES.md does not mention ComfyUI");
+    let near = &licences[at..(at + 700).min(licences.len())];
+    assert!(near.contains("GPL-3.0"), "no licence: {near}");
+    assert!(near.contains("not* part of this package"), "{near}");
+}
+
+#[test]
 fn p3_x02_the_licences_say_ollama_is_mit_and_is_not_part_of_the_package() {
     let licences = text("THIRD_PARTY_LICENSES.md");
     let at = licences
@@ -107,6 +168,44 @@ fn p3_x05_the_hosts_a_real_pull_contacted_are_declared_by_the_ollama_document() 
         assert!(
             seen.iter().any(|host| declares(declared, host)),
             "the document declares {declared}, which no recorded pull contacted"
+        );
+    }
+}
+
+#[test]
+fn p3_x08_the_hosts_a_real_fetch_of_the_page_contacted_are_declared_by_the_comfyui_document() {
+    let registry = build_registry(&ConfigDirs::default());
+    let engine = registry
+        .engine("comfyui")
+        .expect("the embedded ComfyUI document");
+    let seen: Vec<String> = recorded::comfyui_egress()
+        .iter()
+        .map(|c| {
+            c.rsplit_once(':')
+                .map_or(c.as_str(), |(h, _)| h)
+                .to_string()
+        })
+        .collect();
+    assert!(
+        !seen.is_empty(),
+        "the recording of what ComfyUI contacted is missing"
+    );
+    for host in &seen {
+        assert!(
+            engine
+                .doc
+                .engine
+                .egress
+                .iter()
+                .any(|declared| declares(declared, host)),
+            "a real fetch contacted {host}, which the document does not declare"
+        );
+    }
+    // and nothing is declared that was not seen: the document says only what was measured
+    for declared in &engine.doc.engine.egress {
+        assert!(
+            seen.iter().any(|host| declares(declared, host)),
+            "the document declares {declared}, which no recorded fetch contacted"
         );
     }
 }

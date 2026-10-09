@@ -51,7 +51,7 @@ pub fn installed(offer: &Offer, have: &BTreeMap<String, u64>, listed: &[String])
         Fetch::Files(download) => {
             !download.files.is_empty()
                 && download.files.iter().all(|piece| {
-                    have.get(&piece.store_as)
+                    have.get(&have_key(piece))
                         .is_some_and(|size| piece.size.is_none_or(|wanted| wanted == *size))
                 })
         }
@@ -61,17 +61,31 @@ pub fn installed(offer: &Offer, have: &BTreeMap<String, u64>, listed: &[String])
     }
 }
 
-/// The `.gguf` files of a folder with their sizes (a folder that is not there has none).
-fn files_in(folder: &Path, into: &mut BTreeMap<String, u64>) {
+/// What `have` calls a file a piece fetches: its name, or its name in the folder it is kept in.
+pub fn have_key(piece: &quickai_core::lookup::present::Piece) -> String {
+    match &piece.place {
+        Some(place) => format!("{place}/{}", piece.store_as),
+        None => piece.store_as.clone(),
+    }
+}
+
+/// The model files of a folder with their sizes (a folder that is not there has none), under the name
+/// they have in the folder, or `<in_folder>/<name>` when it is one of the folders of the models folder.
+fn files_in(folder: &Path, in_folder: Option<&str>, into: &mut BTreeMap<String, u64>) {
     let Ok(read) = std::fs::read_dir(folder) else {
         return;
     };
     for entry in read.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name.to_lowercase().ends_with(".gguf") {
+        let lower = name.to_lowercase();
+        if lower.ends_with(".gguf") || lower.ends_with(".safetensors") {
             if let Ok(meta) = entry.metadata() {
                 if meta.is_file() {
-                    into.insert(name, meta.len());
+                    let key = match in_folder {
+                        Some(folder) => format!("{folder}/{name}"),
+                        None => name,
+                    };
+                    into.insert(key, meta.len());
                 }
             }
         }
@@ -116,8 +130,17 @@ impl App {
     /// Looks again at what the models folders hold.
     pub(super) fn refresh_catalog_have(&mut self) {
         let mut have = BTreeMap::new();
-        files_in(&self.bundled_models_dir, &mut have);
-        files_in(&self.models_dir, &mut have);
+        files_in(&self.bundled_models_dir, None, &mut have);
+        files_in(&self.models_dir, None, &mut have);
+        // the folders of the models folder, for an engine that keeps its files by the folder they are in
+        if let Ok(read) = std::fs::read_dir(&self.models_dir) {
+            for entry in read.flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if quickai_core::lookup::present::is_place(&name) && entry.path().is_dir() {
+                    files_in(&entry.path(), Some(&name), &mut have);
+                }
+            }
+        }
         self.catalog.have = have;
     }
 

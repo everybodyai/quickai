@@ -39,6 +39,8 @@ pub struct ListCall {
     pub capabilities: Option<String>,
     /// Where the last reply is kept, so a list can be shown while the engine is not running.
     pub cache: Option<String>,
+    /// Patterns over a whole name: the models the picker does not show.
+    pub hide: Vec<String>,
 }
 
 /// The request that pulls a model and where its progress is in the events of the reply.
@@ -86,6 +88,67 @@ pub fn lookup_rules(
         sizes: registry.vocabulary().size_classes().to_vec(),
         bundles: bundles(engine).to_vec(),
         settings: lookup.kind.read().clone(),
+        places: places(engine),
+    }
+}
+
+/// Where the files of a download are kept for this engine: the folder its weights go in and the
+/// folder of each kind of companion, when the engine's document says (`[models.acquire] place`,
+/// `[components.<kind>] place`). Empty for an engine that keeps all of them in one folder.
+pub fn places(engine: &Engine) -> crate::lookup::present::Places {
+    crate::lookup::present::Places {
+        weights: engine
+            .models
+            .as_ref()
+            .and_then(|m| m.files.as_ref())
+            .and_then(|f| f.place.clone()),
+        kinds: engine
+            .components
+            .iter()
+            .filter_map(|c| Some((c.kind.clone(), c.place.clone()?)))
+            .collect(),
+    }
+}
+
+/// The folders of the models folder a file can be put in, for an engine that keeps its files by the
+/// folder they are in (ComfyUI): the folder the weights go in, the folder of each kind of companion,
+/// and the others the document names (`[models.acquire] places`), each once and in that order. Empty
+/// for an engine that keeps all of them in one folder.
+pub fn folders(engine: &Engine) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut add = |name: &String| {
+        if !out.contains(name) {
+            out.push(name.clone());
+        }
+    };
+    let acquire = engine.models.as_ref().and_then(|m| m.files.as_ref());
+    if let Some(place) = acquire.and_then(|f| f.place.as_ref()) {
+        add(place);
+    }
+    for place in engine.components.iter().filter_map(|c| c.place.as_ref()) {
+        add(place);
+    }
+    for place in acquire.iter().flat_map(|f| f.places.iter()) {
+        add(place);
+    }
+    out
+}
+
+/// The folder a file of this name belongs in, as the engine's document says it: that of the kind of
+/// companion a part of one of its bundles finds the name to be (`Wan2.2_VAE.safetensors` is a `vae`, so
+/// `vae`), else the folder the weights go in. `None` for an engine that keeps all of its files in one
+/// folder. It is a guess from the name, and what a person who says where the file goes is believed over.
+pub fn place_for(engine: &Engine, file_name: &str) -> Option<String> {
+    let places = places(engine);
+    let named = crate::lookup::candidate::RemoteFile::new(file_name, None);
+    let kind = bundles(engine)
+        .iter()
+        .flat_map(|b| b.parts.iter())
+        .find(|part| part.is(&named))
+        .map(|part| part.kind.as_str());
+    match kind {
+        Some(kind) => places.kinds.get(kind).cloned().or(places.weights),
+        None => places.weights,
     }
 }
 
@@ -110,7 +173,7 @@ pub fn recommended(
         crate::registry::engine::LookupKind::HuggingFace { site, .. } => Some(site.as_str()),
         _ => None,
     });
-    crate::lookup::catalog::entries(
+    let mut entries = crate::lookup::catalog::entries(
         registry.catalog(),
         &crate::lookup::catalog::Context {
             engine: &engine.id,
@@ -118,7 +181,53 @@ pub fn recommended(
             bundles: bundles(engine),
             site,
         },
-    )
+    );
+    let places = places(engine);
+    for entry in &mut entries {
+        places.apply(entry);
+    }
+    entries
+}
+
+/// A place the engine's models are found, with its path filled in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileSource {
+    /// `scan_dir` (a folder the person can write to) or `bundle_dir` (one shipped with the application).
+    pub kind: String,
+    pub path: String,
+    /// The endings of the files that are models, in lower case with the dot (`.gguf`); any when empty.
+    pub ext: Vec<String>,
+    pub writable: bool,
+}
+
+/// The places the engine's models are found, with the document's templates filled in from the values
+/// the selection holds. Empty for an engine whose document names none: it keeps its models in the one
+/// folder it always has.
+pub fn file_sources(engine: &Engine, selection: &Selection, facts: &HostFacts) -> Vec<FileSource> {
+    let Some(models) = engine.models.as_ref().filter(|m| !m.sources.is_empty()) else {
+        return Vec::new();
+    };
+    let (_, context) = crate::plan::resolve::resolve_fields(engine, selection, facts);
+    models
+        .sources
+        .iter()
+        .filter_map(|source| {
+            Some(FileSource {
+                kind: source.kind.clone(),
+                path: source.path.render(&context).ok()?.to_string(),
+                ext: source.ext.clone(),
+                writable: source.writable,
+            })
+        })
+        .collect()
+}
+
+/// The models folder files are fetched into, for an engine whose document says
+/// (`[models.acquire] dir`), with its fields filled in.
+pub fn files_dir(engine: &Engine, selection: &Selection, facts: &HostFacts) -> Option<String> {
+    let dir = engine.models.as_ref()?.files.as_ref()?.dir.as_ref()?;
+    let (_, context) = crate::plan::resolve::resolve_fields(engine, selection, facts);
+    dir.render(&context).ok().map(|v| v.to_string())
 }
 
 fn render(step: &CompiledStep, context: &Value) -> Result<ModelCall, String> {
@@ -163,6 +272,7 @@ pub fn list_call(engine: &Engine, facts: &HostFacts) -> Option<Result<ListCall, 
             digest: list.digest.clone(),
             capabilities: list.capabilities.clone(),
             cache,
+            hide: list.hide.clone(),
         })
     })())
 }

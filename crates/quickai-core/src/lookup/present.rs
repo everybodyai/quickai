@@ -23,6 +23,12 @@ pub struct Settings {
     pub bytes_per_parameter: f64,
     /// The types this engine runs, by id; a model of another type is shown as `other`. Empty: all.
     pub types: Vec<String>,
+    /// The kinds of companion file (a bundle's parts: `vae`, `text_encoder`) that are also offered by
+    /// themselves, each file of the kind a button of its own in a row of its own, and kept in the folder
+    /// of its kind. For an engine whose files are used by name from a workflow, where a VAE or a text
+    /// encoder is as much a thing to fetch as the model that uses it. Empty: a companion is fetched
+    /// only with the weights it goes with.
+    pub alone: Vec<String>,
 }
 
 impl Default for Settings {
@@ -33,6 +39,7 @@ impl Default for Settings {
             show_variants: 4,
             bytes_per_parameter: 0.6,
             types: Vec::new(),
+            alone: Vec::new(),
         }
     }
 }
@@ -53,6 +60,67 @@ pub struct OwnedRules {
     pub sizes: Vec<SizeClassDef>,
     pub bundles: Vec<Bundle>,
     pub settings: Settings,
+    /// Where the files of what is found are kept, for an engine that finds files by their folder.
+    pub places: Places,
+}
+
+/// Where the files of a download are kept, for an engine that finds them by the folder they are in
+/// (ComfyUI: the weights of a diffusion model in `diffusion_models`, its text encoder in
+/// `text_encoders`) and not by an argument. Folders of the models folder, each one plain name.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Places {
+    /// The folder the weights go in, unless the model says another.
+    pub weights: Option<String>,
+    /// The folder each kind of companion goes in.
+    pub kinds: std::collections::BTreeMap<String, String>,
+}
+
+impl Places {
+    /// Gives every piece that has no folder of its own the folder its kind has here, and has a button
+    /// that fetches into folders say which.
+    pub fn apply(&self, entry: &mut Entry) {
+        for offer in &mut entry.offers {
+            let Fetch::Files(download) = &mut offer.fetch else {
+                continue;
+            };
+            for piece in &mut download.files {
+                if piece.place.is_none() {
+                    piece.place = match &piece.kind {
+                        None => self.weights.clone(),
+                        Some(kind) => self.kinds.get(kind).cloned(),
+                    };
+                }
+            }
+            let mut folders: Vec<String> = Vec::new();
+            for place in download.files.iter().filter_map(|p| p.place.as_ref()) {
+                if !folders.contains(place) {
+                    folders.push(place.clone());
+                }
+            }
+            if !folders.is_empty() {
+                offer.hover = format!("{} {}", sentence_end(&offer.hover), kept_in(&folders));
+            }
+        }
+    }
+}
+
+/// `text` as a sentence that ends with a full stop.
+fn sentence_end(text: &str) -> String {
+    let text = text.trim_end();
+    if text.ends_with('.') {
+        text.to_string()
+    } else {
+        format!("{text}.")
+    }
+}
+
+/// "It is kept in the vae folder.", "It is kept in the diffusion_models, text_encoders and vae folders."
+fn kept_in(folders: &[String]) -> String {
+    match folders {
+        [one] => format!("It is kept in the {one} folder."),
+        [rest @ .., last] => format!("It is kept in the {} and {last} folders.", rest.join(", ")),
+        [] => String::new(),
+    }
 }
 
 impl OwnedRules {
@@ -67,7 +135,9 @@ impl OwnedRules {
 
     /// The entry of a candidate.
     pub fn present(&self, candidate: &Candidate) -> Entry {
-        present(candidate, &self.rules())
+        let mut entry = present(candidate, &self.rules());
+        self.places.apply(&mut entry);
+        entry
     }
 }
 
@@ -129,6 +199,19 @@ pub struct Offer {
     pub fetch: Fetch,
 }
 
+impl Offer {
+    /// The file this button fetches when it is a file of a kind of component and nothing else (a VAE, a
+    /// text encoder: a button of a row of its own), and not the weights or a bundle.
+    pub fn only(&self) -> Option<&Piece> {
+        match &self.fetch {
+            Fetch::Files(download) if download.bundle.is_none() && download.files.len() == 1 => {
+                download.files.first().filter(|piece| piece.kind.is_some())
+            }
+            _ => None,
+        }
+    }
+}
+
 /// What a button does.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Fetch {
@@ -166,6 +249,9 @@ pub struct Piece {
     pub size: Option<u64>,
     /// What the bytes that arrive must hash to (lower case hexadecimal), when the source says.
     pub sha256: Option<String>,
+    /// The folder of the models folder it is kept in, for an engine that finds its files by the folder
+    /// they are in; `None` is the models folder itself.
+    pub place: Option<String>,
 }
 
 impl Download {
@@ -178,6 +264,22 @@ impl Download {
     pub fn weights(&self) -> Option<&Piece> {
         self.files.iter().find(|f| f.kind.is_none())
     }
+
+    /// The file the download is named after: the weights, or, for a download of one companion file by
+    /// itself (a VAE), that file.
+    pub fn primary(&self) -> Option<&Piece> {
+        self.weights().or_else(|| self.files.first())
+    }
+}
+
+/// Whether `text` can name a folder of the models folder: one plain name of lower case letters, digits,
+/// `_` and `-`, so that nothing climbs out of the models folder or goes into a folder inside another.
+pub fn is_place(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 64
+        && text
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_' || ch == '-')
 }
 
 /// A name safe to keep a file under in a folder: letters, digits, `.`, `-` and `_`, no leading dot.
@@ -327,40 +429,6 @@ fn hub_offers(
         .filter(|f| !bundle::is_companion(rules.bundles, f))
         .filter(|f| !skipped(f))
         .collect();
-    if weights.is_empty() {
-        return (Vec::new(), kinds);
-    }
-
-    // a label is the quantization the name says; a file that says none, or says what another does, is
-    // told by its name without what all the names begin with (`APEX-Compact` for `Laguna-XS-2.1-APEX-Compact`)
-    let labels: Vec<Option<String>> = weights.iter().map(|f| quant::label(f.name())).collect();
-    let stems: Vec<&str> = weights.iter().map(|f| stem_of(f.name())).collect();
-    let common = common_prefix(&stems);
-    let mut variants: Vec<Variant<'_>> = weights
-        .iter()
-        .zip(&labels)
-        .zip(&stems)
-        .map(|((file, label), stem)| {
-            let clash = label.is_some() && labels.iter().filter(|l| *l == label).count() > 1;
-            Variant {
-                label: match label {
-                    Some(l) if !clash => l.clone(),
-                    _ => stem[common..].to_string(),
-                },
-                file,
-                rank: quant::rank(file.name(), &settings.prefer),
-            }
-        })
-        .collect();
-    // the ones to show: those the preferences like, then the smallest of the rest
-    variants.sort_by_key(|v| (v.rank, v.file.size.unwrap_or(u64::MAX), v.file.path.clone()));
-    variants.truncate(settings.show_variants.max(1));
-    let best = variants
-        .iter()
-        .map(|v| v.rank)
-        .min()
-        .filter(|r| *r != usize::MAX);
-    variants.sort_by_key(|v| (v.file.size.unwrap_or(u64::MAX), v.file.path.clone()));
 
     let source = format!("huggingface:{repo}");
     let piece = |part: Option<&Part>, file: &RemoteFile| Piece {
@@ -373,66 +441,210 @@ fn hub_offers(
         },
         name: file.name().to_string(),
         size: file.size,
-        sha256: None,
+        sha256: file.sha256.clone(),
+        place: None,
     };
 
     let mut offers = Vec::new();
-    for variant in &variants {
-        let download = Download {
-            files: vec![piece(None, variant.file)],
-            bundle: None,
-            source: source.clone(),
-            mode: None,
-        };
-        let bytes = variant.file.size;
-        let recommended = best == Some(variant.rank);
-        offers.push(Offer {
-            bundle: None,
-            label: with_size(&variant.label, bytes),
-            hover: preferred(
-                match bytes {
-                    Some(b) => format!("Download {} ({})", variant.file.name(), format_bytes(b)),
-                    None => format!("Download {}", variant.file.name()),
-                },
-                recommended,
-            ),
-            bytes,
-            estimated: false,
-            class: class_of(rules.sizes, bytes),
-            recommended,
-            fetch: Fetch::Files(download),
-        });
-    }
-    for b in rules.bundles {
-        let Some(found) = bundle::gather(b, files) else {
-            continue;
-        };
+    if !weights.is_empty() {
+        // a label is the quantization the name says; a file that says none, or says what another does, is
+        // told by its name without what all the names begin with (`APEX-Compact` for `Laguna-XS-2.1-APEX-Compact`)
+        let labels: Vec<Option<String>> = weights.iter().map(|f| quant::label(f.name())).collect();
+        let stems: Vec<&str> = weights.iter().map(|f| stem_of(f.name())).collect();
+        let common = common_prefix(&stems);
+        let mut variants: Vec<Variant<'_>> = weights
+            .iter()
+            .zip(&labels)
+            .zip(&stems)
+            .map(|((file, label), stem)| {
+                let clash = label.is_some() && labels.iter().filter(|l| *l == label).count() > 1;
+                Variant {
+                    label: match label {
+                        Some(l) if !clash => l.clone(),
+                        _ => stem[common..].to_string(),
+                    },
+                    file,
+                    rank: quant::rank(file.name(), &settings.prefer),
+                }
+            })
+            .collect();
+        // the ones to show: those the preferences like, then the smallest of the rest
+        variants.sort_by_key(|v| (v.rank, v.file.size.unwrap_or(u64::MAX), v.file.path.clone()));
+        variants.truncate(settings.show_variants.max(1));
+        let best = variants
+            .iter()
+            .map(|v| v.rank)
+            .min()
+            .filter(|r| *r != usize::MAX);
+        variants.sort_by_key(|v| (v.file.size.unwrap_or(u64::MAX), v.file.path.clone()));
+
         for variant in &variants {
-            let mut pieces = vec![piece(None, variant.file)];
-            let mut words = Vec::new();
-            for (part, file) in &found {
-                pieces.push(piece(Some(part), file));
-                words.push(format!("the {} {}", part.label, file.name()));
-            }
             let download = Download {
-                files: pieces,
-                bundle: Some(b.id.clone()),
+                files: vec![piece(None, variant.file)],
+                bundle: None,
                 source: source.clone(),
                 mode: None,
             };
-            let bytes = download.total();
+            let bytes = variant.file.size;
             let recommended = best == Some(variant.rank);
             offers.push(Offer {
-                bundle: Some(b.id.clone()),
+                bundle: None,
                 label: with_size(&variant.label, bytes),
                 hover: preferred(
-                    format!(
-                        "Download {} and {}{}",
-                        variant.file.name(),
-                        words.join(" and "),
-                        bytes
-                            .map(|b| format!(" ({} in all)", format_bytes(b)))
-                            .unwrap_or_default()
+                    checked(
+                        match bytes {
+                            Some(b) => {
+                                format!("Download {} ({})", variant.file.name(), format_bytes(b))
+                            }
+                            None => format!("Download {}", variant.file.name()),
+                        },
+                        &download,
+                    ),
+                    recommended,
+                ),
+                bytes,
+                estimated: false,
+                class: class_of(rules.sizes, bytes),
+                recommended,
+                fetch: Fetch::Files(download),
+            });
+        }
+        for b in rules.bundles {
+            let Some(found) = bundle::gather(b, files) else {
+                continue;
+            };
+            for variant in &variants {
+                let mut pieces = vec![piece(None, variant.file)];
+                let mut words = Vec::new();
+                for (part, file) in &found {
+                    pieces.push(piece(Some(part), file));
+                    words.push(format!("the {} {}", part.label, file.name()));
+                }
+                let download = Download {
+                    files: pieces,
+                    bundle: Some(b.id.clone()),
+                    source: source.clone(),
+                    mode: None,
+                };
+                let bytes = download.total();
+                let recommended = best == Some(variant.rank);
+                offers.push(Offer {
+                    bundle: Some(b.id.clone()),
+                    label: with_size(&variant.label, bytes),
+                    hover: preferred(
+                        checked(
+                            format!(
+                                "Download {} and {}{}",
+                                variant.file.name(),
+                                words.join(" and "),
+                                bytes
+                                    .map(|b| format!(" ({} in all)", format_bytes(b)))
+                                    .unwrap_or_default()
+                            ),
+                            &download,
+                        ),
+                        recommended,
+                    ),
+                    bytes,
+                    estimated: false,
+                    class: class_of(rules.sizes, bytes),
+                    recommended,
+                    fetch: Fetch::Files(download),
+                });
+            }
+        }
+    }
+    offers.extend(alone_offers(files, rules, &source, &piece));
+    (offers, kinds)
+}
+
+/// The files of the kinds the look-up offers by themselves (`Settings::alone`): for each kind, the
+/// files of the repository that a part of that kind finds, as buttons of a row of their own, the ones
+/// the preferences like and then the smallest, shown smallest first. Each is one file of its kind and
+/// is kept under the name it has in the repository, in the folder the engine keeps its kind in.
+fn alone_offers(
+    files: &[RemoteFile],
+    rules: &Rules<'_>,
+    source: &str,
+    piece: &dyn Fn(Option<&Part>, &RemoteFile) -> Piece,
+) -> Vec<Offer> {
+    let settings = rules.settings;
+    let mut offers = Vec::new();
+    for kind in &settings.alone {
+        // how a file of this kind is found is a part of a bundle of the engine; the first that says
+        let Some(part) = rules
+            .bundles
+            .iter()
+            .flat_map(|b| b.parts.iter())
+            .find(|p| &p.kind == kind)
+        else {
+            continue;
+        };
+        let of_kind: Vec<&RemoteFile> = files
+            .iter()
+            .filter(|f| part.is(f))
+            .filter(|f| is_model_file(f.name()))
+            .filter(|f| !super::glob::matches_any(&settings.skip, &f.path))
+            .collect();
+        if of_kind.is_empty() {
+            continue;
+        }
+        let labels: Vec<Option<String>> = of_kind.iter().map(|f| quant::label(f.name())).collect();
+        let mut variants: Vec<Variant<'_>> = of_kind
+            .iter()
+            .zip(&labels)
+            .map(|(file, label)| {
+                let clash = label.is_some() && labels.iter().filter(|l| *l == label).count() > 1;
+                Variant {
+                    label: match label {
+                        Some(l) if !clash => l.clone(),
+                        _ => stem_of(file.name()).to_string(),
+                    },
+                    file,
+                    rank: quant::rank(file.name(), &settings.prefer),
+                }
+            })
+            .collect();
+        variants.sort_by_key(|v| (v.rank, v.file.size.unwrap_or(u64::MAX), v.file.path.clone()));
+        variants.truncate(settings.show_variants.max(1));
+        let best = variants
+            .iter()
+            .map(|v| v.rank)
+            .min()
+            .filter(|r| *r != usize::MAX);
+        variants.sort_by_key(|v| (v.file.size.unwrap_or(u64::MAX), v.file.path.clone()));
+        for variant in &variants {
+            let mut one = piece(Some(part), variant.file);
+            // by itself a file keeps the name it has: a workflow that someone shared names it so, and
+            // the folder of its kind is what keeps it apart from a file of another kind
+            one.store_as = safe_file_name(variant.file.name());
+            let download = Download {
+                files: vec![one],
+                bundle: None,
+                source: source.to_string(),
+                mode: None,
+            };
+            let bytes = variant.file.size;
+            let recommended = best == Some(variant.rank);
+            offers.push(Offer {
+                bundle: None,
+                label: with_size(&variant.label, bytes),
+                hover: preferred(
+                    checked(
+                        match bytes {
+                            Some(b) => format!(
+                                "Download {} ({}) as the {} alone, without a model",
+                                variant.file.name(),
+                                format_bytes(b),
+                                part.label
+                            ),
+                            None => format!(
+                                "Download {} as the {} alone, without a model",
+                                variant.file.name(),
+                                part.label
+                            ),
+                        },
+                        &download,
                     ),
                     recommended,
                 ),
@@ -444,7 +656,22 @@ fn hub_offers(
             });
         }
     }
-    (offers, kinds)
+    offers
+}
+
+/// Whether a file name is one of the formats of numbers a look-up fetches: it cannot hold a program.
+fn is_model_file(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.ends_with(".gguf") || lower.ends_with(".safetensors")
+}
+
+/// Says that what is fetched is checked, when every file of it has the hash the hub states.
+fn checked(text: String, download: &Download) -> String {
+    if !download.files.is_empty() && download.files.iter().all(|f| f.sha256.is_some()) {
+        format!("{text}. It is checked against its SHA-256 when it arrives")
+    } else {
+        text
+    }
 }
 
 /// What a button says when it is the preferred one: it is bold, and this is why.
@@ -456,14 +683,15 @@ fn preferred(text: String, yes: bool) -> String {
     }
 }
 
-/// A file name without its `.gguf`.
+/// A file name without its `.gguf` or `.safetensors`.
 fn stem_of(name: &str) -> &str {
     let lower = name.to_ascii_lowercase();
-    if lower.ends_with(".gguf") {
-        &name[..name.len() - ".gguf".len()]
-    } else {
-        name
+    for ending in [".gguf", ".safetensors"] {
+        if lower.ends_with(ending) {
+            return &name[..name.len() - ending.len()];
+        }
     }
+    name
 }
 
 /// How much the names begin with in common, counted up to and including the last separator in it, so

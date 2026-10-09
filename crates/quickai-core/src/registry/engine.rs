@@ -73,6 +73,9 @@ pub struct CompiledComponent {
     pub kind: String,
     pub order: i32,
     pub arg: Vec<Template>,
+    /// The folder of the models folder this kind of file is kept in, for an engine that finds its
+    /// files by where they are.
+    pub place: Option<String>,
 }
 
 /// `[[models.mode]]`: a way the engine is started for a kind of model, checked.
@@ -122,6 +125,31 @@ pub struct CompiledModels {
     pub bundles: Vec<Bundle>,
     /// The ways the engine is started for a kind of model, in the order the document gives them.
     pub modes: Vec<Mode>,
+    /// Where an engine whose models are files finds them, in the order the document gives them.
+    pub sources: Vec<CompiledSource>,
+    /// Where a file fetched for the engine is put, for an engine that says (`[models.acquire]`).
+    pub files: Option<CompiledFiles>,
+}
+
+/// One place models are found (`[[models.sources]]`), checked.
+#[derive(Clone, Debug)]
+pub struct CompiledSource {
+    /// `scan_dir`: a folder the person can write to; `bundle_dir`: one shipped with the application.
+    pub kind: String,
+    pub path: Template,
+    pub ext: Vec<String>,
+    pub writable: bool,
+}
+
+/// Where fetched files go (`[models.acquire]`), checked.
+#[derive(Clone, Debug)]
+pub struct CompiledFiles {
+    /// The models folder.
+    pub dir: Option<Template>,
+    /// The folder of it the weights of a model go in, when the engine finds files by the folder.
+    pub place: Option<String>,
+    /// The other folders a file can be put in by hand (`[models.acquire] places`).
+    pub places: Vec<String>,
 }
 
 /// One way of looking models up online (`[[models.lookup]]`), checked.
@@ -143,6 +171,11 @@ pub enum LookupKind {
         popular: usize,
         keyword: usize,
         similar: usize,
+        /// The pipeline tags (`text-to-video`) the plain list is made of, one search for each; none
+        /// is the most downloaded GGUF repositories of any kind.
+        pipelines: Vec<String>,
+        /// Words the plain list is also made of (`encoder`), one search for each.
+        words: Vec<String>,
         read: ReadSettings,
     },
 }
@@ -176,6 +209,8 @@ pub struct CompiledList {
     pub capabilities: Option<String>,
     /// Where the last reply is kept.
     pub cache: Option<Template>,
+    /// Patterns over a whole name: the models the picker does not show.
+    pub hide: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -213,6 +248,10 @@ pub struct CompiledAcquire {
     pub skip_rules: Vec<(Option<Expr>, String)>,
     /// Each overlay with its rules: the condition and the file name it selects.
     pub overlay_rules: Vec<CompiledOverlay>,
+    /// For a `python_app`: the condition of each pip step and of each node pack (always, when
+    /// `None`), in the order the document has them.
+    pub pip_when: Vec<Option<Expr>>,
+    pub node_when: Vec<Option<Expr>>,
 }
 
 /// An overlay of `[acquire]`, its conditions parsed.
@@ -230,6 +269,17 @@ pub struct CompiledSpawn {
     pub env: Vec<CompiledEnv>,
     pub group: bool,
     pub stop: CompiledStop,
+    /// The folders made before the program starts.
+    pub mkdir: Vec<Template>,
+    /// The files of the application's own that are put where the program reads them, before it starts.
+    pub write: Vec<CompiledWrite>,
+}
+
+/// One file or folder of the application's own, and the template of where it goes.
+#[derive(Clone, Debug)]
+pub struct CompiledWrite {
+    pub asset: String,
+    pub to: Template,
 }
 
 /// How to stop what was started, with its waits resolved.
@@ -365,6 +415,8 @@ pub struct CompiledField {
     pub default: Option<CompiledDefault>,
     pub arg: Option<Vec<Template>>,
     pub arg_split: bool,
+    /// For a `choice` field: the words each option adds to the command line.
+    pub arg_by_value: BTreeMap<String, Vec<String>>,
     /// Variables of the engine this field decides (`bind.env`).
     pub env: Vec<CompiledEnv>,
     /// For a field of the person's own lines of environment (`bind.env_lines`): the names those
@@ -525,7 +577,7 @@ pub fn compile(
 
     let fields = compile_fields(&mut c, &doc, known);
     let locate = check_locate(&mut c, &doc);
-    let (spawn, ready) = compile_launch(&mut c, &doc);
+    let (spawn, ready) = compile_launch(&mut c, &doc, known);
     let launch = compile_launch_extras(&mut c, &doc);
     let acquire = doc
         .acquire
@@ -748,6 +800,27 @@ fn compile_fields(c: &mut Checker, doc: &EngineDoc, known: &KnownPrimitives) -> 
                 "`arg_split` needs a text field",
             );
         }
+        if !field.bind.arg_by_value.is_empty() {
+            let by_value_at = at.clone().key("bind").key("arg_by_value");
+            if field.ty != FieldType::Choice {
+                c.error(&by_value_at, "`arg_by_value` needs a choice field");
+            }
+            for (option, words) in &field.bind.arg_by_value {
+                if field.ty == FieldType::Choice && !field.options.contains(option) {
+                    c.error_hint(
+                        &by_value_at.clone().key(option),
+                        format!("`{option}` is not one of the field's options"),
+                        format!("the options are {}", field.options.join(", ")),
+                    );
+                }
+                if words.iter().any(|word| word.trim().is_empty()) {
+                    c.error(
+                        &by_value_at.clone().key(option),
+                        "an argument cannot be empty",
+                    );
+                }
+            }
+        }
 
         let env: Vec<CompiledEnv> = field
             .bind
@@ -887,6 +960,7 @@ fn compile_fields(c: &mut Checker, doc: &EngineDoc, known: &KnownPrimitives) -> 
             default,
             arg,
             arg_split: field.bind.arg_split,
+            arg_by_value: field.bind.arg_by_value.clone(),
             env,
             env_lines,
             public_port: is_public,
@@ -1004,6 +1078,10 @@ fn label_schema() -> Type {
 
 /// The default install directory of a build: the release, then the file's name without its extension.
 pub const DEFAULT_LABEL: &str = "${tag}-${stem}";
+
+/// The same for a build that is the release's source: the file is named after the release, so the
+/// release alone is the name.
+pub const DEFAULT_SOURCE_LABEL: &str = "${tag}";
 
 const KNOWN_OS: [&str; 3] = ["linux", "windows", "macos"];
 const KNOWN_ARCH: [&str; 2] = ["x86_64", "aarch64"];
@@ -1133,12 +1211,18 @@ fn compile_acquire(c: &mut Checker, doc: &EngineDoc, acquire: &Acquire) -> Compi
             }
             label.clone()
         }
+        Some(Assets::Source { label }) => label.clone(),
         None => None,
     };
-    let label = label_text.as_deref().unwrap_or(DEFAULT_LABEL);
+    let default_label = if matches!(acquire.assets, Some(Assets::Source { .. })) {
+        DEFAULT_SOURCE_LABEL
+    } else {
+        DEFAULT_LABEL
+    };
+    let label = label_text.as_deref().unwrap_or(default_label);
     let label = c
         .template(&assets_at.key("label"), label, &label_schema())
-        .unwrap_or_else(|| Template::parse(DEFAULT_LABEL).expect("the default label parses"));
+        .unwrap_or_else(|| Template::parse(default_label).expect("the default label parses"));
 
     if let Some(tested) = &acquire.tested {
         if tested.tag.trim().is_empty() {
@@ -1268,6 +1352,24 @@ fn compile_acquire(c: &mut Checker, doc: &EngineDoc, acquire: &Acquire) -> Compi
         }
     }
 
+    let (pip_when, node_when) = match &acquire.install {
+        Some(Install::PythonApp { .. }) => {
+            compile_python_app(c, acquire, &at.clone().key("install"), &engine_schema)
+        }
+        _ => (Vec::new(), Vec::new()),
+    };
+    if matches!(acquire.assets, Some(Assets::Source { .. }))
+        && !matches!(
+            acquire.feed,
+            Some(crate::doc::engine::Feed::GithubRelease { .. })
+        )
+    {
+        c.error(
+            &assets_at_for_source(&at),
+            "`by = \"source\"` takes the source archive of the feed's releases, and there is no feed",
+        );
+    }
+
     for (i, backend) in acquire.backends.iter().enumerate() {
         let backend_at = at.clone().key("backends").index(i);
         if backend.needle.trim().is_empty() {
@@ -1298,7 +1400,245 @@ fn compile_acquire(c: &mut Checker, doc: &EngineDoc, acquire: &Acquire) -> Compi
         name_rules,
         skip_rules,
         overlay_rules,
+        pip_when,
+        node_when,
     }
+}
+
+fn assets_at_for_source(at: &DocPath) -> DocPath {
+    at.clone().key("assets")
+}
+
+/// A relative path inside a build: no root, no drive, no `..`, no empty part.
+fn is_inside_path(text: &str) -> bool {
+    !text.trim().is_empty()
+        && !text.starts_with(['/', '\\'])
+        && !text.contains(':')
+        && text
+            .split(['/', '\\'])
+            .all(|part| !part.is_empty() && part != "." && part != "..")
+}
+
+/// A name that is safe as a pip requirement: it is a package and cannot be taken for an option.
+fn is_requirement(text: &str) -> bool {
+    !text.is_empty()
+        && !text.starts_with('-')
+        && !text.contains(char::is_whitespace)
+        && !text.contains(['"', '\'', '`', ';', '|', '&', '$'])
+}
+
+/// Checks what a `python_app` install says and parses the conditions of its steps; the conditions of
+/// the pip steps and of the node packs come back in the document's order.
+fn compile_python_app(
+    c: &mut Checker,
+    acquire: &Acquire,
+    install_at: &DocPath,
+    engine_schema: &Type,
+) -> (Vec<Option<Expr>>, Vec<Option<Expr>>) {
+    let Some(Install::PythonApp {
+        binary,
+        entry,
+        python,
+        smoke,
+        smoke_timeout,
+        space,
+        pip,
+        nodes,
+        ..
+    }) = &acquire.install
+    else {
+        return (Vec::new(), Vec::new());
+    };
+    if binary.name.trim().is_empty() || binary.name.contains(['/', '\\']) {
+        c.error_hint(
+            &install_at.clone().key("binary").key("name"),
+            format!("`{}` is not the name of a launcher", binary.name),
+            "write a plain file name, such as comfyui",
+        );
+    }
+    if !is_inside_path(entry) {
+        c.error_hint(
+            &install_at.clone().key("entry"),
+            format!("`{entry}` is not a path inside the unpacked source"),
+            "write it relative to the source, such as main.py",
+        );
+    }
+    if python.versions.is_empty() {
+        c.error(
+            &install_at.clone().key("python").key("versions"),
+            "`versions` is empty, so no Python is ever looked for",
+        );
+    }
+    for version in &python.versions {
+        let well_formed = version.split_once('.').is_some_and(|(major, minor)| {
+            !major.is_empty()
+                && !minor.is_empty()
+                && major.chars().all(|ch| ch.is_ascii_digit())
+                && minor.chars().all(|ch| ch.is_ascii_digit())
+        });
+        if !well_formed {
+            c.error_hint(
+                &install_at.clone().key("python").key("versions"),
+                format!("`{version}` is not a Python version"),
+                "write it as 3.13: the major and the minor number",
+            );
+        }
+    }
+    if let Some(smoke) = smoke {
+        if smoke.first().map(String::as_str) != Some("${binary}") {
+            c.error_hint(
+                &install_at.clone().key("smoke"),
+                "a smoke test runs the launcher that was just written, so it starts with it",
+                "write it as smoke = [\"${binary}\", \"--quick-test-for-ci\"]",
+            );
+        }
+    }
+    if let Some(text) = smoke_timeout {
+        c.duration(&install_at.clone().key("smoke_timeout"), text);
+    }
+    if let Some(text) = space {
+        if crate::lookup::size::parse_size(text).is_none() {
+            c.error_hint(
+                &install_at.clone().key("space"),
+                format!("`{text}` is not a size"),
+                "a number and a unit: 30GiB",
+            );
+        }
+    }
+
+    let mut ids: Vec<&str> = Vec::new();
+    let mut pip_when = Vec::new();
+    for (i, step) in pip.iter().enumerate() {
+        let step_at = install_at.clone().key("pip").index(i);
+        if step.id.is_empty()
+            || !step
+                .id
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        {
+            c.error_hint(
+                &step_at.clone().key("id"),
+                format!("`{}` is not a valid step id", step.id),
+                "use letters, digits and `_`",
+            );
+        }
+        if ids.contains(&step.id.as_str()) {
+            c.error(
+                &step_at.clone().key("id"),
+                format!("the step id `{}` is used twice", step.id),
+            );
+        }
+        ids.push(&step.id);
+        if step.packages.is_empty() && step.requirements.is_none() {
+            c.error(
+                &step_at,
+                "a step installs packages or a requirements file, and this one names neither",
+            );
+        }
+        for package in &step.packages {
+            if !is_requirement(package) {
+                c.error_hint(
+                    &step_at.clone().key("packages"),
+                    format!("`{package}` is not a package"),
+                    "write a name such as torch, or torch==2.14.1",
+                );
+            }
+        }
+        if let Some(file) = &step.requirements {
+            if !is_inside_path(file) {
+                c.error_hint(
+                    &step_at.clone().key("requirements"),
+                    format!("`{file}` is not a path inside the unpacked source"),
+                    "write it relative to the source, such as requirements.txt",
+                );
+            }
+        }
+        if let Some(index) = &step.index {
+            if !index.starts_with("https://") && !is_http_root(index) {
+                c.error_hint(
+                    &step_at.clone().key("index"),
+                    format!("`{index}` is not an http or https address"),
+                    "write the address of the package index",
+                );
+            }
+        }
+        pip_when.push(
+            step.when
+                .as_deref()
+                .and_then(|text| c.expr(&step_at.clone().key("when"), text, engine_schema, true)),
+        );
+    }
+
+    let mut node_ids: Vec<&str> = Vec::new();
+    let mut node_when = Vec::new();
+    for (i, node) in nodes.iter().enumerate() {
+        let node_at = install_at.clone().key("nodes").index(i);
+        if node.id.is_empty()
+            || !node
+                .id
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        {
+            c.error_hint(
+                &node_at.clone().key("id"),
+                format!("`{}` is not a valid node pack id", node.id),
+                "use letters, digits and `_`",
+            );
+        }
+        if node_ids.contains(&node.id.as_str()) {
+            c.error(
+                &node_at.clone().key("id"),
+                format!("the node pack id `{}` is used twice", node.id),
+            );
+        }
+        node_ids.push(&node.id);
+        if !is_http_root(&node.url) || !node.url.ends_with(".tar.gz") {
+            c.error_hint(
+                &node_at.clone().key("url"),
+                format!("`{}` is not the address of a .tar.gz", node.url),
+                "write the address of an archive of one commit",
+            );
+        }
+        let digest = node
+            .sha256
+            .trim()
+            .strip_prefix("sha256:")
+            .unwrap_or(node.sha256.trim());
+        if digest.len() != 64 || !digest.chars().all(|ch| ch.is_ascii_hexdigit()) {
+            c.error_hint(
+                &node_at.clone().key("sha256"),
+                format!("`{}` is not a sha256 digest", node.sha256),
+                "write it as sha256: and 64 hexadecimal digits",
+            );
+        }
+        if !is_inside_path(&node.into) {
+            c.error_hint(
+                &node_at.clone().key("into"),
+                format!("`{}` is not a path inside the unpacked source", node.into),
+                "write it relative to the source, such as custom_nodes/ComfyUI-GGUF",
+            );
+        }
+        if let Some(file) = &node.requirements {
+            if !is_inside_path(file) {
+                c.error_hint(
+                    &node_at.clone().key("requirements"),
+                    format!("`{file}` is not a path inside the pack"),
+                    "write it relative to the pack, such as requirements.txt",
+                );
+            }
+        }
+        node_when.push(
+            node.when
+                .as_deref()
+                .and_then(|text| c.expr(&node_at.clone().key("when"), text, engine_schema, true)),
+        );
+    }
+    (pip_when, node_when)
+}
+
+/// A folder of the models folder: one plain name, so that nothing climbs out of it or goes below it.
+pub fn is_folder_name(text: &str) -> bool {
+    crate::lookup::present::is_place(text)
 }
 
 /// The root of an HTTP API: `http://` or `https://` and a host, nothing else.
@@ -1472,6 +1812,7 @@ fn check_runtime(c: &mut Checker, doc: &EngineDoc) {
 fn compile_launch(
     c: &mut Checker,
     doc: &EngineDoc,
+    known: &KnownPrimitives,
 ) -> (Option<CompiledSpawn>, Option<CompiledReady>) {
     let launch_path = DocPath::default().key("launch");
     let strategies: Vec<&str> = if doc.launch.strategies.is_empty() {
@@ -1520,14 +1861,66 @@ fn compile_launch(
                 })
                 .collect();
             let stop = compile_stop(c, &at.clone().key("stop"), &spawn.stop);
+            let mkdir: Vec<Option<Template>> = spawn
+                .mkdir
+                .iter()
+                .map(|d| c.template(&at.clone().key("mkdir"), d, &engine_schema))
+                .collect();
+            let write: Vec<Option<CompiledWrite>> = spawn
+                .write
+                .iter()
+                .enumerate()
+                .map(|(i, entry)| {
+                    let at = at.clone().key("write").index(i);
+                    if !is_asset_name(&entry.asset) {
+                        c.error(
+                            &at.clone().key("asset"),
+                            format!(
+                                "`{}` is not the name of one of the application's own files: it is a \
+                                 relative name with `/` between its parts, none of them empty, `.` or `..`",
+                                entry.asset
+                            ),
+                        );
+                        return None;
+                    }
+                    if let Some(assets) = known.asset_names() {
+                        if !assets.contains(&entry.asset) {
+                            let hint = match crate::expr::types::suggest(
+                                &entry.asset,
+                                assets.iter().map(String::as_str),
+                            ) {
+                                Some(near) => format!("did you mean `{near}`?"),
+                                None => "a document can only put files this version of QuickAI has".to_string(),
+                            };
+                            c.error_hint(
+                                &at.clone().key("asset"),
+                                format!("this version of QuickAI has no file called `{}`", entry.asset),
+                                hint,
+                            );
+                            return None;
+                        }
+                    }
+                    let to = c.template(&at.key("to"), &entry.to, &engine_schema)?;
+                    Some(CompiledWrite {
+                        asset: entry.asset.clone(),
+                        to,
+                    })
+                })
+                .collect();
             match (program, stop) {
-                (Some(program), Some(stop)) if args.iter().all(Option::is_some) => {
+                (Some(program), Some(stop))
+                    if args.iter().all(Option::is_some)
+                        && mkdir.iter().all(Option::is_some)
+                        && write.iter().all(Option::is_some) =>
+                {
                     Some(CompiledSpawn {
                         program,
                         args: args.into_iter().flatten().collect(),
                         env,
                         group: spawn.group,
                         stop,
+                        mkdir: mkdir.into_iter().flatten().collect(),
+                        write: write.into_iter().flatten().collect(),
                     })
                 }
                 _ => None,
@@ -1978,6 +2371,15 @@ fn compile_models(
             .cache
             .as_deref()
             .map(|t| c.template(&at.clone().key("cache"), t, &engine_schema));
+        for (i, pattern) in list.hide.iter().enumerate() {
+            if let Err(e) = Regex::new(&format!("^(?:{pattern})$")) {
+                c.error(
+                    &at.clone().key("hide").index(i),
+                    format!("`{pattern}` is not a valid pattern: {e}"),
+                );
+                ok = false;
+            }
+        }
         if !ok {
             return None;
         }
@@ -1993,6 +2395,7 @@ fn compile_models(
                 Some(t) => Some(t?),
                 None => None,
             },
+            hide: list.hide.clone(),
         })
     });
 
@@ -2055,15 +2458,86 @@ fn compile_models(
         pointer(c, at.key("pointer"), &capabilities.pointer);
     }
 
+    let mut sources = Vec::new();
+    for (i, source) in models.sources.iter().enumerate() {
+        let source_at = at.clone().key("sources").index(i);
+        if !["scan_dir", "bundle_dir"].contains(&source.kind.as_str()) {
+            c.error_hint(
+                &source_at.clone().key("use"),
+                format!("`{}` is not a place models are found", source.kind),
+                "use scan_dir (a folder the person can write to) or bundle_dir (one shipped with the application)",
+            );
+        }
+        for ext in &source.ext {
+            if !ext.starts_with('.') {
+                c.error_hint(
+                    &source_at.clone().key("ext"),
+                    format!("the ending `{ext}` does not start with a dot"),
+                    format!("write `.{ext}`"),
+                );
+            }
+        }
+        if let Some(path) = c.template(&source_at.key("path"), &source.path, &engine_schema) {
+            sources.push(CompiledSource {
+                kind: source.kind.clone(),
+                path,
+                ext: source.ext.iter().map(|e| e.to_ascii_lowercase()).collect(),
+                writable: source.writable,
+            });
+        }
+    }
+    let files = models.acquire.as_ref().map(|acquire| {
+        let acquire_at = at.clone().key("acquire");
+        if acquire.kind != "file" {
+            c.error_hint(
+                &acquire_at.clone().key("use"),
+                format!("`{}` is not a way files are fetched", acquire.kind),
+                "use file: it is downloaded or linked as a file",
+            );
+        }
+        if let Some(place) = &acquire.place {
+            if !is_folder_name(place) {
+                c.error_hint(
+                    &acquire_at.clone().key("place"),
+                    format!("`{place}` is not the name of a folder"),
+                    "lower case letters, digits and _ or -, such as diffusion_models",
+                );
+            }
+        }
+        let mut places: Vec<String> = Vec::new();
+        for (n, place) in acquire.places.iter().enumerate() {
+            if !is_folder_name(place) {
+                c.error_hint(
+                    &acquire_at.clone().key("places").index(n),
+                    format!("`{place}` is not the name of a folder"),
+                    "lower case letters, digits and _ or -, such as text_encoders",
+                );
+            } else if !places.contains(place) {
+                places.push(place.clone());
+            }
+        }
+        CompiledFiles {
+            dir: acquire
+                .dir
+                .as_deref()
+                .and_then(|dir| c.template(&acquire_at.key("dir"), dir, &engine_schema)),
+            place: acquire.place.clone().filter(|p| is_folder_name(p)),
+            places,
+        }
+    });
+
+    let bundles = compile_bundles(c, &at, &models.bundle, components);
     CompiledModels {
         needs_server: models.needs_server,
         list: list.flatten(),
         pull: pull.flatten(),
         remove,
         input_rules: compile_input_rules(c, &at, &models.input_rules),
-        lookups: compile_lookups(c, &at, &models.lookup),
-        bundles: compile_bundles(c, &at, &models.bundle, components),
+        lookups: compile_lookups(c, &at, &models.lookup, &bundles),
+        bundles,
         modes: compile_modes(c, &at, &models.mode),
+        sources,
+        files,
     }
 }
 
@@ -2086,11 +2560,22 @@ fn compile_components(c: &mut Checker, doc: &EngineDoc) -> Vec<CompiledComponent
             );
             continue;
         }
-        if component.bind.arg.is_empty() {
+        if let Some(place) = &component.place {
+            if !is_folder_name(place) {
+                c.error_hint(
+                    &at.clone().key("place"),
+                    format!("`{place}` is not the name of a folder"),
+                    "lower case letters, digits and _ or -, such as text_encoders",
+                );
+                continue;
+            }
+        }
+        // a kind of file reaches the program by an argument, or by the folder it is kept in
+        if component.bind.arg.is_empty() && component.place.is_none() {
             c.error_hint(
                 &at.clone().key("bind"),
                 format!("the component `{kind}` does not say how it reaches the program"),
-                "bind.arg = [\"--mmproj\", \"${component.path}\"]",
+                "bind.arg = [\"--mmproj\", \"${component.path}\"], or place = \"text_encoders\"",
             );
             continue;
         }
@@ -2108,6 +2593,7 @@ fn compile_components(c: &mut Checker, doc: &EngineDoc) -> Vec<CompiledComponent
                 kind: kind.clone(),
                 order: component.order.unwrap_or(DEFAULT_COMPONENT_ORDER),
                 arg,
+                place: component.place.clone(),
             });
         }
     }
@@ -2270,7 +2756,12 @@ fn compile_bundles(
 /// The look-ups of `[[models.lookup]]`: each is named, is one this version has, and has the keys
 /// that look-up takes. A look-up that is wrong is an error (the document is refused, as for any
 /// other broken section), and a key it does not take is a warning, as everywhere in a document.
-fn compile_lookups(c: &mut Checker, at: &DocPath, lookups: &[ModelLookup]) -> Vec<CompiledLookup> {
+fn compile_lookups(
+    c: &mut Checker,
+    at: &DocPath,
+    lookups: &[ModelLookup],
+    bundles: &[Bundle],
+) -> Vec<CompiledLookup> {
     let mut compiled: Vec<CompiledLookup> = Vec::new();
     for (i, lookup) in lookups.iter().enumerate() {
         let at = at.clone().key("lookup").index(i);
@@ -2305,10 +2796,13 @@ fn compile_lookups(c: &mut Checker, at: &DocPath, lookups: &[ModelLookup]) -> Ve
                     "popular",
                     "keyword",
                     "similar",
+                    "pipelines",
+                    "words",
                     "prefer",
                     "skip",
                     "show_variants",
                     "types",
+                    "alone",
                 ],
                 ReadSettings {
                     prefer: [
@@ -2385,11 +2879,46 @@ fn compile_lookups(c: &mut Checker, at: &DocPath, lookups: &[ModelLookup]) -> Ve
                 ) else {
                     continue;
                 };
+                let Some(pipelines) = pipeline_list(c, &at, lookup) else {
+                    continue;
+                };
+                let Some(words) = plain_words(c, &at, lookup) else {
+                    continue;
+                };
+                // a kind offered by itself is one a part of a bundle can find, or nothing says which of
+                // the repository's files it is
+                let mut known = true;
+                for (n, kind) in read.alone.iter().enumerate() {
+                    if !bundles
+                        .iter()
+                        .any(|b| b.parts.iter().any(|p| &p.kind == kind))
+                    {
+                        let kinds: Vec<&str> = bundles
+                            .iter()
+                            .flat_map(|b| b.parts.iter().map(|p| p.kind.as_str()))
+                            .collect();
+                        c.error_hint(
+                            &at.clone().key("alone").index(n),
+                            format!("no part of a bundle of this engine finds a file of the kind `{kind}`"),
+                            if kinds.is_empty() {
+                                "`alone` names kinds of file that a [[models.bundle]] part finds".to_string()
+                            } else {
+                                format!("the kinds its bundles find: {}", kinds.join(", "))
+                            },
+                        );
+                        known = false;
+                    }
+                }
+                if !known {
+                    continue;
+                }
                 LookupKind::HuggingFace {
                     site,
                     popular,
                     keyword,
                     similar,
+                    pipelines,
+                    words,
                     read,
                 }
             }
@@ -2400,6 +2929,82 @@ fn compile_lookups(c: &mut Checker, at: &DocPath, lookups: &[ModelLookup]) -> Ve
         });
     }
     compiled
+}
+
+/// The `pipelines` of a Hugging Face look-up: pipeline tags of the hub (`text-to-video`), at most eight.
+/// `None` (with the errors) when one is not.
+fn pipeline_list(c: &mut Checker, at: &DocPath, lookup: &ModelLookup) -> Option<Vec<String>> {
+    let key_at = at.clone().key("pipelines");
+    match lookup.settings.get("pipelines") {
+        None => Some(Vec::new()),
+        Some(toml::Value::Array(items)) if items.len() <= 8 => {
+            let mut out: Vec<String> = Vec::new();
+            for (n, item) in items.iter().enumerate() {
+                match item {
+                    toml::Value::String(s) if crate::lookup::huggingface::valid_pipeline(s) => {
+                        if !out.contains(s) {
+                            out.push(s.clone());
+                        }
+                    }
+                    other => {
+                        c.error_hint(
+                            &key_at.clone().index(n),
+                            format!("`{other}` is not a pipeline of the hub"),
+                            "lower case letters, digits and -, such as text-to-video",
+                        );
+                        return None;
+                    }
+                }
+            }
+            Some(out)
+        }
+        Some(other) => {
+            c.error_hint(
+                &key_at,
+                format!("`{other}` is not a list of at most eight pipelines"),
+                "pipelines = [\"text-to-video\", \"text-to-image\"]",
+            );
+            None
+        }
+    }
+}
+
+/// The `words` of a Hugging Face look-up: what the plain list is also searched for, at most four, each a
+/// few plain words. `None` (with the errors) when one is not.
+fn plain_words(c: &mut Checker, at: &DocPath, lookup: &ModelLookup) -> Option<Vec<String>> {
+    let key_at = at.clone().key("words");
+    match lookup.settings.get("words") {
+        None => Some(Vec::new()),
+        Some(toml::Value::Array(items)) if items.len() <= 4 => {
+            let mut out: Vec<String> = Vec::new();
+            for (n, item) in items.iter().enumerate() {
+                let words = match item {
+                    toml::Value::String(s) => crate::lookup::huggingface::search_words(s),
+                    _ => String::new(),
+                };
+                if words.is_empty() || words != item.as_str().unwrap_or_default().trim() {
+                    c.error_hint(
+                        &key_at.clone().index(n),
+                        format!("`{item}` is not a few plain words to search for"),
+                        "words = [\"encoder\"]: words with single spaces between, at most 100 characters, no `:`",
+                    );
+                    return None;
+                }
+                if !out.contains(&words) {
+                    out.push(words);
+                }
+            }
+            Some(out)
+        }
+        Some(other) => {
+            c.error_hint(
+                &key_at,
+                format!("`{other}` is not a list of at most four searches"),
+                "words = [\"encoder\"]",
+            );
+            None
+        }
+    }
 }
 
 /// How a look-up reads what it found, from the keys of its entry; `base` is what the kind says when
@@ -2443,7 +3048,7 @@ fn read_settings(
             }
         }
     };
-    for key in ["prefer", "skip", "types"] {
+    for key in ["prefer", "skip", "types", "alone"] {
         if !lookup.settings.contains_key(key) {
             continue;
         }
@@ -2451,6 +3056,7 @@ fn read_settings(
             Some(Some(list)) => match key {
                 "prefer" => read.prefer = list,
                 "skip" => read.skip = list,
+                "alone" => read.alone = list,
                 _ => read.types = list,
             },
             _ => ok = false,
@@ -2610,6 +3216,20 @@ fn compile_body(
 
 /// Reads `stop = { policy, grace, exit_grace }`. The waits belong to a graceful stop; given with
 /// `kill` they would never be used, which is worth a warning.
+/// A name in the application's own files: parts joined by `/`, none of them empty, `.` or `..`, and none with
+/// a `\`, a `:` or a control character in it.
+fn is_asset_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.split('/').all(|part| {
+            !part.is_empty()
+                && part != "."
+                && part != ".."
+                && !part
+                    .chars()
+                    .any(|c| c == '\\' || c == ':' || c.is_control())
+        })
+}
+
 fn compile_stop(c: &mut Checker, at: &DocPath, stop: &StopSpec) -> Option<CompiledStop> {
     let mut ok = true;
     let mut wait = |c: &mut Checker, key: &str, text: &Option<String>, default: Duration| match text

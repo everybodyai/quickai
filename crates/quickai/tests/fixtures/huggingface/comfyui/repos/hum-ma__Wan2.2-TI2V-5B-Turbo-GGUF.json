@@ -1,0 +1,148 @@
+{
+ "disabled": false,
+ "downloads": 22831,
+ "gated": false,
+ "id": "hum-ma/Wan2.2-TI2V-5B-Turbo-GGUF",
+ "likes": 62,
+ "modelId": "hum-ma/Wan2.2-TI2V-5B-Turbo-GGUF",
+ "pipeline_tag": "image-to-video",
+ "private": false,
+ "siblings": [
+  {
+   "rfilename": ".gitattributes",
+   "size": 3411
+  },
+  {
+   "lfs": {
+    "sha256": "5004b242159aef326abaab550f68ec9e123eb516ae776375c033d779d08ceb7e"
+   },
+   "rfilename": "Examples/Wan5bFinal_00005.mp4",
+   "size": 4933020
+  },
+  {
+   "lfs": {
+    "sha256": "91f7aa26221329fdd62c88e134b0738ee8a001b6e1260550e0acd49db5e047b0"
+   },
+   "rfilename": "Examples/Wan5bPreview_00057.mp4",
+   "size": 4809742
+  },
+  {
+   "lfs": {
+    "sha256": "e1593d0ecb0aa238819135b0498c88d8a7cbcd3937c64a8e96f4942a2b9762d4"
+   },
+   "rfilename": "Examples/Wan5bPreview_00731.mp4",
+   "size": 2727403
+  },
+  {
+   "lfs": {
+    "sha256": "406ec42d3cefd50e344846650fde224dedd27d300197c777cc240ebf075d9f0e"
+   },
+   "rfilename": "Examples/turbo-workflow-screen.png",
+   "size": 650946
+  },
+  {
+   "rfilename": "README.md",
+   "size": 1877
+  },
+  {
+   "lfs": {
+    "sha256": "0ace5244e3d1256f884662c261b017249796cf5b95f05d5ed93cc02a478967b8"
+   },
+   "rfilename": "Wan22_TI2V_5B_Turbo_lora_rank_64_fp16.safetensors",
+   "size": 332348584
+  },
+  {
+   "lfs": {
+    "sha256": "7882cbc015fbc9ee91e05ee6ca584884b32bf126d0d62d5d765f2ed4fbadd3a3"
+   },
+   "rfilename": "Wan2_2-TI2V-5B-Turbo-Q2_K.gguf",
+   "size": 1858673376
+  },
+  {
+   "lfs": {
+    "sha256": "e7be45d4b9c7c2d28c69975f77f886c12712d98c506221a4a18e7ca3c2da3f44"
+   },
+   "rfilename": "Wan2_2-TI2V-5B-Turbo-Q3_K_L.gguf",
+   "size": 2786171616
+  },
+  {
+   "lfs": {
+    "sha256": "ec95d8d0e18df9cc910e56de04494e0ef4c0200da8a92b7a0677258cdbadd2e0"
+   },
+   "rfilename": "Wan2_2-TI2V-5B-Turbo-Q3_K_M.gguf",
+   "size": 2552601312
+  },
+  {
+   "lfs": {
+    "sha256": "367a73d874e583435e6f2cb76338526e0e23535f9dc05f5d00c8c52125840bfe"
+   },
+   "rfilename": "Wan2_2-TI2V-5B-Turbo-Q3_K_S.gguf",
+   "size": 2299566816
+  },
+  {
+   "lfs": {
+    "sha256": "8aa3a98c254bd02a9cc7e4f1db37720fe291cef8b0c32fb78e7a2391125d6b28"
+   },
+   "rfilename": "Wan2_2-TI2V-5B-Turbo-Q4_0.gguf",
+   "size": 3033897696
+  },
+  {
+   "lfs": {
+    "sha256": "13b3bee8fcafd9f9a3778ed1a0ca973f4a7d152094ea305f8384b0abd7e1ad51"
+   },
+   "rfilename": "Wan2_2-TI2V-5B-Turbo-Q4_K_M.gguf",
+   "size": 3437927136
+  },
+  {
+   "lfs": {
+    "sha256": "fa881481cd7baa116adfdbceb3c6179165d6e26194199f0e22bc36e95fe4510d"
+   },
+   "rfilename": "Wan2_2-TI2V-5B-Turbo-Q4_K_S.gguf",
+   "size": 3121191648
+  },
+  {
+   "lfs": {
+    "sha256": "fb39b4a9fc545c26b04cfcc1a0897a83494fd48cc9291bec856665f045e2cc45"
+   },
+   "rfilename": "Wan2_2-TI2V-5B-Turbo-Q5_K_M.gguf",
+   "size": 3815414496
+  },
+  {
+   "lfs": {
+    "sha256": "3024aef1dfa6a474ea76886d67fa6cdf029366d4a934f28ceec217f77b2cfd2d"
+   },
+   "rfilename": "Wan2_2-TI2V-5B-Turbo-Q5_K_S.gguf",
+   "size": 3564739296
+  },
+  {
+   "lfs": {
+    "sha256": "bca1319bae8783c6e7663d82f7b929e1c009961260766ce1f0f60dfd65c29de6"
+   },
+   "rfilename": "Wan2_2-TI2V-5B-Turbo-Q6_K.gguf",
+   "size": 4216494816
+  },
+  {
+   "lfs": {
+    "sha256": "b4d7d1888d5ec2c29046cc443239faad99614cd3d356c61d8192fcac5f4c98fc"
+   },
+   "rfilename": "Wan2_2-TI2V-5B-Turbo-Q8_0.gguf",
+   "size": 5404990176
+  },
+  {
+   "lfs": {
+    "sha256": "79290493711b022e1c6e655d803715cd8a91a75cdb139856cad46f354e2f681c"
+   },
+   "rfilename": "Wan2_2_5B_FastWanFullAttn_lora_rank_128_bf16.safetensors",
+   "size": 660874456
+  }
+ ],
+ "tags": [
+  "gguf",
+  "ti2v",
+  "image-to-video",
+  "base_model:quanhaol/Wan2.2-TI2V-5B-Turbo",
+  "base_model:quantized:quanhaol/Wan2.2-TI2V-5B-Turbo",
+  "license:apache-2.0",
+  "region:us"
+ ]
+}

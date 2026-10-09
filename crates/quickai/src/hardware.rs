@@ -32,6 +32,16 @@ pub(crate) fn format_bytes(n: u64) -> String {
     }
 }
 
+/// A time as a person says it: `45 s`, `3 min 10 s`, `1 h 05 min`.
+pub(crate) fn format_duration(time: std::time::Duration) -> String {
+    let seconds = time.as_secs();
+    match seconds {
+        0..=59 => format!("{seconds} s"),
+        60..=3599 => format!("{} min {:02} s", seconds / 60, seconds % 60),
+        _ => format!("{} h {:02} min", seconds / 3600, seconds % 3600 / 60),
+    }
+}
+
 /// What the context and the program need on top of the bytes of the weights.
 const OVERHEAD_FACTOR: f64 = 1.2;
 /// The part of the memory a model is comfortably given.

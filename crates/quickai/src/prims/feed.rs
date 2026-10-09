@@ -238,6 +238,46 @@ pub fn spawn_lookup(
     rx
 }
 
+/// The build that is release `tag`'s source (`assets` of `by = "source"`): the archive GitHub makes of
+/// the tag, which no file of the release lists a digest for, so only the pin of the tested release
+/// can check it.
+fn source_build(spec: &LookupSpec, tag: &str, tested_tag: Option<&str>) -> Option<Build> {
+    let name = acquire::source_archive_name(tag);
+    let url = acquire::source_archive_url(&spec.engine, tag)?;
+    let tested = tested_tag == Some(tag);
+    Some(Build {
+        tag: tag.to_string(),
+        label: acquire::install_label(&spec.engine, tag, &name),
+        pin: tested
+            .then(|| acquire::pin_for(&spec.engine, &name))
+            .flatten(),
+        asset_name: name,
+        url,
+        size_bytes: None,
+        sha256: None,
+        tested,
+        conflict: false,
+        overlays: Vec::new(),
+    })
+}
+
+/// What going on with the install of the build `label` asks of the installer, worked out from the engine's
+/// document alone (a build from source is labelled by its release): the source of that release, with the
+/// pin of the release the document was tested with if it is that one. `None` for an engine whose builds are
+/// not made from source, and for a label that no release of the document would give.
+pub fn request_for_label(
+    engine: &Engine,
+    facts: &HostFacts,
+    label: &str,
+) -> Option<InstallRequest> {
+    if !acquire::builds_from_source(engine) {
+        return None;
+    }
+    let spec = LookupSpec::from_engine(engine, facts)?;
+    let build = source_build(&spec, label, acquire::tested_tag(engine))?;
+    (build.label == label).then(|| build.install_request(&[]))
+}
+
 fn run(spec: LookupSpec, tx: Sender<BuildLookupEvent>, wake: impl Fn() + Send + Sync + 'static) {
     let send = |e: BuildLookupEvent| {
         let _ = tx.send(e);
@@ -294,10 +334,19 @@ fn run(spec: LookupSpec, tx: Sender<BuildLookupEvent>, wake: impl Fn() + Send + 
 
     let tested_tag = acquire::tested_tag(&spec.engine);
     let overlay_choices = acquire::overlay_choices(&spec.engine, &spec.facts);
+    let from_source = acquire::builds_from_source(&spec.engine);
     // one group of builds per release, in the feed's order; the tested release goes first
     let mut groups: Vec<(bool, Vec<Build>)> = Vec::new();
     for release in releases {
         if release.draft || (release.prerelease && !prereleases) {
+            continue;
+        }
+        if from_source {
+            // the build is the release's source: every release has one, and it is the same on every
+            // platform
+            if let Some(build) = source_build(&spec, &release.tag_name, tested_tag) {
+                groups.push((build.tested, vec![build]));
+            }
             continue;
         }
         let names: Vec<&str> = release.assets.iter().map(|a| a.name.as_str()).collect();
@@ -354,6 +403,13 @@ fn run(spec: LookupSpec, tx: Sender<BuildLookupEvent>, wake: impl Fn() + Send + 
             })
             .collect();
         groups.push((tested, builds));
+    }
+    // The release the document was tested with is offered even when the feed's first page has moved on
+    // from it: its address and its pin are the document's, and nothing is asked of the feed for them.
+    if from_source && !groups.iter().any(|(tested, _)| *tested) {
+        if let Some(build) = tested_tag.and_then(|tag| source_build(&spec, tag, Some(tag))) {
+            groups.push((true, vec![build]));
+        }
     }
     // the tested release first, whatever its place in the feed, and the rest as the feed has them
     let (tested_groups, others): (Vec<_>, Vec<_>) = groups.into_iter().partition(|(t, _)| *t);

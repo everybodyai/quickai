@@ -90,11 +90,34 @@ help = "Translates between languages."
 match = { pipelines = ["translation"], words = ["translat", "madlad"] }
 
 [[model_type]]
+id = "video"
+label = "Video"
+order = 60
+help = "Makes short video clips from a prompt or a picture. It does not chat."
+match = { pipelines = ["text-to-video", "image-to-video", "image-text-to-video", "video-to-video"] }
+
+# Pictures and what reads a prompt for a picture or a video are what an engine like ComfyUI runs; an engine
+# that does not (llama.cpp, Ollama) lists them under `other`, as it always did.
+[[model_type]]
+id = "image"
+label = "Images"
+order = 62
+help = "Makes pictures from a prompt or from another picture. It does not chat."
+match = { pipelines = ["text-to-image", "image-to-image", "unconditional-image-generation"] }
+
+[[model_type]]
+id = "text_encoder"
+label = "Text encoders"
+order = 65
+help = "Reads the prompt for a picture or video model: a workflow names one beside the model. It is fetched on its own, and kept where the engine looks for it."
+match = { companions = ["text_encoder"] }
+
+[[model_type]]
 id = "other"
 label = "Other"
 order = 90
 help = "Not language models, or kinds this engine does not run."
-match = { pipelines = ["object-detection", "image-segmentation", "image-classification", "image-feature-extraction", "depth-estimation", "zero-shot-object-detection", "zero-shot-image-classification", "mask-generation", "keypoint-detection", "text-to-image", "image-to-image", "unconditional-image-generation", "text-to-video", "image-to-video", "image-text-to-video", "video-classification", "tabular-classification", "reinforcement-learning", "robotics"] }
+match = { pipelines = ["object-detection", "image-segmentation", "image-classification", "image-feature-extraction", "depth-estimation", "zero-shot-object-detection", "zero-shot-image-classification", "mask-generation", "keypoint-detection", "video-classification", "tabular-classification", "reinforcement-learning", "robotics"] }
 
 [[model_type]]
 id = "chat"
@@ -223,3 +246,25 @@ prompt = "/prompt"
 delta = ["/response"]
 final = ["/response"]
 error = ["/error"]
+
+# ---- ComfyUI's own ----------------------------------------------------------------------------------------
+# A workflow is not a conversation: a client sends the graph of nodes it wants run to /prompt and asks
+# /history what came out, so there is nothing for the Live tab to read, and the API panel says how it is
+# done.
+[[api]]
+id = "comfyui.workflow"
+paths = ["/prompt"]
+capabilities = ["workflow"]
+
+[[api.examples]]
+label = "Workflow"
+when = "true"
+curl = '''
+# 1. In ComfyUI's page, build a workflow and save it with Export (API).
+# 2. Queue it (this prints the id of the job):
+curl ${api.base_url}/prompt \
+  -H "Content-Type: application/json" \
+  -d "{\"prompt\": $(cat workflow_api.json)}"
+# 3. Ask what it made (the files are named in the answer; /view?filename=... fetches one):
+curl ${api.base_url}/history
+'''

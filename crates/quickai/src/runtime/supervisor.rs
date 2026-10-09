@@ -391,6 +391,33 @@ impl Supervisor {
             self.log(line);
         }
 
+        // folders the program is told about and refuses when they are not there yet
+        for dir in &spawn.mkdir {
+            if let Err(e) = std::fs::create_dir_all(dir) {
+                self.log(format!("Could not make the folder {dir}: {e}"));
+                self.finish(ServerState::Crashed);
+                return;
+            }
+        }
+        // files of the application's own that the program is told to read: put again at every start, so that
+        // a build made long ago has what an update brought, and the program does not meet a file it is
+        // told about that is not there
+        for step in &spawn.write {
+            match crate::assets::put(&step.asset, std::path::Path::new(&step.to)) {
+                Ok(put) if put.written > 0 => self.log(format!(
+                    "Put {} ({} of {} files written)",
+                    step.to,
+                    put.written,
+                    put.written + put.kept
+                )),
+                Ok(_) => {}
+                Err(e) => {
+                    self.log(format!("Could not put {}: {e}", step.to));
+                    self.finish(ServerState::Crashed);
+                    return;
+                }
+            }
+        }
         let env = child_env(spawn, &|name| std::env::var(name).ok());
         let mut daemon = match Daemon::spawn(spawn, &env) {
             Ok(daemon) => daemon,
