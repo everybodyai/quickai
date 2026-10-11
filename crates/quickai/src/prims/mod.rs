@@ -26,6 +26,7 @@ pub const PROVIDED: &[&str] = &[
     "locate.known_paths@1",
     "exec.probe@1",
     "feed.github_release@1",
+    "feed.pypi@1",
     "lookup.ollama_library@1",
     "lookup.huggingface_gguf@1",
     "install.archive@1",

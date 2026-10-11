@@ -50,6 +50,8 @@ pub const GROUPS: &[Group] = &[
             a("homepage", "text", "Where to read about it."),
             a("egress", "list of text", "The hosts the engine itself contacts, which the privacy table lists; a name that begins `*.` stands for every host under it."),
             a("order", "whole number", "Where the engine stands in the engine selector, lowest first. Default 100; engines with the same number stand in the order of their ids."),
+            a("companion_of", "text", "The id of the engine this program goes with, for a program that is not an engine to choose but something that is started beside one (Open WebUI beside Ollama). It is not in the engine selector and is never the engine in use; the settings of the engine it goes with offer it, it is started when that engine is ready and stopped with it, and it is a run of its own: when it stops unasked, the engine's run goes on. In every other way it is an engine's document: it is installed, located, started and given settings as an engine is, and keeps everything in a root of its own. Its templates may ask about the engine it goes with: `${parent.port}`, `${parent.url}`, `${parent.id}`."),
+            a("first_address_field", "text", "For a companion: the id of a field of its own (of type `hidden`) that holds the address of the engine it goes with, as it was when the program was first started. A program that keeps the address it is first given in a database of its own and does not read it from its environment again goes on calling that one when the engine is somewhere else later. QuickAI writes the address down in this field at the first start, says in the log when a later start would give another, and says so in the notes of a configuration that would put the engine elsewhere. The field is the person's own and is never part of a configuration."),
         ],
     },
     Group {
@@ -157,6 +159,7 @@ pub const GROUPS: &[Group] = &[
             a("args", "list of templates", "Its first arguments, one each. The fields' `bind.arg` follow, by `order`."),
             a("env", "list of tables", "Environment variables to set, below."),
             a("group", "bool", "Start it in a process group of its own (a job on Windows), so that stopping it takes the processes it started with it, and, on Linux, so that it follows QuickAI if QuickAI is killed. Default false."),
+            a("cwd", "template", "The folder the program starts in; it is made, with the ones above it, if it is not there. Without it the program starts wherever QuickAI was started from, which is the person's, and a program that writes a file to its working directory (Open WebUI keeps its secret key there) writes it there."),
             a("mkdir", "list of templates", "Folders made, with the ones above them, before the program starts: for a program that refuses a folder it is told about that does not exist yet (ComfyUI's `--models-directory`)."),
             a("write", "list of tables", "Files of the application's own that are put where the program is told to read them, before it starts, below."),
             a("stop", "table", "How to stop it: `{ policy = \"kill\" }` (the default: at once), or `{ policy = \"graceful\", grace = \"10s\", exit_grace = \"2s\" }`: ask it to leave (SIGTERM to its group; Windows has no such signal), wait `grace` (`exit_grace` while the application is closing), then kill what is left."),
@@ -217,6 +220,8 @@ pub const GROUPS: &[Group] = &[
             a("pattern", "regular expression", "The whole text value must match it."),
             a("validate", "list of `{ check, message }`", "Rules that may look at other fields. The first whose `check` does not hold gives its `message` as the field's error."),
             a("persist", "`global`, `per_model`, `profile`, `session`", "Where the value is remembered. Default `global`."),
+            a("share", "`yes`, `review`, `never`", "Whether the value travels in a configuration, a saved and shareable runtime. `yes`: it does. `review`: it does, and a person who is given a file that has it is shown it and asked (it becomes a command-line word, an environment line or an address, or it widens what the program may do). `never`: it belongs to a computer or a person and is never in one. Without it the type decides: `int`, `float`, `bool`, `choice` and `port` are `yes`; `text`, `url` and `kv_lines` are `review`; `dir`, `file` and `runtime_path` are `never`; `hidden` and `model_ref` are not settings (the model has a section of its own). A field added later is private until its document says otherwise."),
+            a("share_note", "text", "The sentence a person is told when this field is asked about or left out of a configuration (`Open WebUI may use the internet`). Only for a field that is not `yes`."),
             a("applies", "`on_start`, `spawn_only`, `live`", "When a change takes effect: at the next start; at the next start, and only when QuickAI starts the engine itself; at once. Default `on_start`."),
             a("bind", "table, below", "How the value reaches the engine."),
             a("derive", "table of conditions", "Named facts for the rest of the program, from the field's value (`gpu_offload = \"value > 0\"`)."),
@@ -541,6 +546,18 @@ pub const GROUPS: &[Group] = &[
         ],
     },
     Group {
+        heading: "`[acquire]` `feed`, `use = \"pypi\"`",
+        intro: "The releases of a package of the Python Package Index, for an application that is installed from its wheel (`assets` of `by = \"wheel\"`). The index lists a sha256 for every file, so every build carries one.",
+        source: None,
+        attributes: &[
+            a("use", "`pypi`", "The kind of feed."),
+            a("package", "text", "The package, as the index names it (`open-webui`)."),
+            a("show", "whole number", "How many releases that have a wheel to show. Default 5."),
+            a("prereleases", "bool", "Whether a release the index calls a pre-release (`1.0rc1`) counts. Default false."),
+            a("api", "address", "The root of the index's JSON API (`https://pypi.org`, the default). Another root, `http` or `https`, is how a test points the feed at a fake; only documents QuickAI trusts may name one."),
+        ],
+    },
+    Group {
         heading: "`[acquire]` `assets`, `by = \"keywords\"`",
         intro: "A file qualifies when it ends in one of `ext`, contains none of the `exclude` words, and contains a word for this machine's OS and one for its architecture. Matching ignores case.",
         source: None,
@@ -573,6 +590,15 @@ pub const GROUPS: &[Group] = &[
         ],
     },
     Group {
+        heading: "`[acquire]` `assets`, `by = \"wheel\"`",
+        intro: "The release's wheel is the build, for an application that is installed from the package index (`feed` of `use = \"pypi\"`, `install` of `use = \"python_app\"` with a `console_script`): the one file of the release that is a wheel for every platform (`py3-none-any`). It is downloaded, checked against its sha256, and installed into an environment with what it needs.",
+        source: None,
+        attributes: &[
+            a("by", "`wheel`", "The kind of rule."),
+            a("label", "template", "The directory a build is installed under, over `tag`, `stem` and `asset`. Default `${tag}`."),
+        ],
+    },
+    Group {
         heading: "`[acquire]` `install`",
         intro: "`use = \"archive\"`: unpack a `.zip`, `.tar.gz` or `.tar.zst`, safely, into a directory of its own that is renamed into place when it is whole, and find the executable inside.",
         source: None,
@@ -592,7 +618,8 @@ pub const GROUPS: &[Group] = &[
         attributes: &[
             a("use", "`python_app`", "The kind of install."),
             a("binary", "`{ name }`", "The launcher the installer writes (`comfyui`; `comfyui.cmd` on Windows)."),
-            a("entry", "text", "The script of the unpacked source that the launcher runs, relative to it (`main.py`)."),
+            a("entry", "text", "The script of the unpacked source that the launcher runs, relative to it (`main.py`). One of `entry` and `console_script` is needed."),
+            a("console_script", "text", "For a build that is a wheel, which has no source to run a script of: the program the wheel puts in the environment (`open-webui`). The installer asks the environment which function it calls, and the launcher has the environment's Python call it; the script itself is never run, because it holds the path of the folder it was made in, and a build is moved to its name when it is whole."),
             a("python", "`{ versions }`", "The versions of Python to look for, best first (`[\"3.13\", \"3.12\"]`): on the `PATH`, in pyenv's and uv's folders, and through the Windows launcher. The person may name a Python of their own."),
             a("verify", "`none` or `digest`", "`digest`: compare the source archive with the sha256 this document pins for the tested release before anything is unpacked; another release is installed and said to be unchecked. Default `none`."),
             a("smoke", "list of text", "A command that must succeed on the finished build before it counts as installed, starting with the launcher: `[\"${binary}\", \"--quick-test-for-ci\"]`."),
@@ -612,6 +639,7 @@ pub const GROUPS: &[Group] = &[
             a("when", "condition", "Only on a machine where this holds (`has(gpu.vendors, 'amd')`); always when left out."),
             a("packages", "list of text", "Packages, as requirement specifiers (`torch`, `torchvision==0.29.1`)."),
             a("requirements", "text", "A requirements file of the unpacked source, relative to it (`requirements.txt`)."),
+            a("wheel", "bool", "Installs the wheel the build is (`assets` of `by = \"wheel\"`): the file that was downloaded and checked, with what it needs from the index. A build that is a wheel has exactly one such step, and it names no packages or requirements file."),
             a("index", "address", "The package index the packages come from instead of PyPI. It is the only one used: a second could offer a newer package built for something else."),
             a("weight", "whole number", "How much of the progress bar this step is, next to the others (default 1)."),
         ],
@@ -805,6 +833,23 @@ pub const VOCAB_GROUPS: &[Group] = &[
         ],
     },
     Group {
+        heading: "`[[finding]]`",
+        intro: "The sentence of one note that a person is told about a configuration (docs/configurations.md, section 7): `too_new`, `unknown_engine`, `build_missing` and the rest. The code decides when a note is made and how much it matters (it stops an import, asks a question, warns or only says); a document can reword it and cannot change that. A vocabulary that gives some of the notes gives all of them. The list merges by `id`, so a document of the person's can reword one.",
+        source: Some("FindingDef"),
+        attributes: &[
+            a("id", "text", "The note it is for. One this version does not make is a warning."),
+            a("text", "text", "The sentence. `{name}` is replaced by the word the note has for it (`{needs}`, `{this}`, `{model}`...); one the note does not have is an error, and the error lists the ones it has. Required."),
+        ],
+    },
+    Group {
+        heading: "`[profile]`",
+        intro: "What a configuration file may and may not do.",
+        source: Some("ProfileRules"),
+        attributes: &[
+            a("deny_env", "list of text", "Names of environment variables no configuration may set, in any case; a trailing `*` stands for any ending (`DYLD_*`). They add to a short list the application always refuses (`LD_*`, `DYLD_*`, `PATH`, `PYTHON*`), which no document can take away: a file from outside must not make a program load other code."),
+        ],
+    },
+    Group {
         heading: "`[[api]]`",
         intro: "An API a client can call on a running engine. An engine lists the ones it serves in `[provides]` `apis`, and an engine that names an `id` no vocabulary defines does not load.",
         source: Some("ApiDef"),
@@ -876,11 +921,11 @@ pub fn render_vocab() -> String {
         "A vocabulary document (`kind = \"vocab\"`) names what engines and the window have in common: \
          the kinds of input and output a model can have, the APIs an engine can serve, with where the \
          text is in the requests and replies of each, so that the Live tab can read the traffic of an \
-         engine the code has never heard of, and the types of model and the classes of size a look-up \
-         sorts what it found by. A vocabulary can name things and describe them; it cannot \
+         engine the code has never heard of, the types of model and the classes of size a look-up \
+         sorts what it found by, and the sentences of the notes a person is told about a configuration. A vocabulary can name things and describe them; it cannot \
          start a program or reach a host. A document in the user's configuration directory with the same \
-         `id` patches the embedded one: tables merge by key and `[[modality]]`, `[[api]]`, `[[model_type]]` \
-         and `[[size_class]]` entries by `id` \
+         `id` patches the embedded one: tables merge by key and `[[modality]]`, `[[api]]`, `[[model_type]]`, \
+         `[[size_class]]` and `[[finding]]` entries by `id` \
          (docs/architecture.md, section 5.2). A key this version does not know is a warning; \
          `quickai config check --strict` makes warnings fail.\n\n\
          The primitives a document relies on go in `requires` (`requires = { primitives = [\"decode@1\"] }` \
@@ -901,7 +946,11 @@ pub fn render_vocab() -> String {
          - a model type id is a name and is used once (also across documents), at most one type is the \
          `default`, and a list of its `match` has no empty entry;\n\
          - a size class id is a name and is used once, every `below` is a size, the bounds go up from one class \
-         to the next, and the class with no bound is the last.\n\n\
+         to the next, and the class with no bound is the last;\n\
+         - a `[[finding]]` has the `id` of a note this version makes (else a warning), a `text` that is not empty and \
+         uses only the words its note fills in, and is given once; the notes of the document all have a sentence \
+         when it has any;\n\
+         - a name of `deny_env` is the name of an environment variable, with `*` allowed at the end, and not `*` alone.\n\n\
          An engine that names an API in `[provides]` `apis` that no vocabulary defines does not load (when \
          there is a vocabulary at all), with the nearest name suggested.\n",
     );
@@ -1008,6 +1057,136 @@ pub fn render_catalog() -> String {
          - `mode` is one of the engine's `[[models.mode]]`;\n\
          - `ref` is a name the engine can pull.\n\n\
          A warning is a model no engine offers and a note of more than 600 characters.\n",
+    );
+    out
+}
+
+/// The tables of a configuration document (`kind = "profile"`), by the types in `doc/profile.rs`.
+pub const PROFILE_GROUPS: &[Group] = &[
+    Group {
+        heading: "the document",
+        intro: "The top level of a configuration, besides the envelope (`schema`, `kind`, `id`, `requires`, and `replace` for a file of the person's that stands in for one of the same `id` in a lower layer). The keys that are not tables come first in the file.",
+        source: Some("ProfileDoc"),
+        attributes: &[
+            a("name", "text", "What the dropdown and the list call it, up to 60 characters; control and direction characters are taken out. Default: the `id`. The `id` is made from it (lower case, letters, digits and `-`) and is never a path."),
+            a("meta", "table, below", "For the person who is given the file. Nothing in it changes what runs."),
+            a("engine", "text", "The id of the engine it runs: one a person can choose, not a companion. Required. An engine this version does not have is told to the person who opens the file, and nothing is stored."),
+            a("runtime", "table, below", "Which program, as who it is and not where it is."),
+            a("model", "list of tables, below", "The models it uses, as who they are and never as a path. The first is the one the engine loads."),
+            a("values", "table of tables", "The value of settings: `[values.<engine>]` holds the fields of that engine by their ids (`ctx_size = 16384`), and a companion's settings sit in a table of its own (`[values.openwebui]`). Only what differs from the default is written. A field whose `share` is `never`, and one the engine does not have, is told and ignored; a value that does not fit its field is told and the default is used."),
+            a("app", "table, below", "Settings of the application that are part of a run."),
+        ],
+    },
+    Group {
+        heading: "`[meta]`",
+        intro: "Who made the file and for what. Coarse on purpose: no name of a person or of a computer is ever written.",
+        source: Some("MetaDoc"),
+        attributes: &[
+            a("note", "text", "A sentence or two from whoever made the file."),
+            a("made_with", "text", "The application that wrote it (`QuickAI 0.1.0`)."),
+            a("made_on", "`{ os, arch, gpu, memory_gb }`", "The kind of computer it was made on: `linux`, `windows` or `macos`; `x86_64` or `aarch64`; the makers of the graphics cards (`amd`, `nvidia`, `intel`); the memory in whole gigabytes. The person who opens the file is told where the computer differs from theirs."),
+        ],
+    },
+    Group {
+        heading: "`[meta]` `made_on`",
+        intro: "The kind of computer a file was made on.",
+        source: Some("MadeOnDoc"),
+        attributes: &[
+            a("os", "text", "`linux`, `windows` or `macos`."),
+            a("arch", "text", "`x86_64` or `aarch64`."),
+            a("gpu", "list of text", "The makers of the graphics cards."),
+            a("memory_gb", "whole number", "The memory, in whole gigabytes."),
+        ],
+    },
+    Group {
+        heading: "`[runtime]`",
+        intro: "The program a configuration runs. Left out, it is the program the computer uses by default.",
+        source: Some("RuntimeDoc"),
+        attributes: &[
+            a("build", "text", "The label of a build in the manager's list (`v0.40.0`): the name of the directory it is installed in, with no folder in it. Choosing the configuration sets the engine's program to the installed build of that label, and to nothing else. One that is not installed is told, with the labels that are."),
+            a("version", "text", "The version the program said it was, for the notes."),
+        ],
+    },
+    Group {
+        heading: "`[[model]]`",
+        intro: "One model, by exactly one source: a name the engine takes (the key is one of the engine's `accepts.refs`: `ollama = \"qwen3:8b\"`), an entry of the recommended list (`catalog`, and `file` for one of its files), or a file of the models folder (`file`). A path is never a source. Choosing a configuration selects a model that is here and fetches nothing: one that is not here is told, with its size and where it can be had.",
+        source: Some("ModelDoc"),
+        attributes: &[
+            a("role", "text", "What it is for (`chat`, `embedding`); letters, digits, `_` and `-`. Default `main`."),
+            a("name", "text", "What people call it; nothing finds it by this."),
+            a("catalog", "text", "The id of an entry of the recommended list."),
+            a("file", "text", "A file name, with no folder in it: the file of a `catalog` entry, or a file of the models folder."),
+            a("size", "whole number", "Its size in bytes, to recognise it by and to say what getting it costs."),
+            a("sha256", "text", "Its SHA-256, 64 hexadecimal digits."),
+            a("from", "text", "Where it can be got from, as a kind of place and a name in it (`huggingface:owner/repo`), for a file that is no entry of the recommended list and that the application remembers fetching. It is said to whoever has not got the model, and is never fetched from by itself: the person asks, and looks it up."),
+        ],
+    },
+    Group {
+        heading: "`[app]`",
+        intro: "Settings of the application, not of an engine, that change a run.",
+        source: Some("AppDoc"),
+        attributes: &[
+            a("traffic_proxy", "bool", "Whether the live-traffic proxy sits in front of the engine."),
+        ],
+    },
+];
+
+/// The page for configuration documents, as Markdown.
+pub fn render_profile() -> String {
+    let mut out = String::new();
+    out.push_str("# Configuration documents: a runtime as a file\n\n");
+    out.push_str(
+        "_Generated from the types in `crates/quickai-core/src/doc/profile.rs` by `quickai config docs profile`. \
+         Do not edit by hand: `QUICKAI_UPDATE_GOLDEN=1 cargo test -p quickai-core --test reference` \
+         rewrites it, and a test fails while it is out of date._\n\n",
+    );
+    out.push_str(
+        "A configuration document (`kind = \"profile\"`) says what QuickAI runs and how: the engine, the model, which \
+         build of the program, the settings and command-line arguments of the engine and of what goes with it. The \
+         window has one active configuration, a dropdown chooses it, and a file can be given to someone else, who is \
+         told what their computer lacks or does differently before anything is taken (docs/configurations.md). \
+         Configurations are data: they can pick things the application already knows (an engine, a model, a build, \
+         the value of a setting) and cannot name a program, a host or an address to fetch from. The application \
+         ships `default`; a package may ship more in `<exe>/config/profiles/`; the person's own are files in \
+         `profiles/` of their configuration directory, and one with the same `id` and `replace = true` stands in for \
+         a shipped one. A key this version does not know is kept when the file is written again and told as a \
+         warning; `quickai config check --strict` makes warnings fail.\n\n",
+    );
+    render_groups(&mut out, PROFILE_GROUPS);
+
+    out.push_str(
+        "## What travels: `share`\n\n\
+         Which settings a configuration holds is not decided here but by the engine documents: each `[[field]]` has \
+         a `share` (`yes`, `review` or `never`, see `quickai config docs`). When it says nothing the type decides:\n\n\
+         | `type` | `share` |\n|---|---|\n",
+    );
+    for (ty, _, _) in TYPES {
+        let field: Result<crate::doc::engine::Field, _> =
+            toml::from_str(&format!("id = \"x\"\ntype = \"{}\"\n", type_name(*ty)));
+        let share = match field.ok().and_then(|f| f.share()) {
+            Some(share) => format!("`{}`", share.name()),
+            None => "not a setting: the model has a section of its own".to_string(),
+        };
+        out.push_str(&format!("| `{}` | {share} |\n", type_name(*ty)));
+    }
+    out.push_str(
+        "\nA setting that is `review` travels, and the person who is given a file that has it is shown it in full and \
+         asked before it is taken: it becomes a command-line word, a line of environment or an address, or it widens \
+         what a program may do. A setting that is `never` is a folder, a file or a program, or belongs to a computer; \
+         it is not written and is ignored when it is read. The names of `deny_env` of the vocabulary (and `LD_*`, \
+         `DYLD_*`, `PATH`, `PYTHON*`, which are always refused) cannot be set from a configuration, even when it is \
+         ticked.\n\n\
+         ## What is checked\n\n\
+         Each of these is an error that names the file and the place, and a document with an error in it is not used \
+         (the document below it, if any, stays in force):\n\n\
+         - the file is TOML, no more than 256 KiB, with a `schema` this version reads and a `requires.app` it meets;\n\
+         - `engine` is an id; `name` has no more than 60 characters;\n\
+         - a `[[model]]` has exactly one source, of the kind the engine takes, and no name in it is a path (no `/` or \
+         `\\\\` in a file, no `..`, no drive, no NUL, no control character);\n\
+         - `runtime.build` is a label, not a path;\n\
+         - at most 512 settings and eight models.\n\n\
+         A warning, that leaves the document in use: a setting the engine does not have or does not carry, a value \
+         that does not fit its field (the default is used), keys this version does not know.\n",
     );
     out
 }

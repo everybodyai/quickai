@@ -3,16 +3,24 @@
 //!
 //! ```text
 //! python       a Python of the versions the document lists, found before anything is downloaded
-//! source       the release's source archive, downloaded, checked against its pin, unpacked as app/
+//! source       the release's source archive, downloaded, checked against its pin, unpacked as app/;
+//!              or, for an application installed from the package index, its wheel, downloaded and
+//!              checked the same way and kept as wheel/<file> until the install is whole
 //! nodes        the packs of extra nodes the document lists, each checked against its own pin
 //! venv         <python> -m venv venv/
 //! pip          each step of the document that applies to this machine, with --only-binary so that
-//!              no package gets to run a build script of its own on the person's machine
+//!              no package gets to run a build script of its own on the person's machine; the step
+//!              of a wheel installs the file that was checked, and what it needs from the index
 //! launcher     a script beside app/ and venv/ that runs the application with that environment: the
 //!              build's executable, what the engine document starts and what its locate finds
 //! check        the launcher's smoke test passes
 //! rename       <label>.partial -> <label>, so a build is there whole or not at all
 //! ```
+//!
+//! Each application has its own environment, inside its own build: nothing is installed into a
+//! Python the person has, two applications never share one (ComfyUI's is 17 GB of PyTorch, Open
+//! WebUI needs another Python), and the environment of the person's shell (`PYTHONPATH`, their user
+//! site) is not what the application runs with.
 //!
 //! Everything happens in `<label>.partial/`, as for an archive (decision C26), and the pip steps put
 //! their temporary files there too: the temporary directory of a machine can be memory (this one's
@@ -50,8 +58,8 @@ pub const CANCELLED: &str = "the install was cancelled";
 /// What a `python_app` install does, worked out for this machine from the engine's document.
 #[derive(Clone, Debug, Default)]
 pub struct PythonApp {
-    /// The script of the source the launcher runs, relative to it (`main.py`).
-    pub entry: String,
+    /// What the launcher runs.
+    pub runs: Runs,
     /// The versions of Python to look for, best first (`3.13`).
     pub versions: Vec<String>,
     /// The Python the person named, which is used whatever its version (but not an older one than
@@ -63,6 +71,27 @@ pub struct PythonApp {
     pub space: Option<u64>,
 }
 
+/// What the launcher of a build runs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Runs {
+    /// A script of the unpacked source, relative to it (`main.py`).
+    Script(String),
+    /// The program a wheel puts in the environment (`open-webui`): the build is a wheel, installed.
+    Program(String),
+}
+
+impl Default for Runs {
+    fn default() -> Runs {
+        Runs::Script(String::new())
+    }
+}
+
+impl Runs {
+    fn is_program(&self) -> bool {
+        matches!(self, Runs::Program(_))
+    }
+}
+
 /// One `pip install`.
 #[derive(Clone, Debug)]
 pub struct PipPlan {
@@ -70,6 +99,8 @@ pub struct PipPlan {
     pub label: String,
     pub packages: Vec<String>,
     pub requirements: Option<String>,
+    /// Installs the wheel the build is, the file that was downloaded and checked, with what it needs.
+    pub wheel: bool,
     pub index: Option<String>,
     pub weight: u32,
 }
@@ -736,30 +767,17 @@ fn move_top_directory(unpacked: &Path, place: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Downloads `source`, checks it against `expected`, unpacks it and puts its top folder at `place`.
-#[allow(clippy::too_many_arguments)]
-fn fetch_and_unpack(
+/// Downloads `source` into `part`, and checks it against `expected`.
+fn fetch_checked(
     spec: &InstallSpec,
     source: &Source,
     expected: Option<&str>,
     what: &str,
-    root: &Path,
-    staging: &Path,
-    leftovers: &mut Leftovers,
-    place: &Path,
+    part: &Path,
     send: &dyn Fn(JobEvent<PathBuf>),
 ) -> Result<(), String> {
-    let kind = ArchiveKind::from_url(&source.url).ok_or_else(|| {
-        format!(
-            "don't know how to extract {} ({})",
-            source.url,
-            ArchiveKind::EXPECTED
-        )
-    })?;
-    let part = root.join(format!("{what}.{}{PART}", kind.extension()));
-    leftovers.paths.push(part.clone());
     send(JobEvent::Status(format!("Downloading {what}")));
-    let fetched = download(&source.url, &part, 0, source.size, &spec.cancel, &|event| {
+    let fetched = download(&source.url, part, 0, source.size, &spec.cancel, &|event| {
         // the bar of an install that has steps is the steps': a download is told in the log
         if !matches!(event, JobEvent::Progress { .. }) {
             send(event);
@@ -784,7 +802,79 @@ fn fetch_and_unpack(
         }
         None => {}
     }
-    check_cancelled(spec)?;
+    check_cancelled(spec)
+}
+
+/// The file name of the wheel a URL is the address of: the last part of its path, which pip needs to be
+/// the file's own (it reads the tags from it).
+fn wheel_file_name(url: &str) -> Option<String> {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let name = path.trim_end_matches('/').rsplit('/').next()?;
+    (name.ends_with(".whl")
+        && name.len() > ".whl".len()
+        && !name.contains(['\\', ':'])
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-' | '+')))
+    .then(|| name.to_string())
+}
+
+/// Downloads the wheel of the build and checks it, and puts it in `wheel/` of the staging directory.
+#[allow(clippy::too_many_arguments)]
+fn fetch_wheel(
+    spec: &InstallSpec,
+    source: &Source,
+    expected: Option<&str>,
+    what: &str,
+    root: &Path,
+    staging: &Path,
+    leftovers: &mut Leftovers,
+    send: &dyn Fn(JobEvent<PathBuf>),
+) -> Result<PathBuf, String> {
+    let name = wheel_file_name(&source.url).ok_or_else(|| {
+        format!(
+            "{} is not the address of a wheel: its name should end in .whl",
+            source.url
+        )
+    })?;
+    let part = root.join(format!("{what}.whl{PART}"));
+    leftovers.paths.push(part.clone());
+    fetch_checked(spec, source, expected, what, &part, send)?;
+    let dir = staging.join("wheel");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+    let place = dir.join(&name);
+    std::fs::rename(&part, &place)
+        .or_else(|_| std::fs::copy(&part, &place).map(|_| ()))
+        .map_err(|e| format!("could not keep the wheel in {}: {e}", place.display()))?;
+    let _ = std::fs::remove_file(&part);
+    Ok(place)
+}
+
+/// Downloads `source`, checks it against `expected`, unpacks it and puts its top folder at `place`.
+#[allow(clippy::too_many_arguments)]
+fn fetch_and_unpack(
+    spec: &InstallSpec,
+    source: &Source,
+    expected: Option<&str>,
+    what: &str,
+    root: &Path,
+    staging: &Path,
+    leftovers: &mut Leftovers,
+    place: &Path,
+    send: &dyn Fn(JobEvent<PathBuf>),
+) -> Result<(), String> {
+    let kind = ArchiveKind::from_url(&source.url).ok_or_else(|| {
+        format!(
+            "don't know how to extract {} ({})",
+            source.url,
+            ArchiveKind::EXPECTED
+        )
+    })?;
+    let part = root.join(format!("{what}.{}{PART}", kind.extension()));
+    leftovers.paths.push(part.clone());
+    fetch_checked(spec, source, expected, what, &part, send)?;
     let unpacked = staging.join(format!("{what}.unpacked"));
     // what an install that was stopped in the middle of this left
     let _ = std::fs::remove_dir_all(&unpacked);
@@ -796,24 +886,146 @@ fn fetch_and_unpack(
     move_top_directory(&unpacked, place)
 }
 
-/// The launcher: a script that runs the application with the environment beside it.
-fn write_launcher(staging: &Path, name: &str, entry: &str) -> Result<PathBuf, String> {
-    let (file, text) = if cfg!(windows) {
+/// What a console script of an installed wheel runs: `open_webui:app` is the name `app` in the module
+/// `open_webui`, called with no arguments and its result the exit status.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct EntryPoint {
+    /// The module to import (`open_webui`).
+    pub module: String,
+    /// What to call in it, possibly with dots (`app`, `cli.main`).
+    pub attr: String,
+}
+
+/// What the environment's Python is asked to find the entry point of a console script: the first argument is
+/// the script's name, and it prints what the package's records say it is (`module:attr`), or nothing.
+const ENTRY_POINT_QUERY: &str = "import sys; from importlib.metadata import entry_points as e; print(next((x.value for x in e(group='console_scripts') if x.name == sys.argv[1]), ''))";
+
+/// `module:attr` (with, perhaps, ` [extras]` after it) as an entry point; `None` for anything that is not a name
+/// of a module and a name in it. Only such names go into a launcher, which is written from what a package says.
+pub(super) fn parse_entry_point(text: &str) -> Option<EntryPoint> {
+    let text = text.split('[').next().unwrap_or_default().trim();
+    let (module, attr) = text.split_once(':')?;
+    let name = |part: &str| {
+        !part.is_empty()
+            && part.split('.').all(|piece| {
+                let mut chars = piece.chars();
+                chars
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                    && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+            })
+    };
+    (name(module) && name(attr)).then(|| EntryPoint {
+        module: module.to_string(),
+        attr: attr.to_string(),
+    })
+}
+
+/// Asks the environment's own Python what the console script `program` runs.
+///
+/// A launcher that ran the script itself would not survive the install: pip writes into a script the path of the
+/// Python it was installed with (`#!/…/<label>.partial/venv/bin/python`), and a build is moved to its name when it is
+/// whole, so the script would look for a Python that is no longer there (found by running the real thing, T90). The
+/// Python of the environment, which finds its environment from where it is, is moved without harm: that is what the
+/// launcher runs, and it is told which function to call.
+fn resolve_entry_point(python: &Path, program: &str) -> Result<EntryPoint, String> {
+    let mut command = Command::new(python);
+    command
+        .args(["-c", ENTRY_POINT_QUERY, program])
+        .env("PYTHONNOUSERSITE", "1");
+    without_package_loader_env(&mut command);
+    let ran =
+        run_captured(&mut command, Duration::from_secs(60)).map_err(|failure| match failure {
+            RunFailure::Start(e) => format!("could not run the environment's Python: {e}"),
+            RunFailure::TimedOut => {
+                "the environment's Python did not answer in a minute".to_string()
+            }
+            RunFailure::Wait(e) => format!("could not wait for the environment's Python: {e}"),
+            RunFailure::Stopped => CANCELLED.to_string(),
+        })?;
+    if !ran.status.success() {
+        return Err(format!(
+            "the environment's Python could not look for `{program}` ({}): {}",
+            ran.status,
+            ran.stderr.trim().chars().take(300).collect::<String>()
+        ));
+    }
+    parse_entry_point(ran.stdout.trim()).ok_or_else(|| {
+        format!(
+            "the package that was installed has no program called `{program}` (its records say {:?})",
+            ran.stdout.trim()
+        )
+    })
+}
+
+/// The file name and the text of the launcher, for Windows (`name.cmd`, a batch file) or any other system (`name`, a
+/// shell script). A pure function, so that both are tested on every platform.
+fn launcher_text(
+    name: &str,
+    runs: &Runs,
+    entry: Option<&EntryPoint>,
+    windows: bool,
+) -> (String, String) {
+    // the program of a wheel is run by the environment's Python, told what to call (see `resolve_entry_point`)
+    let program = |program: &str| -> String {
+        let entry =
+            entry.expect("the entry point of a program is found before its launcher is written");
+        let (first, _) = entry.attr.split_once('.').unwrap_or((&entry.attr, ""));
+        format!(
+            "import sys; from {} import {first}; sys.argv[0] = '{program}'; sys.exit({}())",
+            entry.module, entry.attr
+        )
+    };
+    if windows {
+        let run = match runs {
+            Runs::Script(entry) => format!(
+                "\"%~dp0venv\\Scripts\\python.exe\" \"%~dp0app\\{}\" %*",
+                entry.replace('/', "\\")
+            ),
+            Runs::Program(name) => format!(
+                "\"%~dp0venv\\Scripts\\python.exe\" -c \"{}\" %*",
+                program(name)
+            ),
+        };
         (
             format!("{name}.cmd"),
             format!(
-                "@echo off\r\n\"%~dp0venv\\Scripts\\python.exe\" \"%~dp0app\\{}\" %*\r\n",
-                entry.replace('/', "\\")
+                "@echo off\r\nset PYTHONPATH=\r\nset PYTHONHOME=\r\nset PYTHONSTARTUP=\r\nset PYTHONUSERBASE=\r\nset VIRTUAL_ENV=\r\nset PYTHONNOUSERSITE=1\r\n{run}\r\n"
             ),
         )
     } else {
+        let run = match runs {
+            Runs::Script(entry) => {
+                format!("exec \"$here/venv/bin/python\" \"$here/app/{entry}\" \"$@\"")
+            }
+            Runs::Program(name) => {
+                format!(
+                    "exec \"$here/venv/bin/python\" -c \"{}\" \"$@\"",
+                    program(name)
+                )
+            }
+        };
         (
             name.to_string(),
             format!(
-                "#!/bin/sh\n# Written by QuickAI: runs the application with the Python environment installed beside it.\nhere=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd -P)\nexec \"$here/venv/bin/python\" \"$here/app/{entry}\" \"$@\"\n"
+                "#!/bin/sh\n# Written by QuickAI: runs the application with the Python environment installed beside it.\nhere=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd -P)\n# the person's own Python variables are not the application's\nunset PYTHONPATH PYTHONHOME PYTHONSTARTUP PYTHONUSERBASE VIRTUAL_ENV\nPYTHONNOUSERSITE=1\nexport PYTHONNOUSERSITE\n{run}\n"
             ),
         )
-    };
+    }
+}
+
+/// The launcher: a script that runs the application with the environment beside it.
+///
+/// The Python variables of the person's shell are put away first: a `PYTHONPATH` that is theirs would put
+/// their packages in front of the environment's, and their user site is a place the environment is not
+/// to read.
+fn write_launcher(
+    staging: &Path,
+    name: &str,
+    runs: &Runs,
+    entry: Option<&EntryPoint>,
+) -> Result<PathBuf, String> {
+    let (file, text) = launcher_text(name, runs, entry, cfg!(windows));
     let path = staging.join(file);
     std::fs::write(&path, text).map_err(|e| format!("could not write {}: {e}", path.display()))?;
     #[cfg(unix)]
@@ -833,7 +1045,11 @@ fn plan_steps(app: &PythonApp, request: &InstallRequest, check: bool) -> Vec<Ste
     let step = |id: String, label: String| StepRecord { id, label };
     let mut steps = vec![step(
         "source".into(),
-        format!("the source of {}", request.label),
+        if app.runs.is_program() {
+            format!("the package of {}", request.label)
+        } else {
+            format!("the source of {}", request.label)
+        },
     )];
     for pack in &app.nodes {
         steps.push(step(format!("node:{}", pack.id), pack.label.clone()));
@@ -860,17 +1076,18 @@ fn plan_fingerprint(app: &PythonApp, request: &InstallRequest, python: &Interpre
     let mut parts = vec![
         request.label.clone(),
         request.base.url.clone(),
-        app.entry.clone(),
+        format!("{:?}", app.runs),
         python.program.display().to_string(),
         format!("{}.{}", python.version.0, python.version.1),
     ];
     for step in &app.pip {
         parts.push(format!(
-            "pip|{}|{}|{}|{}",
+            "pip|{}|{}|{}|{}|{}",
             step.id,
             step.index.as_deref().unwrap_or(""),
             step.packages.join(" "),
-            step.requirements.as_deref().unwrap_or("")
+            step.requirements.as_deref().unwrap_or(""),
+            step.wheel
         ));
     }
     for pack in &app.nodes {
@@ -1023,25 +1240,52 @@ fn work(ctx: Ctx, steps: &mut Steps, leftovers: &mut Leftovers) -> Result<(), St
     };
     bar.show(0.0, 0.0);
 
-    // the source
-    if steps.done("source", || app_dir.join(&app.entry).is_file()) {
-        before(steps, "source");
-    } else {
-        check_cancelled(spec)?;
-        send(JobEvent::Detail(steps.title("source")));
-        let _ = std::fs::remove_dir_all(&app_dir);
-        fetch_and_unpack(
-            spec,
-            &request.base,
-            expected,
-            &request.label,
-            &spec.root,
-            staging,
-            leftovers,
-            &app_dir,
-            send,
-        )?;
-        steps.finish("source")?;
+    // the source: the unpacked archive of a release, or the wheel that is the build
+    let wheel_there =
+        wheel_file_name(&request.base.url).map(|name| staging.join("wheel").join(name));
+    match &app.runs {
+        Runs::Script(entry) => {
+            if steps.done("source", || app_dir.join(entry).is_file()) {
+                before(steps, "source");
+            } else {
+                check_cancelled(spec)?;
+                send(JobEvent::Detail(steps.title("source")));
+                let _ = std::fs::remove_dir_all(&app_dir);
+                fetch_and_unpack(
+                    spec,
+                    &request.base,
+                    expected,
+                    &request.label,
+                    &spec.root,
+                    staging,
+                    leftovers,
+                    &app_dir,
+                    send,
+                )?;
+                steps.finish("source")?;
+            }
+        }
+        Runs::Program(_) => {
+            if steps.done("source", || {
+                wheel_there.as_ref().is_some_and(|w| w.is_file())
+            }) {
+                before(steps, "source");
+            } else {
+                check_cancelled(spec)?;
+                send(JobEvent::Detail(steps.title("source")));
+                fetch_wheel(
+                    spec,
+                    &request.base,
+                    expected,
+                    &request.label,
+                    &spec.root,
+                    staging,
+                    leftovers,
+                    send,
+                )?;
+                steps.finish("source")?;
+            }
+        }
     }
     bar.finished(source_weight);
 
@@ -1139,6 +1383,13 @@ fn work(ctx: Ctx, steps: &mut Steps, leftovers: &mut Leftovers) -> Result<(), St
         if let Some(file) = &step.requirements {
             args.extend(["-r".to_string(), in_source(file)]);
         }
+        if step.wheel {
+            // the file that was checked, by its path: pip takes what it needs from the index
+            let Some(path) = wheel_there.as_ref().filter(|w| w.is_file()) else {
+                return Err("the wheel of the build is not in the install's folder".to_string());
+            };
+            args.push(path.display().to_string());
+        }
         args.extend(step.packages.iter().cloned());
         let title = steps.title(&id);
         send(JobEvent::Detail(title.clone()));
@@ -1199,7 +1450,11 @@ fn work(ctx: Ctx, steps: &mut Steps, leftovers: &mut Leftovers) -> Result<(), St
     // the launcher, and whether it runs: every time, since it is quick and it is what counts
     check_cancelled(spec)?;
     let launcher_name = spec.binary.trim_end_matches(".cmd");
-    let launcher = write_launcher(staging, launcher_name, &app.entry)?;
+    let entry = match &app.runs {
+        Runs::Program(program) => Some(resolve_entry_point(&inside, program)?),
+        Runs::Script(_) => None,
+    };
+    let launcher = write_launcher(staging, launcher_name, &app.runs, entry.as_ref())?;
     if let Some(smoke) = &spec.smoke {
         send(JobEvent::Status("Checking that it runs".to_string()));
         send(JobEvent::Detail(format!(
@@ -1210,6 +1465,9 @@ fn work(ctx: Ctx, steps: &mut Steps, leftovers: &mut Leftovers) -> Result<(), St
     }
     bar.finished(smoke_weight);
     let _ = std::fs::remove_dir_all(&temporary);
+    // the wheel is installed and the build runs: a copy of it beside the environment is only room. It
+    // stays until here so that an install that stops after the packages (the check) goes on from there
+    let _ = std::fs::remove_dir_all(staging.join("wheel"));
     Ok(())
 }
 
@@ -1228,7 +1486,21 @@ pub(super) fn install(
     }
 
     // everything that can be known without the network is settled first
-    for url in std::iter::once(&request.base.url).chain(app.nodes.iter().map(|n| &n.url)) {
+    if app.runs.is_program() {
+        if wheel_file_name(&request.base.url).is_none() {
+            return Err(format!(
+                "{} is not the address of a wheel: its name should end in .whl",
+                request.base.url
+            ));
+        }
+    } else if ArchiveKind::from_url(&request.base.url).is_none() {
+        return Err(format!(
+            "don't know how to extract {} ({})",
+            request.base.url,
+            ArchiveKind::EXPECTED
+        ));
+    }
+    for url in app.nodes.iter().map(|n| &n.url) {
         if ArchiveKind::from_url(url).is_none() {
             return Err(format!(
                 "don't know how to extract {url} ({})",
@@ -1295,6 +1567,13 @@ pub(super) fn install(
         dir: staging_path.clone(),
         journal: Journal::new(&request.label, fingerprint.clone(), steps_plan.clone()),
     };
+    let recorded = super::SourceRecord {
+        url: request.base.url.clone(),
+        host_digest: request.base.host_digest.clone(),
+        pin: request.base.pin.clone(),
+        size: request.base.size,
+    };
+    steps.journal.source = Some(recorded.clone());
     if existed {
         match Journal::read(&staging_path) {
             Some(mut found) if found.fingerprint == fingerprint && found.label == request.label => {
@@ -1304,6 +1583,7 @@ pub(super) fn install(
                     steps_plan.len()
                 )));
                 found.steps = steps_plan;
+                found.source = Some(recorded);
                 steps.journal = found;
             }
             other => {
@@ -1397,6 +1677,147 @@ mod tests {
         assert_eq!(announced_size("Downloading x.whl (12.5 kB)"), Some(12_500));
         assert_eq!(announced_size("Downloading x.whl"), None);
         assert_eq!(announced_size("Collecting torch (>=2.0)"), None);
+    }
+
+    #[test]
+    fn the_launcher_runs_what_the_build_runs_with_the_persons_python_variables_put_away() {
+        let app = EntryPoint {
+            module: "open_webui".into(),
+            attr: "app".into(),
+        };
+        // a script of the source, as ComfyUI's has always been, on a system with a shell
+        let (file, text) = launcher_text("comfyui", &Runs::Script("main.py".into()), None, false);
+        assert_eq!(file, "comfyui");
+        assert!(text.starts_with("#!/bin/sh\n"), "{text}");
+        assert!(
+            text.contains(r#"exec "$here/venv/bin/python" "$here/app/main.py" "$@""#),
+            "{text}"
+        );
+        // the program of a wheel is run by the environment's Python and told what to call: a script of the
+        // environment holds the path of the folder it was made in, and the build is moved when it is whole
+        let program = Runs::Program("open-webui".into());
+        let (file, text) = launcher_text("open-webui", &program, Some(&app), false);
+        assert_eq!(file, "open-webui");
+        // the suites' stand-in for a finished build writes this very file (`resources/owui_world.py` of the test
+        // repository holds its text to it, `resources/test_fake_pypi.py`): they change together or not at all
+        assert_eq!(
+            text,
+            include_str!("../../../tests/fixtures/launchers/open-webui.sh"),
+            "the launcher changed: tests/fixtures/launchers/open-webui.sh and the suites' stand-in are to change with it"
+        );
+        assert!(
+            text.ends_with(
+                "exec \"$here/venv/bin/python\" -c \"import sys; from open_webui import app; sys.argv[0] = 'open-webui'; sys.exit(app())\" \"$@\"\n"
+            ),
+            "{text}"
+        );
+        assert!(
+            !text.contains("venv/bin/open-webui"),
+            "the script of the environment is never run: {text}"
+        );
+        for line in [
+            "unset PYTHONPATH PYTHONHOME PYTHONSTARTUP PYTHONUSERBASE VIRTUAL_ENV",
+            "PYTHONNOUSERSITE=1",
+            "export PYTHONNOUSERSITE",
+        ] {
+            assert!(text.contains(line), "{line} in {text}");
+        }
+        // a name with dots in it is called whole, and its first part is what is imported
+        let dotted = EntryPoint {
+            module: "pkg.cli".into(),
+            attr: "tools.main".into(),
+        };
+        let (_, text) = launcher_text("tool", &Runs::Program("tool".into()), Some(&dotted), false);
+        assert!(
+            text.contains(
+                "from pkg.cli import tools; sys.argv[0] = 'tool'; sys.exit(tools.main())"
+            ),
+            "{text}"
+        );
+        // and the same on Windows, where a launcher is a batch file
+        let (file, text) =
+            launcher_text("comfyui", &Runs::Script("nodes/main.py".into()), None, true);
+        assert_eq!(file, "comfyui.cmd");
+        assert!(
+            text.contains("\"%~dp0venv\\Scripts\\python.exe\" \"%~dp0app\\nodes\\main.py\" %*"),
+            "{text}"
+        );
+        let (file, text) = launcher_text("open-webui", &program, Some(&app), true);
+        assert_eq!(file, "open-webui.cmd");
+        assert!(
+            text.contains(
+                "\"%~dp0venv\\Scripts\\python.exe\" -c \"import sys; from open_webui import app; sys.argv[0] = 'open-webui'; sys.exit(app())\" %*\r\n"
+            ) && text.contains("set PYTHONPATH=\r\n")
+                && text.contains("set PYTHONUSERBASE=\r\n")
+                && text.contains("set VIRTUAL_ENV=\r\n")
+                && text.contains("set PYTHONNOUSERSITE=1\r\n"),
+            "{text:?}"
+        );
+    }
+
+    #[test]
+    fn an_entry_point_is_a_module_and_a_name_in_it_and_nothing_else_is_written_into_a_launcher() {
+        let ep = |text: &str| parse_entry_point(text).map(|e| (e.module, e.attr));
+        assert_eq!(
+            ep("open_webui:app"),
+            Some(("open_webui".into(), "app".into()))
+        );
+        assert_eq!(
+            ep("  a.b.c:cli.main  "),
+            Some(("a.b.c".into(), "cli.main".into()))
+        );
+        assert_eq!(
+            ep("pkg:main [extra]"),
+            Some(("pkg".into(), "main".into())),
+            "extras are the installer's and not the call's"
+        );
+        for bad in [
+            "",
+            "open_webui",
+            ":app",
+            "open_webui:",
+            "open-webui:app",
+            "a:b; import os; os.system('x')",
+            "a b:c",
+            "1a:b",
+            "a:b:c",
+            "a..b:c",
+            "a:\"; evil; \"",
+            "a:b'; evil; '",
+        ] {
+            assert_eq!(ep(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_wheel_is_named_by_the_last_part_of_its_address_and_only_a_wheel_has_such_a_name() {
+        let name = |url: &str| wheel_file_name(url);
+        let wheel = "open_webui-0.11.4-py3-none-any.whl";
+        for url in [
+            format!("https://files.pythonhosted.org/packages/ca/8d/051d/{wheel}"),
+            format!("http://127.0.0.1:8000/{wheel}"),
+            format!("https://host/{wheel}?download=1"),
+            format!("https://host/{wheel}#sha256=abc"),
+        ] {
+            assert_eq!(name(&url).as_deref(), Some(wheel), "{url}");
+        }
+        assert_eq!(
+            name("https://host/a/b/torch-2.14.1+cpu-cp312-cp312-manylinux_2_28_x86_64.whl")
+                .as_deref(),
+            Some("torch-2.14.1+cpu-cp312-cp312-manylinux_2_28_x86_64.whl"),
+            "a version may have a plus sign"
+        );
+        for url in [
+            "https://host/open_webui-0.11.4.tar.gz",
+            "https://host/.whl",
+            "https://host/whl",
+            "https://host/a b.whl",
+            "https://host/a%2fb.whl",
+            "https://host/",
+            "",
+        ] {
+            assert_eq!(name(url), None, "{url:?}");
+        }
     }
 
     #[test]
@@ -1547,7 +1968,7 @@ mod tests {
     #[test]
     fn the_steps_are_listed_in_the_order_they_are_done_with_the_check_last() {
         let app = PythonApp {
-            entry: "main.py".into(),
+            runs: Runs::Script("main.py".into()),
             versions: vec!["3.13".into()],
             python: None,
             pip: vec![PipPlan {
@@ -1555,6 +1976,7 @@ mod tests {
                 label: "PyTorch".into(),
                 packages: vec!["torch".into()],
                 requirements: None,
+                wheel: false,
                 index: None,
                 weight: 1,
             }],

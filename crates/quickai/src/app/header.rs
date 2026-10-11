@@ -1,4 +1,4 @@
-//! The title row of the main window (panel `header`).
+//! The title row of the main window (panel `header`), and what is under it before the page of a tab.
 
 use eframe::egui;
 
@@ -16,6 +16,19 @@ impl App {
         } else {
             self.show_settings = true;
         }
+    }
+
+    /// The top of the window: the title row, and under it the Live tab when that is the one open, or on the
+    /// Main tab the section of the configuration. Returns whether the rest of the Main page follows.
+    pub(super) fn show_page_top(&mut self, ui: &mut egui::Ui) -> bool {
+        self.show_header(ui);
+        if self.active_tab == Tab::Live {
+            self.show_live_traffic_tab(ui);
+            return false;
+        }
+        self.show_configuration_section(ui);
+        ui.add_space(8.0);
+        true
     }
 
     /// The title row: the heading, the Main/Live tab strip (only with live traffic on) and the theme,

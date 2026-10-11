@@ -8,6 +8,8 @@ mod assets;
 mod bundles;
 mod cli;
 mod config;
+mod configuration_cli;
+mod configurations;
 mod downloader;
 mod events;
 #[cfg(test)]
@@ -25,6 +27,7 @@ mod proxy;
 
 mod runtime;
 mod settings;
+mod sources;
 #[cfg(test)]
 mod testkit;
 

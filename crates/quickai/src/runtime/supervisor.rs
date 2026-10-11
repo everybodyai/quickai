@@ -391,8 +391,9 @@ impl Supervisor {
             self.log(line);
         }
 
-        // folders the program is told about and refuses when they are not there yet
-        for dir in &spawn.mkdir {
+        // folders the program is told about and refuses when they are not there yet, and the one it
+        // starts in
+        for dir in spawn.cwd.iter().chain(&spawn.mkdir) {
             if let Err(e) = std::fs::create_dir_all(dir) {
                 self.log(format!("Could not make the folder {dir}: {e}"));
                 self.finish(ServerState::Crashed);
@@ -569,7 +570,12 @@ impl Supervisor {
     ) -> Result<(), Outcome> {
         if self.unit.warm.is_empty() {
             if self.model.is_none() {
-                self.log(format!("{} ready, no model loaded.", self.server()));
+                // "no model loaded" is news for an engine that is given one, not for a program that has none
+                if self.unit.needs_model {
+                    self.log(format!("{} ready, no model loaded.", self.server()));
+                } else {
+                    self.log(format!("{} ready.", self.server()));
+                }
             }
             self.emit(Event::StateChanged(ServerState::Running));
             return Ok(());

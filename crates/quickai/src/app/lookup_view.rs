@@ -156,6 +156,7 @@ impl App {
         }
         let ctx = ctx.clone();
         self.bench_fetching(&download);
+        self.download_source = Some(download.source.clone());
         self.download = Some(downloader::spawn_files(
             download,
             self.models_dir.clone(),

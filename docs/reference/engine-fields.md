@@ -18,6 +18,8 @@ Who the engine is.
 | `homepage` | text | Where to read about it. |
 | `egress` | list of text | The hosts the engine itself contacts, which the privacy table lists; a name that begins `*.` stands for every host under it. |
 | `order` | whole number | Where the engine stands in the engine selector, lowest first. Default 100; engines with the same number stand in the order of their ids. |
+| `companion_of` | text | The id of the engine this program goes with, for a program that is not an engine to choose but something that is started beside one (Open WebUI beside Ollama). It is not in the engine selector and is never the engine in use; the settings of the engine it goes with offer it, it is started when that engine is ready and stopped with it, and it is a run of its own: when it stops unasked, the engine's run goes on. In every other way it is an engine's document: it is installed, located, started and given settings as an engine is, and keeps everything in a root of its own. Its templates may ask about the engine it goes with: `${parent.port}`, `${parent.url}`, `${parent.id}`. |
+| `first_address_field` | text | For a companion: the id of a field of its own (of type `hidden`) that holds the address of the engine it goes with, as it was when the program was first started. A program that keeps the address it is first given in a database of its own and does not read it from its environment again goes on calling that one when the engine is somewhere else later. QuickAI writes the address down in this field at the first start, says in the log when a later start would give another, and says so in the notes of a configuration that would put the engine elsewhere. The field is the person's own and is never part of a configuration. |
 
 ## `[provides]`
 
@@ -125,6 +127,7 @@ Starting the program. Every text is a template: `${...}` holes are filled from t
 | `args` | list of templates | Its first arguments, one each. The fields' `bind.arg` follow, by `order`. |
 | `env` | list of tables | Environment variables to set, below. |
 | `group` | bool | Start it in a process group of its own (a job on Windows), so that stopping it takes the processes it started with it, and, on Linux, so that it follows QuickAI if QuickAI is killed. Default false. |
+| `cwd` | template | The folder the program starts in; it is made, with the ones above it, if it is not there. Without it the program starts wherever QuickAI was started from, which is the person's, and a program that writes a file to its working directory (Open WebUI keeps its secret key there) writes it there. |
 | `mkdir` | list of templates | Folders made, with the ones above them, before the program starts: for a program that refuses a folder it is told about that does not exist yet (ComfyUI's `--models-directory`). |
 | `write` | list of tables | Files of the application's own that are put where the program is told to read them, before it starts, below. |
 | `stop` | table | How to stop it: `{ policy = "kill" }` (the default: at once), or `{ policy = "graceful", grace = "10s", exit_grace = "2s" }`: ask it to leave (SIGTERM to its group; Windows has no such signal), wait `grace` (`exit_grace` while the application is closing), then kill what is left. |
@@ -185,6 +188,8 @@ One setting. Fields build the settings the window shows, and each says how its v
 | `pattern` | regular expression | The whole text value must match it. |
 | `validate` | list of `{ check, message }` | Rules that may look at other fields. The first whose `check` does not hold gives its `message` as the field's error. |
 | `persist` | `global`, `per_model`, `profile`, `session` | Where the value is remembered. Default `global`. |
+| `share` | `yes`, `review`, `never` | Whether the value travels in a configuration, a saved and shareable runtime. `yes`: it does. `review`: it does, and a person who is given a file that has it is shown it and asked (it becomes a command-line word, an environment line or an address, or it widens what the program may do). `never`: it belongs to a computer or a person and is never in one. Without it the type decides: `int`, `float`, `bool`, `choice` and `port` are `yes`; `text`, `url` and `kv_lines` are `review`; `dir`, `file` and `runtime_path` are `never`; `hidden` and `model_ref` are not settings (the model has a section of its own). A field added later is private until its document says otherwise. |
+| `share_note` | text | The sentence a person is told when this field is asked about or left out of a configuration (`Open WebUI may use the internet`). Only for a field that is not `yes`. |
 | `applies` | `on_start`, `spawn_only`, `live` | When a change takes effect: at the next start; at the next start, and only when QuickAI starts the engine itself; at once. Default `on_start`. |
 | `bind` | table, below | How the value reaches the engine. |
 | `derive` | table of conditions | Named facts for the rest of the program, from the field's value (`gpu_offload = "value > 0"`). |
@@ -507,6 +512,18 @@ Where builds of the engine come from and where they are kept. It configures the 
 | `digest` | bool | The feed lists a sha256 for each file (GitHub's `digest`) and a build carries it, for the installer to check. Default false. |
 | `archive` | address | Where the source archive of a release is fetched from, for `assets` of `by = "source"`: `<archive>/<owner>/<name>/archive/refs/tags/<tag>.tar.gz`. Default `https://github.com`; as with `api`, only documents QuickAI trusts may name another. |
 
+## `[acquire]` `feed`, `use = "pypi"`
+
+The releases of a package of the Python Package Index, for an application that is installed from its wheel (`assets` of `by = "wheel"`). The index lists a sha256 for every file, so every build carries one.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `use` | `pypi` | The kind of feed. |
+| `package` | text | The package, as the index names it (`open-webui`). |
+| `show` | whole number | How many releases that have a wheel to show. Default 5. |
+| `prereleases` | bool | Whether a release the index calls a pre-release (`1.0rc1`) counts. Default false. |
+| `api` | address | The root of the index's JSON API (`https://pypi.org`, the default). Another root, `http` or `https`, is how a test points the feed at a fake; only documents QuickAI trusts may name one. |
+
 ## `[acquire]` `assets`, `by = "keywords"`
 
 A file qualifies when it ends in one of `ext`, contains none of the `exclude` words, and contains a word for this machine's OS and one for its architecture. Matching ignores case.
@@ -539,6 +556,15 @@ The release's own source archive is the build, for an application that is instal
 | `by` | `source` | The kind of rule. |
 | `label` | template | The directory a build is installed under, over `tag`, `stem` and `asset`. Default `${tag}`. |
 
+## `[acquire]` `assets`, `by = "wheel"`
+
+The release's wheel is the build, for an application that is installed from the package index (`feed` of `use = "pypi"`, `install` of `use = "python_app"` with a `console_script`): the one file of the release that is a wheel for every platform (`py3-none-any`). It is downloaded, checked against its sha256, and installed into an environment with what it needs.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `by` | `wheel` | The kind of rule. |
+| `label` | template | The directory a build is installed under, over `tag`, `stem` and `asset`. Default `${tag}`. |
+
 ## `[acquire]` `install`
 
 `use = "archive"`: unpack a `.zip`, `.tar.gz` or `.tar.zst`, safely, into a directory of its own that is renamed into place when it is whole, and find the executable inside.
@@ -560,7 +586,8 @@ Install an application written in Python from its source: the source archive is 
 |---|---|---|
 | `use` | `python_app` | The kind of install. |
 | `binary` | `{ name }` | The launcher the installer writes (`comfyui`; `comfyui.cmd` on Windows). |
-| `entry` | text | The script of the unpacked source that the launcher runs, relative to it (`main.py`). |
+| `entry` | text | The script of the unpacked source that the launcher runs, relative to it (`main.py`). One of `entry` and `console_script` is needed. |
+| `console_script` | text | For a build that is a wheel, which has no source to run a script of: the program the wheel puts in the environment (`open-webui`). The installer asks the environment which function it calls, and the launcher has the environment's Python call it; the script itself is never run, because it holds the path of the folder it was made in, and a build is moved to its name when it is whole. |
 | `python` | `{ versions }` | The versions of Python to look for, best first (`["3.13", "3.12"]`): on the `PATH`, in pyenv's and uv's folders, and through the Windows launcher. The person may name a Python of their own. |
 | `verify` | `none` or `digest` | `digest`: compare the source archive with the sha256 this document pins for the tested release before anything is unpacked; another release is installed and said to be unchecked. Default `none`. |
 | `smoke` | list of text | A command that must succeed on the finished build before it counts as installed, starting with the launcher: `["${binary}", "--quick-test-for-ci"]`. |
@@ -580,6 +607,7 @@ One `pip install`.
 | `when` | condition | Only on a machine where this holds (`has(gpu.vendors, 'amd')`); always when left out. |
 | `packages` | list of text | Packages, as requirement specifiers (`torch`, `torchvision==0.29.1`). |
 | `requirements` | text | A requirements file of the unpacked source, relative to it (`requirements.txt`). |
+| `wheel` | bool | Installs the wheel the build is (`assets` of `by = "wheel"`): the file that was downloaded and checked, with what it needs from the index. A build that is a wheel has exactly one such step, and it names no packages or requirements file. |
 | `index` | address | The package index the packages come from instead of PyPI. It is the only one used: a second could offer a newer package built for something else. |
 | `weight` | whole number | How much of the progress bar this step is, next to the others (default 1). |
 
@@ -661,6 +689,9 @@ Conditions, defaults and templates are written in one small language (docs/archi
 | `model.ref` | a string |
 | `model.size_bytes` | an int |
 | `os` | a string |
+| `parent.id` | a string |
+| `parent.port` | an int |
+| `parent.url` | a string |
 | `public_port` | an int |
 | `runtime.binary` | a string |
 | `runtime.build` | an int |

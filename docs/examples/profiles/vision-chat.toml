@@ -1,20 +1,34 @@
-# ILLUSTRATIVE. A profile is a saved selection: which engine, which model, which components, which values.
-# Start runs a profile. The last-used selection is an implicit profile, so nothing changes for a user who
-# never saves one. Data-tier: it can pick things the registry already knows, nothing more.
+# A configuration: what QuickAI runs and how, in a file that can be chosen, saved and given to someone else
+# (docs/configurations.md; every key is on docs/reference/profile-fields.md). This one is Ollama with a vision
+# model, a context of 16K and Open WebUI beside it. Nothing in it says where anything is on a disk: a model is a
+# name, a program is a label of a build, and a computer that lacks either is told so before anything is taken.
+# It is data: it can pick what the application already knows and name no program, host or address to fetch from.
 schema = 1
 kind = "profile"
 id = "vision-chat"
-name = "Vision chat (llama.cpp)"
+requires = { app = ">=0.1" }
+name = "Vision chat"
+engine = "ollama"
 
-engine = "llamacpp"
-model = "example-vl-7b"                 # from catalog/starter.toml (fictional)
+[meta]
+note = "Qwen3-VL 8B on Ollama, 16K context, with Open WebUI beside it."
+made_with = "QuickAI 0.1.0"
+made_on = { os = "linux", arch = "x86_64", gpu = ["amd"], memory_gb = 32 }
 
-# Component settings belong to the attached component, not to the engine: the fields come from the
-# adapter kind in vocab/core.toml, and the engine document says how each becomes a flag.
-[components.mmproj]
-source = "recipe"                       # the projector the recipe names; or a file path, or "none"
-offload = true
+[runtime]
+build = "v0.40.0"
 
-[values]                                # engine and app fields, by id; anything not listed keeps its default
-"llamacpp.ctx_size" = 8192
-"llamacpp.n_gpu_layers" = 999
+[[model]]
+role = "main"
+ollama = "qwen3-vl:8b"                  # the key is the kind of name the engine takes (`accepts.refs`)
+size = 6140000000
+
+# Only what differs from the default is written. A text that becomes an environment line (or a command-line word) is
+# shown in full to whoever opens the file, and taken only if they agree.
+[values.ollama]
+ctx_size = 16384
+extra_env = "OLLAMA_FLASH_ATTENTION=1"
+
+[values.openwebui]                      # a companion's settings are a table of its own
+enabled = true
+port = 3000

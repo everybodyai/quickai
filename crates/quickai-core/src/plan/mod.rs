@@ -133,6 +133,24 @@ pub struct HostFacts {
     /// The running engine is one QuickAI did not start (it attached to it): its environment belongs
     /// to whoever started it, so what only a spawn can set cannot be changed from here.
     pub session_attached: bool,
+    /// For a companion: the engine it goes with and where that engine is, which its document may ask
+    /// about (`${parent.port}`). `None` for an engine, and for a companion that is not being planned for
+    /// a run.
+    pub parent: Option<Parent>,
+}
+
+/// The engine a companion goes with, as the companion's document sees it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Parent {
+    pub id: String,
+    /// The port clients reach it on: the one its settings give, which is the address of a daemon that
+    /// was already running and of a gateway in front of one that was started here.
+    pub port: u16,
+}
+
+/// The address a program that goes with an engine is told the engine is at (`${parent.url}`).
+pub fn parent_url(port: u16) -> String {
+    format!("http://127.0.0.1:{port}")
 }
 
 /// The app-level value that puts the live-traffic proxy in front of the engine.
@@ -278,6 +296,7 @@ pub fn plan(
                 .server_name
                 .clone()
                 .unwrap_or_else(|| engine.doc.engine.name.clone()),
+            needs_model: engine.doc.provides.needs_model,
             start,
             ready,
             warm,
@@ -773,6 +792,10 @@ fn plan_spawn(
         // A program QuickAI does not ship is a downloaded one, with libraries of its own.
         scrub_loader_env: !engine.doc.engine.bundled,
         identity: None,
+        cwd: spawn
+            .cwd
+            .as_ref()
+            .and_then(|template| render(template, spawn_path.clone().key("cwd"), context, errors)),
         mkdir: spawn
             .mkdir
             .iter()

@@ -1,0 +1,229 @@
+# Open WebUI as a document: a chat page for the models of the Ollama it goes with, installed from the Python
+# Package Index with an environment of its own and started beside Ollama (docs/openwebui.md).
+#
+# This is the document the application ships (docs/examples/engines/openwebui.toml has the same
+# content, and a test keeps them equal); a document of the same id in the user's configuration
+# directory patches it. It is an engine's document in every way but one: `companion_of` says it is not an
+# engine to choose. The settings of Ollama offer it, Ollama's Start starts it once Ollama answers, and it is a
+# run of its own, so that when it stops, Ollama's run goes on.
+#
+# It is isolated from every other engine, completely (the person's rule): its own root, `~/.quickai/openwebui`
+# (builds, each with a Python environment of its own, and `data/` and `cache/`); nothing is written anywhere
+# else (not to the home folder, not to the folder QuickAI was started from, not into its own package), and the
+# variables of the person's Python are put away. Every fact behind a line of it was measured with the release
+# named below: docs/engine-facts.md (W1 to W15).
+schema = 1
+kind = "engine"
+id = "openwebui"
+requires = { primitives = ["locate.setting@1", "locate.installed@1", "feed.pypi@1", "install.python_app@1", "spawn@1", "probe.http@1"] }
+
+[engine]
+name = "Open WebUI"
+server_name = "Open WebUI"
+summary = "A chat page for your models, with conversations, documents and tools. It runs on this computer and talks to Ollama."
+license = "Open WebUI License"  # BSD-3-Clause with one more condition: its name and logo are not to be altered or removed (a person who installs it is under it). It is why it is downloaded on request and never shipped
+bundled = false                 # downloaded on request, never shipped in a package
+homepage = "https://openwebui.com"
+order = 40
+companion_of = "ollama"
+first_address_field = "first_ollama"   # it keeps the address of Ollama it was first given in its own database (W16); QuickAI remembers that address in this field and says when it would be given another
+egress = []                     # nothing while its internet access is `offline` (the default). With `online`: huggingface.co, for the models it reads documents and speech with if the person points it at one of its own, and whatever sites a tool or a web search of the person's own asks it to reach
+
+[provides]
+apis = []                       # a page, not an API for other programs: they use Ollama's own
+web_ui = { path = "/", label = "Open Chat UI" }
+default_port = 3000             # 8080 is llama.cpp's, and what most programs of a developer's use
+needs_model = false             # it lists the models Ollama has and takes the one the person picks in its page
+
+[locate]
+strategies = [
+  { use = "setting", field = "bin_override" },
+  { use = "installed", root = "${data}/openwebui", pick = "newest", binary = { linux = "open-webui", macos = "open-webui", windows = "open-webui.cmd" } },
+]
+
+# ---- builds ----------------------------------------------------------------------------------------
+# A build is a release's wheel from the package index, installed into an environment made for it. The
+# wheel of the release the document was tested with has its sha256 pinned below; every other is checked
+# against the one the index lists for it, which is the file's own and not an independent witness.
+[acquire]
+root = "${data}/openwebui"
+feed = { use = "pypi", package = "open-webui", show = 5 }
+assets = { by = "wheel" }
+tested = { tag = "0.11.4" }
+filter_hint = "e.g. 0.11"
+
+[acquire.pins]                  # recorded 2026-10-10 from https://pypi.org/pypi/open-webui/0.11.4/json
+"open_webui-0.11.4-py3-none-any.whl" = "sha256:e4c2b02607ae984ec8ec08f3f9e02a8de06b1226af0f2df37fe2fab7f9d52523"
+
+# Its own Python environment, in its own build: nothing is installed into a Python the person has, and nothing
+# is shared with ComfyUI's (17 GB of PyTorch for another Python). Open WebUI says 3.11 or 3.12 (`<3.13`), so
+# a machine that has only a newer Python is told so before anything is downloaded. Only wheels: no package
+# runs a build script on the person's machine. The wheel pins its own 100 direct dependencies by version.
+[acquire.install]
+use = "python_app"
+binary = { name = "open-webui" }
+console_script = "open-webui"
+python = { versions = ["3.12", "3.11"] }
+verify = "digest"
+smoke = ["${binary}", "--help"]     # the launcher runs the program of the environment: it starts and says what it can do (the packages are imported by the first start, which has its own advice below)
+smoke_timeout = "120s"
+space = "8GiB"                  # measured (W2): 2.95 GB installed, about 1.6 GB downloaded; the room asked for is twice the environment
+
+# On Linux PyPI's own PyTorch is the one built for NVIDIA cards, with 3 GB of libraries around it; it is only
+# the part of Open WebUI that reads documents and speech on the processor, and Ollama does the models, so the
+# one for the processor is installed first and the wheel's own requirement is met by it. Elsewhere PyPI's
+# own is already the one for the processor.
+[[acquire.install.pip]]
+id = "torch_cpu"
+label = "PyTorch for the processor"
+when = "os == 'linux'"
+packages = ["torch"]
+index = "https://download.pytorch.org/whl/cpu"
+weight = 2
+
+[[acquire.install.pip]]
+id = "open_webui"
+label = "Open WebUI and what it needs"
+wheel = true
+weight = 6
+
+# ---- starting it -------------------------------------------------------------------------------------
+[launch]
+strategies = ["spawn"]
+
+[launch.spawn]
+program = "${runtime.binary}"
+args = ["serve", "--host", "127.0.0.1", "--port", "${listen_port}"]
+# It keeps its secret key in a file of the folder it starts in (W4), and everything else in `DATA_DIR`: the
+# folder is its own, and a build can be deleted or replaced and nothing of the person's is lost.
+cwd = "${data}/openwebui/data"
+mkdir = ["${data}/openwebui/data", "${data}/openwebui/cache", "${data}/openwebui/cache/tmp", "${data}/openwebui/home"]
+env = [
+  # where it keeps things: nothing outside its root (W7). Its static files are copied into its own package by default
+  { name = "DATA_DIR", value = "${data}/openwebui/data" },
+  { name = "STATIC_DIR", value = "${data}/openwebui/data/static" },
+  { name = "XDG_CACHE_HOME", value = "${data}/openwebui/cache" },
+  { name = "HF_HOME", value = "${data}/openwebui/cache/huggingface" },
+  # and what it does not know it keeps (a library that looks in `~` or in a temporary folder) is kept there too: it is
+  # started with a home and a temporary folder that are its own, so that nothing of it reaches the person's home or
+  # the system's temporary folder (the person's rule: the engines are isolated from each other completely)
+  { name = "HOME", value = "${data}/openwebui/home" },
+  { name = "USERPROFILE", value = "${data}/openwebui/home" },
+  { name = "APPDATA", value = "${data}/openwebui/home/AppData/Roaming" },
+  { name = "LOCALAPPDATA", value = "${data}/openwebui/home/AppData/Local" },
+  { name = "TMPDIR", value = "${data}/openwebui/cache/tmp" },
+  { name = "TEMP", value = "${data}/openwebui/cache/tmp" },
+  { name = "TMP", value = "${data}/openwebui/cache/tmp" },
+  # the Ollama it goes with, where its settings say it is: through QuickAI's gateway when the live view is on, and the daemon's own address when it was already running
+  { name = "ENABLE_OLLAMA_API", value = "true" },
+  { name = "OLLAMA_BASE_URL", value = "${parent.url}" },
+  { name = "ENABLE_OPENAI_API", value = "false" },
+  # the vectors of the documents a person gives it are made by Ollama, with an embedding model of the person's choice: by default it loads a model of its own from huggingface.co at start (30 files, 889 MB, and no answer on its port for minutes: W3)
+  { name = "RAG_EMBEDDING_ENGINE", value = "ollama" },
+  { name = "RAG_EMBEDDING_MODEL", value = "nomic-embed-text" },
+  # nothing is sent anywhere by it unasked: no usage statistics, and no check for a newer version (QuickAI installs the versions)
+  { name = "ANONYMIZED_TELEMETRY", value = "false" },
+  { name = "DO_NOT_TRACK", value = "true" },
+  { name = "SCARF_NO_ANALYTICS", value = "true" },
+  { name = "ENABLE_VERSION_UPDATE_CHECK", value = "false" },
+  # its page may be reached from its own address and no other (it answers any site by default: W6)
+  { name = "CORS_ALLOW_ORIGIN", value = "http://127.0.0.1:${listen_port};http://localhost:${listen_port}" },
+  # the variables of the person's own Python are not the program's
+  { name = "PYTHONUNBUFFERED", value = "1" },
+  { name = "PYTHONNOUSERSITE", value = "1" },
+  { name = "PYTHONPATH", value = "" },
+  { name = "PYTHONHOME", value = "" },
+]
+group = true                    # own process group (Unix) or job object (Windows): what it starts goes with it
+stop = { policy = "graceful", grace = "10s", exit_grace = "2s" }
+
+[launch.ready]
+probe = { use = "http", path = "/health", expect = 200 }
+timeout = "180s"
+interval = "1s"
+on_timeout = "wait"             # the first start makes its database (30 s on a slow disk): say so and go on waiting
+
+# ---- settings ----------------------------------------------------------------------------------------------
+[[field]]
+id = "enabled"
+label = "Start Open WebUI with Ollama"
+type = "bool"
+default = false
+help = "Start Open WebUI, a chat page for Ollama's models, when Ollama starts, and stop it with Ollama. It is downloaded the first time you ask for it (below) and keeps its own folder, ~/.quickai/openwebui."
+enabled_when = "not session.running"
+ui = { section = "primary", order = 1 }
+
+[[field]]
+id = "port"
+label = "Port"
+type = "port"
+default = 3000
+help = "The port Open WebUI listens on, on this computer only (127.0.0.1): the address of the page that Open Chat UI opens."
+bind.port = "public"
+enabled_when = "not session.running"
+ui = { section = "primary", order = 10 }
+
+[[field]]
+id = "network"
+label = "Open WebUI's internet access"
+type = "choice"
+options = ["offline", "online"]
+default = "offline"
+help = "Whether Open WebUI may use the internet. Either way it talks to your Ollama, on this computer. offline: it contacts no other site (OFFLINE_MODE): it looks for no update, fetches no model and installs no package a tool asks for. online: it may, as it does when you start it by hand: to fetch a model that reads documents or speech, if you choose one in its own settings, and for a tool or a web search that you ask for."
+bind.env = [ { name = "OFFLINE_MODE", value = "true", when = "value == 'offline'" } ]
+applies = "spawn_only"
+enabled_when = "not session.running"
+share = "review"
+share_note = "Open WebUI may use the internet: to fetch a model, a tool or a web search it is asked for."
+ui = { section = "primary", order = 20 }
+
+[[field]]
+id = "python"
+label = "Python for the install"
+type = "file"
+optional = true
+help = "The Python that makes Open WebUI's environment when it is installed, if you do not want the one QuickAI finds (3.12 or 3.11, in that order: Open WebUI does not run on a newer one yet). It needs the venv module: on Debian and Ubuntu the package python3-venv."
+ui = { section = "advanced", order = 12, hint = "e.g. /usr/bin/python3.12" }
+
+[[field]]
+id = "extra_env"
+label = "Extra environment (KEY=VALUE per line)"
+type = "kv_lines"
+default = ""
+help = "Variables for Open WebUI, one KEY=VALUE per line; a line that starts with # is a comment. Its settings are in its own documentation (docs.openwebui.com): ENABLE_SIGNUP=false, WEBUI_NAME and so on."
+bind.env_lines = { protect = ["DATA_DIR", "STATIC_DIR", "XDG_CACHE_HOME", "HF_HOME", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TMPDIR", "TEMP", "TMP", "OLLAMA_BASE_URL", "ENABLE_OLLAMA_API", "CORS_ALLOW_ORIGIN", "OFFLINE_MODE", "PYTHONPATH", "PYTHONHOME", "PYTHONNOUSERSITE"] }
+applies = "spawn_only"
+enabled_when = "not session.running"
+share = "never"
+share_note = "A line here works for some of Open WebUI's settings and not for the ones it keeps in its own database after its first start, so a configuration does not carry it."
+ui = { section = "advanced", order = 91 }
+
+# The address of the engine Open WebUI was first started with. Open WebUI keeps the address it is given at its first
+# start in a database of its own and does not read it from the environment again (docs/configurations.md, section 9), so
+# when the engine is on another port later it goes on calling the old one. QuickAI remembers the first address in this
+# value, which is its own and is not part of a configuration, to say so when the two differ.
+[[field]]
+id = "first_ollama"
+type = "hidden"
+
+[[field]]
+id = "bin_override"
+label = "Open WebUI launcher"
+type = "runtime_path"
+help = "Override the launcher QuickAI finds: a program that runs `open-webui serve` and passes its arguments on. Leave blank to use the installed build."
+ui = { section = "advanced", widget = "runtime_manager", order = 2, hint = "Local launcher path..." }
+
+# ---- advice for a run that went wrong ------------------------------------------------------------------------
+[[diagnostic]]
+when = { log_matches = '(?i)address already in use|errno 98|error while attempting to bind' }
+hint = "Another program is using port ${field.port}. Pick another port."
+action = "focus_field:port"
+
+[[diagnostic]]
+when = { log_matches = '(?i)No module named|ModuleNotFoundError|ImportError' }
+hint = "Open WebUI is missing a Python package. Install it again from Settings."
+
+[[diagnostic]]
+when = { log_matches = '(?i)outgoing traffic has been disabled|offline mode enabled' }
+hint = "Open WebUI is offline, so it did not fetch something it wanted. If you need it, set Open WebUI's internet access to online under Settings."
+action = "focus_field:network"

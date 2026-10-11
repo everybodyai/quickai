@@ -8,6 +8,7 @@
 pub mod catalog;
 pub mod duration;
 pub mod engine;
+pub mod profile;
 pub mod reference;
 pub mod vocab;
 
@@ -160,7 +161,7 @@ impl Envelope {
         let mut take = |key: &str| table.remove(key);
 
         let schema = match take("schema") {
-            Some(toml::Value::Integer(n)) if n >= 1 => n as u32,
+            Some(toml::Value::Integer(n)) if (1..=i64::from(u32::MAX)).contains(&n) => n as u32,
             Some(_) => {
                 problems.push(EnvelopeProblem::at(
                     "schema",

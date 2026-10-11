@@ -1,0 +1,779 @@
+{
+ "info": {
+  "name": "open-webui",
+  "requires_python": "<3.13.0a1,>=3.11",
+  "summary": "Open WebUI",
+  "version": "0.11.4"
+ },
+ "last_serial": 41304222,
+ "releases": {
+  "0.10.0": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "e7ae7dee2e604e125067230d7bec6eea8965a655a27c575050c48c44b8f48951"
+    },
+    "digests": {
+     "blake2b_256": "9ea7760c1f538bce2e58520f7fce3afa3e05d82283eda13ef4295ba4c38f7818",
+     "md5": "62ed4e2f7827992ade3591ee3650a539",
+     "sha256": "4bd16d93dc86e955939bb1b40409a7013108708bf4cba61871e0ff5112802460"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.10.0-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "62ed4e2f7827992ade3591ee3650a539",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 152016068,
+    "upload_time": "2026-06-29T19:24:31",
+    "upload_time_iso_8601": "2026-06-29T19:24:31.831944Z",
+    "url": "https://files.pythonhosted.org/packages/9e/a7/760c1f538bce2e58520f7fce3afa3e05d82283eda13ef4295ba4c38f7818/open_webui-0.10.0-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "037ba04d946ba32f988eeea5855381d68f9737ead8eb0653f33dfa5108ebec2f",
+     "md5": "8bbdc54caa23fb4a551a040135d84733",
+     "sha256": "ac507e6136ca14c512d8e10e012c3b21943b8be5997174ba65dae7deabea57ba"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.10.0.tar.gz",
+    "has_sig": false,
+    "md5_digest": "8bbdc54caa23fb4a551a040135d84733",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 52541262,
+    "upload_time": "2026-06-29T19:24:36",
+    "upload_time_iso_8601": "2026-06-29T19:24:36.356932Z",
+    "url": "https://files.pythonhosted.org/packages/03/7b/a04d946ba32f988eeea5855381d68f9737ead8eb0653f33dfa5108ebec2f/open_webui-0.10.0.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.10.1": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "02b3d5c978baa0121627cd8be4073a62daded4e5f7d886c7bf07640caba00e41"
+    },
+    "digests": {
+     "blake2b_256": "8273d4cd74ab7b955bf22c7d178d891c77205d442bb9690284918139fbeae461",
+     "md5": "1607adecd1203a2d6da672992de90460",
+     "sha256": "fe30d3f623ee89c29cc68ebac99cf14a9536833e0e274da3e9a6f1be841af3c0"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.10.1-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "1607adecd1203a2d6da672992de90460",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 152016524,
+    "upload_time": "2026-06-29T19:45:22",
+    "upload_time_iso_8601": "2026-06-29T19:45:22.998398Z",
+    "url": "https://files.pythonhosted.org/packages/82/73/d4cd74ab7b955bf22c7d178d891c77205d442bb9690284918139fbeae461/open_webui-0.10.1-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "26f7eab70bbe73c09d8aed260ef5141cefe5b5506d9e5d93390fabfc08f6fe25",
+     "md5": "c8e94cf79328444b39f44d15e6d983b1",
+     "sha256": "9292b09990473b416a5276a3fb4b3b04c68f0a71f0db10a23b9d6e8de8f4aa3c"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.10.1.tar.gz",
+    "has_sig": false,
+    "md5_digest": "c8e94cf79328444b39f44d15e6d983b1",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 52541254,
+    "upload_time": "2026-06-29T19:45:27",
+    "upload_time_iso_8601": "2026-06-29T19:45:27.520210Z",
+    "url": "https://files.pythonhosted.org/packages/26/f7/eab70bbe73c09d8aed260ef5141cefe5b5506d9e5d93390fabfc08f6fe25/open_webui-0.10.1.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.10.2": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "af948b2f8aba9cfdf191ca57be0ab1edcdcc5aedd252666b17823f29ea12ad97"
+    },
+    "digests": {
+     "blake2b_256": "1b93a09a41914b17a5fcf74bcfbcc88e6bb64468bab6d94b4d50909b8f819485",
+     "md5": "97bfd77f217b3a8aff383daa1d904eca",
+     "sha256": "7bd0d4ae8dd333b03d28f4240d2393d72c2aac98f532138777c6413828741b82"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.10.2-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "97bfd77f217b3a8aff383daa1d904eca",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 152030106,
+    "upload_time": "2026-07-01T08:48:09",
+    "upload_time_iso_8601": "2026-07-01T08:48:09.017762Z",
+    "url": "https://files.pythonhosted.org/packages/1b/93/a09a41914b17a5fcf74bcfbcc88e6bb64468bab6d94b4d50909b8f819485/open_webui-0.10.2-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "1704ad286fa5c3ec9bff7d4bde79a891ca5e63a881141bf0fc41daa5e25521f3",
+     "md5": "56f23324bcdc94575c94c017a8da6c32",
+     "sha256": "324362e45ef40c32bca61be4a50491cb73ccbaac07b26bb71361c4f9ce56e1c7"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.10.2.tar.gz",
+    "has_sig": false,
+    "md5_digest": "56f23324bcdc94575c94c017a8da6c32",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 52550015,
+    "upload_time": "2026-07-01T08:48:13",
+    "upload_time_iso_8601": "2026-07-01T08:48:13.859280Z",
+    "url": "https://files.pythonhosted.org/packages/17/04/ad286fa5c3ec9bff7d4bde79a891ca5e63a881141bf0fc41daa5e25521f3/open_webui-0.10.2.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.11.0": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "348b12a58643d05368f9b759f9c0433d281df9992b5f668a19315e0171e15fbe"
+    },
+    "digests": {
+     "blake2b_256": "b06387edc2cade790151d1595b05fbba1bde0c2df1fb2d0be80f2863667816e0",
+     "md5": "34a37b69316818f0b1af39c272aa467c",
+     "sha256": "71c266be87d0fb2cd79d9172d0e86a3b1b59d550d7054622b831344df07d361b"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.11.0-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "34a37b69316818f0b1af39c272aa467c",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 145492176,
+    "upload_time": "2026-07-27T10:53:15",
+    "upload_time_iso_8601": "2026-07-27T10:53:15.423671Z",
+    "url": "https://files.pythonhosted.org/packages/b0/63/87edc2cade790151d1595b05fbba1bde0c2df1fb2d0be80f2863667816e0/open_webui-0.11.0-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "e1093239c518cc7bd0582da021d4f12962399178ab3c833dc1832720cf2ff9f8",
+     "md5": "0c09c8cc1b35264cb1e53014efce32f0",
+     "sha256": "e28c4fa997bf0a678caa7a0db6441da2e0c33b9a4120677f959ec3e45fccf9e9"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.11.0.tar.gz",
+    "has_sig": false,
+    "md5_digest": "0c09c8cc1b35264cb1e53014efce32f0",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 49568784,
+    "upload_time": "2026-07-27T10:53:19",
+    "upload_time_iso_8601": "2026-07-27T10:53:19.373200Z",
+    "url": "https://files.pythonhosted.org/packages/e1/09/3239c518cc7bd0582da021d4f12962399178ab3c833dc1832720cf2ff9f8/open_webui-0.11.0.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.11.1": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "73fe773bc6926c6e7283720b331ddc680d36fad57852fd2b54f38ed7f6c8143d"
+    },
+    "digests": {
+     "blake2b_256": "d61825ba7b9818d41e082c3e68b9e0f94d8a781ba0978350bc835b6d0588406f",
+     "md5": "21ea2246af41facca6f20b41848e0197",
+     "sha256": "5eee202e434813d3dcfef98da68c7ea17689a3c78f5c78190fd876b0c3b274ae"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.11.1-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "21ea2246af41facca6f20b41848e0197",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 146002387,
+    "upload_time": "2026-08-25T21:24:38",
+    "upload_time_iso_8601": "2026-08-25T21:24:38.526352Z",
+    "url": "https://files.pythonhosted.org/packages/d6/18/25ba7b9818d41e082c3e68b9e0f94d8a781ba0978350bc835b6d0588406f/open_webui-0.11.1-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "ad3b75e50eb1475cb7d96a459fa6d4a4a73c58fec5d98e03fb62e92248747ee7",
+     "md5": "b3d0297fd5d9ccbc95da6832d1ec6de5",
+     "sha256": "6c2f3e60027ef30abb24b213c547a76c32326028e94a7fb9383558fcf8ef3f14"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.11.1.tar.gz",
+    "has_sig": false,
+    "md5_digest": "b3d0297fd5d9ccbc95da6832d1ec6de5",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 49879948,
+    "upload_time": "2026-08-25T21:24:43",
+    "upload_time_iso_8601": "2026-08-25T21:24:43.079536Z",
+    "url": "https://files.pythonhosted.org/packages/ad/3b/75e50eb1475cb7d96a459fa6d4a4a73c58fec5d98e03fb62e92248747ee7/open_webui-0.11.1.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.11.2": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "0f9bc99988cb0bead4e283a3f687edfdf4dd76f08a453d0c0f681c5c7acc7fe8"
+    },
+    "digests": {
+     "blake2b_256": "797de8a645577e95fd55815d885f2aaf8fa524f8cd47d4ba347346d892aa97e4",
+     "md5": "6e2d362bc8c1e7d7c295f4092d8fc602",
+     "sha256": "aaaa08731218474cb8817313f7e1928aad671724403a076ac87073bef638dc13"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.11.2-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "6e2d362bc8c1e7d7c295f4092d8fc602",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 146071524,
+    "upload_time": "2026-08-31T05:54:58",
+    "upload_time_iso_8601": "2026-08-31T05:54:58.116939Z",
+    "url": "https://files.pythonhosted.org/packages/79/7d/e8a645577e95fd55815d885f2aaf8fa524f8cd47d4ba347346d892aa97e4/open_webui-0.11.2-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "dcd6fc22d473663ed9298e923084018e6b7ce76ae15da8aaa8041b4832a70ac0",
+     "md5": "ed52617605d1049f4ef3aa5bde568dca",
+     "sha256": "ee3dc634ad108980cfaa09e4a66912cf26179e602e1fb542276528fd8ea86e6f"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.11.2.tar.gz",
+    "has_sig": false,
+    "md5_digest": "ed52617605d1049f4ef3aa5bde568dca",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 49931160,
+    "upload_time": "2026-08-31T05:55:02",
+    "upload_time_iso_8601": "2026-08-31T05:55:02.689466Z",
+    "url": "https://files.pythonhosted.org/packages/dc/d6/fc22d473663ed9298e923084018e6b7ce76ae15da8aaa8041b4832a70ac0/open_webui-0.11.2.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.11.3": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "0b687e303df3fc13c7c48af19b75e67e2d18cdfbe03fafadc31181ff7bb68e45"
+    },
+    "digests": {
+     "blake2b_256": "4ce428abecd6b75fa6fa40ae181d2fa9f57593e26d13309c90531dee5b4acc28",
+     "md5": "9960fbab7ac429735856dbde27e49e41",
+     "sha256": "8436f9bb29c5accbdfd90d78470fcc917c882bd53f72ed88fed91b1ee97fa547"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.11.3-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "9960fbab7ac429735856dbde27e49e41",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 146072797,
+    "upload_time": "2026-08-31T15:01:59",
+    "upload_time_iso_8601": "2026-08-31T15:01:59.527325Z",
+    "url": "https://files.pythonhosted.org/packages/4c/e4/28abecd6b75fa6fa40ae181d2fa9f57593e26d13309c90531dee5b4acc28/open_webui-0.11.3-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "5766a9549114ee1f66ff321cb8a6c8efa4e40e3a25ca66d31d701f49cf9af2e1",
+     "md5": "ed0d8b80264be7415d50c6226aa80364",
+     "sha256": "2e1eb0d8dce8d357103e6a1d75834a81e4c7486174c90546221dc1b14b76bd31"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.11.3.tar.gz",
+    "has_sig": false,
+    "md5_digest": "ed0d8b80264be7415d50c6226aa80364",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 49932372,
+    "upload_time": "2026-08-31T15:02:04",
+    "upload_time_iso_8601": "2026-08-31T15:02:04.562768Z",
+    "url": "https://files.pythonhosted.org/packages/57/66/a9549114ee1f66ff321cb8a6c8efa4e40e3a25ca66d31d701f49cf9af2e1/open_webui-0.11.3.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.11.4": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "7df0efd622a735890666175a345187625e4fa8f5aed10fee2e3eba95b0229428"
+    },
+    "digests": {
+     "blake2b_256": "ca8d051d8145b88cb3f97f9e165feaa4a266aa46f4f5f2df67affb0e72ba8066",
+     "md5": "df38a3828a95e7e1aac7c7c66fe5539d",
+     "sha256": "e4c2b02607ae984ec8ec08f3f9e02a8de06b1226af0f2df37fe2fab7f9d52523"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.11.4-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "df38a3828a95e7e1aac7c7c66fe5539d",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 98894348,
+    "upload_time": "2026-09-21T19:31:38",
+    "upload_time_iso_8601": "2026-09-21T19:31:38.796430Z",
+    "url": "https://files.pythonhosted.org/packages/ca/8d/051d8145b88cb3f97f9e165feaa4a266aa46f4f5f2df67affb0e72ba8066/open_webui-0.11.4-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "57f05d17412331055e9c188ff9d02ff9e3a86f631ce36839875e3454219a2d83",
+     "md5": "0218f66aeae3186fd797f80f166799c8",
+     "sha256": "1f1a31668a0dee733953c29d6183d78dd78984e696aa8eb0f2083f5796497be0"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.11.4.tar.gz",
+    "has_sig": false,
+    "md5_digest": "0218f66aeae3186fd797f80f166799c8",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 12430894,
+    "upload_time": "2026-09-21T19:31:43",
+    "upload_time_iso_8601": "2026-09-21T19:31:43.349121Z",
+    "url": "https://files.pythonhosted.org/packages/57/f0/5d17412331055e9c188ff9d02ff9e3a86f631ce36839875e3454219a2d83/open_webui-0.11.4.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.5.3.dev1": [
+   {
+    "comment_text": "",
+    "core-metadata": {
+     "sha256": "bd3c37478ae7e1a962375d18ac42fb883aef7ddf5abc4f295820244cf6104d2f"
+    },
+    "digests": {
+     "blake2b_256": "2fea04e14c5641fc0ea3989fe116678334fc242b32a33baec37e48f2a5080a87",
+     "md5": "218d1f644b1273f2191bb38011a5dc1c",
+     "sha256": "36eb5c4e6a3128bde9f825d76023fcb08f421c066af8614c031b2357e1369436"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.5.3.dev1-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "218d1f644b1273f2191bb38011a5dc1c",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 111213938,
+    "upload_time": "2024-12-31T21:29:49",
+    "upload_time_iso_8601": "2024-12-31T21:29:49.095758Z",
+    "url": "https://files.pythonhosted.org/packages/2f/ea/04e14c5641fc0ea3989fe116678334fc242b32a33baec37e48f2a5080a87/open_webui-0.5.3.dev1-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": "",
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "21e67cfc2f1f64baf69d3aa462c3985602e53ff28c7e3ef19898a66eb1af4d65",
+     "md5": "4e8e439a983b6c80f80c19928b25c38d",
+     "sha256": "c1e3befdf192f4e46eec43d24a26c45e130a216fd7c3bc626cf7e2e30982f8d5"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.5.3.dev1.tar.gz",
+    "has_sig": false,
+    "md5_digest": "4e8e439a983b6c80f80c19928b25c38d",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 53050226,
+    "upload_time": "2024-12-31T21:30:03",
+    "upload_time_iso_8601": "2024-12-31T21:30:03.525834Z",
+    "url": "https://files.pythonhosted.org/packages/21/e6/7cfc2f1f64baf69d3aa462c3985602e53ff28c7e3ef19898a66eb1af4d65/open_webui-0.5.3.dev1.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.6.26.dev1": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "0109e98daebc95c8cfe40f4f9161083c2e0bc4af4aa8e98e858a5f052bb0a4af"
+    },
+    "digests": {
+     "blake2b_256": "448c5a450d7544e26e2f16f614239f77eecc0ea92d793966f9ef6aedf62b5957",
+     "md5": "612f93d98d6b539df8c09b778aa45ce7",
+     "sha256": "53e5382c84a0550405e4669619a5023b686422974c3ab68191e30c1d854bc47a"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.6.26.dev1-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "612f93d98d6b539df8c09b778aa45ce7",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 141184685,
+    "upload_time": "2025-08-28T10:26:31",
+    "upload_time_iso_8601": "2025-08-28T10:26:31.123339Z",
+    "url": "https://files.pythonhosted.org/packages/44/8c/5a450d7544e26e2f16f614239f77eecc0ea92d793966f9ef6aedf62b5957/open_webui-0.6.26.dev1-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "c35f48372b4699ae6fa58ff7d4f50bd7c494ca9b3f21e7c6f07425facf16d8a6",
+     "md5": "6722bf1e09d37b10e84dd3afc8afb302",
+     "sha256": "b3938934b2f7298acae899a52aa69c45e142f2dc315a249adff0277e978d1f84"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.6.26.dev1.tar.gz",
+    "has_sig": false,
+    "md5_digest": "6722bf1e09d37b10e84dd3afc8afb302",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 54306004,
+    "upload_time": "2025-08-28T10:26:36",
+    "upload_time_iso_8601": "2025-08-28T10:26:36.900537Z",
+    "url": "https://files.pythonhosted.org/packages/c3/5f/48372b4699ae6fa58ff7d4f50bd7c494ca9b3f21e7c6f07425facf16d8a6/open_webui-0.6.26.dev1.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.6.6.dev1": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "ed79795d588a05d1f7c64e3506a4b3dd02b158e0d44eecc06c38c6a419465d06"
+    },
+    "digests": {
+     "blake2b_256": "ba95c693ad29291fc79f19d5e4afe6834277261ba046c0145dc327e93943cdfd",
+     "md5": "6d5138f75fc0472d2005f371da874e41",
+     "sha256": "34eadd1bc90e45f5e5591e1357b296eada8decc39de18bd3b63b84b556ff42aa"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.6.6.dev1-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "6d5138f75fc0472d2005f371da874e41",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 133036205,
+    "upload_time": "2025-05-05T13:51:29",
+    "upload_time_iso_8601": "2025-05-05T13:51:29.960656Z",
+    "url": "https://files.pythonhosted.org/packages/ba/95/c693ad29291fc79f19d5e4afe6834277261ba046c0145dc327e93943cdfd/open_webui-0.6.6.dev1-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "14662094e27db028491a4ededf4f9ad15f644a88e547f1f91d0f807918a53358",
+     "md5": "17b743c831326b510f7f8bcdfdb73883",
+     "sha256": "7f658095fd7eb5314bc794a53ba03dc2544f30a2dba4ea3a6bed7b709d8206ea"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.6.6.dev1.tar.gz",
+    "has_sig": false,
+    "md5_digest": "17b743c831326b510f7f8bcdfdb73883",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 53684303,
+    "upload_time": "2025-05-05T13:51:36",
+    "upload_time_iso_8601": "2025-05-05T13:51:36.191827Z",
+    "url": "https://files.pythonhosted.org/packages/14/66/2094e27db028491a4ededf4f9ad15f644a88e547f1f91d0f807918a53358/open_webui-0.6.6.dev1.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.9.3": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "bdf53a959803ca712eb931fa6c4e86a988ed1fbc43186cc80b969a9ba2f05673"
+    },
+    "digests": {
+     "blake2b_256": "c722236a6dec2e5f71d7478f3ca5897a55468fa18dbfde338873f17b70c5077c",
+     "md5": "3b717a69ad92baa485285c3b920474f8",
+     "sha256": "314e1855d2aa84567fc1d4fe945c05c872dd21a08b41be4958fcc823729ab4de"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.9.3-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "3b717a69ad92baa485285c3b920474f8",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 151384166,
+    "upload_time": "2026-05-09T07:23:46",
+    "upload_time_iso_8601": "2026-05-09T07:23:46.358692Z",
+    "url": "https://files.pythonhosted.org/packages/c7/22/236a6dec2e5f71d7478f3ca5897a55468fa18dbfde338873f17b70c5077c/open_webui-0.9.3-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "a9549b667c4e7d0e0d7ebadebe51479ac39fd68cd4036a661907e4744a93b12a",
+     "md5": "557d2703dc5ac9cd5730a4e6209fdd31",
+     "sha256": "95ba587edb2a1d10b609f2984b58ae96e777b08c386132e0405743d900001d93"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.9.3.tar.gz",
+    "has_sig": false,
+    "md5_digest": "557d2703dc5ac9cd5730a4e6209fdd31",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 52161413,
+    "upload_time": "2026-05-09T07:23:51",
+    "upload_time_iso_8601": "2026-05-09T07:23:51.737239Z",
+    "url": "https://files.pythonhosted.org/packages/a9/54/9b667c4e7d0e0d7ebadebe51479ac39fd68cd4036a661907e4744a93b12a/open_webui-0.9.3.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.9.4": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "b1910848dc1fd87a11ae3ab4ce7c16ae08d55346c4ae7010426bf05d73d68fca"
+    },
+    "digests": {
+     "blake2b_256": "5b9ffdc6d89372adee11e0709f219b2bd36122856be401967077dc67fa3a69ea",
+     "md5": "f8c811a0e8b02e3a5d2016621249d48c",
+     "sha256": "a33f577bdf03f273c50e74df455687cbec69d0c4556c90c146af78fa4631b3cb"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.9.4-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "f8c811a0e8b02e3a5d2016621249d48c",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 151385574,
+    "upload_time": "2026-05-09T07:56:58",
+    "upload_time_iso_8601": "2026-05-09T07:56:58.233987Z",
+    "url": "https://files.pythonhosted.org/packages/5b/9f/fdc6d89372adee11e0709f219b2bd36122856be401967077dc67fa3a69ea/open_webui-0.9.4-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "0b8cf0503dae9f13be04876454db458c505f9cc699e769e9ff55a59ce83d7d35",
+     "md5": "fe665e18dd1995fc649715a4258fd7ef",
+     "sha256": "5ab29680ccb20e3905eb9c423ca62eadc3cad284ef3b99a9fe4bfe6d64007e35"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.9.4.tar.gz",
+    "has_sig": false,
+    "md5_digest": "fe665e18dd1995fc649715a4258fd7ef",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 52161914,
+    "upload_time": "2026-05-09T07:57:04",
+    "upload_time_iso_8601": "2026-05-09T07:57:04.294982Z",
+    "url": "https://files.pythonhosted.org/packages/0b/8c/f0503dae9f13be04876454db458c505f9cc699e769e9ff55a59ce83d7d35/open_webui-0.9.4.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.9.5": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "186f7e531f27432ef1e77168dfd44ac806a4ad91d4e33b4b7009bea2781f9512"
+    },
+    "digests": {
+     "blake2b_256": "a959993a84b6852a4f1a46e8142f2b59b8748ca8b5a49ad1353c510c06b30898",
+     "md5": "19aa425c26942e52eb4d31a0c4b62e0f",
+     "sha256": "88e5751135cb54188e15bcd693cbef8689b3f755197513b76bb6ca35482f290d"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.9.5-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "19aa425c26942e52eb4d31a0c4b62e0f",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 151398894,
+    "upload_time": "2026-05-10T18:20:38",
+    "upload_time_iso_8601": "2026-05-10T18:20:38.031284Z",
+    "url": "https://files.pythonhosted.org/packages/a9/59/993a84b6852a4f1a46e8142f2b59b8748ca8b5a49ad1353c510c06b30898/open_webui-0.9.5-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "9f1fcd81f80e1f28ff52f5f83b1c35e6b679c2368689a67831e8c7be4d416aed",
+     "md5": "134f38b272723f553ea9cbe477c14a0b",
+     "sha256": "f231aaac4316b1e24824db1ccb195d8af32ca5a34b79ed0cb6ce5bc517bf62b4"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.9.5.tar.gz",
+    "has_sig": false,
+    "md5_digest": "134f38b272723f553ea9cbe477c14a0b",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 52172646,
+    "upload_time": "2026-05-10T18:20:48",
+    "upload_time_iso_8601": "2026-05-10T18:20:48.559845Z",
+    "url": "https://files.pythonhosted.org/packages/9f/1f/cd81f80e1f28ff52f5f83b1c35e6b679c2368689a67831e8c7be4d416aed/open_webui-0.9.5.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.9.6": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "f4c9091248c41157bd6195ba35f3fb25a14188ccb3973f462deec429729c8a6e"
+    },
+    "digests": {
+     "blake2b_256": "56df7bf2b53aeed2a327a1a4affe5bdb04f41d33c4ccb85f3f5db17a74d3534d",
+     "md5": "4255bc4d338e9d0b58de987029c32929",
+     "sha256": "ce5fdd1b8acf2b823c87417242dea4e6686d6130a98e766954ec6f04e5e146ed"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.9.6-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "4255bc4d338e9d0b58de987029c32929",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 151659070,
+    "upload_time": "2026-06-01T22:03:27",
+    "upload_time_iso_8601": "2026-06-01T22:03:27.641444Z",
+    "url": "https://files.pythonhosted.org/packages/56/df/7bf2b53aeed2a327a1a4affe5bdb04f41d33c4ccb85f3f5db17a74d3534d/open_webui-0.9.6-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   },
+   {
+    "comment_text": null,
+    "core-metadata": false,
+    "digests": {
+     "blake2b_256": "3ac73d5d4465e7bb7fc1832f0e63eaf988d847af5c8dbc9595d342fc681dbfdf",
+     "md5": "a49bde043eac3838785fbbb7de654cf7",
+     "sha256": "91b38fa35917bb7d2f645d030ed3b9544d35b72354bce3098d059899fd7f688b"
+    },
+    "downloads": -1,
+    "filename": "open_webui-0.9.6.tar.gz",
+    "has_sig": false,
+    "md5_digest": "a49bde043eac3838785fbbb7de654cf7",
+    "packagetype": "sdist",
+    "python_version": "source",
+    "requires_python": "<3.13.0a1,>=3.11",
+    "size": 52267098,
+    "upload_time": "2026-06-01T22:03:32",
+    "upload_time_iso_8601": "2026-06-01T22:03:32.608508Z",
+    "url": "https://files.pythonhosted.org/packages/3a/c7/3d5d4465e7bb7fc1832f0e63eaf988d847af5c8dbc9595d342fc681dbfdf/open_webui-0.9.6.tar.gz",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ]
+ },
+ "urls": [
+  {
+   "comment_text": null,
+   "core-metadata": {
+    "sha256": "7df0efd622a735890666175a345187625e4fa8f5aed10fee2e3eba95b0229428"
+   },
+   "digests": {
+    "blake2b_256": "ca8d051d8145b88cb3f97f9e165feaa4a266aa46f4f5f2df67affb0e72ba8066",
+    "md5": "df38a3828a95e7e1aac7c7c66fe5539d",
+    "sha256": "e4c2b02607ae984ec8ec08f3f9e02a8de06b1226af0f2df37fe2fab7f9d52523"
+   },
+   "downloads": -1,
+   "filename": "open_webui-0.11.4-py3-none-any.whl",
+   "has_sig": false,
+   "md5_digest": "df38a3828a95e7e1aac7c7c66fe5539d",
+   "packagetype": "bdist_wheel",
+   "python_version": "py3",
+   "requires_python": "<3.13.0a1,>=3.11",
+   "size": 98894348,
+   "upload_time": "2026-09-21T19:31:38",
+   "upload_time_iso_8601": "2026-09-21T19:31:38.796430Z",
+   "url": "https://files.pythonhosted.org/packages/ca/8d/051d8145b88cb3f97f9e165feaa4a266aa46f4f5f2df67affb0e72ba8066/open_webui-0.11.4-py3-none-any.whl",
+   "yanked": false,
+   "yanked_reason": null
+  },
+  {
+   "comment_text": null,
+   "core-metadata": false,
+   "digests": {
+    "blake2b_256": "57f05d17412331055e9c188ff9d02ff9e3a86f631ce36839875e3454219a2d83",
+    "md5": "0218f66aeae3186fd797f80f166799c8",
+    "sha256": "1f1a31668a0dee733953c29d6183d78dd78984e696aa8eb0f2083f5796497be0"
+   },
+   "downloads": -1,
+   "filename": "open_webui-0.11.4.tar.gz",
+   "has_sig": false,
+   "md5_digest": "0218f66aeae3186fd797f80f166799c8",
+   "packagetype": "sdist",
+   "python_version": "source",
+   "requires_python": "<3.13.0a1,>=3.11",
+   "size": 12430894,
+   "upload_time": "2026-09-21T19:31:43",
+   "upload_time_iso_8601": "2026-09-21T19:31:43.349121Z",
+   "url": "https://files.pythonhosted.org/packages/57/f0/5d17412331055e9c188ff9d02ff9e3a86f631ce36839875e3454219a2d83/open_webui-0.11.4.tar.gz",
+   "yanked": false,
+   "yanked_reason": null
+  }
+ ]
+}

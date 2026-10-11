@@ -23,6 +23,16 @@ their own license terms, reproduced in full below:
   files you download. It is downloaded, not bundled, and it is a separate program that QuickAI starts, not part
   of QuickAI.
 
+- **Open WebUI** is *not* part of this package either. If you choose Ollama as the engine and ask for a
+  chat page in ⚙ Settings, QuickAI downloads it on request from the
+  [Python Package Index](https://pypi.org/project/open-webui/) (a wheel of one release, checked against the
+  sha256 the index lists and, for the release it was tested with, the one QuickAI holds) and, through pip,
+  PyTorch (BSD-3-Clause) and about two hundred other Python packages, each under its own licence, which stays
+  with the files you download. Open WebUI is under the
+  [Open WebUI License](https://docs.openwebui.com/license): BSD-3-Clause with one more condition, that its
+  name and logo are not altered, removed or replaced (QuickAI leaves them as they are). It is downloaded,
+  not bundled, and it is a separate program that QuickAI starts, not part of QuickAI.
+
 Neither license requires QuickAI's own code to be released under the same
 terms — each applies only to the files it covers.
 

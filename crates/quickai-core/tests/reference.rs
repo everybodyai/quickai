@@ -8,15 +8,18 @@ use std::path::{Path, PathBuf};
 
 use quickai_core::doc::catalog::CatalogDoc;
 use quickai_core::doc::engine::EngineDoc;
+use quickai_core::doc::profile::ProfileDoc;
 use quickai_core::doc::read_body;
 use quickai_core::doc::reference::{
-    render, render_catalog, render_vocab, type_name, CATALOG_GROUPS, GROUPS, TYPES, VOCAB_GROUPS,
+    render, render_catalog, render_profile, render_vocab, type_name, CATALOG_GROUPS, GROUPS,
+    PROFILE_GROUPS, TYPES, VOCAB_GROUPS,
 };
 use quickai_core::doc::vocab::VocabDoc;
 
 const ENGINE_RS: &str = include_str!("../src/doc/engine.rs");
 const VOCAB_RS: &str = include_str!("../src/doc/vocab.rs");
 const CATALOG_RS: &str = include_str!("../src/doc/catalog.rs");
+const PROFILE_RS: &str = include_str!("../src/doc/profile.rs");
 
 fn page_path(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -40,6 +43,11 @@ fn the_checked_in_vocabulary_page_is_the_generated_one() {
 #[test]
 fn the_checked_in_catalog_page_is_the_generated_one() {
     check_golden("catalog-fields.md", render_catalog());
+}
+
+#[test]
+fn p3_a06_the_checked_in_configuration_page_is_the_generated_one() {
+    check_golden("profile-fields.md", render_profile());
 }
 
 fn check_golden(name: &str, generated: String) {
@@ -105,6 +113,7 @@ fn p3_e19_every_table_lists_exactly_the_fields_of_its_type_in_both_directions() 
         (ENGINE_RS, GROUPS),
         (VOCAB_RS, VOCAB_GROUPS),
         (CATALOG_RS, CATALOG_GROUPS),
+        (PROFILE_RS, PROFILE_GROUPS),
     ] {
         for group in groups {
             let Some(source) = group.source else { continue };
@@ -215,6 +224,13 @@ below = "4GiB"
 
 [[size_class]]
 id = "large"
+
+[[finding]]
+id = "too_new"
+text = "Made by a newer QuickAI: it needs {needs}, and this is {this}."
+
+[profile]
+deny_env = ["NODE_OPTIONS", "PERL5*"]
 "#;
 
 #[test]
@@ -401,6 +417,19 @@ feed = { use = "github_release", repo = "a/b" }
 assets = { by = "source", label = "${tag}" }
 install = { use = "python_app", binary = { name = "x" }, entry = "main.py", python = { versions = ["3.13", "3.12"] }, verify = "digest", smoke = ["${binary}", "--quick-test-for-ci"], smoke_timeout = "300s", space = "30GiB", pip = [ { id = "torch", label = "PyTorch", when = "has(gpu.vendors, 'amd')", packages = ["torch"], requirements = "requirements.txt", index = "https://download.example.com/whl/rocm", weight = 10 } ], nodes = [ { id = "gguf", label = "GGUF", when = "true", url = "https://example.com/a.tar.gz", sha256 = "sha256:0000000000000000000000000000000000000000000000000000000000000000", into = "custom_nodes/gguf", requirements = "requirements.txt", license = "MIT" } ] }
 "#;
+    let wheel = r#"
+[engine]
+name = "x"
+companion_of = "y"
+[launch.spawn]
+program = "x"
+cwd = "${data}/x/data"
+[acquire]
+root = "${data}/x"
+feed = { use = "pypi", package = "x-app", show = 5, prereleases = false, api = "https://pypi.example.com" }
+assets = { by = "wheel", label = "${tag}" }
+install = { use = "python_app", binary = { name = "x" }, console_script = "x-app", python = { versions = ["3.12"] }, verify = "digest", smoke = ["${binary}", "--help"], pip = [ { id = "app", label = "the application", wheel = true, weight = 4 } ] }
+"#;
     let lookups = r#"
 [engine]
 name = "x"
@@ -416,7 +445,7 @@ mode = [ { id = "embedding", label = "embedding server", help = "h", arg = ["--e
 order = 80
 bind = { arg = ["--mmproj", "${component.path}"] }
 "#;
-    for text in [keywords, names, python, lookups] {
+    for text in [keywords, names, python, wheel, lookups] {
         let table: toml::Table = toml::from_str(text).unwrap();
         let typed =
             read_body::<EngineDoc>(&table).unwrap_or_else(|e| panic!("{}: {}", e.path, e.message));
@@ -434,11 +463,92 @@ bind = { arg = ["--mmproj", "${component.path}"] }
                 keywords.contains(&key)
                     || names.contains(&key)
                     || python.contains(&key)
+                    || wheel.contains(&key)
                     || lookups.contains(&key),
                 "`{}` of `{}` is not exercised by the variant document above",
                 attribute.name,
                 group.heading
             );
         }
+    }
+}
+
+/// A configuration that says every key there is.
+const EVERY_PROFILE_KEY: &str = r#"
+name = "Vision chat"
+engine = "ollama"
+
+[meta]
+note = "Qwen3-VL 8B on Ollama."
+made_with = "QuickAI 0.1.0"
+made_on = { os = "linux", arch = "x86_64", gpu = ["amd"], memory_gb = 32 }
+
+[runtime]
+build = "v0.40.0"
+version = "0.40.0"
+
+[[model]]
+role = "chat"
+name = "Qwen3-VL 8B"
+catalog = "qwen3-vl-8b"
+file = "Qwen3-VL-8B-Q4_K_M.gguf"
+size = 6140000000
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+from = "huggingface:acme/Tiny-GGUF"
+
+[values.ollama]
+ctx_size = 16384
+
+[app]
+traffic_proxy = false
+"#;
+
+#[test]
+fn every_key_the_configuration_page_lists_is_one_the_schema_accepts() {
+    let table: toml::Table = toml::from_str(EVERY_PROFILE_KEY).unwrap();
+    let typed =
+        read_body::<ProfileDoc>(&table).unwrap_or_else(|e| panic!("{}: {}", e.path, e.message));
+    assert!(
+        typed.unknown.is_empty(),
+        "keys the schema does not know: {:?}",
+        typed.unknown
+    );
+    for group in PROFILE_GROUPS {
+        for attribute in group.attributes {
+            let (as_value, as_table) = (
+                format!("{} =", attribute.name),
+                format!("[{}]", attribute.name),
+            );
+            let as_values = attribute.name == "values" && EVERY_PROFILE_KEY.contains("[values.");
+            let as_model = attribute.name == "model" && EVERY_PROFILE_KEY.contains("[[model]]");
+            assert!(
+                EVERY_PROFILE_KEY.contains(&as_value)
+                    || EVERY_PROFILE_KEY.contains(&as_table)
+                    || as_values
+                    || as_model,
+                "`{}` of `{}` is not exercised by the document above",
+                attribute.name,
+                group.heading
+            );
+        }
+    }
+    let table: toml::Table = toml::from_str("engine = \"x\"\nenjine = 1\n").unwrap();
+    let typed = read_body::<ProfileDoc>(&table).unwrap();
+    assert_eq!(typed.unknown.len(), 1, "{:?}", typed.unknown);
+}
+
+#[test]
+fn the_configuration_page_has_a_table_for_every_type_of_the_document() {
+    let types: Vec<&str> = PROFILE_RS
+        .lines()
+        .filter_map(|l| l.strip_prefix("pub struct "))
+        .filter_map(|rest| rest.split(' ').next())
+        .collect();
+    let described: Vec<&str> = PROFILE_GROUPS.iter().filter_map(|g| g.source).collect();
+    for ty in &types {
+        assert!(
+            described.contains(ty),
+            "`struct {ty}` of doc/profile.rs has no table in PROFILE_GROUPS"
+        );
     }
 }

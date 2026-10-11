@@ -20,6 +20,7 @@ ComfyUI is GPL-3.0 and a program of its own. It is **not part of any package**: 
 | The window | a picker and a model box | the list of what is installed, **Recommended**, **Look up online**, a box for a link or a file and the folder it goes in, Refresh, Open folder, and **Open ComfyUI** once it runs |
 | API | `/v1`, Ollama's | `POST /prompt`, `GET /history/<id>`, `GET /view`, `/ws`, `GET /system_stats` (`comfyui.workflow`) |
 | Its page | none, or the server's own | a web page of its own, which QuickAI gives a **Download** that installs into the models folder ([below](#the-pages-download-button)) |
+| Its files | below `~/.quickai/<engine>` (Ollama's in a home and a temporary folder of its own there too; llama.cpp writes nothing else) | below `~/.quickai/comfyui`, and **in a home and a temporary folder of its own there** (`home/`, `cache/tmp/`): the compiler cache of ROCm, PyTorch's and the driver's caches and the kernels it compiles would otherwise go to the person's `~/.cache` and the system's temporary folder (F28), and the Python variables of the person's shell are put away (C92: every engine is isolated, completely) |
 
 ## Installing it
 

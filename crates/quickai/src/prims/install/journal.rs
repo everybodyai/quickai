@@ -33,6 +33,16 @@ pub struct StepRecord {
     pub label: String,
 }
 
+/// Where the file the build is made from came from: what going on with an install needs when the document
+/// alone does not say (the address of a wheel is the package index's, not something made up from its version).
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SourceRecord {
+    pub url: String,
+    pub host_digest: Option<String>,
+    pub pin: Option<String>,
+    pub size: Option<u64>,
+}
+
 /// The steps of an install and which of them are done.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Journal {
@@ -47,6 +57,9 @@ pub struct Journal {
     pub steps: Vec<StepRecord>,
     /// The ids of the steps that are done, in the order they were.
     pub done: Vec<String>,
+    /// The file the build is made from; a journal of an earlier version has none.
+    #[serde(default)]
+    pub source: Option<SourceRecord>,
 }
 
 impl Journal {
@@ -60,6 +73,7 @@ impl Journal {
                 .map_or(0, |d| d.as_secs()),
             steps,
             done: Vec::new(),
+            source: None,
         }
     }
 
@@ -201,6 +215,8 @@ pub struct Unfinished {
     pub next: Option<String>,
     /// When it last did something.
     pub touched: Option<SystemTime>,
+    /// Where the file the build is made from came from, as the install that stopped recorded it.
+    pub source: Option<SourceRecord>,
 }
 
 /// The directories below `root` with a journal that no install is working in, most recently touched
@@ -223,6 +239,7 @@ pub fn list_unfinished(root: &Path) -> Vec<Unfinished> {
                 done: journal.done.len(),
                 total: journal.steps.len(),
                 next: journal.next().map(|s| s.label.clone()),
+                source: journal.source,
                 label: journal.label,
                 dir,
                 touched,

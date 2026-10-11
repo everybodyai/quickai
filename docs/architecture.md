@@ -83,7 +83,7 @@ Each has a recommendation. The rest of the document assumes the recommendations.
 | Q7 | Layout rule | **Until Phase 5 the data-driven UI renders exactly today's window in llama.cpp mode.** Redesigns come after | The GUI suite's OCR crops are calibrated to it |
 | Q8 | Sequencing | **Declarative core first** (Phases 1-2), Ollama as the first new engine (Phase 3). The alternative, Ollama on the first proposal's design and a migration later, reaches a first Ollama sooner but throws away the per-engine Rust (API client, catalog, launcher, panel). Run the Ollama spike (A1-A9) **now, in parallel**; it does not depend on the architecture | Time to first Ollama versus rework |
 | Q9 | Packaging contract with `quickai_base` | **Keep today's convention** (`llama-server` and `models/` next to the executable) as the built-in `next_to_exe` locate strategy, so existing bundles keep working. Later, `stage_bundle` also writes a `bundle.toml` (what ships, with hashes) | It changes the contract between the two repositories and the `packaged_bundle` suite |
-| Q10 | Profiles in the UI? | **Data model now** (a selection already is a profile), **save/load UI later**, in Settings first | Layout parity |
+| Q10 | Profiles in the UI? | **Data model now** (a selection already is a profile), **save/load UI later**, in Settings first. *Built as WP4.17 (2026-10-11), at the user's request and in another place than Settings: "configurations", a dropdown in a section under the title row that says when a change was made, and a window of its own, [configurations.md](configurations.md).* | Layout parity |
 | Q11 | (was D1) When an Ollama already answers on the port, attach to it? | **Yes.** Strategy `attach_if_running`; field `mode` (auto, attach, spawn) | Most Ollama users run it as a service |
 | Q12 | (was D2) Own model store for a QuickAI-started Ollama? | **Yes** (`models_dir`), with a `use_default_store` switch | Pull and Delete must not touch models pulled with the Ollama CLI |
 | Q13 | (was D3) Version policy | **A `tested` tag with pinned digests in the engine document**; newest through an explicit look-up | Ollama ships often (v0.35.1 on 2026-09-29) |
@@ -205,11 +205,11 @@ An engine document has these sections ([`llamacpp.toml`](examples/engines/llamac
 
 | Section | Purpose | Primitives |
 |---|---|---|
-| `[engine]`, `[provides]` | Identity, license, the APIs served, accepted model formats, modalities, whether a web UI exists, whether the model name matters in a request, `egress` (hosts the engine itself contacts) | none |
+| `[engine]`, `[provides]` | Identity, license, the APIs served, accepted model formats, modalities, whether a web UI exists, whether the model name matters in a request, `egress` (hosts the engine itself contacts), `companion_of` (§10.5: a program that goes with an engine and is not one to choose) | none |
 | `[runtime]` | What the installed build reports: version, and its flags from `--help` | `exec.probe` |
 | `[locate]` | Find the binary without touching the network | `locate.*` |
-| `[acquire]` | List, download, verify and install builds | `feed.github_release`, `install.archive` |
-| `[launch]` | Start strategies; spawn (program, args, environment, stop policy) or attach; readiness | `spawn`, `attach`, `probe.http` |
+| `[acquire]` | List, download, verify and install builds | `feed.github_release`, `feed.pypi`, `install.archive`, `install.python_app` |
+| `[launch]` | Start strategies; spawn (program, args, the folder it starts in, environment, stop policy) or attach; readiness | `spawn`, `attach`, `probe.http` |
 | `[[launch.prepare]]`, `[[launch.warm]]`, `[[launch.unload]]` | Steps around serving | `http_call`, `write_file` |
 | `[models]` | Local sources, acquire, remove, look-up, how a typed string is read | `catalog.*`, `input_rules` |
 | `[[field]]` | The settings form; each field carries its UI and its bindings | widgets, sinks |
@@ -389,6 +389,7 @@ the context table, so a typo is a diagnostic with a file and line, not a runtime
 | `app.<id>` | app-level fields |
 | `listen_port`, `public_port` | the port the engine binds; the port clients use (different when the proxy is on) |
 | `session.running`, `.crashed`, `.model_display`, `.model_ref`; `ui.show_api` | runtime and UI state |
+| `parent.id`, `.port`, `.url` | for a companion (§10.5): the engine it goes with, the port its settings give and `http://127.0.0.1:<port>`; null for an engine |
 | `data`, `config`, `exe_dir`, `home` | path variables from policy |
 | `input` | the typed string, inside `input_rules` only |
 
@@ -579,9 +580,25 @@ lifecycle (daemon, then models on demand) on llama.cpp. The architecture absorbs
 `model-draft`-style key of its preset section instead of a command-line argument. Whether to offer it is a
 product question (Q2).
 
-### 10.5 Sidecars and stacks (designed in, built later)
+### 10.5 Companions, sidecars and stacks
 
-A profile may list several units; a gateway routes by path and taps all traffic for the Live tab
+**A companion (built, WP4.16).** A program that is not an engine to choose but goes with one: Open WebUI, a chat page
+for the models of Ollama ([`openwebui.toml`](examples/engines/openwebui.toml), [openwebui.md](openwebui.md)). Its
+document is an engine's in every way (locate, acquire, launch, fields, diagnostics) with `[engine] companion_of =
+"<engine>"`, which does four things: the engine selector does not offer it (`Registry::selectable`) and a settings file
+that names it as the engine is not believed; the settings of the engine it goes with draw its section
+(`Registry::companions_of`), with the usual manager of builds; its templates may ask about that engine (`${parent.port}`);
+and a companion of an engine that is not there, of itself or of another companion is an error and is not kept.
+
+It is **a run of its own**, not a second unit of the engine's plan: the window holds a second `Session` for it, started,
+once in a run, when the engine runs (Ollama answers, whether QuickAI started it or found it) and the person wants it and it is
+installed (when the run reaches Running, or later in it when the box is ticked or its install ends), and stopped when that run is
+over, however it ends; when the companion stops by itself, only it has stopped and the engine's run goes on, and the window
+says so. Its own root, Python environment, data, caches, home folder and temporary folder are inside its root, so that the
+engines are isolated from each other completely (C92); the application's own parts that read "the engine in use" serve it
+by holding its state in a slot that is put where they read it for the length of one call (`app/companion.rs`).
+
+**Sidecars and stacks (designed in, built later).** A profile may list several units; a gateway routes by path and taps all traffic for the Live tab
 ([`profiles/voice-chat.toml`](examples/profiles/voice-chat.toml)). The run plan already has `units`, and the
 supervisor starts them in dependency order (`optional = true` units may fail without failing the session). What
 is missing today is only the supervisor starting more than one and the gateway routing, plus engine documents for
@@ -733,6 +750,16 @@ click "Install"
   by the system when the process ends, however it ends; a second window is refused, the sweep of leftovers skips what is
   in use, and a list of what stopped does not show it. The lock is asked for a few times before a directory is said to be in
   use: a program that another thread is starting holds a copy of every open file until it runs (engine-facts F15).
+- **A wheel in place of a source** (WP4.16). An application that is published on the Python Package Index
+  (Open WebUI) has no source to unpack: its build is the release's wheel (`feed.pypi@1` lists the releases and the sha256 of
+  each file from the index's JSON; `assets` is `by = "wheel"`). The `source` step downloads the wheel, checks it the same way
+  (the pin for the tested release, the index's digest for another) and keeps it as `wheel/<file>` until the build is whole,
+  because a step that is done is undone if its file is gone; the `pip` step with `wheel = true` installs that file by its path,
+  and what it needs from the index, only as wheels; the launcher (`console_script`) has the environment's Python call the
+  function that the program the wheel put in the environment calls (asked of the environment, so that the script pip wrote,
+  which holds the path of the folder it was made in, is never run: the build is moved to its name when it is whole), and the
+  journal records where the file came from so that **Continue** works without asking the index again.
+  Everything else is as for a source: an environment in the build's own folder, a journal, a lock, a check, a rename.
 - **What a person sees.** Under the bar: the step (`Step 4 of 7 · ...`), what pip is doing, how far a download is and how
   fast, how long an unpacking has taken, and a silence once it is long. pip is the child of the install thread (its own
   process group, SIGTERM when its parent dies), so a window that is closed or killed takes it with it.

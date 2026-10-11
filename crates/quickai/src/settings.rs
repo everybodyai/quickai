@@ -15,6 +15,11 @@ pub const ENGINE_KEY: &str = "app.engine";
 /// The engine a file with no choice in it means.
 pub const DEFAULT_ENGINE: &str = "llamacpp";
 
+/// Where the id of the active configuration is kept: `values."app.configuration"`, absent while it is
+/// the Default (docs/configurations.md, section 6), so that the file of a person who does not use
+/// configurations is what it always was.
+pub const ACTIVE_CONFIGURATION_KEY: &str = "app.configuration";
+
 /// Where the hashes of the documents the person said may run a program are kept:
 /// `values."app.confirmed_engines"`, a list of texts.
 pub const CONFIRMED_ENGINES_KEY: &str = "app.confirmed_engines";
@@ -95,7 +100,7 @@ impl Settings {
 
     /// The settings stored at `path`; the defaults when the file is missing, unreadable, not JSON
     /// or of the wrong shape (a wrongly typed value discards the whole file, as it always has).
-    fn load_from(path: &Path) -> Self {
+    pub(crate) fn load_from(path: &Path) -> Self {
         std::fs::read_to_string(path)
             .ok()
             .and_then(|s| Self::from_json(&s))
@@ -208,6 +213,41 @@ impl Settings {
             values.remove(ENGINE_KEY);
         } else {
             values.insert(ENGINE_KEY.to_string(), serde_json::Value::from(id));
+        }
+        if values.is_empty() {
+            self.other.remove("values");
+        } else {
+            self.other
+                .insert("values".to_string(), serde_json::Value::Object(values));
+        }
+    }
+
+    /// The id of the configuration the person chose, `None` for the Default (which a file with no choice
+    /// in it means).
+    pub fn active_configuration(&self) -> Option<String> {
+        self.other
+            .get("values")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|values| values.get(ACTIVE_CONFIGURATION_KEY))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    }
+
+    /// Records the configuration chosen. The Default is what a file with no choice means, so choosing
+    /// it takes the key away again; everything else in the file is left as it is.
+    #[allow(dead_code)] // the windows of WP4.17.5 are its user; the tests use it now
+    pub fn set_active_configuration(&mut self, id: &str) {
+        let mut values = match self.other.get("values") {
+            Some(serde_json::Value::Object(existing)) => existing.clone(),
+            _ => serde_json::Map::new(),
+        };
+        if id == crate::configurations::DEFAULT_ID {
+            values.remove(ACTIVE_CONFIGURATION_KEY);
+        } else {
+            values.insert(
+                ACTIVE_CONFIGURATION_KEY.to_string(),
+                serde_json::Value::from(id),
+            );
         }
         if values.is_empty() {
             self.other.remove("values");
@@ -343,6 +383,60 @@ mod tests {
         let mut keys: Vec<String> = value.as_object().unwrap().keys().cloned().collect();
         keys.sort();
         keys
+    }
+
+    /// A18 of docs/phase3-test-plan.md: choosing the Default leaves a llama.cpp user's file with the nine
+    /// keys it has always had, a first run's file exactly the golden one, and what a configuration does
+    /// not carry (the theme, the folders, a program of the person's own) where it was.
+    #[test]
+    fn p3_a18_choosing_the_default_leaves_the_nine_keys_and_the_goldens_unchanged() {
+        use crate::config::{build_registry, ConfigDirs};
+        use crate::configurations::{choose, store_state, Installed};
+        use quickai_core::profile::check::Inventory;
+        let registry = build_registry(&ConfigDirs::default());
+        let default = registry.profile("default").unwrap().configuration.clone();
+        let mut want: Vec<String> = LEGACY_KEYS.iter().map(|k| k.to_string()).collect();
+        want.sort();
+
+        // a first run
+        let mut first = Settings::default();
+        let choice = choose(
+            &registry,
+            &first,
+            &default,
+            &Inventory::default(),
+            &Installed::new(),
+        )
+        .unwrap();
+        store_state(&registry, &mut first, &choice.state).unwrap();
+        first.set_active_configuration("default");
+        crate::golden::assert_golden("settings_default.json", &first.to_json().unwrap());
+
+        // a person who has set everything
+        let mut tuned = populated();
+        let choice = choose(
+            &registry,
+            &tuned,
+            &default,
+            &Inventory::default(),
+            &Installed::new(),
+        )
+        .unwrap();
+        store_state(&registry, &mut tuned, &choice.state).unwrap();
+        tuned.set_active_configuration("default");
+        let json = tuned.to_json().unwrap();
+        assert_eq!(keys_of(&json), want);
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["port"], 8080);
+        assert_eq!(value["ctx_size"], 4096);
+        assert_eq!(value["n_gpu_layers"], 999);
+        assert_eq!(value["extra_args"], "");
+        assert_eq!(value["last_model_filename"], serde_json::Value::Null);
+        assert_eq!(value["enable_traffic_proxy"], false);
+        // the theme, the folder and the program are theirs, not a configuration's
+        assert_eq!(value["dark_mode"], false);
+        assert_eq!(value["models_dir_override"], "/data/models");
+        assert_eq!(value["llama_bin_override"], "/opt/llama/llama-server");
     }
 
     #[test]

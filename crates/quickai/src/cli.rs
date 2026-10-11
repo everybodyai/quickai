@@ -33,10 +33,11 @@ QuickAI headless commands
       --strict      warnings (for example keys this version does not know) fail too
       --embedded    check only the documents compiled into the application
 
-  quickai config docs [vocab | catalog]
+  quickai config docs [vocab | catalog | profile]
       Print the reference page for engine documents (docs/reference/engine-fields.md), or with
-      `vocab` the one for vocabulary documents (docs/reference/vocab-fields.md), or with `catalog`
-      the one for catalog documents (docs/reference/catalog-fields.md), generated from the types the
+      `vocab` the one for vocabulary documents (docs/reference/vocab-fields.md), with `catalog`
+      the one for catalog documents (docs/reference/catalog-fields.md), or with `profile` the one
+      for configuration documents (docs/reference/profile-fields.md), generated from the types the
       loader reads.
 
   quickai plan [--explain | --json] [--engine ID] [--model FILE|NAME] [--binary FILE] [--port N]
@@ -48,6 +49,13 @@ QuickAI headless commands
       --explain     (default) the plan as text, with the origin of every argument
       --json        the plan as JSON
 
+  quickai plan ... [--configuration ID|FILE]
+      Start from a configuration: its engine, model and settings; what is given on the line wins.
+
+  quickai configuration list | show | check | export | import
+      Configurations, a runtime as a file that can be shared (docs/configurations.md). Each is shown by
+      `quickai configuration` with no arguments.
+
   quickai --help
 ";
 
@@ -55,7 +63,7 @@ QuickAI headless commands
 /// interface as usual. Any other arguments are ignored by the interface, as they always were.
 pub fn run(args: &[String]) -> Option<i32> {
     let first = args.first().map(String::as_str)?;
-    if !matches!(first, "config" | "plan" | "--help" | "-h") {
+    if !matches!(first, "config" | "configuration" | "plan" | "--help" | "-h") {
         return None;
     }
     let stdout = std::io::stdout();
@@ -93,11 +101,16 @@ pub fn run_with(
                 let _ = write!(out, "{}", quickai_core::doc::reference::render_catalog());
                 0
             }
+            Some("docs") if args.len() == 3 && args[2] == "profile" => {
+                let _ = write!(out, "{}", quickai_core::doc::reference::render_profile());
+                0
+            }
             _ => usage_error(
                 err,
-                "expected `config check` or `config docs [vocab | catalog]`",
+                "expected `config check` or `config docs [vocab | catalog | profile]`",
             ),
         },
+        Some("configuration") => crate::configuration_cli::run(&args[1..], dirs, out, err),
         Some("plan") => plan_command(&args[1..], dirs, out, err),
         _ => usage_error(err, "unknown command"),
     }
@@ -137,16 +150,27 @@ fn config_check(
         }
         let _ = writeln!(out, "{d}");
     }
-    let engines: Vec<&str> = registry.engines().map(|e| e.id.as_str()).collect();
+    // the engines to choose from, and the programs that go with one (they are documents of an engine, and not to choose)
+    let engines: Vec<&str> = registry.selectable().map(|e| e.id.as_str()).collect();
+    let companions: Vec<&str> = registry
+        .engines()
+        .filter(|e| e.doc.engine.companion_of.is_some())
+        .map(|e| e.id.as_str())
+        .collect();
     let _ = writeln!(
         out,
-        "config: {errors} error{}, {warnings} warning{}; engines: {}",
+        "config: {errors} error{}, {warnings} warning{}; engines: {}{}",
         if errors == 1 { "" } else { "s" },
         if warnings == 1 { "" } else { "s" },
         if engines.is_empty() {
             "none".to_string()
         } else {
             engines.join(", ")
+        },
+        if companions.is_empty() {
+            String::new()
+        } else {
+            format!("; companions: {}", companions.join(", "))
         }
     );
     i32::from(errors > 0 || (strict && warnings > 0))
@@ -162,6 +186,8 @@ struct PlanArgs {
     extra_args: Option<String>,
     proxy: bool,
     engine: Option<String>,
+    /// A configuration (an id, or a file) to start from.
+    configuration: Option<String>,
 }
 
 fn parse_plan_args(args: &[String]) -> Result<PlanArgs, String> {
@@ -175,6 +201,7 @@ fn parse_plan_args(args: &[String]) -> Result<PlanArgs, String> {
         extra_args: None,
         proxy: false,
         engine: None,
+        configuration: None,
     };
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -188,6 +215,7 @@ fn parse_plan_args(args: &[String]) -> Result<PlanArgs, String> {
             "--json" => parsed.json = true,
             "--proxy" => parsed.proxy = true,
             "--engine" => parsed.engine = Some(value("--engine")?),
+            "--configuration" => parsed.configuration = Some(value("--configuration")?),
             "--model" => parsed.model = Some(PathBuf::from(value("--model")?)),
             "--binary" => parsed.binary = Some(value("--binary")?),
             "--extra-args" => parsed.extra_args = Some(value("--extra-args")?),
@@ -254,10 +282,30 @@ fn plan_command(
         let _ = writeln!(err, "{d}");
     }
 
-    let engine = parsed
-        .engine
-        .clone()
-        .unwrap_or_else(|| DEFAULT_ENGINE.to_string());
+    // a configuration gives the engine, the model and the settings; what is said on the line wins
+    let base = match &parsed.configuration {
+        Some(target) => match crate::configuration_cli::plan_base(&registry, target) {
+            Ok(base) => Some(base),
+            Err(message) => {
+                let _ = writeln!(err, "quickai: {message}");
+                return 1;
+            }
+        },
+        None => None,
+    };
+    let engine = match (&parsed.engine, &base) {
+        (Some(wanted), Some(base)) if wanted != &base.engine => {
+            let _ = writeln!(
+                err,
+                "quickai: `--engine {wanted}` and the configuration, which is for {}, disagree",
+                base.engine
+            );
+            return 2;
+        }
+        (Some(wanted), _) => wanted.clone(),
+        (None, Some(base)) => base.engine.clone(),
+        (None, None) => DEFAULT_ENGINE.to_string(),
+    };
     let Some(engine_doc) = registry.engine(&engine) else {
         let _ = writeln!(err, "quickai: there is no engine called `{engine}`");
         return 1;
@@ -275,7 +323,12 @@ fn plan_command(
         }
         None
     } else if lists_models {
-        parsed.model.as_ref().map(|name| {
+        let named = parsed.model.clone().or_else(|| {
+            base.as_ref()
+                .and_then(|b| b.model.clone())
+                .map(PathBuf::from)
+        });
+        named.as_ref().map(|name| {
             let name = name.to_string_lossy().into_owned();
             quickai_core::plan::ModelInfo {
                 id: name.clone(),
@@ -288,20 +341,37 @@ fn plan_command(
         let entry = match &parsed.model {
             Some(path) => model_entry(path),
             None => {
-                let bundled = crate::paths::bundled_models_dir();
-                let user = crate::paths::user_models_dir();
+                let (bundled, user) = match &dirs.data {
+                    Some(data) => (data.join("bundled-models"), data.join("models")),
+                    None => (
+                        crate::paths::bundled_models_dir(),
+                        crate::paths::user_models_dir(),
+                    ),
+                };
                 let hide = quickai_core::lookup::bundle::companion_patterns(
                     quickai_core::models::bundles(engine_doc),
                 );
-                match crate::models::discover_all(&bundled, &user, &hide)
-                    .into_iter()
-                    .next()
-                {
-                    Some(m) => m,
-                    None => {
-                        let _ = writeln!(err, "quickai: no model found; pass --model FILE");
-                        return 1;
-                    }
+                let found = crate::models::discover_all(&bundled, &user, &hide);
+                // the model a configuration names, which must be here; else the first there is
+                let wanted = base.as_ref().and_then(|b| b.model.clone());
+                match (wanted, found.into_iter()) {
+                    (Some(name), mut models) => match models.find(|m| m.filename == name) {
+                        Some(m) => m,
+                        None => {
+                            let _ = writeln!(
+                                err,
+                                "quickai: the configuration's model, {name}, is not in the models folder; pass --model FILE"
+                            );
+                            return 1;
+                        }
+                    },
+                    (None, mut models) => match models.next() {
+                        Some(m) => m,
+                        None => {
+                            let _ = writeln!(err, "quickai: no model found; pass --model FILE");
+                            return 1;
+                        }
+                    },
                 }
             }
         };
@@ -325,6 +395,12 @@ fn plan_command(
             }
         }
     }
+    // what the configuration gives, and then what is said on the line
+    if let Some(base) = &base {
+        for (key, value) in &base.values {
+            selection.values.insert(key.clone(), value.clone());
+        }
+    }
     let key = |field: &str| format!("{engine}.{field}");
     if let Some(port) = parsed.port {
         selection = selection.set(&key("port"), port);
@@ -342,7 +418,8 @@ fn plan_command(
         selection = selection.set(&key("bin_override"), binary.as_str());
     }
     // the window puts the proxy only in front of an engine whose traffic is read; so does the plan
-    let proxy = parsed.proxy && launch::engine_reads_traffic(&registry, &engine);
+    let proxy = (parsed.proxy || base.as_ref().is_some_and(|b| b.proxy))
+        && launch::engine_reads_traffic(&registry, &engine);
     if proxy {
         selection = selection.set(quickai_core::plan::TRAFFIC_PROXY_KEY, true);
     }
@@ -434,7 +511,7 @@ mod tests {
         assert_eq!(code, 0, "{out}{err}");
         assert_eq!(
             out,
-            "config: 0 errors, 0 warnings; engines: llamacpp, ollama, comfyui\n"
+            "config: 0 errors, 0 warnings; engines: llamacpp, ollama, comfyui; companions: openwebui\n"
         );
     }
 
@@ -533,6 +610,22 @@ mod tests {
             out,
             page.replace("\r\n", "\n"),
             "regenerate it with `quickai config docs catalog`"
+        );
+    }
+
+    #[test]
+    fn config_docs_profile_prints_the_page_of_configuration_documents() {
+        let (code, out, _) = run_capture(&["config", "docs", "profile"], &ConfigDirs::default());
+        assert_eq!(code, 0);
+        assert!(out.contains("# Configuration documents"), "{out}");
+        let page = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/reference/profile-fields.md"),
+        )
+        .expect("the reference page is checked in");
+        assert_eq!(
+            out,
+            page.replace("\r\n", "\n"),
+            "regenerate it with `quickai config docs profile`"
         );
     }
 
@@ -741,5 +834,399 @@ mod tests {
         let plan: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(plan["gateway"].is_object(), "{json}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- configurations (WP4.17.4) --------------------------------------------------------------
+
+    const EXAMPLE: &str = include_str!("../../../docs/examples/profiles/vision-chat.toml");
+
+    /// A configuration directory of someone's, with a data directory of its own so that what is installed
+    /// and what is downloaded is what the test puts there.
+    fn person(name: &str) -> (PathBuf, ConfigDirs) {
+        let dir = scratch(name);
+        let dirs = ConfigDirs {
+            user: Some(dir.clone()),
+            data: Some(dir.join("data")),
+            ..ConfigDirs::default()
+        };
+        (dir, dirs)
+    }
+
+    fn put(dir: &Path, rel: &str, text: &str) -> PathBuf {
+        let path = dir.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, text).unwrap();
+        path
+    }
+
+    fn tree(dir: &Path) -> Vec<String> {
+        fn walk(dir: &Path, base: &Path, out: &mut Vec<String>) {
+            for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, base, out);
+                } else {
+                    out.push(path.strip_prefix(base).unwrap().display().to_string());
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(dir, dir, &mut out);
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn p3_a47_configuration_list_and_show_print_what_the_store_has() {
+        let (dir, dirs) = person("a47");
+        put(&dir, "profiles/vision-chat.toml", EXAMPLE);
+        put(
+            &dir,
+            "profiles/broken.toml",
+            "schema = 1\nkind = \"profile\"\nid = \"broken\"\n",
+        );
+        put(&dir, "profiles/later.toml", "schema = 1\nkind = \"profile\"\nid = \"later\"\nrequires = { app = \">=9.0\" }\nengine = \"llamacpp\"\n");
+        let mut settings = crate::settings::Settings::default();
+        settings.set_active_configuration("vision-chat");
+        settings.save_to(&dir.join("settings.json"));
+
+        let (code, out, _) = run_capture(&["configuration", "list"], &dirs);
+        assert_eq!(code, 0);
+        let lines: Vec<&str> = out.lines().collect();
+        assert!(
+            lines[0].starts_with("  default")
+                && lines[0].contains("Default")
+                && lines[0].contains("llamacpp")
+                && lines[0].contains("built in"),
+            "{out}"
+        );
+        assert!(
+            lines[1].starts_with("* vision-chat")
+                && lines[1].contains("Vision chat")
+                && lines[1].contains("ollama")
+                && lines[1].contains("yours")
+                && lines[1].contains("qwen3-vl:8b"),
+            "{out}"
+        );
+        // the files that could not be used, with why
+        assert!(
+            out.contains("! ")
+                && out.contains("broken.toml")
+                && out.contains("missing field `engine`"),
+            "{out}"
+        );
+        assert!(
+            out.contains("later.toml") && out.contains("update QuickAI"),
+            "{out}"
+        );
+        // with nothing chosen the Default is the one in use
+        std::fs::remove_file(dir.join("settings.json")).unwrap();
+        let (_, out, _) = run_capture(&["configuration", "list"], &dirs);
+        assert!(
+            out.lines().next().unwrap().starts_with("* default"),
+            "{out}"
+        );
+
+        // show: what it holds, and what a person should be told about it on this computer
+        let (code, out, err) = run_capture(&["configuration", "show", "vision-chat"], &dirs);
+        assert_eq!(code, 0, "{err}");
+        assert!(
+            out.starts_with("Vision chat (vision-chat), yours\n"),
+            "{out}"
+        );
+        for want in [
+            "Engine:  ollama",
+            "Program: v0.40.0",
+            "Model:   qwen3-vl:8b (main, 5.7 GB)",
+            "Context size: 16384",
+            "Extra environment (KEY=VALUE per line): OLLAMA_FLASH_ATTENTION=1",
+            "Start Open WebUI with Ollama: true",
+            "On this computer:",
+            "Made with v0.40.0, which is not installed here, and no build of this program is.",
+            "Ollama is not running, so it cannot be told whether qwen3-vl:8b is here.",
+        ] {
+            assert!(out.contains(want), "{want} in\n{out}");
+        }
+        let (code, _, err) = run_capture(&["configuration", "show", "nope"], &dirs);
+        assert_eq!(code, 1);
+        assert!(err.contains("no configuration called `nope`"), "{err}");
+        let (code, _, _) = run_capture(&["configuration", "show"], &dirs);
+        assert_eq!(code, 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn p3_a48_configuration_check_prints_the_notes_for_this_computer_and_reads_nothing_but_the_file(
+    ) {
+        let (dir, dirs) = person("a48");
+        let file = put(&dir, "given/vision-chat.toml", EXAMPLE);
+        let before = tree(&dir);
+        let (code, out, err) =
+            run_capture(&["configuration", "check", file.to_str().unwrap()], &dirs);
+        assert_eq!(code, 0, "{out}{err}");
+        assert!(
+            out.starts_with("Vision chat (vision-chat), for ollama\n"),
+            "{out}"
+        );
+        // what is asked about is shown in full
+        assert!(
+            out.contains("  Asks   Lines of environment, set for Ollama as they are written."),
+            "{out}"
+        );
+        assert!(
+            out.contains("ollama.extra_env = OLLAMA_FLASH_ATTENTION=1"),
+            "{out}"
+        );
+        assert!(out.contains("Warns"), "{out}");
+        assert!(
+            out.trim_end().ends_with(" warns") && out.contains("0 stops, 1 asks"),
+            "{out}"
+        );
+        // --strict fails on what is asked or warned about; a file that cannot be used fails always
+        let (code, _, _) = run_capture(
+            &["configuration", "check", "--strict", file.to_str().unwrap()],
+            &dirs,
+        );
+        assert_eq!(code, 1);
+        let alien = put(
+            &dir,
+            "given/alien.toml",
+            "schema = 1\nkind = \"profile\"\nid = \"alien\"\nengine = \"whispercpp\"\n",
+        );
+        let (code, out, _) =
+            run_capture(&["configuration", "check", alien.to_str().unwrap()], &dirs);
+        assert_eq!(code, 1);
+        assert!(
+            out.contains("Stops  It is for whispercpp, which this QuickAI does not have."),
+            "{out}"
+        );
+        let newer = put(&dir, "given/newer.toml", "schema = 1\nkind = \"profile\"\nid = \"n\"\nrequires = { app = \">=9.0\" }\nengine = \"llamacpp\"\n");
+        let (code, out, _) =
+            run_capture(&["configuration", "check", newer.to_str().unwrap()], &dirs);
+        assert_eq!(code, 1);
+        assert!(out.contains("Update QuickAI to use it."), "{out}");
+        let junk = put(&dir, "given/junk.toml", "this is = not toml = at all");
+        let (code, out, _) =
+            run_capture(&["configuration", "check", junk.to_str().unwrap()], &dirs);
+        assert_eq!(
+            (code, out.contains("not a QuickAI configuration")),
+            (1, true),
+            "{out}"
+        );
+        let (code, _, err) = run_capture(
+            &[
+                "configuration",
+                "check",
+                dir.join("nope.toml").to_str().unwrap(),
+            ],
+            &dirs,
+        );
+        assert_eq!(code, 1);
+        assert!(err.contains("could not read"), "{err}");
+        // and nothing was written anywhere
+        let mut expected = before.clone();
+        expected
+            .extend(["given/alien.toml", "given/newer.toml", "given/junk.toml"].map(String::from));
+        expected.sort();
+        assert_eq!(tree(&dir), expected);
+        let (code, _, _) = run_capture(&["configuration", "check"], &dirs);
+        assert_eq!(code, 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn p3_a49_export_import_and_plan_configuration() {
+        let (dir, dirs) = person("a49");
+        let mut with_secret = EXAMPLE.replace(
+            "OLLAMA_FLASH_ATTENTION=1",
+            "OLLAMA_FLASH_ATTENTION=1\\nHF_TOKEN=hunter2",
+        );
+        with_secret.push('\n');
+        put(&dir, "profiles/vision-chat.toml", &with_secret);
+
+        // export: to the screen, no secret, and what was left out is said
+        let (code, out, err) = run_capture(&["configuration", "export", "vision-chat"], &dirs);
+        assert_eq!(code, 0, "{err}");
+        assert!(
+            out.contains("OLLAMA_FLASH_ATTENTION=1")
+                && !out.contains("hunter2")
+                && !out.contains("HF_TOKEN"),
+            "{out}"
+        );
+        assert!(
+            out.contains("kind = \"profile\"") && out.contains("made_with = \"QuickAI "),
+            "{out}"
+        );
+        assert!(
+            err.contains("Lines left out because they look like secrets"),
+            "{err}"
+        );
+        let given = dir.join("shared.toml");
+        let (code, _, _) = run_capture(
+            &[
+                "configuration",
+                "export",
+                "vision-chat",
+                "-o",
+                given.to_str().unwrap(),
+                "--note",
+                "For you.",
+            ],
+            &dirs,
+        );
+        assert_eq!(code, 0);
+        let text = std::fs::read_to_string(&given).unwrap();
+        assert!(text.contains("note = \"For you.\""), "{text}");
+        let (code, _, err) = run_capture(&["configuration", "export", "nope"], &dirs);
+        assert_eq!(
+            (code, err.contains("no configuration called nope")),
+            (1, true),
+            "{err}"
+        );
+
+        // import on another computer: what is asked about is not taken without a yes
+        let (other, other_dirs) = person("a49b");
+        let (code, out, err) = run_capture(
+            &["configuration", "import", given.to_str().unwrap()],
+            &other_dirs,
+        );
+        assert_eq!(code, 0, "{out}{err}");
+        assert!(
+            out.contains("imported as Vision chat (vision-chat)"),
+            "{out}"
+        );
+        assert!(out.contains("not taken: ollama.extra_env"), "{out}");
+        let stored = std::fs::read_to_string(other.join("profiles/vision-chat.toml")).unwrap();
+        assert!(
+            stored.contains("ctx_size = 16384") && !stored.contains("extra_env"),
+            "{stored}"
+        );
+        // the same name again is a question, and the answers are three
+        let (code, _, err) = run_capture(
+            &["configuration", "import", given.to_str().unwrap()],
+            &other_dirs,
+        );
+        assert_eq!(code, 1);
+        assert!(
+            err.contains("--as NAME, --keep-both or --replace")
+                && err.contains("nothing was stored"),
+            "{err}"
+        );
+        let (code, out, _) = run_capture(
+            &[
+                "configuration",
+                "import",
+                given.to_str().unwrap(),
+                "--keep-both",
+                "--accept-review",
+            ],
+            &other_dirs,
+        );
+        assert_eq!(code, 0, "{out}");
+        assert!(
+            out.contains("imported as Vision chat 2 (vision-chat-2)"),
+            "{out}"
+        );
+        let kept = std::fs::read_to_string(other.join("profiles/vision-chat-2.toml")).unwrap();
+        assert!(
+            kept.contains("OLLAMA_FLASH_ATTENTION=1"),
+            "taken with a yes: {kept}"
+        );
+        let (code, _, _) = run_capture(
+            &[
+                "configuration",
+                "import",
+                given.to_str().unwrap(),
+                "--replace",
+                "--accept-review",
+            ],
+            &other_dirs,
+        );
+        assert_eq!(code, 0);
+        assert!(
+            std::fs::read_to_string(other.join("profiles/vision-chat.toml"))
+                .unwrap()
+                .contains("extra_env")
+        );
+        let (code, out, _) = run_capture(
+            &[
+                "configuration",
+                "import",
+                given.to_str().unwrap(),
+                "--as",
+                "Other name",
+            ],
+            &other_dirs,
+        );
+        assert_eq!(code, 0, "{out}");
+        assert!(other.join("profiles/other-name.toml").exists());
+        // a file that cannot be used stores nothing
+        let alien = put(
+            &dir,
+            "alien.toml",
+            "schema = 1\nkind = \"profile\"\nid = \"alien\"\nengine = \"whispercpp\"\n",
+        );
+        let before = tree(&other);
+        let (code, _, err) = run_capture(
+            &["configuration", "import", alien.to_str().unwrap()],
+            &other_dirs,
+        );
+        assert_eq!(code, 1);
+        assert!(err.contains("nothing was stored"), "{err}");
+        assert_eq!(tree(&other), before);
+        // the settings of the person are not touched by an import
+        assert!(!other.join("settings.json").exists());
+
+        // plan: the run plan the configuration makes here
+        let (code, out, err) = run_capture(&["plan", "--configuration", "vision-chat"], &dirs);
+        assert_eq!(code, 0, "{err}");
+        assert!(
+            out.contains("OLLAMA_CONTEXT_LENGTH") && out.contains("16384"),
+            "{out}"
+        );
+        let (code, json, _) =
+            run_capture(&["plan", "--configuration", "vision-chat", "--json"], &dirs);
+        assert_eq!(code, 0);
+        let plan: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(plan["engine"], "ollama");
+        assert_eq!(plan["model"], "qwen3-vl:8b");
+        // what is said on the line wins, and an engine that disagrees is refused
+        let (code, out, _) = run_capture(
+            &[
+                "plan",
+                "--configuration",
+                "vision-chat",
+                "--ctx-size",
+                "4096",
+            ],
+            &dirs,
+        );
+        assert_eq!(code, 0);
+        assert!(out.contains("4096") && !out.contains("16384"), "{out}");
+        let (code, _, err) = run_capture(
+            &[
+                "plan",
+                "--configuration",
+                "vision-chat",
+                "--engine",
+                "llamacpp",
+            ],
+            &dirs,
+        );
+        assert_eq!(code, 2);
+        assert!(err.contains("disagree"), "{err}");
+        // a file too
+        let (code, out, _) =
+            run_capture(&["plan", "--configuration", given.to_str().unwrap()], &dirs);
+        assert_eq!(code, 0);
+        assert!(out.contains("OLLAMA_CONTEXT_LENGTH"), "{out}");
+        let (code, _, err) = run_capture(&["plan", "--configuration", "nope"], &dirs);
+        assert_eq!(
+            (code, err.contains("no configuration called `nope`")),
+            (1, true),
+            "{err}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&other);
     }
 }

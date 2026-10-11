@@ -40,6 +40,11 @@ impl App {
         let Some(pending) = &self.pending_delete else {
             return;
         };
+        // a build of the program that goes with the engine is asked about, and removed, as that program's
+        if self.delete_of_companion && !self.in_companion {
+            self.as_companion(|app| app.show_confirm_delete_modal(ctx));
+            return;
+        }
         let (title, body) = match pending {
             PendingDelete::Model { filename, path } => ("Delete model?".to_string(), {
                 let mut body = format!("Delete \"{filename}\" from disk? This can't be undone.");
@@ -113,8 +118,10 @@ impl App {
                 }
                 None => {}
             }
+            self.delete_of_companion = false;
         } else if cancelled {
             self.pending_delete = None;
+            self.delete_of_companion = false;
         }
     }
 }

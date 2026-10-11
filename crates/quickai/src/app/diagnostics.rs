@@ -44,6 +44,10 @@ impl App {
                 self.show_crash_panel(ui, state, &server);
             }
         }
+        // the program that goes with the engine stopped, and the engine's run goes on
+        if self.companion_state() == Some(ServerState::Crashed) {
+            self.show_companion_crash(ui);
+        }
     }
 
     /// llama.cpp's panel, word for word as it has always been.
@@ -88,7 +92,7 @@ impl App {
     }
 
     /// Another engine's panel: what happened, and the advice its document has for what the log says.
-    fn show_crash_panel(&mut self, ui: &mut egui::Ui, state: ServerState, server: &str) {
+    pub(super) fn show_crash_panel(&mut self, ui: &mut egui::Ui, state: ServerState, server: &str) {
         let ended_in = if self.run_reached_running {
             "running"
         } else {

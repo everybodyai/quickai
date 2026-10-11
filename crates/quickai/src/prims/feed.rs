@@ -1,4 +1,4 @@
-//! `feed.github_release@1`: the builds an engine's GitHub releases offer (docs/architecture.md,
+//! `feed.github_release@1` and `feed.pypi@1`: the builds an engine's releases offer (docs/architecture.md,
 //! section 8). The engine document names the repository, how many releases to ask for and show,
 //! whether prereleases count and which of a release's files is a build for this machine; this module
 //! asks GitHub and reports what the document's rule lets through.
@@ -27,6 +27,9 @@ use super::install::{InstallRequest, Source};
 
 /// Where GitHub's API lives; a document may name another root (a test points the lookup at a fake).
 pub const GITHUB_API: &str = "https://api.github.com";
+
+/// Where the package index's JSON API lives; a document may name another root, as for GitHub's.
+pub const PYPI_API: &str = "https://pypi.org";
 
 const CALL_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -113,11 +116,16 @@ impl LookupSpec {
     /// unless the document names another root.
     pub fn from_engine(engine: &Engine, facts: &HostFacts) -> Option<LookupSpec> {
         let feed = engine.doc.acquire.as_ref()?.feed.as_ref()?;
-        let Feed::GithubRelease { api, .. } = feed;
+        let api_base = match feed {
+            Feed::GithubRelease { api, .. } => {
+                api.clone().unwrap_or_else(|| GITHUB_API.to_string())
+            }
+            Feed::Pypi { api, .. } => api.clone().unwrap_or_else(|| PYPI_API.to_string()),
+        };
         Some(LookupSpec {
             engine: engine.clone(),
             facts: facts.clone(),
-            api_base: api.clone().unwrap_or_else(|| GITHUB_API.to_string()),
+            api_base,
         })
     }
 
@@ -165,6 +173,10 @@ fn now_epoch() -> u64 {
 }
 
 fn get_releases(url: &str) -> Result<Vec<GhRelease>, LookupError> {
+    get_json(url)
+}
+
+fn get_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T, LookupError> {
     // a status is an answer here: the headers of a 403 say whether it is the rate limit
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
@@ -198,7 +210,7 @@ fn get_releases(url: &str) -> Result<Vec<GhRelease>, LookupError> {
         return Err(LookupError::Other(format!("http status: {status}")));
     }
     resp.into_body()
-        .read_json::<Vec<GhRelease>>()
+        .read_json::<T>()
         .map_err(|e| LookupError::Other(e.to_string()))
 }
 
@@ -273,6 +285,14 @@ pub fn request_for_label(
     if !acquire::builds_from_source(engine) {
         return None;
     }
+    // the address of a wheel is not made up from its version: what an install that stopped was made from
+    // is kept in its own record, and the index is asked only for a release that is looked up
+    if matches!(
+        engine.doc.acquire.as_ref().and_then(|a| a.assets.as_ref()),
+        Some(quickai_core::doc::engine::Assets::Wheel { .. })
+    ) {
+        return None;
+    }
     let spec = LookupSpec::from_engine(engine, facts)?;
     let build = source_build(&spec, label, acquire::tested_tag(engine))?;
     (build.label == label).then(|| build.install_request(&[]))
@@ -283,6 +303,17 @@ fn run(spec: LookupSpec, tx: Sender<BuildLookupEvent>, wake: impl Fn() + Send + 
         let _ = tx.send(e);
         wake();
     };
+    if matches!(
+        spec.engine
+            .doc
+            .acquire
+            .as_ref()
+            .and_then(|a| a.feed.as_ref()),
+        Some(Feed::Pypi { .. })
+    ) {
+        run_pypi(&spec, &send);
+        return;
+    }
     let Some(Feed::GithubRelease {
         repo,
         per_page,
@@ -417,6 +448,170 @@ fn run(spec: LookupSpec, tx: Sender<BuildLookupEvent>, wake: impl Fn() + Send + 
         for build in builds {
             send(BuildLookupEvent::Found(build));
         }
+    }
+    send(BuildLookupEvent::Done);
+}
+
+// ---- the package index ----------------------------------------------------------------------------------
+
+/// A file of a release, as the index lists it.
+#[derive(Clone, Debug, Deserialize)]
+struct PypiFile {
+    filename: String,
+    url: String,
+    #[serde(default)]
+    size: Option<u64>,
+    #[serde(default)]
+    digests: PypiDigests,
+    #[serde(default)]
+    packagetype: String,
+    #[serde(default)]
+    yanked: bool,
+    #[serde(default)]
+    upload_time_iso_8601: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+struct PypiDigests {
+    #[serde(default)]
+    sha256: Option<String>,
+}
+
+/// `GET /pypi/<package>/json`: every release, with its files.
+#[derive(Deserialize)]
+struct PypiPackage {
+    #[serde(default)]
+    releases: std::collections::BTreeMap<String, Vec<PypiFile>>,
+}
+
+/// `GET /pypi/<package>/<version>/json`: one release, with its files.
+#[derive(Deserialize)]
+struct PypiRelease {
+    #[serde(default)]
+    urls: Vec<PypiFile>,
+}
+
+impl PypiFile {
+    /// The wheel that is for every platform (`py3-none-any`), which is the one an application installed from
+    /// the index is made of; a file that was withdrawn is not offered.
+    fn is_pure_wheel(&self) -> bool {
+        !self.yanked
+            && self.packagetype == "bdist_wheel"
+            && self.filename.ends_with("-none-any.whl")
+    }
+}
+
+/// Whether a version is a pre-release in the index's sense (`1.0a1`, `1.0b2`, `1.0rc1`, `1.0.dev3`).
+fn is_prerelease(version: &str) -> bool {
+    let v = version.to_ascii_lowercase();
+    if v.contains("dev") {
+        return true;
+    }
+    let b = v.as_bytes();
+    (1..b.len().saturating_sub(1)).any(|i| {
+        b[i - 1].is_ascii_digit()
+            && ((matches!(b[i], b'a' | b'b') && b[i + 1].is_ascii_digit())
+                || (b[i] == b'r'
+                    && b[i + 1] == b'c'
+                    && b.get(i + 2).is_some_and(u8::is_ascii_digit)))
+    })
+}
+
+/// The build that is `file` of release `version`: its address and its sha256 are the index's, and the pin is
+/// the document's for the release it was tested with.
+fn pypi_build(
+    spec: &LookupSpec,
+    version: &str,
+    file: &PypiFile,
+    tested_tag: Option<&str>,
+) -> Build {
+    let tested = tested_tag == Some(version);
+    let sha256 = file.digests.sha256.as_deref().map(bare_digest);
+    let pin = tested
+        .then(|| acquire::pin_for(&spec.engine, &file.filename))
+        .flatten();
+    Build {
+        tag: version.to_string(),
+        asset_name: file.filename.clone(),
+        url: file.url.clone(),
+        size_bytes: file.size,
+        label: acquire::install_label(&spec.engine, version, &file.filename),
+        conflict: matches!((&sha256, &pin), (Some(a), Some(b)) if a != b),
+        sha256,
+        pin,
+        tested,
+        overlays: Vec::new(),
+    }
+}
+
+/// The builds of a package on the index: the newest releases that have a wheel, the one the document was
+/// tested with first (asked for by itself when the list has moved past it), each with the sha256 the index
+/// lists for its file.
+fn run_pypi(spec: &LookupSpec, send: &dyn Fn(BuildLookupEvent)) {
+    let Some(Feed::Pypi {
+        package,
+        show,
+        prereleases,
+        ..
+    }) = spec
+        .engine
+        .doc
+        .acquire
+        .as_ref()
+        .and_then(|a| a.feed.as_ref())
+    else {
+        return;
+    };
+    let fail = |text: String| {
+        send(BuildLookupEvent::Status(text));
+        send(BuildLookupEvent::Failed);
+        send(BuildLookupEvent::Done);
+    };
+    send(BuildLookupEvent::Status(format!(
+        "Checking {} releases...",
+        spec.repo_label()
+    )));
+    let listed: PypiPackage = match get_json(&format!("{}/pypi/{package}/json", spec.api_base)) {
+        Ok(listed) => listed,
+        Err(LookupError::RateLimited { reset }) => {
+            return fail(rate_limit_message(reset, now_epoch()));
+        }
+        Err(LookupError::Other(e)) => return fail(format!("Lookup failed: {e}")),
+    };
+    let tested_tag = acquire::tested_tag(&spec.engine);
+    // the newest first, by when the wheel was uploaded: a version number is not a reliably sortable thing
+    let mut found: Vec<(String, PypiFile)> = listed
+        .releases
+        .into_iter()
+        .filter(|(version, _)| *prereleases || !is_prerelease(version))
+        .filter_map(|(version, files)| {
+            let wheel = files.into_iter().find(PypiFile::is_pure_wheel)?;
+            Some((version, wheel))
+        })
+        .collect();
+    found.sort_by(|a, b| b.1.upload_time_iso_8601.cmp(&a.1.upload_time_iso_8601));
+    let mut builds: Vec<Build> = found
+        .iter()
+        .map(|(version, file)| pypi_build(spec, version, file, tested_tag))
+        .collect();
+    // the tested release is offered even when the newest ones have moved past it
+    if let Some(tag) = tested_tag {
+        let shown = builds.iter().take(*show).any(|b| b.tag == tag);
+        if !shown {
+            builds.retain(|b| b.tag != tag);
+            let one: Result<PypiRelease, LookupError> =
+                get_json(&format!("{}/pypi/{package}/{tag}/json", spec.api_base));
+            if let Ok(one) = one {
+                if let Some(file) = one.urls.iter().find(|f| f.is_pure_wheel()) {
+                    builds.insert(0, pypi_build(spec, tag, file, Some(tag)));
+                }
+            }
+        }
+    }
+    // the tested release first, and the rest newest first
+    let (tested, others): (Vec<_>, Vec<_>) = builds.into_iter().partition(|b| b.tested);
+    for build in tested.into_iter().chain(others).take(*show) {
+        send(BuildLookupEvent::Found(build));
     }
     send(BuildLookupEvent::Done);
 }
@@ -774,5 +969,57 @@ install = { use = "archive", binary = { name = "demo-server" } }
             assert!(!lower.contains("cudart"));
             assert!(b.url.contains(&b.tag));
         }
+    }
+
+    #[test]
+    fn a_version_is_a_pre_release_when_the_index_would_say_so() {
+        for pre in [
+            "1.0a1",
+            "1.0b2",
+            "1.0rc1",
+            "0.12.0rc10",
+            "1.0.dev3",
+            "2.0.0a0",
+            "1.0.0b1",
+            "3.1.0RC2",
+        ] {
+            assert!(is_prerelease(pre), "{pre}");
+        }
+        for stable in [
+            "0.11.4",
+            "1.0",
+            "1.0.post1",
+            "2026.2",
+            "10.0.1",
+            "1.2.3.4",
+            "0.0.0",
+            "1.0.0+local.5",
+        ] {
+            assert!(!is_prerelease(stable), "{stable}");
+        }
+    }
+
+    #[test]
+    fn only_a_wheel_for_every_platform_that_was_not_withdrawn_is_a_build() {
+        let file = |name: &str, kind: &str, yanked: bool| PypiFile {
+            filename: name.into(),
+            url: format!("https://x/{name}"),
+            size: None,
+            digests: PypiDigests::default(),
+            packagetype: kind.into(),
+            yanked,
+            upload_time_iso_8601: None,
+        };
+        assert!(file("a-1-py3-none-any.whl", "bdist_wheel", false).is_pure_wheel());
+        assert!(file("a-1-py2.py3-none-any.whl", "bdist_wheel", false).is_pure_wheel());
+        assert!(!file("a-1-py3-none-any.whl", "bdist_wheel", true).is_pure_wheel());
+        assert!(!file(
+            "a-1-cp312-cp312-manylinux_2_28_x86_64.whl",
+            "bdist_wheel",
+            false
+        )
+        .is_pure_wheel());
+        assert!(!file("a-1.tar.gz", "sdist", false).is_pure_wheel());
+        assert!(!file("a-1-py3-none-any.whl", "sdist", false).is_pure_wheel());
     }
 }

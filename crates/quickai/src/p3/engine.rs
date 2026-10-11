@@ -134,8 +134,12 @@ fn p3_e01_the_embedded_set_has_an_ollama_engine_that_loads_clean() {
 #[test]
 fn p3_e01b_the_engines_are_listed_with_llamacpp_first_for_the_selector() {
     let registry = registry();
-    let ids: Vec<&str> = registry.engines().map(|e| e.id.as_str()).collect();
+    // what a person can choose between: Open WebUI is a companion of Ollama's and is offered by its settings
+    let ids: Vec<&str> = registry.selectable().map(|e| e.id.as_str()).collect();
     assert_eq!(ids, ["llamacpp", "ollama", "comfyui"]);
+    // every document there is, in the same order, has it last
+    let all: Vec<&str> = registry.engines().map(|e| e.id.as_str()).collect();
+    assert_eq!(all, ["llamacpp", "ollama", "comfyui", "openwebui"]);
 }
 
 /// The sha256 of each Ollama v0.35.1 asset as `docs/engine-facts.md` records them.
@@ -508,8 +512,9 @@ fn p3_e15_a_document_needing_a_primitive_this_build_lacks_is_skipped_with_it_nam
         &ConfigDirs::default(),
         &KnownPrimitives::new(&without).with_widgets(crate::app::NAMED_WIDGETS),
     );
-    // both engines that attach to a daemon that is already there need it
-    for id in ["ollama", "comfyui"] {
+    // both engines that attach to a daemon that is already there need it, and Open WebUI, which goes with
+    // Ollama, is left without the engine it goes with
+    for id in ["ollama", "comfyui", "openwebui"] {
         assert!(registry.engine(id).is_none(), "{id} was loaded");
     }
     assert!(
@@ -522,13 +527,18 @@ fn p3_e15_a_document_needing_a_primitive_this_build_lacks_is_skipped_with_it_nam
         .filter(|d| d.is_error())
         .map(|d| d.to_string())
         .collect();
-    assert_eq!(errors.len(), 2, "{errors:#?}");
+    assert_eq!(errors.len(), 3, "{errors:#?}");
     for (id, error) in ["comfyui", "ollama"].iter().zip(&errors) {
         assert!(
             error.contains("`attach@1`") && error.contains(id),
             "{id}: {error}"
         );
     }
+    assert!(
+        errors[2].contains("companion_of") && errors[2].contains("`ollama`"),
+        "{}",
+        errors[2]
+    );
 }
 
 // ---- the form ---------------------------------------------------------------------------------------

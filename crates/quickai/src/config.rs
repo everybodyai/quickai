@@ -102,6 +102,9 @@ pub struct ConfigDirs {
     pub user: Option<PathBuf>,
     pub override_dir: Option<PathBuf>,
     pub safe_mode: bool,
+    /// Where the application keeps what it downloads (`~/.quickai`), when a test says another place:
+    /// `None` is the real one.
+    pub data: Option<PathBuf>,
 }
 
 impl ConfigDirs {
@@ -118,6 +121,7 @@ impl ConfigDirs {
                 .filter(|v| !v.is_empty())
                 .map(PathBuf::from),
             safe_mode: flag("QUICKAI_SAFE"),
+            data: None,
         }
     }
 }
@@ -165,7 +169,7 @@ pub fn engine_in_use(
     settings: &crate::settings::Settings,
 ) -> (String, Option<String>) {
     match settings.chosen_engine() {
-        Some(wanted) if registry.engine(&wanted).is_some() => (wanted, None),
+        Some(wanted) if registry.selectable_engine(&wanted).is_some() => (wanted, None),
         Some(wanted) => (
             crate::settings::DEFAULT_ENGINE.to_string(),
             Some(format!(

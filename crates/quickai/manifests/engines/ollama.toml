@@ -93,7 +93,17 @@ env = [
   { name = "OLLAMA_KEEP_ALIVE", value = "-1" },
   { name = "OLLAMA_MAX_LOADED_MODELS", value = "1" },
   { name = "OLLAMA_NO_CLOUD", value = "1", locked = true },     # without it a plain serve calls ollama.com at start-up and every ~4 h (A6)
+  # Isolation (the person's rule: the engines are isolated from each other completely). What Ollama keeps that is not its models
+  # (its identity, a key pair it makes at its first start in `~/.ollama`, and the shader caches of the graphics driver in
+  # `~/.cache`: O29) is kept in a home and a temporary folder of its own below its root, and not in the person's. Except when the
+  # person asked for Ollama's own store: that is the home of the Ollama they run themselves, and is left as it is.
+  { name = "HOME", value = "${data}/ollama/home", when = "not field.use_default_store" },
+  { name = "USERPROFILE", value = "${data}/ollama/home", when = "not field.use_default_store" },
+  { name = "TMPDIR", value = "${data}/ollama/cache/tmp" },
+  { name = "TEMP", value = "${data}/ollama/cache/tmp" },
+  { name = "TMP", value = "${data}/ollama/cache/tmp" },
 ]
+mkdir = ["${data}/ollama/home", "${data}/ollama/cache/tmp"]
 group = true                    # own process group (Unix) or job object (Windows): the runners are children
 stop = { policy = "graceful", grace = "10s", exit_grace = "2s" }
 
@@ -174,6 +184,8 @@ type = "bool"
 default = false
 applies = "spawn_only"           # an attached daemon's environment belongs to its owner
 enabled_when = "not session.running"
+share = "review"
+share_note = "Uses the model store of the Ollama you run yourself instead of QuickAI's own: its models are the ones in that store."
 ui = { section = "advanced", order = 11 }
 
 [[field]]
@@ -181,9 +193,10 @@ id = "extra_env"
 label = "Extra environment (KEY=VALUE per line)"
 type = "kv_lines"
 default = ""
-bind.env_lines = { protect = ["OLLAMA_HOST", "OLLAMA_MODELS", "OLLAMA_NO_CLOUD"] }
+bind.env_lines = { protect = ["OLLAMA_HOST", "OLLAMA_MODELS", "OLLAMA_NO_CLOUD", "HOME", "USERPROFILE", "TMPDIR", "TEMP", "TMP"] }
 applies = "spawn_only"           # an attached daemon's environment belongs to its owner
 enabled_when = "not session.running"
+share_note = "Lines of environment, set for Ollama as they are written."
 ui = { section = "advanced", order = 90 }
 
 [[field]]

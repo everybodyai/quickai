@@ -69,6 +69,9 @@ pub fn render_explain(plan: &RunPlan) -> String {
             for arg in &spawn.args {
                 push("", format!("  {}", arg.value), &arg.origin);
             }
+            if let Some(dir) = &spawn.cwd {
+                push("", format!("cwd   {dir}"), "engine launch.spawn.cwd");
+            }
             for dir in &spawn.mkdir {
                 push("", format!("mkdir {dir}"), "engine launch.spawn.mkdir");
             }

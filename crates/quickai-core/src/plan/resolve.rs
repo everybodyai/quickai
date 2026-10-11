@@ -247,6 +247,17 @@ pub(crate) fn base_context(selection: &Selection, facts: &HostFacts) -> Value {
                 ("model_ref", Value::Null),
             ]),
         ),
+        (
+            "parent",
+            match &facts.parent {
+                Some(parent) => map([
+                    ("id", parent.id.as_str().into()),
+                    ("port", parent.port.into()),
+                    ("url", super::parent_url(parent.port).as_str().into()),
+                ]),
+                None => Value::Null,
+            },
+        ),
         ("data", facts.data_dir.as_str().into()),
         ("config", facts.config_dir.as_str().into()),
         ("exe_dir", facts.exe_dir.as_str().into()),

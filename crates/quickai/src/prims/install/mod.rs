@@ -26,7 +26,7 @@ mod journal;
 mod python_app;
 mod zstd;
 
-pub use journal::{is_unfinished, list_unfinished, Unfinished};
+pub use journal::{is_unfinished, list_unfinished, SourceRecord, Unfinished};
 #[cfg(test)]
 pub use journal::{Journal, StepRecord};
 
@@ -38,7 +38,7 @@ pub fn hold_for_test(dir: &Path) -> impl Sized {
 }
 #[cfg(test)]
 pub use python_app::{find_python, Where};
-pub use python_app::{NodePlan, PipPlan, PythonApp, CANCELLED};
+pub use python_app::{NodePlan, PipPlan, PythonApp, Runs, CANCELLED};
 
 use std::fs::File;
 use std::io::{Read, Write};
@@ -168,6 +168,7 @@ impl InstallSpec {
             Install::PythonApp {
                 binary,
                 entry,
+                console_script,
                 python,
                 verify,
                 smoke,
@@ -179,7 +180,11 @@ impl InstallSpec {
                     text.clone().unwrap_or_else(|| fallback.to_string())
                 };
                 let app = PythonApp {
-                    entry: entry.clone(),
+                    runs: match (entry, console_script) {
+                        (_, Some(program)) => Runs::Program(program.clone()),
+                        (Some(entry), None) => Runs::Script(entry.clone()),
+                        (None, None) => return None,
+                    },
                     versions: python.versions.clone(),
                     python: None,
                     pip: quickai_core::acquire::pip_steps(engine, facts)
@@ -189,6 +194,7 @@ impl InstallSpec {
                             label: label(&step.label, &step.id),
                             packages: step.packages.clone(),
                             requirements: step.requirements.clone(),
+                            wheel: step.wheel,
                             index: step.index.clone(),
                             weight: step.weight.unwrap_or(1),
                         })

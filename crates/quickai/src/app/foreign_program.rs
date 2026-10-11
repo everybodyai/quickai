@@ -20,10 +20,11 @@ impl App {
         let Some(engine) = self.embedded.engine(&self.engine) else {
             return false;
         };
-        let found = launch::locate_binary(
+        let found = launch::locate_binary_in(
             &self.embedded,
             &self.engine,
             self.values.text("bin_override"),
+            self.data_dir_override.as_deref(),
         );
         if Path::new(program) == found {
             return true;

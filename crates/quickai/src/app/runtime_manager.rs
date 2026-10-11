@@ -124,6 +124,9 @@ pub struct RuntimeTexts {
     pub filter_hint: String,
     pub filter_help: String,
     pub default_choice: String,
+    /// Said beside the default row when the program it stands for is not there: only for an engine that is downloaded on
+    /// request, whose default is a build the person has not installed yet (`None`: the path is shown as it is).
+    pub default_missing: Option<String>,
     pub confirm_title: String,
     pub unfinished_label: String,
     pub unfinished_help: String,
@@ -144,22 +147,45 @@ impl RuntimeTexts {
             .unwrap_or_else(|| name.clone());
         let lookup = format!("Look up {name} builds");
         let repo = acquire::feed_repo_label(engine).unwrap_or_default();
+        // where the builds are published, and what a link to one is, in the words of the feed
+        let from_index = matches!(
+            engine.doc.acquire.as_ref().and_then(|a| a.feed.as_ref()),
+            Some(quickai_core::doc::engine::Feed::Pypi { .. })
+        );
+        let published = if from_index {
+            format!("the Python Package Index ({repo})")
+        } else {
+            format!("{name}'s own GitHub releases")
+        };
+        let link = if from_index {
+            "a link to a .whl file".to_string()
+        } else {
+            "a release asset link copied from GitHub".to_string()
+        };
         let filter_hint = engine
             .doc
             .acquire
             .as_ref()
             .and_then(|a| a.filter_hint.clone())
             .unwrap_or_default();
+        // "bundled" is what the packages ship (the document says so: `bundled = true`) and no more: an engine that is
+        // downloaded on request has nothing bundled for the first row of the list to be, and its row says `Default`
+        let shipped = engine.doc.engine.bundled;
+        let default_kind = if shipped {
+            "bundled/auto-detected"
+        } else {
+            "default"
+        };
         RuntimeTexts {
             browse_help: format!("Browse for a {server} executable"),
             apply_url_help: format!(
                 "Download and install a {server} build from this direct \
-                 URL (e.g. a release asset link copied from GitHub), then \
+                 URL (e.g. {link}), then \
                  switch to it automatically — no need to go through \"{lookup}\" first."
             ),
             apply_path_help: format!(
                 "Point at an already-downloaded {server} executable on \
-                 disk, or leave blank to reset to the bundled/auto-detected one."
+                 disk, or leave blank to reset to the {default_kind} one."
             ),
             installed_label: "Installed builds".to_string(),
             installed_help: format!(
@@ -171,8 +197,8 @@ impl RuntimeTexts {
             ),
             delete_build_help: "Delete this installed build".to_string(),
             lookup_help: format!(
-                "List recent {server} builds published on {name}'s \
-                 own GitHub releases, filtered to ones that match this \
+                "List recent {server} builds published on {published}, \
+                 filtered to ones that match this \
                  machine's OS/CPU. Picking one downloads and installs it \
                  under {root} and applies it automatically — \
                  useful when the current binary can't load a model (e.g. a \
@@ -189,7 +215,12 @@ impl RuntimeTexts {
                  already listed, no extra lookup.",
                 acquire::backend_words(engine)
             ),
-            default_choice: "Bundled/default".to_string(),
+            default_choice: if shipped {
+                "Bundled/default".to_string()
+            } else {
+                "Default".to_string()
+            },
+            default_missing: (!shipped).then(|| "not installed yet".to_string()),
             confirm_title: format!("Delete {server} build?"),
             unfinished_label: "Unfinished installs".to_string(),
             unfinished_help: format!(
@@ -237,6 +268,16 @@ impl RuntimeTexts {
 
     pub fn confirm_body(&self, label: &str) -> String {
         format!("Delete the installed build \"{label}\" from disk? This can't be undone.")
+    }
+}
+
+/// What is said beside the default row: where the program the application finds by itself is, or that there is none yet.
+/// A program that is not found is named by its bare name (`open-webui`), which says nothing to a person who has not
+/// installed one: next to a label it looked like the thing the row stood for.
+pub fn default_note(texts: &RuntimeTexts, binary: &Path) -> String {
+    match &texts.default_missing {
+        Some(missing) if !binary.is_file() => missing.clone(),
+        _ => binary.display().to_string(),
     }
 }
 
@@ -361,7 +402,11 @@ impl App {
                     }
                     if outcome.is_ok() && deleting.was_in_use {
                         self.runtime.input.clear();
-                        self.binary = launch::default_binary(&self.registry, &self.engine);
+                        self.binary = launch::default_binary_in(
+                            &self.registry,
+                            &self.engine,
+                            self.data_dir_override.as_deref(),
+                        );
                         self.set_bin_override(None);
                         self.missing_binary_warned = false;
                         self.save_settings();
@@ -482,9 +527,31 @@ impl App {
         let Some(spec) = self.install_spec() else {
             return;
         };
+        // from the document when it can say where the source is, and otherwise from what the install that
+        // stopped recorded of it (the address of a wheel is the index's to say)
         let request = self
             .runtime_engine()
-            .and_then(|e| feed::request_for_label(e, &self.host_facts, label));
+            .and_then(|e| feed::request_for_label(e, &self.host_facts, label))
+            .or_else(|| {
+                let source = self
+                    .runtime
+                    .disk
+                    .unfinished
+                    .iter()
+                    .find(|u| u.label == label)?
+                    .source
+                    .clone()?;
+                Some(install::InstallRequest {
+                    label: label.to_string(),
+                    base: install::Source {
+                        url: source.url,
+                        host_digest: source.host_digest,
+                        pin: source.pin,
+                        size: source.size,
+                    },
+                    overlays: Vec::new(),
+                })
+            });
         let Some(request) = request else {
             self.push_log(format!(
                 "Cannot go on with the install of {label}: this version of QuickAI does not know where its source is. Delete it and install again."
@@ -548,7 +615,11 @@ impl App {
     /// Points the engine back at the executable it finds by itself.
     fn use_default_binary(&mut self) {
         self.runtime.input.clear();
-        self.binary = launch::default_binary(&self.registry, &self.engine);
+        self.binary = launch::default_binary_in(
+            &self.registry,
+            &self.engine,
+            self.data_dir_override.as_deref(),
+        );
         self.set_bin_override(None);
         self.missing_binary_warned = false;
         self.settings_error = None;
@@ -700,6 +771,7 @@ impl App {
                 self.use_binary(path);
             }
             if let Some(pending) = to_delete {
+                self.delete_of_companion = self.in_companion;
                 self.pending_delete = Some(pending);
             }
         }
@@ -761,6 +833,7 @@ impl App {
                 self.continue_install(&label, ui.ctx());
             }
             if let Some(pending) = to_remove {
+                self.delete_of_companion = self.in_companion;
                 self.pending_delete = Some(pending);
             }
         }
@@ -884,12 +957,15 @@ impl App {
                             {
                                 reset_to_default = true;
                             }
+                            let binary = launch::default_binary_in(
+                                &self.registry,
+                                &self.engine,
+                                self.data_dir_override.as_deref(),
+                            );
                             ui.label(
-                                egui::RichText::new(
-                                    launch::default_binary(&self.registry, &self.engine).display().to_string(),
-                                )
-                                .small()
-                                .color(egui::Color32::GRAY),
+                                egui::RichText::new(default_note(&texts, &binary))
+                                    .small()
+                                    .color(egui::Color32::GRAY),
                             );
                         });
                     }
@@ -1047,6 +1123,90 @@ mod tests {
             want("log_delete_failed")
         );
         assert_eq!(t.confirm_body("{label}"), want("confirm_body"));
+    }
+
+    /// Every sentence of the manager, as a list.
+    fn sentences(t: &RuntimeTexts) -> Vec<(&'static str, &str)> {
+        vec![
+            ("browse_help", &t.browse_help),
+            ("apply_url_help", &t.apply_url_help),
+            ("apply_path_help", &t.apply_path_help),
+            ("installed_label", &t.installed_label),
+            ("installed_help", &t.installed_help),
+            ("delete_build_help", &t.delete_build_help),
+            ("lookup_label", &t.lookup_label),
+            ("lookup_help", &t.lookup_help),
+            ("close_list_help", &t.close_list_help),
+            ("checking_status", &t.checking_status),
+            ("filter_label", &t.filter_label),
+            ("filter_hint", &t.filter_hint),
+            ("filter_help", &t.filter_help),
+            ("default_choice", &t.default_choice),
+            ("confirm_title", &t.confirm_title),
+            ("unfinished_label", &t.unfinished_label),
+            ("unfinished_help", &t.unfinished_help),
+            ("continue_help", &t.continue_help),
+            ("delete_unfinished_help", &t.delete_unfinished_help),
+            ("confirm_unfinished_title", &t.confirm_unfinished_title),
+        ]
+    }
+
+    /// "Bundled" is what the packages ship (`bundled = true` in the document) and nothing else. The first row of the list
+    /// of builds used to say `Bundled/default` for every engine, so that Open WebUI, which is downloaded on request and never
+    /// shipped (its licence is why), was offered to the person as a program that came with QuickAI.
+    #[test]
+    fn p3_t43_an_engine_that_is_not_shipped_is_never_called_bundled_by_its_manager() {
+        let registry = build_registry(&ConfigDirs::default());
+        let mut said_bundled_of_a_shipped_one = false;
+        for id in ["llamacpp", "ollama", "comfyui", "openwebui"] {
+            let engine = registry.engine(id).expect("the embedded engine");
+            let t = RuntimeTexts::for_engine(engine, "~/.quickai/x");
+            let bundled: Vec<&str> = sentences(&t)
+                .into_iter()
+                .filter(|(_, text)| text.to_lowercase().contains("bundled"))
+                .map(|(name, _)| name)
+                .collect();
+            let nowhere = Path::new("/nowhere/program");
+            if engine.doc.engine.bundled {
+                said_bundled_of_a_shipped_one |= !bundled.is_empty();
+                assert_eq!(
+                    t.default_choice, "Bundled/default",
+                    "{id}: what it always was"
+                );
+                assert_eq!(
+                    default_note(&t, nowhere),
+                    "/nowhere/program",
+                    "{id}: the path beside the row is shown as it is, there or not"
+                );
+            } else {
+                assert!(
+                    bundled.is_empty(),
+                    "{id} is downloaded on request and never shipped, and its manager says bundled in {bundled:?}"
+                );
+                assert_eq!(t.default_choice, "Default", "{id}");
+                assert!(
+                    t.apply_path_help
+                        .ends_with("or leave blank to reset to the default one."),
+                    "{id}: {}",
+                    t.apply_path_help
+                );
+                // beside the row: a build that is there is shown by its place, and none that is not by a word and
+                // not by the bare name of a program (`open-webui` read as what the row stood for)
+                assert_eq!(default_note(&t, nowhere), "not installed yet", "{id}");
+                let dir = scratch(&format!("t43-{id}"));
+                let there = dir.join("program");
+                std::fs::write(&there, "#!/bin/sh\n").unwrap();
+                assert_eq!(
+                    default_note(&t, &there),
+                    there.display().to_string(),
+                    "{id}"
+                );
+            }
+        }
+        assert!(
+            said_bundled_of_a_shipped_one,
+            "the word is kept for the engine that is shipped: llama.cpp"
+        );
     }
 
     #[test]
@@ -1235,6 +1395,7 @@ backends = [ { match = "gpu", label = "GPU" } ]
                 total: 7,
                 next: Some("PyTorch".into()),
                 touched: None,
+                source: None,
             }],
         }
     }

@@ -9,6 +9,8 @@
 mod catalog;
 #[cfg(unix)]
 mod comfy;
+#[cfg(unix)]
+mod companion;
 mod contract;
 mod docs;
 mod engine;
