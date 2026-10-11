@@ -42,41 +42,10 @@ pub(crate) fn format_duration(time: std::time::Duration) -> String {
     }
 }
 
-/// What the context and the program need on top of the bytes of the weights.
-const OVERHEAD_FACTOR: f64 = 1.2;
-/// The part of the memory a model is comfortably given.
-const RAM_FRACTION: f64 = 0.5;
-/// The part of the memory beyond which a model does not fit at all.
-const RAM_LIMIT: f64 = 0.8;
-
-/// How a model of some size sits in this machine's memory.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Fit {
-    /// It fits with room to spare.
-    Comfortable,
-    /// It fits, and little else does.
-    Tight,
-    /// It is more than the machine can hold.
-    TooBig,
-}
-
-/// Whether `bytes` of weights fit in `total_ram_bytes`: comfortably in half of it with the overhead
-/// counted, tightly in four fifths, not beyond. All that is known of the machine is its total memory
-/// (no graphics memory), so this is a hint and not a promise; an unknown memory judges nothing.
-pub fn fit(bytes: u64, total_ram_bytes: u64) -> Fit {
-    if total_ram_bytes == 0 {
-        return Fit::Comfortable;
-    }
-    let need = bytes as f64 * OVERHEAD_FACTOR;
-    let ram = total_ram_bytes as f64;
-    if need <= ram * RAM_FRACTION {
-        Fit::Comfortable
-    } else if need <= ram * RAM_LIMIT {
-        Fit::Tight
-    } else {
-        Fit::TooBig
-    }
-}
+// The rule of whether a model fits is the core's, so that a configuration and the Recommended window
+// say the same (docs/configurations.md, section 7).
+pub use quickai_core::heuristics::{fit, Fit};
+use quickai_core::heuristics::{OVERHEAD_FACTOR, RAM_FRACTION};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SpeedTier {

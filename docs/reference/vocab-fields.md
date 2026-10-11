@@ -2,7 +2,7 @@
 
 _Generated from the types in `crates/quickai-core/src/doc/vocab.rs` by `quickai config docs vocab`. Do not edit by hand: `QUICKAI_UPDATE_GOLDEN=1 cargo test -p quickai-core --test reference` rewrites it, and a test fails while it is out of date._
 
-A vocabulary document (`kind = "vocab"`) names what engines and the window have in common: the kinds of input and output a model can have, the APIs an engine can serve, with where the text is in the requests and replies of each, so that the Live tab can read the traffic of an engine the code has never heard of, and the types of model and the classes of size a look-up sorts what it found by. A vocabulary can name things and describe them; it cannot start a program or reach a host. A document in the user's configuration directory with the same `id` patches the embedded one: tables merge by key and `[[modality]]`, `[[api]]`, `[[model_type]]` and `[[size_class]]` entries by `id` (docs/architecture.md, section 5.2). A key this version does not know is a warning; `quickai config check --strict` makes warnings fail.
+A vocabulary document (`kind = "vocab"`) names what engines and the window have in common: the kinds of input and output a model can have, the APIs an engine can serve, with where the text is in the requests and replies of each, so that the Live tab can read the traffic of an engine the code has never heard of, the types of model and the classes of size a look-up sorts what it found by, and the sentences of the notes a person is told about a configuration. A vocabulary can name things and describe them; it cannot start a program or reach a host. A document in the user's configuration directory with the same `id` patches the embedded one: tables merge by key and `[[modality]]`, `[[api]]`, `[[model_type]]`, `[[size_class]]` and `[[finding]]` entries by `id` (docs/architecture.md, section 5.2). A key this version does not know is a warning; `quickai config check --strict` makes warnings fail.
 
 The primitives a document relies on go in `requires` (`requires = { primitives = ["decode@1"] }` for one with `decode` tables); a build that lacks one skips the document and says which.
 
@@ -50,6 +50,23 @@ A band of sizes, which is a button of the size filter of a look-up. A model's bu
 | `label` | text | What the filter says (`Small (< 4 GB)`); default the id. |
 | `help` | text | A sentence for the person who wonders what it is. |
 | `below` | size | Where it ends: sizes below it are in the class (`4GiB`, `500MB`; `GB` counts thousands, `GiB` 1024s). Left out, the class takes every size beyond the last bound. |
+
+## `[[finding]]`
+
+The sentence of one note that a person is told about a configuration (docs/configurations.md, section 7): `too_new`, `unknown_engine`, `build_missing` and the rest. The code decides when a note is made and how much it matters (it stops an import, asks a question, warns or only says); a document can reword it and cannot change that. A vocabulary that gives some of the notes gives all of them. The list merges by `id`, so a document of the person's can reword one.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `id` | text | The note it is for. One this version does not make is a warning. |
+| `text` | text | The sentence. `{name}` is replaced by the word the note has for it (`{needs}`, `{this}`, `{model}`...); one the note does not have is an error, and the error lists the ones it has. Required. |
+
+## `[profile]`
+
+What a configuration file may and may not do.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `deny_env` | list of text | Names of environment variables no configuration may set, in any case; a trailing `*` stands for any ending (`DYLD_*`). They add to a short list the application always refuses (`LD_*`, `DYLD_*`, `PATH`, `PYTHON*`), which no document can take away: a file from outside must not make a program load other code. |
 
 ## `[[api]]`
 
@@ -118,6 +135,8 @@ Each of these is an error that names the file and the place, and a document with
 - `framing` is not empty and names only `sse`, `ndjson` and `json`;
 - a `decode` comes with `paths`, and says where the text of a request is, by `prompt` or by `chat`, not both;
 - a model type id is a name and is used once (also across documents), at most one type is the `default`, and a list of its `match` has no empty entry;
-- a size class id is a name and is used once, every `below` is a size, the bounds go up from one class to the next, and the class with no bound is the last.
+- a size class id is a name and is used once, every `below` is a size, the bounds go up from one class to the next, and the class with no bound is the last;
+- a `[[finding]]` has the `id` of a note this version makes (else a warning), a `text` that is not empty and uses only the words its note fills in, and is given once; the notes of the document all have a sentence when it has any;
+- a name of `deny_env` is the name of an environment variable, with `*` allowed at the end, and not `*` alone.
 
 An engine that names an API in `[provides]` `apis` that no vocabulary defines does not load (when there is a vocabulary at all), with the nearest name suggested.

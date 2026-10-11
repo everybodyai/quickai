@@ -238,6 +238,10 @@ impl Daemon {
     pub fn spawn(spawn: &SpawnPlan, env: &ChildEnv) -> std::io::Result<Daemon> {
         let mut cmd = Command::new(&spawn.program.value);
         cmd.args(spawn.args.iter().map(|a| &a.value));
+        // a program that has a folder of its own starts in it, and not in the person's
+        if let Some(dir) = &spawn.cwd {
+            cmd.current_dir(dir);
+        }
         for name in &env.remove {
             cmd.env_remove(name);
         }
@@ -496,6 +500,7 @@ mod tests {
             env,
             group: false,
             scrub_loader_env: scrub,
+            cwd: None,
             mkdir: Vec::new(),
             write: Vec::new(),
             identity: None,
@@ -648,6 +653,7 @@ mod tests {
                 }],
                 group: true,
                 scrub_loader_env: false,
+                cwd: None,
                 mkdir: Vec::new(),
                 write: Vec::new(),
                 identity: None,
@@ -739,6 +745,7 @@ mod tests {
                 env: vec![],
                 group,
                 scrub_loader_env: false,
+                cwd: None,
                 mkdir: Vec::new(),
                 write: Vec::new(),
                 identity: None,

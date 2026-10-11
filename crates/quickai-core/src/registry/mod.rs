@@ -13,6 +13,7 @@ pub mod engine;
 #[cfg(test)]
 pub(crate) mod fixtures;
 pub mod input;
+pub mod profile;
 pub mod vocab;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -28,6 +29,7 @@ use crate::docpath::DocPath;
 pub use catalog::Catalog;
 pub use engine::Engine;
 pub use input::InputAction;
+pub use profile::ProfileEntry;
 pub use vocab::{Api, Vocabulary};
 
 /// The primitives (and versions) the running application provides, and the widgets its interface can
@@ -94,6 +96,8 @@ pub struct Registry {
     engines: BTreeMap<String, Engine>,
     vocabulary: Vocabulary,
     catalog: Catalog,
+    /// The configurations of every layer (`profile` documents), by id.
+    profiles: BTreeMap<String, ProfileEntry>,
     /// Documents of kinds this version does not interpret yet, kept so nothing is lost.
     other: BTreeMap<(Kind, String), MergedDoc>,
     /// Everything that went wrong while loading and building, in order.
@@ -131,10 +135,14 @@ impl Registry {
                     .expect("the conflicts were checked while building");
             }
         }
-        // catalogs last: they are held to the types of the vocabulary and to the engines they name
+        // catalogs and configurations last: they are held to the types of the vocabulary and to the
+        // engines they name
         let (catalogs, rest): (Vec<_>, Vec<_>) = rest
             .into_iter()
             .partition(|((kind, _), _)| *kind == Kind::Catalog);
+        let (profiles, rest): (Vec<_>, Vec<_>) = rest
+            .into_iter()
+            .partition(|((kind, _), _)| *kind == Kind::Profile);
         for ((kind, id), merged) in rest {
             match kind {
                 Kind::Engine => {
@@ -159,6 +167,7 @@ impl Registry {
                 }
             }
         }
+        registry.check_companions();
         for ((_, _), merged) in catalogs {
             let vocabulary = registry.vocabulary.clone();
             let engines = registry.engines.clone();
@@ -171,11 +180,109 @@ impl Registry {
                 }
             }
         }
+        for ((_, id), merged) in profiles {
+            let vocabulary = registry.vocabulary.clone();
+            let built = build_layered(merged, &mut registry.diagnostics, |merged| {
+                profile::try_build(merged, &vocabulary, &registry.engines)
+            });
+            if let Some(entry) = built {
+                registry.profiles.insert(id, entry);
+            }
+        }
+        registry.check_findings();
         registry
+    }
+
+    /// A vocabulary that gives the notes about a configuration sentences gives all of them: a note
+    /// without one would show a person its id.
+    fn check_findings(&mut self) {
+        if !self.vocabulary.has_findings() {
+            return;
+        }
+        let missing: Vec<&str> = crate::profile::notes::NOTES
+            .iter()
+            .map(|n| n.id)
+            .filter(|id| self.vocabulary.finding(id).is_none())
+            .collect();
+        if !missing.is_empty() {
+            self.diagnostics.push(
+                Diagnostic::error(format!(
+                    "the vocabulary gives no sentence for the notes about a configuration: {}",
+                    missing.join(", ")
+                ))
+                .with_hint("each `[[finding]]` has the `id` of a note and its `text`"),
+            );
+        }
+    }
+
+    /// The configurations the documents define, by id.
+    pub fn profiles(&self) -> impl Iterator<Item = &ProfileEntry> {
+        self.profiles.values()
+    }
+
+    /// The configuration called `id`.
+    pub fn profile(&self, id: &str) -> Option<&ProfileEntry> {
+        self.profiles.get(id)
+    }
+
+    /// The engines by id, which a configuration is read against.
+    pub fn engine_map(&self) -> &BTreeMap<String, Engine> {
+        &self.engines
     }
 
     pub fn engine(&self, id: &str) -> Option<&Engine> {
         self.engines.get(id)
+    }
+
+    /// A companion has to go with an engine that is there, and that is an engine of its own: a
+    /// document that names another, or one that is itself a companion, would be offered nowhere, so it is
+    /// reported and not kept.
+    fn check_companions(&mut self) {
+        let orphans: Vec<(String, String)> = self
+            .engines
+            .values()
+            .filter_map(|engine| {
+                let of = engine.doc.engine.companion_of.as_deref()?;
+                let problem = match self.engines.get(of) {
+                    None => format!("`companion_of` names `{of}`, which is not an engine this version has a document for"),
+                    Some(host) if host.doc.engine.companion_of.is_some() => format!(
+                        "`companion_of` names `{of}`, which is itself a companion: a companion goes with an engine"
+                    ),
+                    Some(_) if of == engine.id => "`companion_of` names the engine itself".to_string(),
+                    Some(_) => return None,
+                };
+                Some((engine.id.clone(), problem))
+            })
+            .collect();
+        for (id, problem) in orphans {
+            if let Some(engine) = self.engines.remove(&id) {
+                self.diagnostics.push(engine.merged.diagnostic(
+                    Severity::Error,
+                    &DocPath::default().key("engine").key("companion_of"),
+                    format!("{problem}; `{id}` is not used"),
+                ));
+            }
+        }
+    }
+
+    /// The engine a person can choose, by its id: a companion is not one.
+    pub fn selectable_engine(&self, id: &str) -> Option<&Engine> {
+        self.engines
+            .get(id)
+            .filter(|e| e.doc.engine.companion_of.is_none())
+    }
+
+    /// The engines a person can choose between, in the order the selector shows them: every engine but
+    /// the companions, which are offered by the engine they go with.
+    pub fn selectable(&self) -> impl Iterator<Item = &Engine> {
+        self.engines()
+            .filter(|e| e.doc.engine.companion_of.is_none())
+    }
+
+    /// The programs that go with `engine` (Open WebUI with Ollama), in the order of the selector.
+    pub fn companions_of<'a>(&'a self, engine: &'a str) -> impl Iterator<Item = &'a Engine> + 'a {
+        self.engines()
+            .filter(move |e| e.doc.engine.companion_of.as_deref() == Some(engine))
     }
 
     /// The engines in the order the selector shows them: by the `order` of their documents (default 100),
@@ -1334,18 +1441,19 @@ backends = [ { match = "cuda", label = "CUDA", needs_gpu = "nvidia" }, { match =
 
     #[test]
     fn documents_of_other_kinds_are_kept_with_a_note() {
-        // a catalog is used since the list of recommended models (docs/catalog.md): a profile is not yet
+        // a catalog is used since the list of recommended models (docs/catalog.md) and a profile since
+        // the configurations (docs/configurations.md): a policy is not yet
         let e = MemorySource::new(&[(
-            "embedded:profiles/starter.toml",
-            "schema = 1\nkind = \"profile\"\nid = \"starter\"\n[defaults]\nengine = \"llamacpp\"\n",
+            "embedded:policy/starter.toml",
+            "schema = 1\nkind = \"policy\"\nid = \"starter\"\n[defaults]\nengine = \"llamacpp\"\n",
         )]);
         let r = Registry::build(
             load(&[(Layer::Embedded, &e)], &LoadOptions::default()),
             &known(),
         );
-        assert!(r.document(Kind::Profile, "starter").is_some());
+        assert!(r.document(Kind::Policy, "starter").is_some());
         assert!(texts(&r, Severity::Info)[0]
-            .contains("profile documents are not used by this version of QuickAI yet"));
+            .contains("policy documents are not used by this version of QuickAI yet"));
         assert!(r.engine("starter").is_none());
         assert!(r.catalog().models().is_empty());
     }

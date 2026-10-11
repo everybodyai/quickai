@@ -429,8 +429,8 @@ fn p3_f01_the_embedded_set_has_a_comfyui_engine_that_loads_clean() {
             .map(|a| a.formats.clone()),
         Some(vec!["gguf".to_string(), "safetensors".to_string()])
     );
-    // the selector shows llama.cpp first, then Ollama, then this
-    let order: Vec<&str> = registry.engines().map(|e| e.id.as_str()).collect();
+    // the selector shows llama.cpp first, then Ollama, then this (Open WebUI is Ollama's companion, and not in it)
+    let order: Vec<&str> = registry.selectable().map(|e| e.id.as_str()).collect();
     assert_eq!(order, ["llamacpp", "ollama", "comfyui"]);
     // the other two still need a model, as they always did
     for id in ["llamacpp", "ollama"] {
@@ -665,7 +665,8 @@ fn p3_f07_the_default_plan_attaches_if_it_can_and_otherwise_starts_comfyui() {
             "--offline",
         ]
     );
-    // the folders it refuses when they are not there are made first, and nothing more
+    // the folders it refuses when they are not there are made first, with the home and the temporary folder it is given
+    // (WP4.16: the engines are isolated from each other completely), and nothing more
     assert_eq!(
         spawn["mkdir"],
         json!([
@@ -673,7 +674,9 @@ fn p3_f07_the_default_plan_attaches_if_it_can_and_otherwise_starts_comfyui() {
             "/data/comfyui/output",
             "/data/comfyui/input",
             "/data/comfyui/user",
-            "/data/comfyui/temp"
+            "/data/comfyui/temp",
+            "/data/comfyui/home",
+            "/data/comfyui/cache/tmp"
         ])
     );
     let env = env_of(spawn);
@@ -799,23 +802,22 @@ fn p3_f09_an_amd_card_is_presented_as_the_architecture_pytorch_has_and_the_perso
 
 #[test]
 fn p3_f14_a_plan_that_makes_no_folders_does_not_say_so() {
-    // llama.cpp's and Ollama's plans are what they were: no `mkdir` and no `write` in their JSON
+    // llama.cpp's plan is what it was: no `mkdir` and no `write` in its JSON (Ollama's, since WP4.16, makes the home and the
+    // temporary folder it is given, which T40 holds; it has no `write`)
     let registry = shipped_registry(&[]);
-    for id in ["llamacpp", "ollama"] {
-        let mut selection = Selection::new(id);
-        selection.model = Some(quickai_core::plan::ModelInfo {
-            id: "m".into(),
-            display: "m".into(),
-            path: "/m.gguf".into(),
-            size_bytes: 1,
-        });
-        let mut f = facts(&[], &[], "linux");
-        f.binary = Some("/bin/x".into());
-        let p = plan(&registry, &selection, &f).expect("a plan");
-        let text = serde_json::to_string(&p).unwrap();
-        assert!(!text.contains("mkdir"), "{id}: {text}");
-        assert!(!text.contains("\"write\""), "{id}: {text}");
-    }
+    let mut selection = Selection::new("llamacpp");
+    selection.model = Some(quickai_core::plan::ModelInfo {
+        id: "m".into(),
+        display: "m".into(),
+        path: "/m.gguf".into(),
+        size_bytes: 1,
+    });
+    let mut f = facts(&[], &[], "linux");
+    f.binary = Some("/bin/x".into());
+    let p = plan(&registry, &selection, &f).expect("a plan");
+    let text = serde_json::to_string(&p).unwrap();
+    assert!(!text.contains("mkdir"), "{text}");
+    assert!(!text.contains("\"write\""), "{text}");
 }
 
 #[test]

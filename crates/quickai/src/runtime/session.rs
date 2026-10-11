@@ -538,6 +538,7 @@ mod tests {
                 id: "test".into(),
                 engine: "test".into(),
                 server_name: "test".into(),
+                needs_model: true,
                 warm: vec![],
                 unload: vec![],
                 endpoint: Endpoint {
@@ -555,6 +556,7 @@ mod tests {
                     }],
                     group: false,
                     scrub_loader_env: false,
+                    cwd: None,
                     mkdir: Vec::new(),
                     write: Vec::new(),
                     identity: None,

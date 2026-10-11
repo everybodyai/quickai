@@ -8,7 +8,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use quickai_core::diag::Diagnostic;
-use quickai_core::plan::{plan, HostFacts, ModelInfo, RunPlan, Selection, TRAFFIC_PROXY_KEY};
+use quickai_core::plan::{
+    plan, HostFacts, ModelInfo, Parent, RunPlan, Selection, TRAFFIC_PROXY_KEY,
+};
 use quickai_core::registry::Registry;
 use quickai_core::value::Value;
 
@@ -180,8 +182,18 @@ pub fn plan_run(
     )
 }
 
+/// What a companion's document may ask about the engine it goes with, when nothing says where that engine
+/// is: the engine, on its default port. `None` for an engine, and for a companion of an engine this build
+/// has no document for.
+pub fn default_parent(registry: &Registry, engine: &str) -> Option<Parent> {
+    let of = registry.engine(engine)?.doc.engine.companion_of.clone()?;
+    let port = registry.engine(&of)?.doc.provides.default_port?;
+    Some(Parent { id: of, port })
+}
+
 /// The run plan for any selection: the entry point for callers that set only some values and let the
-/// fields' defaults fill in the rest (the headless `plan` command).
+/// fields' defaults fill in the rest (the headless `plan` command). A companion is planned for the
+/// engine it goes with on its default port.
 pub fn plan_selection(
     registry: &Registry,
     selection: &Selection,
@@ -189,17 +201,26 @@ pub fn plan_selection(
     machine: MachineFacts,
     internal_port: Option<u16>,
 ) -> Result<RunPlan, Vec<Diagnostic>> {
-    plan(
-        registry,
-        selection,
-        &host_facts(binary, machine, internal_port),
-    )
+    let mut facts = host_facts(binary, machine, internal_port);
+    facts.parent = default_parent(registry, &selection.engine);
+    plan(registry, selection, &facts)
 }
 
 /// Where the engine's executable is: the user's choice if there is one, otherwise the first of the
 /// document's other strategies that finds it. When nothing exists the last candidate is returned
 /// anyway, so there is a path to name in "not found at ...".
 pub fn locate_binary(registry: &Registry, engine_id: &str, bin_override: Option<&str>) -> PathBuf {
+    locate_binary_in(registry, engine_id, bin_override, None)
+}
+
+/// `locate_binary` with the data directory the application works in (`None`: the real one, below the home):
+/// a test's own, so that what it finds is what it put there and not what the machine it runs on has installed.
+pub fn locate_binary_in(
+    registry: &Registry,
+    engine_id: &str,
+    bin_override: Option<&str>,
+    data_dir: Option<&str>,
+) -> PathBuf {
     let Some(engine) = registry.engine(engine_id) else {
         return PathBuf::from(DEFAULT_PROGRAM);
     };
@@ -213,7 +234,10 @@ pub fn locate_binary(registry: &Registry, engine_id: &str, bin_override: Option<
             .then(|| bin_override.map(str::to_string))
             .flatten()
     };
-    let facts = host_facts(Path::new(""), MachineFacts::default(), None);
+    let mut facts = host_facts(Path::new(""), MachineFacts::default(), None);
+    if let Some(dir) = data_dir {
+        facts.data_dir = dir.to_string();
+    }
     locate(
         &engine.locate,
         &LocateEnv {
@@ -253,12 +277,19 @@ fn program_name(engine: &quickai_core::registry::Engine) -> String {
                 .clone()
                 .unwrap_or_else(|| engine.doc.engine.name.clone())
                 .to_ascii_lowercase()
+                .replace(' ', "-")
         })
 }
 
 /// The executable ignoring any override: what "Reset to default" returns to.
+#[cfg(test)]
 pub fn default_binary(registry: &Registry, engine_id: &str) -> PathBuf {
     locate_binary(registry, engine_id, None)
+}
+
+/// `default_binary` for the data directory the application works in.
+pub fn default_binary_in(registry: &Registry, engine_id: &str, data_dir: Option<&str>) -> PathBuf {
+    locate_binary_in(registry, engine_id, None, data_dir)
 }
 
 /// Whether the engine serves any API whose traffic can be read (a conversation): only then is there

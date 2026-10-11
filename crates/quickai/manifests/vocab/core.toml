@@ -268,3 +268,130 @@ curl ${api.base_url}/prompt \
 # 3. Ask what it made (the files are named in the answer; /view?filename=... fetches one):
 curl ${api.base_url}/history
 '''
+
+# ---- configurations ------------------------------------------------------------------------------------------
+# What a person is told about a configuration (docs/configurations.md, section 7). The code decides *when* a note is
+# made and how much it matters (it stops an import, asks a question, warns or only says: a document cannot lower
+# that); the words are these, and `{name}` is filled in by the code from the holes the note has. A vocabulary that
+# gives some of these gives all of them.
+
+[profile]
+# Names of environment variables a configuration may never set, besides the ones the application always refuses (LD_*,
+# DYLD_*, PATH, PYTHON*): they make a program load or run other code. A trailing * stands for any ending.
+deny_env = ["NODE_OPTIONS", "NODE_PATH", "NODE_EXTRA_CA_CERTS", "PERL5*", "PERLLIB", "RUBY*", "GEM_*", "CLASSPATH", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS", "BASH_ENV", "ENV", "SHELLOPTS", "PS4", "IFS", "GCONV_PATH", "LOCPATH", "NLSPATH", "HOSTALIASES", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"]
+
+# -- the file cannot be used
+[[finding]]
+id = "not_a_configuration"
+text = "This file is not a QuickAI configuration ({why})."
+
+[[finding]]
+id = "too_new"
+text = "This configuration was made by a newer QuickAI: it needs {needs}, and this is {this}. Update QuickAI to use it."
+
+[[finding]]
+id = "unknown_engine"
+text = "It is for {engine}, which this QuickAI does not have."
+
+# -- a yes is needed
+[[finding]]
+id = "free_text"
+text = "{field} for {engine}: this text is passed on as it is written."
+
+[[finding]]
+id = "wider_access"
+text = "{field} for {engine} is set to {value}, which widens what it may do."
+
+[[finding]]
+id = "name_taken"
+text = "There is already a configuration called {name}."
+
+# -- it differs; it can be used
+[[finding]]
+id = "refused_line"
+text = "{name} cannot be set from a configuration ({field}); the line is left out."
+
+[[finding]]
+id = "names_a_path"
+text = "{field} names {path}, a folder on the computer it was made on."
+
+[[finding]]
+id = "unknown_setting"
+text = "{setting} is not a setting this QuickAI has; it is ignored."
+
+[[finding]]
+id = "private_setting"
+text = "{setting} belongs to a computer and is not carried in a configuration; it is ignored."
+
+[[finding]]
+id = "bad_value"
+text = "{field}: {value} is not accepted ({why}); the default is used."
+
+[[finding]]
+id = "unknown_keys"
+text = "This QuickAI does not know {keys}; they are kept in the file and ignored."
+
+[[finding]]
+id = "other_system"
+text = "Made on {made}; this computer is {this}. Arguments and builds made there may not exist here."
+
+[[finding]]
+id = "other_gpu"
+text = "{text}"
+
+[[finding]]
+id = "memory"
+text = "{model} needs about {need} of memory, and this computer has {have}."
+
+[[finding]]
+id = "model_to_get"
+text = "Not here: {model}. It can be got from {from}."
+
+[[finding]]
+id = "model_unknown"
+text = "{model} is not here, and the file does not say where it came from."
+
+[[finding]]
+id = "build_missing"
+text = "Made with {build}, which is not installed here. The builds that are: {have}."
+
+[[finding]]
+id = "build_none"
+text = "Made with {build}, which is not installed here, and no build of this program is."
+
+[[finding]]
+id = "port_taken"
+text = "{field}: port {port} is in use on this computer now."
+
+[[finding]]
+id = "ports_clash"
+text = "{fields} are all set to port {port}."
+
+[[finding]]
+id = "companion_missing"
+text = "{companion} is switched on and is not installed here."
+
+[[finding]]
+id = "companion_address"
+text = "{companion} keeps the address of {engine} it was first started with ({first}); it would be given {now} now. Change it in {companion}'s own settings."
+
+# -- information
+[[finding]]
+id = "model_unseen"
+text = "{engine} is not running, so it cannot be told whether {model} is here. Start {engine} to see."
+
+[[finding]]
+id = "will_change"
+text = "These settings change: {list}."
+
+[[finding]]
+id = "left_out_private"
+text = "Settings left out because they belong to this computer (a folder, a program): {count}."
+
+[[finding]]
+id = "left_out_secrets"
+text = "Lines left out because they look like secrets (a key, a token, a password): {count}."
+
+[[finding]]
+id = "left_out_source"
+text = "{model} has no known source: the file says its name and size only."

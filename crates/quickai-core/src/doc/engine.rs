@@ -71,6 +71,21 @@ pub struct EngineInfo {
     /// Where the engine stands in the engine selector, lowest first (default 100); engines with the same
     /// number stand in the order of their ids.
     pub order: Option<i32>,
+    /// The id of the engine this program goes with, for a program that is not an engine to choose but
+    /// something that is started beside one (Open WebUI beside Ollama). It is not in the engine
+    /// selector and is never the engine in use; the settings of the engine it goes with offer it, it is
+    /// started when that engine is ready and stopped with it, and it is its own run: when it stops
+    /// unasked, the engine's run goes on. Its documents are an engine's in every other way: it is
+    /// installed, located, started and given settings the way an engine is, and keeps everything in
+    /// a root of its own.
+    pub companion_of: Option<String>,
+    /// For a companion: the id of a hidden field of its own that holds the address of the engine it goes
+    /// with, as it was when the program was first started. A program that keeps the address it is first
+    /// given in a database of its own, and does not read the environment for it again (Open WebUI), goes on
+    /// calling that one when the engine is somewhere else later: QuickAI writes the address down in this
+    /// field at the first start, says in the log when a later start would give another, and says it in the
+    /// notes of a configuration that would put the engine elsewhere.
+    pub first_address_field: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -278,6 +293,22 @@ pub enum Feed {
         /// with `api`, a document that names another is how a test points the install at a fake.
         archive: Option<String>,
     },
+    /// The releases of a package of the Python Package Index, with the files attached to each: the
+    /// feed of an application that is installed from its wheel (`assets` of `by = "wheel"`). The index
+    /// lists a sha256 for every file, so a build always carries one.
+    Pypi {
+        /// The package, as the index names it (`open-webui`).
+        package: String,
+        /// How many releases, with a wheel, to show.
+        #[serde(default = "default_show")]
+        show: usize,
+        /// Whether a release the index marks as a pre-release (`1.0rc1`) counts.
+        #[serde(default)]
+        prereleases: bool,
+        /// The root of the index's JSON API. Default `https://pypi.org`; as with `api` of the GitHub feed,
+        /// a document that names another is how a test points the look-up at a fake.
+        api: Option<String>,
+    },
 }
 
 fn default_per_page() -> u32 {
@@ -314,6 +345,10 @@ pub enum Assets {
     /// The release's own source archive (`<tag>.tar.gz`) is the build, for an application that is
     /// installed from its source (ComfyUI). Every release has one, on every platform.
     Source { label: Option<String> },
+    /// The release's wheel is the build, for an application that is installed from the Python Package
+    /// Index (Open WebUI): the one file of the release that is a wheel for every platform
+    /// (`py3-none-any`), which is installed into an environment with what it needs.
+    Wheel { label: Option<String> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
@@ -352,8 +387,15 @@ pub enum Install {
     PythonApp {
         /// The launcher the installer writes (`comfyui`; `comfyui.cmd` on Windows).
         binary: BinarySpec,
-        /// The script of the unpacked source the launcher runs, relative to the source (`main.py`).
-        entry: String,
+        /// The script of the unpacked source the launcher runs, relative to the source (`main.py`). An
+        /// application that is installed from a wheel has no source to run a script of: it names a
+        /// `console_script` instead, and one of the two is needed.
+        entry: Option<String>,
+        /// The program the wheel puts in the environment (`open-webui`). The installer asks the environment
+        /// which function it calls (the package's own records say), and the launcher has the environment's
+        /// Python call it: the script itself is never run, because it holds the path of the folder it was
+        /// made in, and a build is moved to its name when it is whole.
+        console_script: Option<String>,
         python: PythonSpec,
         /// Whether the source archive is compared with a sha256 before anything is unpacked.
         #[serde(default)]
@@ -397,6 +439,10 @@ pub struct PipStep {
     pub packages: Vec<String>,
     /// A requirements file of the unpacked source, relative to it (`requirements.txt`).
     pub requirements: Option<String>,
+    /// Installs the wheel the build is (`assets` of `by = "wheel"`), the file that was downloaded and
+    /// checked, and what it needs from the index.
+    #[serde(default)]
+    pub wheel: bool,
     /// The index the packages come from instead of PyPI (`https://download.pytorch.org/whl/rocm7.2`).
     pub index: Option<String>,
     /// How much of the progress bar this step is, next to the others (default 1): PyTorch is most of
@@ -807,6 +853,11 @@ pub struct Spawn {
     pub group: bool,
     #[serde(default)]
     pub stop: StopSpec,
+    /// The folder the program starts in, a template. Without it the program starts wherever QuickAI
+    /// was started from, which is the person's, and a program that writes a file to its working
+    /// directory (Open WebUI keeps its secret key there) would write it there. It is made with the
+    /// folders of `mkdir` if it is not there.
+    pub cwd: Option<String>,
     /// Folders made, with the ones above them, before the program starts: templates. For a program
     /// that refuses a folder it is told about that does not exist yet (ComfyUI's `--models-directory`).
     #[serde(default)]
@@ -927,6 +978,14 @@ pub struct Field {
     /// Where the value is remembered.
     #[serde(default)]
     pub persist: Persist,
+    /// Whether the value travels in a configuration (a saved, shareable runtime): `yes`, `review`
+    /// (it does, and a person who is given a file with it is asked) or `never`. Without it the type
+    /// decides (`Field::share`), so that a field added later is private until a document says
+    /// otherwise.
+    #[serde(default)]
+    pub share: Option<Share>,
+    /// The sentence a person is told when this field is asked about or left out of a configuration.
+    pub share_note: Option<String>,
     /// When a change takes effect.
     #[serde(default)]
     pub applies: Applies,
@@ -1041,6 +1100,31 @@ pub enum Persist {
     Session,
 }
 
+/// Whether the value of a field travels in a configuration.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Share {
+    /// It is saved and given away as it is.
+    Yes,
+    /// It is saved and given away, and a person who is given a file that has it is shown it and asked:
+    /// it becomes a command-line word, an environment line or an address, or it widens what a program
+    /// may do.
+    Review,
+    /// It belongs to a computer or to a person (a folder, a program) and is never in a configuration.
+    Never,
+}
+
+impl Share {
+    /// The word a document uses.
+    pub fn name(self) -> &'static str {
+        match self {
+            Share::Yes => "yes",
+            Share::Review => "review",
+            Share::Never => "never",
+        }
+    }
+}
+
 /// When a change to a field takes effect.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -1060,6 +1144,27 @@ impl Field {
     /// else last.
     pub fn arg_order(&self) -> i32 {
         self.bind.order.or(self.ui.order).unwrap_or(i32::MAX)
+    }
+
+    /// Whether the value travels in a configuration: what the document says, else what the type
+    /// says. Numbers, ports, choices and flags do; text, addresses and lines of environment do and
+    /// are asked about, because they reach a command line, an environment or a host; folders, files
+    /// and programs belong to a computer and never do. A hidden value or a model reference is not a
+    /// setting (the model has a section of its own), and a button holds nothing: `None`.
+    pub fn share(&self) -> Option<Share> {
+        if self.ty == FieldType::Hidden || self.ty == FieldType::ModelRef {
+            return None;
+        }
+        Some(self.share.unwrap_or(match self.ty {
+            FieldType::Int
+            | FieldType::Float
+            | FieldType::Bool
+            | FieldType::Choice
+            | FieldType::Port => Share::Yes,
+            FieldType::Text | FieldType::Url | FieldType::KvLines => Share::Review,
+            FieldType::Dir | FieldType::File | FieldType::RuntimePath => Share::Never,
+            FieldType::Hidden | FieldType::ModelRef => return None,
+        }))
     }
 }
 

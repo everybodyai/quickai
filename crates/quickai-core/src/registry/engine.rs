@@ -269,6 +269,8 @@ pub struct CompiledSpawn {
     pub env: Vec<CompiledEnv>,
     pub group: bool,
     pub stop: CompiledStop,
+    /// The folder the program starts in.
+    pub cwd: Option<Template>,
     /// The folders made before the program starts.
     pub mkdir: Vec<Template>,
     /// The files of the application's own that are put where the program reads them, before it starts.
@@ -576,6 +578,7 @@ pub fn compile(
     }
 
     let fields = compile_fields(&mut c, &doc, known);
+    check_first_address_field(&mut c, &doc);
     let locate = check_locate(&mut c, &doc);
     let (spawn, ready) = compile_launch(&mut c, &doc, known);
     let launch = compile_launch_extras(&mut c, &doc);
@@ -663,6 +666,72 @@ fn compile_env_entry(
     }
 }
 
+/// What a field says about travelling in a configuration (`share`) is held to what the field is: a
+/// hidden value or a model is not a setting, and a folder or a program that is given away breaks
+/// the configuration on the first other computer.
+fn check_share(c: &mut Checker, at: &DocPath, field: &crate::doc::engine::Field) {
+    use crate::doc::engine::Share;
+    if let Some(share) = field.share {
+        let path = at.clone().key("share");
+        if matches!(field.ty, FieldType::Hidden | FieldType::ModelRef) {
+            c.add(
+                Severity::Warning,
+                &path,
+                "`share` has no effect on a hidden value or a model, which are not settings",
+                Some("the model of a configuration has a section of its own".into()),
+            );
+        } else if share == Share::Yes
+            && matches!(
+                field.ty,
+                FieldType::Dir | FieldType::File | FieldType::RuntimePath
+            )
+        {
+            c.add(
+                Severity::Warning,
+                &path,
+                "a folder or a program belongs to a computer, and a configuration that carries it fails on the first other one",
+                Some("use `review`, or leave `share` out".into()),
+            );
+        }
+    }
+    if field.share_note.is_some() && field.share() == Some(Share::Yes) {
+        c.warn(
+            &at.clone().key("share_note"),
+            "`share_note` is told when a field is asked about or left out of a configuration, and this one is neither",
+        );
+    }
+}
+
+/// `first_address_field` names a hidden field of this document, and means something only for a companion.
+fn check_first_address_field(c: &mut Checker, doc: &EngineDoc) {
+    let Some(field) = doc.engine.first_address_field.as_deref() else {
+        return;
+    };
+    let at = DocPath::default().key("engine").key("first_address_field");
+    if doc.engine.companion_of.is_none() {
+        c.warn(
+            &at,
+            "`first_address_field` is for a companion, which is started beside the engine it goes with; this document is not one",
+        );
+        return;
+    }
+    match doc.fields.iter().find(|f| f.id == field) {
+        None => c.error_hint(
+            &at,
+            format!("`{field}` is not a field of this document"),
+            "name a field of type `hidden` that the document declares",
+        ),
+        Some(f) if f.ty != FieldType::Hidden => c.error_hint(
+            &at,
+            format!(
+                "`{field}` is not a hidden field: the address is written by QuickAI, not by a form"
+            ),
+            "give the field `type = \"hidden\"`",
+        ),
+        Some(_) => {}
+    }
+}
+
 fn compile_fields(c: &mut Checker, doc: &EngineDoc, known: &KnownPrimitives) -> Vec<CompiledField> {
     let mut compiled = Vec::new();
     let mut seen_ids: BTreeMap<&str, usize> = BTreeMap::new();
@@ -700,6 +769,7 @@ fn compile_fields(c: &mut Checker, doc: &EngineDoc, known: &KnownPrimitives) -> 
         }
 
         check_widget(c, &at, field, known);
+        check_share(c, &at, field);
 
         if let Some((lo, hi)) = field.range {
             if lo > hi {
@@ -1150,6 +1220,47 @@ fn compile_acquire(c: &mut Checker, doc: &EngineDoc, acquire: &Acquire) -> Compi
         }
     }
 
+    if let Some(crate::doc::engine::Feed::Pypi {
+        package, show, api, ..
+    }) = &acquire.feed
+    {
+        let feed_at = at.clone().key("feed");
+        if let Some(api) = api {
+            if !is_http_root(api) {
+                c.error_hint(
+                    &feed_at.clone().key("api"),
+                    format!("`{api}` is not an http or https address"),
+                    "write the root of the index, such as https://pypi.org",
+                );
+            }
+        }
+        if !is_package_name(package) {
+            c.error_hint(
+                &feed_at.clone().key("package"),
+                format!("`{package}` is not the name of a package"),
+                "write it as the index does: letters, digits, `-`, `_` and `.`, such as open-webui",
+            );
+        }
+        if *show == 0 {
+            c.error(&feed_at.key("show"), "`show` must be at least 1");
+        }
+        if !matches!(acquire.assets, Some(Assets::Wheel { .. })) {
+            c.error_hint(
+                &at.clone().key("assets"),
+                "the feed of a package lists wheels, so its `assets` is `by = \"wheel\"`",
+                "write assets = { by = \"wheel\" }",
+            );
+        }
+    }
+    if matches!(acquire.assets, Some(Assets::Wheel { .. }))
+        && !matches!(acquire.feed, Some(crate::doc::engine::Feed::Pypi { .. }))
+    {
+        c.error(
+            &at.clone().key("assets"),
+            "`by = \"wheel\"` takes the wheel of the feed's releases, and the feed is not a package index (`use = \"pypi\"`)",
+        );
+    }
+
     let mut name_rules = Vec::new();
     let assets_at = at.clone().key("assets");
     let label_text = match &acquire.assets {
@@ -1211,10 +1322,13 @@ fn compile_acquire(c: &mut Checker, doc: &EngineDoc, acquire: &Acquire) -> Compi
             }
             label.clone()
         }
-        Some(Assets::Source { label }) => label.clone(),
+        Some(Assets::Source { label } | Assets::Wheel { label }) => label.clone(),
         None => None,
     };
-    let default_label = if matches!(acquire.assets, Some(Assets::Source { .. })) {
+    let default_label = if matches!(
+        acquire.assets,
+        Some(Assets::Source { .. } | Assets::Wheel { .. })
+    ) {
         DEFAULT_SOURCE_LABEL
     } else {
         DEFAULT_LABEL
@@ -1356,6 +1470,14 @@ fn compile_acquire(c: &mut Checker, doc: &EngineDoc, acquire: &Acquire) -> Compi
         Some(Install::PythonApp { .. }) => {
             compile_python_app(c, acquire, &at.clone().key("install"), &engine_schema)
         }
+        Some(Install::Archive { .. }) if matches!(acquire.assets, Some(Assets::Wheel { .. })) => {
+            c.error_hint(
+                &at.clone().key("install"),
+                "a wheel is not an archive to unpack",
+                "use install = { use = \"python_app\", ... } for a wheel",
+            );
+            (Vec::new(), Vec::new())
+        }
         _ => (Vec::new(), Vec::new()),
     };
     if matches!(acquire.assets, Some(Assets::Source { .. }))
@@ -1419,6 +1541,28 @@ fn is_inside_path(text: &str) -> bool {
             .all(|part| !part.is_empty() && part != "." && part != "..")
 }
 
+/// The name of a package on the index: letters, digits and `-_.`, beginning and ending with a letter or a digit.
+fn is_package_name(text: &str) -> bool {
+    let mut chars = text.chars();
+    let (Some(first), Some(last)) = (chars.next(), text.chars().last()) else {
+        return false;
+    };
+    first.is_ascii_alphanumeric()
+        && last.is_ascii_alphanumeric()
+        && text
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+}
+
+/// A program a package installs, named as a file: no folder, no space, nothing a shell would read.
+fn is_program_name(text: &str) -> bool {
+    !text.is_empty()
+        && !text.starts_with('-')
+        && text
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+}
+
 /// A name that is safe as a pip requirement: it is a package and cannot be taken for an option.
 fn is_requirement(text: &str) -> bool {
     !text.is_empty()
@@ -1438,6 +1582,7 @@ fn compile_python_app(
     let Some(Install::PythonApp {
         binary,
         entry,
+        console_script,
         python,
         smoke,
         smoke_timeout,
@@ -1449,6 +1594,7 @@ fn compile_python_app(
     else {
         return (Vec::new(), Vec::new());
     };
+    let from_wheel = matches!(acquire.assets, Some(Assets::Wheel { .. }));
     if binary.name.trim().is_empty() || binary.name.contains(['/', '\\']) {
         c.error_hint(
             &install_at.clone().key("binary").key("name"),
@@ -1456,11 +1602,63 @@ fn compile_python_app(
             "write a plain file name, such as comfyui",
         );
     }
-    if !is_inside_path(entry) {
+    match (entry, console_script) {
+        (Some(_), Some(_)) => c.error(
+            install_at,
+            "`entry` and `console_script` both say what the launcher runs: write one of them",
+        ),
+        (None, None) => c.error_hint(
+            install_at,
+            "the install does not say what the launcher runs",
+            "write entry = \"main.py\" for an application installed from its source, or console_script = \"name\" for one installed from a wheel",
+        ),
+        (Some(entry), None) => {
+            if !is_inside_path(entry) {
+                c.error_hint(
+                    &install_at.clone().key("entry"),
+                    format!("`{entry}` is not a path inside the unpacked source"),
+                    "write it relative to the source, such as main.py",
+                );
+            }
+            if from_wheel {
+                c.error_hint(
+                    &install_at.clone().key("entry"),
+                    "a wheel has no source to run a script of",
+                    "name the program the wheel installs: console_script = \"open-webui\"",
+                );
+            }
+        }
+        (None, Some(script)) => {
+            if !is_program_name(script) {
+                c.error_hint(
+                    &install_at.clone().key("console_script"),
+                    format!("`{script}` is not the name of a program"),
+                    "write a plain name, such as open-webui",
+                );
+            }
+            if !from_wheel {
+                c.error_hint(
+                    &install_at.clone().key("console_script"),
+                    "a program the environment installs is run by a build that is a wheel",
+                    "write assets = { by = \"wheel\" } with a feed of use = \"pypi\", or run a script of the source with `entry`",
+                );
+            }
+        }
+    }
+    let wheel_steps = pip.iter().filter(|step| step.wheel).count();
+    if from_wheel && wheel_steps != 1 {
         c.error_hint(
-            &install_at.clone().key("entry"),
-            format!("`{entry}` is not a path inside the unpacked source"),
-            "write it relative to the source, such as main.py",
+            &install_at.clone().key("pip"),
+            format!(
+                "a build that is a wheel is installed by exactly one step that has `wheel = true`, and this install has {wheel_steps}"
+            ),
+            "add [[acquire.install.pip]] with wheel = true",
+        );
+    }
+    if !from_wheel && wheel_steps > 0 {
+        c.error(
+            &install_at.clone().key("pip"),
+            "`wheel = true` installs the wheel the build is, and the build is not one (`assets` is not `by = \"wheel\"`)",
         );
     }
     if python.versions.is_empty() {
@@ -1529,7 +1727,13 @@ fn compile_python_app(
             );
         }
         ids.push(&step.id);
-        if step.packages.is_empty() && step.requirements.is_none() {
+        if step.wheel && (!step.packages.is_empty() || step.requirements.is_some()) {
+            c.error(
+                &step_at,
+                "a step with `wheel = true` installs the wheel and what it needs, and names no packages or requirements file",
+            );
+        }
+        if !step.wheel && step.packages.is_empty() && step.requirements.is_none() {
             c.error(
                 &step_at,
                 "a step installs packages or a requirements file, and this one names neither",
@@ -1861,6 +2065,10 @@ fn compile_launch(
                 })
                 .collect();
             let stop = compile_stop(c, &at.clone().key("stop"), &spawn.stop);
+            let cwd: Option<Option<Template>> = spawn
+                .cwd
+                .as_ref()
+                .map(|d| c.template(&at.clone().key("cwd"), d, &engine_schema));
             let mkdir: Vec<Option<Template>> = spawn
                 .mkdir
                 .iter()
@@ -1910,6 +2118,7 @@ fn compile_launch(
             match (program, stop) {
                 (Some(program), Some(stop))
                     if args.iter().all(Option::is_some)
+                        && cwd.as_ref().is_none_or(Option::is_some)
                         && mkdir.iter().all(Option::is_some)
                         && write.iter().all(Option::is_some) =>
                 {
@@ -1919,6 +2128,7 @@ fn compile_launch(
                         env,
                         group: spawn.group,
                         stop,
+                        cwd: cwd.flatten(),
                         mkdir: mkdir.into_iter().flatten().collect(),
                         write: write.into_iter().flatten().collect(),
                     })

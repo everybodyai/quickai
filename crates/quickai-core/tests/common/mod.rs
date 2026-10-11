@@ -26,6 +26,7 @@ pub const PROVIDED: &[&str] = &[
     "locate.known_paths@1",
     "exec.probe@1",
     "feed.github_release@1",
+    "feed.pypi@1",
     "install.archive@1",
     "install.python_app@1",
     "attach@1",
@@ -98,37 +99,83 @@ pub fn shipped_registry(user: &[(&str, &str)]) -> Registry {
 }
 
 fn build_registry(provided: &[&str], user: &[(&str, &str)], with_catalogs: bool) -> Registry {
-    let llama = manifest("engines/llamacpp.toml");
-    let ollama = manifest("engines/ollama.toml");
-    let comfyui = manifest("engines/comfyui.toml");
-    let vocab = manifest("vocab/core.toml");
-    let catalogs = if with_catalogs {
-        shipped_catalogs()
-    } else {
-        Vec::new()
-    };
-    let mut docs: Vec<(String, &str)> = vec![
-        ("embedded:engines/llamacpp.toml".to_string(), &llama),
-        ("embedded:engines/ollama.toml".to_string(), &ollama),
-        ("embedded:engines/comfyui.toml".to_string(), &comfyui),
-        ("embedded:vocab/core.toml".to_string(), &vocab),
-    ];
-    docs.extend(
-        catalogs
-            .iter()
-            .map(|(n, t)| (format!("embedded:catalog/{n}"), t.as_str())),
-    );
-    let docs: Vec<(&str, &str)> = docs.iter().map(|(n, t)| (n.as_str(), *t)).collect();
-    let embedded = MemorySource::new(&docs);
-    let person = MemorySource::new(user);
-    let mut layers: Vec<(Layer, &dyn LayerSource)> = vec![(Layer::Embedded, &embedded)];
-    if !user.is_empty() {
-        layers.push((Layer::User, &person));
+    Shape {
+        provided,
+        user,
+        with_catalogs,
+        ..Shape::default()
     }
-    Registry::build(
-        load(&layers, &LoadOptions::default()),
-        &KnownPrimitives::new(provided),
-    )
+    .build()
+}
+
+/// What a test of the configurations varies in the registry the shipped documents make: the
+/// version of the application, a package's documents, the person's, and safe mode.
+#[derive(Default)]
+pub struct Shape<'a> {
+    pub provided: &'a [&'a str],
+    pub user: &'a [(&'a str, &'a str)],
+    pub bundle: &'a [(&'a str, &'a str)],
+    pub with_catalogs: bool,
+    pub app_version: Option<&'a str>,
+    pub safe_mode: bool,
+}
+
+impl Shape<'_> {
+    pub fn build(&self) -> Registry {
+        let llama = manifest("engines/llamacpp.toml");
+        let ollama = manifest("engines/ollama.toml");
+        let comfyui = manifest("engines/comfyui.toml");
+        let openwebui = manifest("engines/openwebui.toml");
+        let vocab = manifest("vocab/core.toml");
+        let default_profile = manifest("profiles/default.toml");
+        let catalogs = if self.with_catalogs {
+            shipped_catalogs()
+        } else {
+            Vec::new()
+        };
+        let mut docs: Vec<(String, &str)> = vec![
+            ("embedded:engines/llamacpp.toml".to_string(), &llama),
+            ("embedded:engines/ollama.toml".to_string(), &ollama),
+            ("embedded:engines/comfyui.toml".to_string(), &comfyui),
+            ("embedded:engines/openwebui.toml".to_string(), &openwebui),
+            ("embedded:vocab/core.toml".to_string(), &vocab),
+            (
+                "embedded:profiles/default.toml".to_string(),
+                &default_profile,
+            ),
+        ];
+        docs.extend(
+            catalogs
+                .iter()
+                .map(|(n, t)| (format!("embedded:catalog/{n}"), t.as_str())),
+        );
+        let docs: Vec<(&str, &str)> = docs.iter().map(|(n, t)| (n.as_str(), *t)).collect();
+        let embedded = MemorySource::new(&docs);
+        let package = MemorySource::new(self.bundle);
+        let person = MemorySource::new(self.user);
+        let mut layers: Vec<(Layer, &dyn LayerSource)> = vec![(Layer::Embedded, &embedded)];
+        if !self.bundle.is_empty() {
+            layers.push((Layer::Bundle, &package));
+        }
+        if !self.user.is_empty() {
+            layers.push((Layer::User, &person));
+        }
+        let provided = if self.provided.is_empty() {
+            PROVIDED
+        } else {
+            self.provided
+        };
+        Registry::build(
+            load(
+                &layers,
+                &LoadOptions {
+                    safe_mode: self.safe_mode,
+                    app_version: self.app_version.map(str::to_string),
+                },
+            ),
+            &KnownPrimitives::new(provided),
+        )
+    }
 }
 
 /// A registry of documents only (no shipped ones), for the tests of a document that is wrong.

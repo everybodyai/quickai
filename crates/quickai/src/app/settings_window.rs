@@ -9,9 +9,8 @@ use std::path::PathBuf;
 
 use eframe::egui;
 
-use quickai_core::form::{Edit, FormField, FormModel};
+use quickai_core::form::{FormField, FormModel};
 
-use super::widgets::{self, Reply};
 use super::{App, PendingDelete};
 use crate::hardware;
 
@@ -102,8 +101,10 @@ impl App {
         self.show_settings = false;
         self.raise_settings = false;
         self.pending_delete = None;
+        self.delete_of_companion = false;
         // what the manager of builds shows of the disk is not looked at while the window is closed: it is read again when it is opened
         self.runtime.disk.stale = true;
+        self.as_companion(|app| app.runtime.disk.stale = true);
         self.save_settings();
     }
 
@@ -251,6 +252,9 @@ impl App {
             }
         }
 
+        // the program that goes with the engine, when one does (Open WebUI beside Ollama)
+        self.show_companion_settings(ui);
+
         ui.add_space(10.0);
         ui.separator();
         ui.add_space(6.0);
@@ -263,57 +267,12 @@ impl App {
         egui::CollapsingHeader::new(format!("Advanced: {engine_name}"))
             .default_open(false)
             .show(ui, |ui| {
-                let mut edits = Vec::new();
-                let mut actions = Vec::new();
                 let advanced: Vec<FormField> = form
                     .as_ref()
                     .and_then(|f| f.section("advanced"))
                     .map(|s| s.fields.iter().filter(|f| f.visible).cloned().collect())
                     .unwrap_or_default();
-                for (i, field) in advanced.iter().enumerate() {
-                    if i > 0 {
-                        ui.add_space(8.0);
-                    }
-                    if field.widget.as_deref() == Some("runtime_manager") {
-                        self.show_runtime_manager(ui, field);
-                        continue;
-                    }
-                    // a checkbox and a button carry their own label
-                    let own_label = field.ty == quickai_core::doc::engine::FieldType::Bool
-                        || field.widget.as_deref() == Some("button");
-                    if !own_label {
-                        let label = ui.label(format!("{}:", field.label));
-                        if let Some(help) = &field.help {
-                            label.on_hover_text(help);
-                        }
-                    }
-                    let reply = ui
-                        .add_enabled_ui(field.enabled, |ui| widgets::show(ui, field))
-                        .inner;
-                    match reply {
-                        Some(Reply::Set(value)) => edits.push(Edit {
-                            key: field.key.clone(),
-                            value,
-                        }),
-                        Some(Reply::Invoke(action)) => actions.push(action),
-                        None => {}
-                    }
-                    // what only a spawn can set belongs to whoever started an engine that
-                    // was already running
-                    if self.session.attached()
-                        && field.applies == quickai_core::doc::engine::Applies::SpawnOnly
-                    {
-                        ui.label(
-                            egui::RichText::new(format!("(Owned by the running {}.)", engine_name))
-                                .small()
-                                .color(egui::Color32::GRAY),
-                        );
-                    }
-                }
-                self.values.apply(edits);
-                for action in actions {
-                    self.invoke(&action);
-                }
+                self.show_fields(ui, &advanced, Some(&engine_name));
             });
 
         if let Some(msg) = &self.settings_error {
@@ -329,7 +288,7 @@ impl App {
     fn show_engine_row(&mut self, ui: &mut egui::Ui) {
         let mut engines: Vec<(String, String)> = self
             .registry
-            .engines()
+            .selectable()
             .map(|e| (e.id.clone(), e.doc.engine.name.clone()))
             .collect();
         // llama.cpp comes first: it is the engine of a first run
@@ -912,5 +871,263 @@ mod tests {
             3,
             "the scan after the window was away for a while",
         );
+    }
+
+    // ---- the program that goes with the engine (work package 4.16) ----------------------------------------
+
+    /// What the Settings window painted last.
+    fn in_settings(display: &Display) -> String {
+        said(&display.0.borrow().windows[&settings_viewport()].shapes)
+    }
+
+    /// A frame as the application does it between draws: what its parts have to say, then the drawing.
+    fn frame_polled(app: &mut App, ctx: &egui::Context, display: &Display) {
+        app.poll_runtime_manager();
+        app.poll_companion(ctx);
+        frame(app, ctx, display);
+    }
+
+    /// The launcher of an installed build of Open WebUI, as the document names it for this system.
+    fn launcher_file() -> &'static str {
+        if cfg!(windows) {
+            "open-webui.cmd"
+        } else {
+            "open-webui"
+        }
+    }
+
+    fn app_with_companion(dir: &Path, enabled: bool) -> App {
+        let mut settings = Settings::default();
+        settings.set_chosen_engine("ollama");
+        settings.models_dir_override = Some(dir.join("models").display().to_string());
+        let registry = build_registry(&ConfigDirs::default());
+        let values: std::collections::BTreeMap<String, quickai_core::value::Value> = [(
+            "openwebui.enabled".to_string(),
+            quickai_core::value::Value::Bool(enabled),
+        )]
+        .into();
+        settings
+            .set_engine_values(registry.engine("openwebui").unwrap(), &values)
+            .unwrap();
+        App::build_in(
+            settings,
+            registry,
+            16 * GB,
+            Vec::new(),
+            Some(dir.join("settings.json")),
+            Some(dir.join("data").display().to_string()),
+        )
+    }
+
+    #[test]
+    fn p3_t36_the_settings_of_ollama_offer_open_webui_and_those_of_the_other_engines_do_not() {
+        for (engine, offered) in [("llamacpp", false), ("ollama", true), ("comfyui", false)] {
+            let dir = scratch(&format!("t36-{engine}"));
+            let mut app = app_in(&dir, engine);
+            let ctx = egui::Context::default();
+            let display = Display::attach(&ctx);
+            app.toggle_settings();
+            settle(&mut app, &ctx, &display);
+            let inside = in_settings(&display);
+            assert_eq!(
+                inside.contains("Chat UI: Open WebUI"),
+                offered,
+                "{engine}: {inside}"
+            );
+            // the engine row offers the engines, and the companion is not one of them
+            assert!(!inside.contains("Open WebUI") || offered, "{engine}");
+            assert_eq!(app.companion.is_some(), offered, "{engine}");
+        }
+        // and the section, opened, says what it is and what it asks
+        let dir = scratch("t36-open");
+        let mut app = app_in(&dir, "ollama");
+        let ctx = egui::Context::default();
+        let display = Display::attach(&ctx);
+        app.toggle_settings();
+        settle(&mut app, &ctx, &display);
+        let header = where_is(&display, "Chat UI: Open WebUI").expect("the section");
+        click_in_settings(&mut app, &ctx, &display, header.center());
+        settle(&mut app, &ctx, &display);
+        let inside = in_settings(&display);
+        for text in [
+            "A chat page for your models",
+            "License: Open WebUI License",
+            "openwebui.org",
+            "Start Open WebUI with Ollama",
+            "Port:",
+            "Open WebUI's internet access:",
+            "Look up Open WebUI builds",
+            "Installs a Python environment with",
+            "Open WebUI and what it needs",
+        ] {
+            let text = text.replace("openwebui.org", "openwebui.com");
+            assert!(inside.contains(&text), "{text:?} in: {inside}");
+        }
+        assert!(
+            inside.contains("Open WebUI launcher:") && !inside.contains("Installed builds"),
+            "its manager is the manager of an engine: the box for the program, and no builds yet: {inside}"
+        );
+    }
+
+    #[test]
+    fn p3_t37_the_section_is_open_when_it_is_wanted_and_not_there_and_closed_when_it_is_not() {
+        let open = |dir: &Path, enabled: bool, installed: bool| -> bool {
+            if installed {
+                let build = dir.join("data/openwebui/0.11.4");
+                std::fs::create_dir_all(&build).unwrap();
+                std::fs::write(build.join(launcher_file()), "#!/bin/sh\n").unwrap();
+            }
+            let mut app = app_with_companion(dir, enabled);
+            assert_eq!(app.companion_installed(), installed);
+            let ctx = egui::Context::default();
+            let display = Display::attach(&ctx);
+            app.toggle_settings();
+            settle(&mut app, &ctx, &display);
+            in_settings(&display).contains("Start Open WebUI with Ollama")
+        };
+        assert!(
+            open(&scratch("t37a"), true, false),
+            "asked for and not there: the thing to do"
+        );
+        assert!(!open(&scratch("t37b"), false, false), "not asked for");
+        assert!(
+            !open(&scratch("t37c"), true, true),
+            "asked for and there: nothing to do"
+        );
+        // the button that sets it up opens the Settings with the section open, whatever it was (and the person can fold it)
+        for (what, enabled, installed) in
+            [("a", false, false), ("b", false, true), ("c", true, true)]
+        {
+            let dir = scratch(&format!("t37{what}2"));
+            if installed {
+                let build = dir.join("data/openwebui/0.11.4");
+                std::fs::create_dir_all(&build).unwrap();
+                std::fs::write(build.join(launcher_file()), "#!/bin/sh\n").unwrap();
+            }
+            let mut app = app_with_companion(&dir, enabled);
+            let ctx = egui::Context::default();
+            let display = Display::attach(&ctx);
+            app.set_up_companion();
+            settle(&mut app, &ctx, &display);
+            assert!(
+                in_settings(&display).contains("Start Open WebUI with Ollama"),
+                "the button's click, with the box {enabled} and the program {installed}"
+            );
+            assert!(
+                !app.companion_section_wanted,
+                "the wish is for one drawing, not for ever"
+            );
+        }
+    }
+
+    #[test]
+    fn p3_t38_ticking_the_box_changes_the_companions_values_only_and_they_are_written_with_the_others(
+    ) {
+        let dir = scratch("t38");
+        let mut app = app_with_companion(&dir, false);
+        let ollama_before = app.values.map().clone();
+        let ctx = egui::Context::default();
+        let display = Display::attach(&ctx);
+        app.toggle_settings();
+        settle(&mut app, &ctx, &display);
+        let header = where_is(&display, "Chat UI: Open WebUI").expect("the section");
+        click_in_settings(&mut app, &ctx, &display, header.center());
+        settle(&mut app, &ctx, &display);
+        assert!(!app.companion_enabled());
+
+        let label = where_is(&display, "Start Open WebUI with Ollama").expect("the box");
+        click_in_settings(&mut app, &ctx, &display, label.center());
+        settle(&mut app, &ctx, &display);
+        assert!(app.companion_enabled(), "the box is ticked");
+        assert_eq!(
+            app.values.map(),
+            &ollama_before,
+            "Ollama's own values are what they were: the click was the companion's"
+        );
+        assert!(app.engine == "ollama" && !app.in_companion);
+
+        // closing the window writes both
+        display.press_close_button(settings_viewport());
+        frame(&mut app, &ctx, &display);
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved["values"]["openwebui.enabled"], true, "{saved}");
+        assert_eq!(saved["values"]["app.engine"], "ollama", "{saved}");
+    }
+
+    #[test]
+    fn p3_t39_a_build_of_the_companion_is_listed_and_deleted_in_its_own_section_and_ollamas_are_untouched(
+    ) {
+        let dir = scratch("t39");
+        // a build of each: Ollama's, and Open WebUI's
+        let ollama_build = dir.join("data/ollama/v0.35.1-ollama-linux-amd64");
+        std::fs::create_dir_all(ollama_build.join("bin")).unwrap();
+        std::fs::write(ollama_build.join("bin/ollama"), "#!/bin/sh\n").unwrap();
+        let build = dir.join("data/openwebui/0.11.4");
+        std::fs::create_dir_all(build.join("venv")).unwrap();
+        std::fs::write(build.join(launcher_file()), "#!/bin/sh\n").unwrap();
+        std::fs::write(build.join("venv/pyvenv.cfg"), "home = x\n").unwrap();
+        let mut app = app_with_companion(&dir, true);
+        assert!(
+            app.companion_installed(),
+            "found where the document says builds are kept"
+        );
+        let ollama_binary = app.binary.clone();
+        let ctx = egui::Context::default();
+        let display = Display::attach(&ctx);
+        app.toggle_settings();
+        // wanted and there: the section is closed; open it
+        settle(&mut app, &ctx, &display);
+        let header = where_is(&display, "Chat UI: Open WebUI").expect("the section");
+        click_in_settings(&mut app, &ctx, &display, header.center());
+        // the disk is read by a thread of its own, and the frame takes the answer in
+        wait_until(Duration::from_secs(10), "the builds to be listed", || {
+            frame_polled(&mut app, &ctx, &display);
+            in_settings(&display).contains("0.11.4")
+        });
+        let inside = in_settings(&display);
+        assert!(inside.contains("Installed builds"), "{inside}");
+
+        // the trash can of its build is pressed: the question is about Open WebUI's build
+        let bin = where_is(&display, "🗑").expect("a trash can for the build");
+        click_in_settings(&mut app, &ctx, &display, bin.center());
+        assert!(app.pending_delete.is_some() && app.delete_of_companion);
+        frame(&mut app, &ctx, &display);
+        let inside = in_settings(&display);
+        assert!(
+            inside.contains("Delete Open WebUI build?") && inside.contains("0.11.4"),
+            "{inside}"
+        );
+        // and the yes deletes it, on a thread, and not Ollama's
+        let yes = where_is(&display, "Delete").expect("the yes");
+        click_in_settings(&mut app, &ctx, &display, yes.center());
+        wait_until(Duration::from_secs(10), "the build to be deleted", || {
+            frame_polled(&mut app, &ctx, &display);
+            !build.exists()
+        });
+        wait_until(Duration::from_secs(10), "the delete to be taken in", || {
+            frame_polled(&mut app, &ctx, &display);
+            app.companion_slot()
+                .is_some_and(|s| s.runtime.delete.is_none())
+        });
+        assert!(app.pending_delete.is_none() && !app.delete_of_companion);
+        assert!(
+            ollama_build.join("bin/ollama").is_file(),
+            "Ollama's build is where it was"
+        );
+        assert_eq!(
+            app.binary, ollama_binary,
+            "and Ollama's program is the one it was"
+        );
+        assert!(app.runtime.delete.is_none() && app.values.text("bin_override").is_none());
+        assert!(
+            app.log_lines
+                .iter()
+                .any(|l| l.contains("Deleted Open WebUI build: 0.11.4")),
+            "{:#?}",
+            app.log_lines
+        );
+        assert!(!app.companion_installed(), "it is not installed now");
     }
 }

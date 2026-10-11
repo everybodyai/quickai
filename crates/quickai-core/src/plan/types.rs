@@ -49,6 +49,10 @@ pub struct Unit {
     pub apis: Vec<String>,
     /// What the interface calls the engine's server in a sentence (`Ollama`, `llama-server`).
     pub server_name: String,
+    /// Whether the program is given a model, so that a run with none is one that has nothing loaded
+    /// (Ollama's management mode). A program that has no models of its own to load (ComfyUI, Open WebUI)
+    /// is simply ready.
+    pub needs_model: bool,
     /// Ways to bring it up, in the order to try them. The session chooses when it starts, because
     /// whether something already answers on the port is not known to a pure planner.
     pub start: Vec<Start>,
@@ -157,6 +161,9 @@ pub struct SpawnPlan {
     /// Do not hand it the loader variables of QuickAI's own package (an AppImage's or a snap's
     /// library directories): it is a program that was downloaded, with libraries of its own.
     pub scrub_loader_env: bool,
+    /// The folder it starts in; without one it starts where QuickAI was started from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
     /// Folders to make, with the ones above them, before it starts.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mkdir: Vec<String>,
@@ -334,6 +341,7 @@ mod tests {
             env: vec![],
             group: false,
             scrub_loader_env: false,
+            cwd: None,
             mkdir: Vec::new(),
             write: Vec::new(),
             identity: None,
@@ -355,6 +363,7 @@ mod tests {
             env,
             group: true,
             scrub_loader_env: true,
+            cwd: None,
             mkdir: Vec::new(),
             write: Vec::new(),
             identity: None,
@@ -460,6 +469,7 @@ mod tests {
             env: ops(),
             group: false,
             scrub_loader_env: false,
+            cwd: None,
             mkdir: Vec::new(),
             write: Vec::new(),
             identity: None,

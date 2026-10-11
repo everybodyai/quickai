@@ -193,6 +193,7 @@ type = "text"
 default = ""
 legacy_key = "extra_args"
 bind.arg_split = true           # a shell-like split with quotes; nothing is added when it is empty
+share_note = "Command-line words, passed to llama-server as they are written."
 ui = { section = "advanced", order = 90, hint = "e.g. --threads 8 --flash-attn on" }
 
 [[field]]

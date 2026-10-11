@@ -19,6 +19,32 @@ pub struct VocabDoc {
     /// The bands of size a look-up filters by, from the smallest up.
     #[serde(default, rename = "size_class")]
     pub size_classes: Vec<SizeClassDoc>,
+    /// The sentences of the notes a person is told about a configuration (docs/configurations.md,
+    /// section 7). The level of a note is the code's, and a document cannot change it.
+    #[serde(default, rename = "finding")]
+    pub findings: Vec<FindingDef>,
+    /// What a configuration file may and may not do.
+    pub profile: Option<ProfileRules>,
+}
+
+/// The sentence of one note: `{needs}` and the like are filled in by the code, from the holes the
+/// note has.
+#[derive(Clone, Debug, Deserialize)]
+pub struct FindingDef {
+    /// The note it is for (`too_new`). A note this version does not make is a warning.
+    pub id: String,
+    /// The sentence. Required.
+    pub text: String,
+}
+
+/// What a configuration file may and may not do (`[profile]`).
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct ProfileRules {
+    /// Names of environment variables a configuration may never set, in any case; a trailing `*`
+    /// stands for any ending (`DYLD_*`). They add to a short list the application always refuses
+    /// (`LD_*`, `DYLD_*`, `PATH`, `PYTHON*`), which no document can take away.
+    #[serde(default)]
+    pub deny_env: Vec<String>,
 }
 
 /// A type of model: Chat, Code, Vision, Embedding, ...

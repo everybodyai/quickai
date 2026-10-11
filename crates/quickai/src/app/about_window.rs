@@ -11,6 +11,13 @@ impl App {
         }
         let mut open = true;
         let mut close_clicked = false;
+        // the program that goes with the engine, if one does (Open WebUI beside Ollama): downloaded on request too
+        let companion = self.companion_doc().map(|c| {
+            (
+                c.doc.engine.name.clone(),
+                c.doc.engine.license.clone().unwrap_or_default(),
+            )
+        });
         // an engine that is downloaded on request, not shipped, says so (its own license too); the
         // text of a window for llama.cpp, which ships, is what it has always been
         let downloaded = self
@@ -87,6 +94,15 @@ impl App {
                             ui.add_space(4.0);
                             ui.label(contacts);
                         }
+                        if let Some((name, _)) = &companion {
+                            ui.add_space(4.0);
+                            ui.label(format!(
+                                "{name}, the chat page ⚙ Settings can add, contacts nothing by itself and is \
+                                 started offline. ⚙ Settings' \"Look up {name} builds\" contacts the Python \
+                                 Package Index (pypi.org), and installing it fetches Python packages from \
+                                 there and PyTorch from download.pytorch.org, only when you click."
+                            ));
+                        }
                         ui.add_space(10.0);
 
                         ui.label(egui::RichText::new("License").strong());
@@ -103,6 +119,14 @@ impl App {
                         if let Some((_, license)) = &downloaded {
                             ui.add_space(4.0);
                             ui.label(license);
+                        }
+                        if let Some((name, license)) = &companion {
+                            ui.add_space(4.0);
+                            ui.label(format!(
+                                "• {name} is not part of this package either: it is downloaded on request \
+                                 from the Python Package Index, under its own license ({license}, which \
+                                 asks that its name and logo be left as they are), and is not bundled."
+                            ));
                         }
                         ui.add_space(4.0);
                         ui.label(

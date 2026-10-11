@@ -58,7 +58,8 @@ pub fn matching_assets(engine: &Engine, names: &[&str], facts: &HostFacts) -> Ve
                 .collect()
         }
         // the release's source is not one of its files: the feed makes that build itself
-        Assets::Source { .. } => Vec::new(),
+        // the build of these is not a file picked out of a release's files: the feed names it
+        Assets::Source { .. } | Assets::Wheel { .. } => Vec::new(),
         Assets::Names { .. } => {
             let Some(compiled) = engine.acquire.as_ref() else {
                 return Vec::new();
@@ -83,11 +84,13 @@ pub fn matching_assets(engine: &Engine, names: &[&str], facts: &HostFacts) -> Ve
     }
 }
 
-/// Whether a build of this engine is the source of a release (`assets` of `by = "source"`).
+/// Whether a build of this engine is the source of a release (`assets` of `by = "source"`) or its
+/// wheel (`by = "wheel"`): an application that is installed, not a program that is unpacked, so a
+/// build has no file name that says which graphics card it is for.
 pub fn builds_from_source(engine: &Engine) -> bool {
     matches!(
         engine.doc.acquire.as_ref().and_then(|a| a.assets.as_ref()),
-        Some(Assets::Source { .. })
+        Some(Assets::Source { .. } | Assets::Wheel { .. })
     )
 }
 
@@ -107,6 +110,8 @@ pub fn source_archive_url(engine: &Engine, tag: &str) -> Option<String> {
                 root.trim_end_matches('/')
             ))
         }
+        // a wheel's address is not made up from its version: the index says where it is
+        crate::doc::engine::Feed::Pypi { .. } => None,
     }
 }
 
@@ -344,6 +349,9 @@ pub fn backend_words(engine: &Engine) -> String {
 pub fn feed_repo_label(engine: &Engine) -> Option<String> {
     match engine.doc.acquire.as_ref()?.feed.as_ref()? {
         crate::doc::engine::Feed::GithubRelease { repo, .. } => Some(format!("github.com/{repo}")),
+        crate::doc::engine::Feed::Pypi { package, .. } => {
+            Some(format!("pypi.org/project/{package}"))
+        }
     }
 }
 

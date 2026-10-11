@@ -117,6 +117,7 @@ impl App {
             || self.runtime.install.is_some()
             || self.runtime.delete.is_some()
             || self.named.pull.is_some()
+            || self.companion_busy()
     }
 
     /// Everything that depends on the engine: its executable, its models and the state of the
@@ -130,10 +131,11 @@ impl App {
                 .unwrap_or_default(),
             ..Default::default()
         };
-        self.binary = launch::locate_binary(
+        self.binary = launch::locate_binary_in(
             &self.registry,
             &self.engine,
             self.values.text("bin_override"),
+            self.data_dir_override.as_deref(),
         );
         self.host_facts = launch::host_facts(&self.binary, self.machine.clone(), None);
         if let Some(dir) = &self.data_dir_override {
@@ -141,6 +143,9 @@ impl App {
         }
         self.look_for_stopped_installs();
         self.missing_binary_warned = false;
+        // the program that goes with this engine, if one does: its own settings, builds and run
+        self.companion = self.build_companion();
+        self.as_companion(|app| app.look_for_stopped_installs());
         self.lookup = super::lookup_view::LookupView::default();
         self.catalog = super::catalog_view::CatalogView::default();
         self.bench = super::workbench::Bench::default();
@@ -2300,6 +2305,145 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
             .clone()
     }
 
+    /// A configuration for llama.cpp that names a model, and what a person is told about it here.
+    fn llama_configuration(app: &App, model_toml: &str) -> quickai_core::profile::Configuration {
+        let text = format!(
+            "schema = 1\nkind = \"profile\"\nid = \"given\"\nname = \"Given\"\nengine = \"llamacpp\"\n{model_toml}"
+        );
+        quickai_core::profile::check::open_text(&app.registry, &text, env!("CARGO_PKG_VERSION"))
+            .unwrap_or_else(|n| panic!("{}", n.text(app.registry.vocabulary())))
+            .configuration
+    }
+
+    fn notes_of(
+        app: &App,
+        configuration: &quickai_core::profile::Configuration,
+    ) -> Vec<quickai_core::profile::notes::Note> {
+        let installed = app.installed_now();
+        let here = app.configuration_inventory(Some(configuration), &installed);
+        quickai_core::profile::check::review(&app.registry, configuration, &[], &here, false).notes
+    }
+
+    #[test]
+    fn p3_a61_the_note_of_a_model_of_the_list_that_is_not_here_has_a_button_that_fetches_it_after_a_click(
+    ) {
+        use super::super::configurations_window::NoteAction;
+        let (dir, hub, mut app) = catalog_world("a61");
+        let ctx = egui::Context::default();
+        let configuration = llama_configuration(
+            &app,
+            "[[model]]\ncatalog = \"tiny-vl\"\nfile = \"tiny-Q4_K_M.gguf\"\n",
+        );
+        // not here: the note says what it costs and where it can be had, and has a button
+        let notes = notes_of(&app, &configuration);
+        let note = notes
+            .iter()
+            .find(|n| n.id == "model_to_get")
+            .expect("a note");
+        let said = note.text(app.registry.vocabulary());
+        assert!(
+            said.starts_with("Not here: ") && said.contains("tiny-Q4_K_M.gguf"),
+            "{said}"
+        );
+        let (action, label, disabled) = app.action_for(note, &configuration).expect("a button");
+        assert_eq!((label, disabled), ("Get", None));
+        assert_eq!(
+            action,
+            NoteAction::GetCatalog {
+                id: "tiny-vl".into(),
+                file: "tiny-Q4_K_M.gguf".into()
+            }
+        );
+        // nothing was asked of the site, and nothing is fetched, until the click
+        assert!(app.download.is_none());
+        assert!(hub.downloads().is_empty(), "{:?}", hub.downloads());
+        app.run_note_action(action, &ctx);
+        assert!(app.download.is_some(), "the Recommended window's own job");
+        until_downloaded(&mut app, &ctx);
+        let models = dir.join("models");
+        // the weights, and what the list pairs with them (a projector): the same as its window's button
+        assert!(models.join("tiny-Q4_K_M.gguf").is_file());
+        assert!(models.join("me--tiny-vl-GGUF--mmproj-f16.gguf").is_file());
+        assert!(models.join("tiny-Q4_K_M.gguf.bundle.json").is_file());
+        // and the note is gone
+        assert!(notes_of(&app, &configuration)
+            .iter()
+            .all(|n| n.id != "model_to_get"));
+        // for another engine the button waits until the configuration is chosen
+        let mut other = configuration.clone();
+        other.engine = "ollama".into();
+        assert_eq!(
+            app.action_for(note, &other).unwrap().2.as_deref(),
+            Some("Choose this configuration first: it is for another engine.")
+        );
+    }
+
+    #[test]
+    fn p3_a62_a_file_that_is_not_here_has_a_button_that_looks_it_up_after_a_click_and_a_path_is_refused(
+    ) {
+        use super::super::configurations_window::NoteAction;
+        let (_dir, hub, mut app) = catalog_world("a62");
+        let ctx = egui::Context::default();
+        let configuration = llama_configuration(
+            &app,
+            "[[model]]\nfile = \"Qwen3-VL-8B-Q4_K_M.gguf\"\nsize = 2800000000\n",
+        );
+        let notes = notes_of(&app, &configuration);
+        let note = notes
+            .iter()
+            .find(|n| n.id == "model_unknown")
+            .expect("a note");
+        assert!(
+            note.text(app.registry.vocabulary())
+                .contains("does not say where it came from"),
+            "{}",
+            note.text(app.registry.vocabulary())
+        );
+        let (action, label, disabled) = app.action_for(note, &configuration).expect("a button");
+        assert_eq!((label, disabled), ("Look up online", None));
+        // the name of the file without its quantization is what is looked up
+        assert_eq!(
+            action,
+            NoteAction::LookUp {
+                query: "Qwen3-VL-8B".into()
+            }
+        );
+        // nothing is asked until the click; then the look-up is the person's, with the words in the box
+        assert!(hub.requests().is_empty());
+        app.run_note_action(action, &ctx);
+        assert_eq!(app.model_input, "Qwen3-VL-8B");
+        assert!(app.lookup.running() || !app.lookup.status.is_empty());
+        // a file that remembers where it came from looks up that repository's name
+        let known = llama_configuration(
+            &app,
+            "[[model]]\nfile = \"Mine-Q4_K_M.gguf\"\nsize = 100\nfrom = \"huggingface:acme/Mine-GGUF\"\n",
+        );
+        let notes = notes_of(&app, &known);
+        let note = notes
+            .iter()
+            .find(|n| n.id == "model_to_get")
+            .expect("a note");
+        assert!(note
+            .text(app.registry.vocabulary())
+            .ends_with("It can be got from huggingface.co/acme/Mine-GGUF."));
+        assert_eq!(
+            app.action_for(note, &known).unwrap().0,
+            NoteAction::LookUp {
+                query: "Mine-GGUF".into()
+            }
+        );
+        // a name that is a path is refused before anything is looked for
+        for bad in ["../../etc/passwd", "sub/x.gguf", "C:x.gguf"] {
+            let text = format!(
+                "schema = 1\nkind = \"profile\"\nid = \"x\"\nengine = \"llamacpp\"\n[[model]]\nfile = \"{bad}\"\n"
+            );
+            assert!(
+                quickai_core::profile::check::open_text(&app.registry, &text, "0.1.0").is_err(),
+                "{bad}"
+            );
+        }
+    }
+
     #[test]
     fn p3_j19_the_window_opens_without_asking_anything_and_shows_what_the_engine_offers() {
         let (_dir, hub, mut app) = catalog_world("j19");
@@ -2696,6 +2840,16 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
         assert!(models.join("tiny-Q4_K_M.gguf").is_file());
         assert!(models.join("me--tiny-vl-GGUF--mmproj-f16.gguf").is_file());
         assert!(models.join("tiny-Q4_K_M.gguf.bundle.json").is_file());
+        // where the weights came from is remembered, in the data directory and not in the models folder
+        // (A63 of docs/phase3-test-plan.md), so that a configuration can say where to get the model
+        let size = std::fs::metadata(models.join("tiny-Q4_K_M.gguf"))
+            .unwrap()
+            .len();
+        assert_eq!(
+            crate::sources::recall(&dir.join("data"), "tiny-Q4_K_M.gguf", size).as_deref(),
+            Some("huggingface:me/tiny-vl-GGUF")
+        );
+        assert!(!models.join("model-sources.json").exists());
         // the window knows without being told: the weights alone are there, and so is the pair, and
         // the other quantization is not
         assert!(installed(&app, "Tiny VL", "Q4_K_M", None));

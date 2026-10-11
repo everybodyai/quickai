@@ -109,3 +109,27 @@ pub fn send(method: &str, url: &str, body: Option<&str>) -> Reply {
         (m, b) => panic!("send does not do {m} with body {b:?}"),
     }
 }
+
+/// GET with a bearer token, as a program that has signed in asks.
+pub fn get_with_token(url: &str, token: &str) -> Reply {
+    read(
+        agent()
+            .get(url)
+            .header("User-Agent", "quickai-test")
+            .header("Authorization", &format!("Bearer {token}"))
+            .call()
+            .unwrap_or_else(|e| panic!("GET {url}: {e}")),
+    )
+}
+
+/// POST of JSON with a bearer token.
+pub fn post_json_with_token(url: &str, body: &Value, token: &str) -> Reply {
+    read(
+        agent()
+            .post(url)
+            .header("Content-Type", "application/json")
+            .header("Authorization", &format!("Bearer {token}"))
+            .send(body.to_string())
+            .unwrap_or_else(|e| panic!("POST {url}: {e}")),
+    )
+}

@@ -26,6 +26,9 @@ mod about_window;
 mod acquire;
 mod api_info;
 mod catalog_view;
+mod companion;
+mod configurations_ui;
+mod configurations_window;
 mod confirm_delete;
 mod controls;
 mod diagnostics;
@@ -109,6 +112,9 @@ pub struct App {
     /// dynamic label right where it's used).
     model_input: String,
     download: Option<Job<String>>,
+    /// Where the files of the download that is going come from (`huggingface:owner/repo`), remembered when
+    /// it ends well so that a configuration can say where to get the model.
+    download_source: Option<String>,
     /// What the models area of an engine that runs on its own holds besides its models: the folder a
     /// file given by hand goes in, and what the last fetch did.
     bench: workbench::Bench,
@@ -150,6 +156,28 @@ pub struct App {
     pending_delete: Option<PendingDelete>,
     /// Each frame beats, and a thread looks at how long ago (see `stall.rs`).
     heartbeat: stall::Heartbeat,
+    /// The program that goes with the engine in use (Open WebUI beside Ollama), if the engine has one:
+    /// its settings, its builds and a run of its own (see `companion.rs`).
+    companion: Option<companion::Companion>,
+    /// The window's state for an engine is the companion's for the length of a call (`as_companion`).
+    in_companion: bool,
+    /// Something asked for the settings to be written while the companion's state was in the window: they
+    /// are written when the call is over, whole.
+    save_wanted: std::cell::Cell<bool>,
+    /// The delete that waits for an answer was asked in the companion's section: it is answered there.
+    delete_of_companion: bool,
+    /// Where the configurations and the other documents are read from and written to.
+    config_dirs: config::ConfigDirs,
+    /// The configuration in use, and the questions the title row asks about it.
+    configs: configurations_ui::Configs,
+    /// The window that keeps the configurations is open (a window of its own, see
+    /// `configurations_window.rs`).
+    show_configurations: bool,
+    /// It was asked for while open: it comes to the front once.
+    raise_configurations: bool,
+    /// The person pressed the chat button that sets the companion up: its section is open the next time it
+    /// is drawn, whatever it was.
+    companion_section_wanted: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -204,19 +232,23 @@ enum PendingDelete {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let settings = Settings::load();
-        let registry = config::build_registry(&config::ConfigDirs::from_environment());
+        let config_dirs = config::ConfigDirs::from_environment();
+        let registry = config::build_registry(&config_dirs);
         cc.egui_ctx.set_visuals(if settings.dark_mode {
             egui::Visuals::dark()
         } else {
             egui::Visuals::light()
         });
-        let app = Self::build(
+        let mut app = Self::build(
             settings,
             registry,
             hardware::total_ram_bytes(),
             gpu::detect(),
             None,
         );
+        app.config_dirs = config_dirs;
+        // the first start with configurations keeps what the person had set as their Default
+        app.adopt_working_state();
         app.watch_the_window(cc.egui_ctx.clone());
         app
     }
@@ -240,7 +272,9 @@ impl App {
     /// What is running that the window is showing and that goes on without it, for the watcher to know
     /// that a window which draws nothing is stuck and not just idle.
     fn running_now(&self) -> Option<&'static str> {
-        if self.runtime.install.is_some() {
+        if let Some(what) = self.companion_running_now() {
+            Some(what)
+        } else if self.runtime.install.is_some() {
             Some("an install")
         } else if self.runtime.delete.is_some() {
             Some("a delete")
@@ -316,6 +350,7 @@ impl App {
             model_input: String::new(),
             bench: workbench::Bench::default(),
             download: None,
+            download_source: None,
             lookup: LookupView::default(),
             catalog: catalog_view::CatalogView::default(),
             total_ram_bytes,
@@ -334,9 +369,20 @@ impl App {
             runtime: RuntimeManager::default(),
             pending_delete: None,
             heartbeat: stall::Heartbeat::new(),
+            companion: None,
+            in_companion: false,
+            save_wanted: std::cell::Cell::new(false),
+            delete_of_companion: false,
+            config_dirs: config::ConfigDirs::default(),
+            configs: configurations_ui::Configs::new(),
+            show_configurations: false,
+            raise_configurations: false,
+            companion_section_wanted: false,
         };
         // the executable, the models and the panels' state of the engine in use
         app.load_engine_state();
+        // and the configuration in use: the one the settings name, else the Default
+        app.find_active_configuration();
         app
     }
 
@@ -358,8 +404,18 @@ impl App {
     fn form_facts(&self) -> HostFacts {
         let mut facts = self.host_facts.clone();
         facts.binary = Some(self.binary.display().to_string());
-        facts.session_running = self.session.is_active();
-        facts.session_attached = self.session.attached();
+        // while the window holds the companion's state where it reads "the engine's", whether a program runs is a
+        // question about the companion's own run: Open WebUI's box can be ticked while Ollama runs
+        match self.companion.as_ref().filter(|_| self.in_companion) {
+            Some(companion) => {
+                facts.session_running = companion.session.is_active();
+                facts.session_attached = false;
+            }
+            None => {
+                facts.session_running = self.session.is_active();
+                facts.session_attached = self.session.attached();
+            }
+        }
         facts
     }
 
@@ -493,7 +549,8 @@ impl App {
                     .engine_doc()
                     .and_then(|e| e.doc.fields.iter().find(|f| f.id == id))
                     .and_then(|f| f.ui.section.clone());
-                if section.as_deref().unwrap_or("advanced") != "primary" {
+                // the fields of a companion are all in its section of the Settings
+                if self.in_companion || section.as_deref().unwrap_or("advanced") != "primary" {
                     self.open_settings();
                 }
                 self.push_log(format!("[quickai] Look at the `{id}` setting."));
@@ -529,11 +586,24 @@ impl App {
             // engine's keys keep what the file had rather than a half-written file.
             let _ = settings.set_engine_values(engine, values.map());
         }
+        // and the program that goes with it keeps its own, in the same file under its own keys
+        if let Some(companion) = &self.companion {
+            if let (Some(engine), Some(slot)) =
+                (self.registry.engine(&companion.id), companion.slot_values())
+            {
+                let _ = settings.set_engine_values(engine, slot.map());
+            }
+        }
         settings
     }
 
-    /// Writes `settings.json`.
+    /// Writes `settings.json`. While the companion's state is in the window the file is not written
+    /// from it: it says that it wants to be, and the call that put the state there writes it when it is over.
     fn save_settings(&self) {
+        if self.in_companion {
+            self.save_wanted.set(true);
+            return;
+        }
         self.write_settings(&self.settings_now());
     }
 
@@ -605,9 +675,25 @@ impl App {
         for line in job.take_statuses() {
             self.push_log(line);
         }
+        let source = if outcome.is_some() {
+            self.download_source.take()
+        } else {
+            None
+        };
         match outcome {
             Some(Ok(filename)) => {
                 self.push_log(format!("Download complete: {filename}"));
+                // where it came from is remembered, in the data directory and not in the models folder
+                if let Some(source) = source {
+                    if let Ok(meta) = std::fs::metadata(self.models_dir.join(&filename)) {
+                        let _ = crate::sources::remember(
+                            std::path::Path::new(&self.host_facts.data_dir),
+                            &filename,
+                            meta.len(),
+                            &source,
+                        );
+                    }
+                }
                 self.catalog.note = None;
                 self.bench_fetched();
                 let current = self.models.get(self.selected).map(|m| m.filename.clone());
@@ -694,6 +780,7 @@ impl eframe::App for App {
         self.poll_download();
         self.poll_lookup();
         self.poll_runtime_manager();
+        self.poll_companion(ui.ctx());
         self.poll_named_models(ui.ctx());
 
         let active = self.session.is_active();
@@ -703,10 +790,7 @@ impl eframe::App for App {
         }
 
         egui::CentralPanel::default().show(ui, |ui| {
-            self.show_header(ui);
-
-            if self.active_tab == Tab::Live {
-                self.show_live_traffic_tab(ui);
+            if !self.show_page_top(ui) {
                 return;
             }
 
@@ -727,9 +811,13 @@ impl eframe::App for App {
         self.show_about_window(ui.ctx());
         self.show_catalog_window(ui.ctx());
         self.show_foreign_program_modal(ui.ctx());
+        self.show_configuration_modals(ui.ctx(), false);
+        self.show_configurations_window(ui.ctx());
     }
 
     fn on_exit(&mut self) {
+        // the page goes first: it has no use without what it talks to
+        self.stop_companion_blocking();
         self.session.stop_blocking();
     }
 }

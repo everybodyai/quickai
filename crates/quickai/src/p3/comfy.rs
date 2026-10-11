@@ -18,7 +18,8 @@ use quickai_core::doc::engine::Verify;
 use crate::jobs::JobEvent;
 use crate::prims::install::{
     find_python, install_blocking, is_unfinished, list_installed, list_unfinished, InstallKind,
-    InstallRequest, InstallSpec, NodePlan, PipPlan, PythonApp, Smoke, Source, Where, CANCELLED,
+    InstallRequest, InstallSpec, NodePlan, PipPlan, PythonApp, Runs, Smoke, Source, Where,
+    CANCELLED,
 };
 use crate::testkit::archives::{sha256_hex, tar_gz, Entry};
 use crate::testkit::files::FileServer;
@@ -32,14 +33,25 @@ use crate::testkit::{scratch, wait_until};
 /// or `smoke_hang` (the program it runs starts a child that sleeps and waits for it); a file beside the log (`World::mode`) changes it between two installs. Everything it
 /// is asked is written to `log`; a venv it makes is a copy of it.
 #[cfg(unix)]
-fn fake_python(dir: &Path, version: &str, mode: &str) -> (PathBuf, PathBuf) {
+pub(super) fn fake_python(dir: &Path, version: &str, mode: &str) -> (PathBuf, PathBuf) {
     let log = dir.join("python.log");
     let body = format!(
         r#"LOG='{log}'
 MODE='{mode}'
 [ -f "$LOG.mode" ] && MODE=$(cat "$LOG.mode")
 case "$1" in
-  -c) echo "{version}"; exit 0;;
+  -c)
+    case "$2" in
+      # which function a console script of the wheel calls: what the package's records say
+      *entry_points*) echo "entry $3" >> "$LOG"; echo "open_webui:app"; exit 0;;
+      # the application of a wheel, run by a launcher that was told what to call
+      *open_webui*)
+        shift 2
+        echo "run open-webui $*" >> "$LOG"
+        if [ "$MODE" = smoke_fail ]; then echo 'ImportError: no module' >&2; exit 3; fi
+        exit 0;;
+      *) echo "{version}"; exit 0;;
+    esac;;
   -m)
     case "$2" in
       venv)
@@ -51,6 +63,7 @@ case "$1" in
       pip)
         shift 2
         echo "pip TMPDIR=$TMPDIR $*" >> "$LOG"
+        echo "$0" >> "$LOG.who"
         echo "Collecting torch"
         case "$MODE" in
           fail)
@@ -82,7 +95,7 @@ esac"#,
     (write_script(dir, "python3.98", &body), log)
 }
 
-fn lines(log: &Path) -> Vec<String> {
+pub(super) fn lines(log: &Path) -> Vec<String> {
     std::fs::read_to_string(log)
         .unwrap_or_default()
         .lines()
@@ -91,7 +104,7 @@ fn lines(log: &Path) -> Vec<String> {
 }
 
 /// What is directly under `root`, sorted: what an install leaves behind shows here.
-fn entries(root: &Path) -> Vec<String> {
+pub(super) fn entries(root: &Path) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(root)
         .map(|rd| {
             rd.flatten()
@@ -166,6 +179,7 @@ impl World {
             label: format!("the {id} step"),
             packages: packages.iter().map(|p| p.to_string()).collect(),
             requirements: requirements.map(str::to_string),
+            wheel: false,
             index: index.map(str::to_string),
             weight,
         };
@@ -181,7 +195,7 @@ impl World {
                 timeout: Duration::from_secs(20),
             }),
             kind: InstallKind::PythonApp(Box::new(PythonApp {
-                entry: "main.py".into(),
+                runs: Runs::Script("main.py".into()),
                 versions: vec!["3.98".into()],
                 python: Some(self.python.clone()),
                 pip: vec![
@@ -239,15 +253,15 @@ impl Drop for World {
 }
 
 /// What an install did.
-struct Ran {
-    outcome: Result<PathBuf, String>,
-    said: Vec<String>,
-    bar: Vec<f32>,
+pub(super) struct Ran {
+    pub outcome: Result<PathBuf, String>,
+    pub said: Vec<String>,
+    pub bar: Vec<f32>,
     /// The lines under the bar, in order.
-    details: Vec<String>,
+    pub details: Vec<String>,
 }
 
-fn run(spec: &InstallSpec, request: &InstallRequest) -> Ran {
+pub(super) fn run(spec: &InstallSpec, request: &InstallRequest) -> Ran {
     let events = Mutex::new((Vec::new(), Vec::new(), Vec::new()));
     let outcome = install_blocking(spec, request, &|event| {
         let mut events = events.lock().unwrap();
@@ -267,7 +281,7 @@ fn run(spec: &InstallSpec, request: &InstallRequest) -> Ran {
     }
 }
 
-fn said(ran: &Ran, word: &str) -> bool {
+pub(super) fn said(ran: &Ran, word: &str) -> bool {
     ran.said.iter().any(|line| line.contains(word))
 }
 

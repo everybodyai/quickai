@@ -14,6 +14,7 @@ use crate::expr::types::suggest;
 use crate::expr::{Expr, Template, Type};
 use crate::lookup::size::parse_size;
 use crate::lookup::types::{SizeClassDef, TypeDef, TypeMatch};
+use crate::profile::notes;
 
 /// An API the vocabulary defines.
 #[derive(Clone, Debug)]
@@ -47,6 +48,10 @@ pub(super) struct VocabParts {
     pub sizes: Vec<SizeClassDef>,
     /// The kinds of input and output a model can have, as `(id, label)`.
     pub modalities: Vec<(String, String)>,
+    /// The sentences of the notes about a configuration, by the id of the note.
+    pub findings: Vec<(String, String)>,
+    /// Names of environment variables a configuration may not set, besides the ones the code refuses.
+    pub deny_env: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -60,6 +65,10 @@ pub struct Vocabulary {
     sizes: Vec<SizeClassDef>,
     /// The modalities, `(id, label)`, in the order the documents list them.
     modalities: Vec<(String, String)>,
+    /// The sentence of each note about a configuration, by the id of the note.
+    findings: BTreeMap<String, String>,
+    /// Names of environment variables a configuration may not set, besides the ones the code refuses.
+    deny_env: Vec<String>,
     /// The vocabulary document each type and each size class came from, for the message of a clash.
     owners: BTreeMap<String, String>,
     /// At least one vocabulary document was loaded (a registry of one engine document alone has
@@ -94,6 +103,22 @@ impl Vocabulary {
     /// The kinds of input and output a model can have (`text`, `image`), as `(id, label)`.
     pub fn modalities(&self) -> &[(String, String)] {
         &self.modalities
+    }
+
+    /// The sentence of the note called `id`, when a vocabulary gives one.
+    pub fn finding(&self, id: &str) -> Option<&str> {
+        self.findings.get(id).map(String::as_str)
+    }
+
+    /// Whether any sentence of the notes about a configuration is defined.
+    pub fn has_findings(&self) -> bool {
+        !self.findings.is_empty()
+    }
+
+    /// The names of environment variables a configuration may not set, besides the ones the
+    /// application always refuses (`profile::notes::DENIED_ENV`).
+    pub fn deny_env(&self) -> &[String] {
+        &self.deny_env
     }
 
     /// The decoders of the APIs named, in that order, for those that have one.
@@ -158,6 +183,17 @@ impl Vocabulary {
                 }
             }
         }
+        for (id, _) in &parts.findings {
+            if let Some(owner) = self.owners.get(&format!("finding:{id}")) {
+                problems.push(merged.diagnostic(
+                    Severity::Error,
+                    &DocPath::default().key("finding").id(id),
+                    format!(
+                        "the note `{id}` already has its sentence from the vocabulary `{owner}`"
+                    ),
+                ));
+            }
+        }
         for class in &parts.sizes {
             if let Some(owner) = self.owners.get(&format!("size:{}", class.id)) {
                 problems.push(merged.diagnostic(
@@ -193,6 +229,16 @@ impl Vocabulary {
         for modality in parts.modalities {
             if !self.modalities.iter().any(|(id, _)| *id == modality.0) {
                 self.modalities.push(modality);
+            }
+        }
+        for (id, text) in parts.findings {
+            self.owners
+                .insert(format!("finding:{id}"), vocab_id.clone());
+            self.findings.insert(id, text);
+        }
+        for name in parts.deny_env {
+            if !self.deny_env.contains(&name) {
+                self.deny_env.push(name);
             }
         }
         self.present = true;
@@ -337,6 +383,8 @@ pub(super) fn compile(merged: &MergedDoc, doc: &VocabDoc) -> (VocabParts, Vec<Di
     let types = compile_types(merged, doc, &mut problems);
     let sizes = compile_sizes(merged, doc, &mut problems);
     let modalities = compile_modalities(merged, doc, &mut problems);
+    let findings = compile_findings(merged, doc, &mut problems);
+    let deny_env = compile_deny_env(merged, doc, &mut problems);
 
     if problems.iter().any(Diagnostic::is_error) {
         return (VocabParts::default(), problems);
@@ -348,9 +396,128 @@ pub(super) fn compile(merged: &MergedDoc, doc: &VocabDoc) -> (VocabParts, Vec<Di
             types,
             sizes,
             modalities,
+            findings,
+            deny_env,
         },
         problems,
     )
+}
+
+/// The sentences of the notes about a configuration, checked: each is for a note this version
+/// makes (else a warning: it may be for a newer one), is written once, says something, and uses
+/// only the holes its note fills in.
+fn compile_findings(
+    merged: &MergedDoc,
+    doc: &VocabDoc,
+    problems: &mut Vec<Diagnostic>,
+) -> Vec<(String, String)> {
+    let mut found: Vec<(String, String)> = Vec::new();
+    for def in &doc.findings {
+        let at = DocPath::default().key("finding").id(&def.id);
+        let Some(spec) = notes::spec_of(&def.id) else {
+            let mut d = merged.diagnostic(
+                Severity::Warning,
+                &at,
+                format!(
+                    "`{}` is not a note this version of QuickAI makes and is ignored",
+                    def.id
+                ),
+            );
+            if let Some(hint) = suggest(&def.id, notes::NOTES.iter().map(|n| n.id)) {
+                d = d.with_hint(format!("did you mean `{hint}`?"));
+            }
+            problems.push(d);
+            continue;
+        };
+        if found.iter().any(|(id, _)| *id == def.id) {
+            problems.push(merged.diagnostic(
+                Severity::Error,
+                &at,
+                format!("the note `{}` is given a sentence twice", def.id),
+            ));
+            continue;
+        }
+        if def.text.trim().is_empty() {
+            problems.push(merged.diagnostic(
+                Severity::Error,
+                &at.key("text"),
+                format!("the sentence of `{}` is empty", def.id),
+            ));
+            continue;
+        }
+        let unknown: Vec<String> = notes::holes_of(&def.text)
+            .into_iter()
+            .filter(|hole| !spec.holes.contains(&hole.as_str()))
+            .collect();
+        if !unknown.is_empty() {
+            problems.push(
+                merged
+                    .diagnostic(
+                        Severity::Error,
+                        &at.key("text"),
+                        format!(
+                            "the sentence of `{}` uses {} which the note does not fill in",
+                            def.id,
+                            unknown
+                                .iter()
+                                .map(|h| format!("`{{{h}}}`"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                    )
+                    .with_hint(format!(
+                        "it has {}",
+                        spec.holes
+                            .iter()
+                            .map(|h| format!("`{{{h}}}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )),
+            );
+            continue;
+        }
+        found.push((def.id.clone(), def.text.clone()));
+    }
+    found
+}
+
+/// The names of `[profile] deny_env`: each a name of an environment variable, with a trailing `*`
+/// allowed.
+fn compile_deny_env(
+    merged: &MergedDoc,
+    doc: &VocabDoc,
+    problems: &mut Vec<Diagnostic>,
+) -> Vec<String> {
+    let Some(rules) = &doc.profile else {
+        return Vec::new();
+    };
+    let mut names = Vec::new();
+    for (i, name) in rules.deny_env.iter().enumerate() {
+        let body = name.strip_suffix('*').unwrap_or(name);
+        let at = DocPath::default().key("profile").key("deny_env").index(i);
+        if name.is_empty() || !body.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            problems.push(
+                merged
+                    .diagnostic(
+                        Severity::Error,
+                        &at,
+                        format!("`{name}` is not the name of an environment variable"),
+                    )
+                    .with_hint("letters, digits and `_`, with `*` allowed at the end"),
+            );
+            continue;
+        }
+        if name == "*" {
+            problems.push(merged.diagnostic(
+                Severity::Error,
+                &at,
+                "`*` alone would refuse every variable",
+            ));
+            continue;
+        }
+        names.push(name.clone());
+    }
+    names
 }
 
 /// The modalities of one document: each an id, written once.

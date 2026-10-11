@@ -222,6 +222,19 @@ is being fetched.
   (`OLLAMA_NO_CLOUD=1`), keeps one model loaded, and keeps its models in `~/.quickai/ollama/models` unless you
   ask for Ollama's own store. Its advanced settings are what to do when one is already running, the model
   store, extra environment (`KEY=VALUE` lines), the executable, the GPU and the context size.
+- **A chat page for Ollama: Open WebUI** (`docs/openwebui.md`). `ollama serve` has no page, so the button next to **Stop**
+  says **Set up chat UI...** until you have one, and opens ⚙ Settings → **Chat UI: Open WebUI**. Tick *Start Open WebUI
+  with Ollama*, then **Look up Open WebUI builds** → **Use** on a row (the first is the release QuickAI was tested with):
+  QuickAI downloads its wheel from the Python Package Index, checks it, and installs it with what it needs (about 3 GB,
+  in four minutes or so) into a Python environment **of its own** under `~/.quickai/openwebui`, which is neither
+  ComfyUI's nor any Python you have; it needs Python 3.12 or 3.11 on the machine and installs none. From then on it
+  starts after Ollama answers (`Ollama ready ... · Open WebUI on port 3000`), **Open Chat UI** opens it, and it stops
+  with Ollama; if it stops by itself Ollama goes on and the window says so. It is started on this machine only and
+  **offline** (no update check, no model fetched, nothing installed for a tool) unless you set its internet access to online;
+  its documents are read with Ollama (pull `nomic-embed-text`, or choose another model in its own settings); its
+  accounts, chats and files are in `~/.quickai/openwebui/data`, and it writes nothing anywhere else. The first account you
+  make on its page is the administrator's. It is under the Open WebUI License (BSD-3-Clause with a condition that its
+  name and logo are left as they are), is never part of a package, and is downloaded only when you ask.
 - **ComfyUI** (`docs/comfyui.md`) makes pictures and video from workflows you build in its own page. **Getting it:** ⚙ Settings →
   **Advanced: ComfyUI** → **Look up ComfyUI builds** → **Use** on a row (the first is the release QuickAI was tested
   with). It needs a Python 3.10 or newer that can make an environment (on Debian and Ubuntu `sudo apt install
@@ -251,6 +264,20 @@ is being fetched.
   (`crates/quickai/manifests/engines/`, `docs/reference/engine-fields.md`); one in your configuration directory
   patches it (`quickai config check` and `quickai plan --engine ollama --model NAME --explain` show what comes of
   it). A document of yours that starts a program QuickAI did not find or install asks you once before it does.
+
+## Configurations
+
+A **configuration** is what QuickAI runs and how: the engine, the model, the program, and the settings and command-line words of the engine, in a file that can be
+chosen, kept under a name and given to someone else. A section under the title row has a **Configuration:** dropdown (the Default, and yours); while what the window holds is no longer what was saved the section
+says **• Modified** in amber, in an amber outline, with *Save* (over the configuration in use), *Save as...* (under a name) and *Revert* (back to what was saved, after asking); *Manage configurations...*, under the list of the dropdown, opens a window of its own:
+the list, what each one sets and what choosing it would change, *Use*, *Rename*, *Duplicate*, *Export*, *Import*, *Delete*, *Reset to factory* and *Revert*. Yours are files in `profiles/` of your
+configuration directory; the first start after the upgrade keeps the settings you had as your own Default, so nothing is said to be modified. Choosing one is refused while a server runs, and starts, fetches and installs nothing.
+
+**What is given away** is only what means the same on another computer: no folder, no program of yours, no word that looks like a secret. A model is named and never fetched; a build is named and never installed.
+What the person who gets the file is told (another system or graphics card, a model or a program they lack, a port in use, a line that widens what a program may do) is said before anything is taken;
+what asks is taken only when ticked, and a line that would make a program load other code (`LD_PRELOAD`, `PATH`) is refused whatever the file says. Open WebUI's environment is left out (it keeps most of its settings
+in a database of its own after its first start): a configuration says whether it starts with Ollama, and its port. From the command line: `quickai configuration list | show | check | export | import`
+and `quickai plan --configuration ID|FILE` (`docs/configurations.md`).
 
 ## Live conversation traffic (📡)
 

@@ -1,11 +1,12 @@
 # Privacy policy: QuickAI
 
-_Last updated: 2026-10-08_
+_Last updated: 2026-10-11_
 
 QuickAI ("the app") is a desktop program for running language models on your own computer: you pick a model,
 start it, and chat with it in your browser or from another program on the same machine. It can run them with
 llama.cpp (which comes with the app) or, if you choose it in ⚙ Settings, with Ollama, or with ComfyUI for pictures
-and video (neither of which comes with the app: it downloads them only when you ask). This policy covers the
+and video (neither of which comes with the app: it downloads them only when you ask). Ollama can be given a chat page,
+Open WebUI, in the same way. This policy covers the
 app however you install it: the Microsoft Store, GitHub Releases (tar.gz, AppImage or zip), Snap, Homebrew,
 Scoop, Chocolatey or the AUR.
 
@@ -14,8 +15,8 @@ Scoop, Chocolatey or the AUR.
 The app itself does not collect, store or send personal information to its developer or to anyone else. It has no
 accounts, no analytics or telemetry, no advertising, no crash reporting and no automatic update check of its own.
 Your prompts and the model's replies are processed on your own computer and are never uploaded. The app talks to
-the internet only when you ask it to, to search for or download a model, a llama.cpp build, an Ollama build or a
-ComfyUI build, or to look Ollama's library up (see [When the app uses the internet](#when-the-app-uses-the-internet)). Some of the stores and package managers you can
+the internet only when you ask it to, to search for or download a model, a llama.cpp build, an Ollama build, a
+ComfyUI build or an Open WebUI build, or to look Ollama's library up (see [When the app uses the internet](#when-the-app-uses-the-internet)). Some of the stores and package managers you can
 install it through do their own data collection, independent of anything the app does; see
 [Stores and package managers](#stores-and-package-managers) below.
 
@@ -33,21 +34,42 @@ install it through do their own data collection, independent of anything the app
   on `127.0.0.1` only and with `OLLAMA_NO_CLOUD=1`, which you cannot override from the app's extra-environment box:
   measured, without that variable an idle `ollama serve` contacts `ollama.com` a moment after it starts and again
   every few hours, and with it a whole session of starting, chatting and stopping made no connection off your
-  computer and no DNS lookup. Ollama keeps its own files: the first time it starts it writes a key pair under
-  `~/.ollama` (`~/.ollama/id_ed25519` and its public half; Ollama's own business, not QuickAI's), and the graphics
-  driver may write shader caches under `~/.cache`. The builds QuickAI installs are kept under `~/.quickai/ollama`,
+  computer and no DNS lookup. Ollama keeps files of its own: the first time it starts it writes a key pair
+  (`.ollama/id_ed25519` and its public half), and the graphics driver writes shader caches. QuickAI starts it with a
+  home folder and a temporary folder of its own, below `~/.quickai/ollama` (`home` and `cache`), so that all of that is
+  kept there and nothing is written to your home folder, your cache folders or the system's temporary folder (measured:
+  run with an empty home, it wrote nothing outside `~/.quickai/ollama`); the exception is when you ask for Ollama's own
+  store in ⚙ Settings, which is the home of the Ollama you run yourself, and then it is started with your home as it
+  would be by hand. The builds QuickAI installs are kept under `~/.quickai/ollama`,
   and so are the models it pulls (`~/.quickai/ollama/models`) unless you tell it to use Ollama's own store; a list
   of the models Ollama had last time is kept there too, so something can be shown while Ollama is not running.
   If an Ollama of your own is already running on the port, QuickAI uses it, changes nothing about how it was
   started, and leaves it running when you press **Stop**. Prompts and replies travel only between your client and
   the local Ollama, as with llama-server, and the live traffic view works the same way.
+- **Open WebUI, if you ask for it beside Ollama.** Open WebUI is a separate program, a chat page for Ollama's models, under
+  the Open WebUI License (BSD-3-Clause with a condition that its name and logo are left as they are), that QuickAI
+  downloads on request (⚙ Settings → **Chat UI: Open WebUI**, **Look up Open WebUI builds**) and never ships. It is
+  installed as a Python package with a Python environment of its own under `~/.quickai/openwebui/<release>` (about 3 GB);
+  packages are installed only as built wheels. QuickAI starts it so that it listens on `127.0.0.1` only, and, unless you set
+  its internet access to online, **offline**: it checks for no update, fetches no model, sends no usage statistics (they are switched off
+  in every case) and installs nothing a tool asks for. Everything it keeps is in `~/.quickai/openwebui`: its data
+  (`data`: the accounts, conversations, files and vectors you make in it, and its secret key), its caches and temporary files
+  (`cache`) and a home folder of its own (`home`), so that it writes nothing to your home folder, your cache folders or the
+  folder QuickAI was started from. The first account made on its page is its administrator's, and it asks for a password; a
+  page on the internet that you open cannot use it, because it answers only to its own address. What you write in it goes
+  only to the Ollama QuickAI started or found, on this computer. With its internet access set to online it may contact other
+  sites as it does when started by hand: Hugging Face for a model it reads documents or speech with, if you choose
+  one of its own, and whatever a tool or a web search that you ask for reaches.
 - **ComfyUI, if you choose it.** ComfyUI is a separate program, GPL-3.0-licensed, that makes pictures and video from
   workflows you build in its own web page, and QuickAI downloads it on request (⚙ Settings, **Look up ComfyUI
   builds**) and never ships it. It is installed as source, with a Python environment of its own, under
   `~/.quickai/comfyui/<release>` (about 17 GB, most of it PyTorch); packages are installed only as built wheels, so no
   package runs a build script on your computer. QuickAI starts it so that it listens on `127.0.0.1` only and, unless
   you change **The page's network** setting, with `--offline`, so that the page it serves contacts no other site;
-  its folders are under `~/.quickai/comfyui` (`models`, `output`, `input`, `user`, `temp`). An install that is interrupted keeps what it did in a directory beside the builds, with a small
+  its folders are under `~/.quickai/comfyui` (`models`, `output`, `input`, `user`, `temp`), and it is started with a home
+  folder and a temporary folder of its own there too (`home`, `cache`), so that the caches PyTorch and the graphics driver
+  keep are kept there and not in your home folder or the system's temporary folder, and with the Python variables of your
+  shell (`PYTHONPATH`, `PYTHONHOME`) put away. An install that is interrupted keeps what it did in a directory beside the builds, with a small
   record of its steps (`.quickai-install.json`) and a lock file; **Unfinished installs** in ⚙ Settings lists it, and
   it is yours to continue or delete. If a ComfyUI of your own is already running on the port, QuickAI uses it and
   changes nothing about how it was started. Every time QuickAI starts ComfyUI it also writes a small folder of
@@ -78,6 +100,19 @@ install it through do their own data collection, independent of anything the app
   `llama-server` path and extra command-line arguments if you entered any. It holds no account or personal data
   beyond the paths you typed, and it is never sent anywhere. The app keeps no history of your prompts, files,
   searches or downloads.
+- **Configurations.** A configuration is a small text file that says what to run and how: the engine, the model (by its
+  name, never by where it is on your disk), the build of the program (by its label), and the settings and
+  command-line arguments of the engine and of what goes with it. They are kept in `profiles/` beside the settings file
+  (on Linux `~/.config/quickai/profiles/`), and QuickAI writes one when you save, import or export one, and once, the first time it
+  starts with this feature, to keep the settings you already had as your own Default. **Export**
+  writes the file where you choose and nowhere else, and leaves out the folders and programs of your computer and any
+  line that looks like a secret (a key, a token, a password). **Import** reads only the file you choose, shows you in full
+  the text in it that would reach a command line or an environment and the settings that widen what a program may
+  do, and takes only what you tick; it uses no network and starts no program. Nothing about a configuration is sent
+  to anyone: it leaves your computer only if you give the file to someone. So that an export can say where a
+  model you fetched can be had again, the app keeps `~/.quickai/model-sources.json`: the name and size of a file and the
+  repository it was fetched from (`huggingface:owner/repo`), for the models you fetch from a look-up or from the
+  recommended list; it holds no address and no account, and is never sent anywhere.
 - **Models and builds you download or import.** Models are saved under `~/.quickai/models` (or the folder you pick
   in ⚙ Settings) and llama.cpp builds under `~/.quickai/llama-bin`; on Windows `.quickai` is in your user profile
   folder. Importing a local `.gguf` file creates a hard link or a copy there; the original is not changed or
@@ -114,6 +149,12 @@ only when you press a button, or Enter in a box, for one of these:
   one `.gguf` or `.safetensors` file (a link to its page on Hugging Face is turned into the link to the file) and
   keeps it in the folder of the models folder you choose or its name suggests; Hugging Face sends the file on to a
   download server (`*.cdn.hf.co`), which sees your IP address and the name of the file too.
+- **Open WebUI.** ⚙ Settings, **Look up Open WebUI builds** asks the Python Package Index (`pypi.org`) for the releases of
+  the package `open-webui`; the request identifies itself as `quickai`. Installing a release downloads its wheel from the
+  index (`files.pythonhosted.org`), checks it against the SHA-256 the index lists (and, for the release QuickAI was tested
+  with, the one QuickAI holds), and then pip fetches the packages it needs from the index and PyTorch for the processor from
+  `download.pytorch.org` (about 1.6 GB in all). The index and PyTorch's site see your IP address and the names of the
+  packages.
 - **llama.cpp builds.** ⚙ Settings, **Look up llama.cpp builds** asks GitHub's API (`api.github.com`) for llama.cpp's
   recent releases; the request identifies itself as `quickai`. Installing one of them, or entering a direct
   download link in the `llama-server` box, downloads that archive from GitHub or from the address you gave. GitHub

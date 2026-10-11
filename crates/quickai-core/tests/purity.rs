@@ -132,3 +132,30 @@ fn the_core_sources_are_pure() {
         report.join("\n")
     );
 }
+
+/// A33 of docs/phase3-test-plan.md: reading, checking, previewing and exporting a configuration use no
+/// network, start no program and write no file. They are the core's, given what they need to know
+/// (`profile::check::Inventory`), and the core is held to the list above.
+#[test]
+fn p3_a33_reading_checking_and_exporting_a_configuration_do_no_effect() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("profile");
+    let mut files = Vec::new();
+    rust_files(&dir, &mut files);
+    let names: Vec<String> = files
+        .iter()
+        .filter_map(|f| f.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .collect();
+    for wanted in ["mod.rs", "check.rs", "notes.rs", "screen.rs", "state.rs"] {
+        assert!(
+            names.iter().any(|n| n == wanted),
+            "{wanted} is missing from {names:?}"
+        );
+    }
+    for file in files {
+        let source = std::fs::read_to_string(&file).expect("readable source");
+        let found = violations(&source);
+        assert!(found.is_empty(), "{}: {found:?}", file.display());
+    }
+}

@@ -2,6 +2,7 @@
 
 use eframe::egui;
 
+use super::companion::ChatAction;
 use super::App;
 use crate::events::ServerState;
 use crate::launch;
@@ -201,6 +202,8 @@ impl App {
                 .on_hover_text(format!("Stop the running {server} process."))
                 .clicked()
             {
+                // the page goes with what it talks to
+                self.stop_companion();
                 self.session.stop();
             }
             if let Some(web_ui) = &web_ui {
@@ -222,6 +225,22 @@ impl App {
                         // the page at the root is the address without a path, as it always was
                         let path = if web_ui.path == "/" { "" } else { &web_ui.path };
                         let _ = webbrowser::open(&format!("http://127.0.0.1:{port}{path}"));
+                    }
+                }
+            }
+            if web_ui.is_none() {
+                if let Some(chat) = self.chat_button() {
+                    if ui
+                        .add_enabled(chat.enabled, egui::Button::new(chat.label.as_str()))
+                        .on_hover_text(chat.hover.as_str())
+                        .clicked()
+                    {
+                        match chat.action {
+                            ChatAction::Open(url) => {
+                                let _ = webbrowser::open(&url);
+                            }
+                            ChatAction::SetUp => self.set_up_companion(),
+                        }
                     }
                 }
             }
@@ -262,6 +281,11 @@ impl App {
                 _ => state.label().to_string(),
             };
             ui.colored_label(Self::state_color(state), label);
+            // the program that goes with the engine, while one is being used
+            if let Some((text, companion_state)) = self.companion_status() {
+                ui.label(egui::RichText::new("·").color(egui::Color32::GRAY));
+                ui.colored_label(Self::state_color(companion_state), text);
+            }
         });
     }
 }
