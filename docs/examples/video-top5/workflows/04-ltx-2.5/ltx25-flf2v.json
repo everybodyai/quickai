@@ -1,0 +1,538 @@
+{
+ "31": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "placeholder.png"
+  },
+  "_meta": {
+   "title": "Load First Frame"
+  }
+ },
+ "39": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "placeholder2.png"
+  },
+  "_meta": {
+   "title": "Load Last Frame"
+  }
+ },
+ "68": {
+  "class_type": "SaveVideo",
+  "inputs": {
+   "filename_prefix": "bampu/ltx25-flf2v",
+   "format": "auto",
+   "format.codec": "auto",
+   "video": [
+    "218",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "SaveVideo"
+  }
+ },
+ "195": {
+  "class_type": "LTXVPreprocess",
+  "inputs": {
+   "img_compression": 18,
+   "image": [
+    "214",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "LTXVPreprocess"
+  }
+ },
+ "196": {
+  "class_type": "RandomNoise",
+  "inputs": {
+   "noise_seed": 1
+  },
+  "_meta": {
+   "title": "RandomNoise"
+  }
+ },
+ "197": {
+  "class_type": "LTXVEmptyLatentAudio",
+  "inputs": {
+   "batch_size": 25,
+   "audio_vae": [
+    "227",
+    0
+   ],
+   "frames_number": [
+    "1001",
+    0
+   ],
+   "frame_rate": [
+    "205",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "LTXVEmptyLatentAudio"
+  }
+ },
+ "199": {
+  "class_type": "LTXVPreprocess",
+  "inputs": {
+   "img_compression": 18,
+   "image": [
+    "213",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "LTXVPreprocess"
+  }
+ },
+ "200": {
+  "class_type": "LTXVCropGuides",
+  "inputs": {
+   "positive": [
+    "204",
+    0
+   ],
+   "negative": [
+    "204",
+    1
+   ],
+   "latent": [
+    "221",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "LTXVCropGuides"
+  }
+ },
+ "201": {
+  "class_type": "EmptyLTXVLatentVideo",
+  "inputs": {
+   "batch_size": 1,
+   "width": [
+    "203",
+    0
+   ],
+   "height": [
+    "203",
+    1
+   ],
+   "length": [
+    "1001",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "EmptyLTXVLatentVideo"
+  }
+ },
+ "202": {
+  "class_type": "LTXVConditioning",
+  "inputs": {
+   "positive": [
+    "222",
+    0
+   ],
+   "negative": [
+    "217",
+    0
+   ],
+   "frame_rate": [
+    "212",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "LTXVConditioning"
+  }
+ },
+ "203": {
+  "class_type": "GetImageSize",
+  "inputs": {
+   "image": [
+    "213",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "GetImageSize"
+  }
+ },
+ "204": {
+  "class_type": "LTXVAddGuide",
+  "inputs": {
+   "frame_idx": -1,
+   "strength": 0.7,
+   "positive": [
+    "206",
+    0
+   ],
+   "negative": [
+    "206",
+    1
+   ],
+   "vae": [
+    "229",
+    0
+   ],
+   "latent": [
+    "206",
+    2
+   ],
+   "image": [
+    "195",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "LTXVAddGuide"
+  }
+ },
+ "205": {
+  "class_type": "PrimitiveInt",
+  "inputs": {
+   "value": 24
+  },
+  "_meta": {
+   "title": "fps"
+  }
+ },
+ "206": {
+  "class_type": "LTXVAddGuide",
+  "inputs": {
+   "frame_idx": 0,
+   "strength": 0.7,
+   "positive": [
+    "202",
+    0
+   ],
+   "negative": [
+    "202",
+    1
+   ],
+   "vae": [
+    "229",
+    0
+   ],
+   "latent": [
+    "201",
+    0
+   ],
+   "image": [
+    "199",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "LTXVAddGuide"
+  }
+ },
+ "208": {
+  "class_type": "SamplerEulerAncestral",
+  "inputs": {
+   "eta": 0,
+   "s_noise": 1
+  },
+  "_meta": {
+   "title": "SamplerEulerAncestral"
+  }
+ },
+ "210": {
+  "class_type": "LTXVConcatAVLatent",
+  "inputs": {
+   "video_latent": [
+    "204",
+    2
+   ],
+   "audio_latent": [
+    "197",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "LTXVConcatAVLatent"
+  }
+ },
+ "211": {
+  "class_type": "SamplerCustomAdvanced",
+  "inputs": {
+   "noise": [
+    "196",
+    0
+   ],
+   "guider": [
+    "235",
+    0
+   ],
+   "sampler": [
+    "208",
+    0
+   ],
+   "sigmas": [
+    "239",
+    0
+   ],
+   "latent_image": [
+    "210",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "SamplerCustomAdvanced"
+  }
+ },
+ "212": {
+  "class_type": "ComfyMathExpression",
+  "inputs": {
+   "expression": "a",
+   "values.a": [
+    "205",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "ComfyMathExpression"
+  }
+ },
+ "213": {
+  "class_type": "ResizeImageMaskNode",
+  "inputs": {
+   "resize_type": "scale dimensions",
+   "resize_type.crop": "center",
+   "scale_method": "nearest-exact",
+   "input": [
+    "31",
+    0
+   ],
+   "resize_type.width": [
+    "215",
+    0
+   ],
+   "resize_type.height": [
+    "216",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "ResizeImageMaskNode"
+  }
+ },
+ "214": {
+  "class_type": "ResizeImageMaskNode",
+  "inputs": {
+   "resize_type": "scale dimensions",
+   "resize_type.crop": "center",
+   "scale_method": "nearest-exact",
+   "input": [
+    "39",
+    0
+   ],
+   "resize_type.width": [
+    "215",
+    0
+   ],
+   "resize_type.height": [
+    "216",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "ResizeImageMaskNode"
+  }
+ },
+ "215": {
+  "class_type": "PrimitiveInt",
+  "inputs": {
+   "value": 1280
+  },
+  "_meta": {
+   "title": "width"
+  }
+ },
+ "216": {
+  "class_type": "PrimitiveInt",
+  "inputs": {
+   "value": 704
+  },
+  "_meta": {
+   "title": "height"
+  }
+ },
+ "217": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "worst quality, blurry, distorted, jpeg artifacts, watermark, subtitles",
+   "clip": [
+    "228",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "CLIPTextEncode"
+  }
+ },
+ "218": {
+  "class_type": "CreateVideo",
+  "inputs": {
+   "bit_depth": 8,
+   "images": [
+    "219",
+    0
+   ],
+   "audio": [
+    "220",
+    0
+   ],
+   "fps": [
+    "212",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "CreateVideo"
+  }
+ },
+ "219": {
+  "class_type": "VAEDecodeTiled",
+  "inputs": {
+   "tile_size": 512,
+   "overlap": 64,
+   "temporal_size": 64,
+   "temporal_overlap": 16,
+   "samples": [
+    "200",
+    2
+   ],
+   "vae": [
+    "229",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "VAEDecodeTiled"
+  }
+ },
+ "220": {
+  "class_type": "LTXVAudioVAEDecode",
+  "inputs": {
+   "samples": [
+    "221",
+    1
+   ],
+   "audio_vae": [
+    "227",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "LTXVAudioVAEDecode"
+  }
+ },
+ "221": {
+  "class_type": "LTXVSeparateAVLatent",
+  "inputs": {
+   "av_latent": [
+    "211",
+    1
+   ]
+  },
+  "_meta": {
+   "title": "LTXVSeparateAVLatent"
+  }
+ },
+ "222": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "clip": [
+    "228",
+    0
+   ],
+   "text": "A calm ocean at sunset."
+  },
+  "_meta": {
+   "title": "CLIPTextEncode"
+  }
+ },
+ "227": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "ltx-2.5-audio-vae-bf16.safetensors"
+  },
+  "_meta": {
+   "title": "VAELoader"
+  }
+ },
+ "228": {
+  "class_type": "CLIPLoader",
+  "inputs": {
+   "type": "ltxv",
+   "device": "default",
+   "clip_name": "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors"
+  },
+  "_meta": {
+   "title": "CLIPLoader"
+  }
+ },
+ "229": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "ltx-2.5-video-vae-bf16.safetensors"
+  },
+  "_meta": {
+   "title": "VAELoader"
+  }
+ },
+ "230": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "weight_dtype": "default",
+   "unet_name": "ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors"
+  },
+  "_meta": {
+   "title": "UNETLoader"
+  }
+ },
+ "235": {
+  "class_type": "LTXVDualCFGGuider",
+  "inputs": {
+   "video_cfg": 1,
+   "audio_cfg": 1,
+   "model": [
+    "230",
+    0
+   ],
+   "positive": [
+    "204",
+    0
+   ],
+   "negative": [
+    "204",
+    1
+   ]
+  },
+  "_meta": {
+   "title": "LTXVDualCFGGuider"
+  }
+ },
+ "239": {
+  "class_type": "ManualSigmas",
+  "inputs": {
+   "sigmas": "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
+  },
+  "_meta": {
+   "title": "ManualSigmas"
+  }
+ },
+ "1001": {
+  "class_type": "PrimitiveInt",
+  "inputs": {
+   "value": 121
+  },
+  "_meta": {
+   "title": "frames"
+  }
+ }
+}

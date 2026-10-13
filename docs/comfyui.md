@@ -3,7 +3,7 @@
 ComfyUI makes pictures and video from workflows that a person builds in its own web page. QuickAI manages it as a third
 engine, the way it manages Ollama: it installs it, starts and stops it, attaches to one that is running, keeps its
 models, says what its API is and what went wrong. The engine is a document ([`comfyui.toml`](examples/engines/comfyui.toml)),
-and what the document cannot say is a primitive (`install.python_app@1`, below). The facts it rests on are F1 to F27 of
+and what the document cannot say is a primitive (`install.python_app@1`, below). The facts it rests on are F1 to F31 of
 [engine-facts.md](engine-facts.md) (written without a leading zero, as the other engines' are); the decisions are C78 to C86
 of [implementation-plan.md](implementation-plan.md); the tests are groups F, P and Q of [phase3-test-plan.md](phase3-test-plan.md)
 (F01 to F91, P01 to P19, Q01 to Q15).
@@ -49,6 +49,22 @@ torch-2.14.1+rocm7.2-cp314-cp314-manylinux_2_28_x86_64.whl: 117.5 MB of 5.8 GB, 
 pip unpacks, which takes minutes in which it prints nothing, how long it has been; and after 45 seconds of silence
 that pip is still running. The log holds pip's own words. **Cancel** stops pip, or the check, and everything
 they started within seconds and throws the work away.
+
+## What the computer has to have
+
+The table above is what the install does; what the computer must have for it, and for the models that run through Triton, is the document's
+`[[prerequisite]]` entries, which a configuration asks for in `[[needs]] system = "..."` and `quickai-run` looks at before it fetches anything
+([headless.md](headless.md), section 12; facts F29 to F31):
+
+| Id | What | Looked at | Brought by (apt) |
+|---|---|---|---|
+| `python_venv` | the `ensurepip` module of the Python the environment is made with: Debian and Ubuntu leave it out of the Python, and without it `python -m venv` fails | before the install, by asking the Python the install will use; not asked of an environment that is made | `python3.12-venv` |
+| `c_compiler` | `$CC`, else `gcc`, else `clang`: what Triton looks for to build the helper it needs at the first kernel | the `PATH` | `build-essential` |
+| `python_headers` | `Python.h` in the folder of Python's headers (the default scheme of `sysconfig`, Debian's `posix_local` read as `posix_prefix`) | by asking the Python of the environment | `python3.12-dev` |
+| `nvidia_driver` | a driver of the 580 series or newer, because the PyTorch for an NVIDIA card is built for CUDA 13 | `nvidia-smi`, else `/proc/driver/nvidia/version` | none: a driver is not installed here |
+| `triton` | a Triton kernel is built with the computer's compiler and run on the card, from an empty cache | after the install and before the models are fetched, by the environment's own Python | none: it passes when the others are right |
+
+The window does not look at any of them; the install it offers is unchanged.
 
 ## If an install is interrupted
 
@@ -262,7 +278,7 @@ link; what it has beside it is a place for a host program, which ComfyUI Desktop
   `extra_model_paths.yaml`, which ComfyUI is told to read (`--extra-model-paths-config`) and which makes `extensions/` a
   place it loads custom nodes from (F19). What is the same is left alone, what differs is written again (the log says
   `Put … (1 of 3 files written)`), and what the person put there is not touched. This is `[[launch.spawn.write]]` of the document, which
-  names files of the application's own (`crates/quickai/assets/comfyui/`, compiled in; architecture §11.7).
+  names files of the application's own (`crates/quickai-runtime/assets/comfyui/`, compiled in; architecture §11.7).
 - **What the bridge is.** Python and a script, with nothing but the standard library and what ComfyUI loads. Three routes that
   only a program on this machine may use (`POST /quickai/downloads {url, name, directory}`, `GET /quickai/downloads`,
   `DELETE /quickai/downloads/<id>`) and a script of the page that gives it `window.__comfyDesktop2.downloadModel`. The page's
@@ -295,7 +311,7 @@ link; what it has beside it is a place for a host program, which ComfyUI Desktop
   other site (`--offline`): which is also why its list of missing models shows no sizes, since the page's look at the size of a
   file at the hub is refused by its own policy.
 - **How it was held.** The downloads (P01 to P11) against a server that behaves like the hub, the glue (P12) with stand-ins for
-  ComfyUI, the plan and the files (P13 to P18), and, by hand (P19, `crates/quickai/tests/comfy_bridge/real_page.py`), the real
+  ComfyUI, the plan and the files (P13 to P18), and, by hand (P19, `crates/quickai-runtime/tests/comfy_bridge/real_page.py`), the real
   thing: the page of this build in Chromium, the Z-Image-Turbo template, **Download** on the VAE, ComfyUI killed in the middle
   and started again, and the same press going on and ending with the hub's size and sha256 (F23). Through the application
   itself too, once: started in a virtual display with a throw-away home, **Start** pressed, the files written by the supervisor, the

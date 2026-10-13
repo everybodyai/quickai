@@ -100,7 +100,8 @@ no `run.ollama` is not offered under Ollama), **D8** (a document can be removed;
   (embedded defaults). `QUICKAI_SAFE=1` ignores the user layer.
 - Reloading is manual ("Reload configuration" in Settings) and automatic when idle; never mid-session.
 - A headless tool in the same binary for development and CI: `quickai config check`,
-  `quickai plan <profile> --explain`. Not a product feature yet.
+  `quickai plan <profile> --explain`. Not a product feature there; the product's headless program is `quickai-run`
+  (WP4.18, docs/headless.md), a binary of its own over the same runtime crate.
 - Strings are keyed from day one; no translations yet.
 - sha256 is verified wherever a hash is known; a download with no hash (a user URL) is shown as unverified.
 - Adapter compatibility comes from the recipe's pairing plus a filename hint (`mmproj*`); inspecting GGUF
@@ -768,7 +769,7 @@ click "Install"
 
 A program that reads extensions from a folder has to be given the folder, and a build that was made before the extension
 existed has to have it too, so it is not a part of the install. `[[launch.spawn.write]]` (`asset`, `to`) names a file or a
-folder of the application's own (`crates/quickai/assets/`, compiled in with `include_dir`; `KnownPrimitives::with_assets` lists
+folder of the application's own (`crates/quickai-runtime/assets/`, compiled in with `include_dir`; `KnownPrimitives::with_assets` lists
 what there is, so a name that is not one is a load error with the nearest as a hint, like a widget that is not) and a template for where it goes; the plan carries it as
 `SpawnPlan.write` (`plan --explain`: `write <to>   (the application's own <asset>)`) and the supervisor
 puts it, after the `mkdir` and before the program starts, **at every start** (`assets::put`): a file that is there and has the same
@@ -847,14 +848,20 @@ document into the throw-away HOME, so a test can describe any engine, recipe or 
 crates/
   quickai-core/            PURE: no processes, no network, no egui
     src/ schema/ expr/ config/ registry/ plan/ form/
-  quickai/
-    manifests/             embedded defaults: engines/ vocab/ catalog/ ui/ policy/   (include_dir)
-    src/ prims/ runtime/ ui/ app/ main.rs    effects, supervisor, egui, shell
+  quickai-runtime/         QuickAI without a window (WP4.18, docs/headless.md): every effect, no toolkit
+    manifests/             embedded defaults: engines/ vocab/ catalog/ profiles/   (include_dir)
+    assets/                files that are put on the disk for a program to read
+    src/ prims/ runtime/ config settings configurations launch models downloader ...
+  quickai/                 the window: draws, and asks the runtime for everything it does to the computer
+    src/ app/ main.rs
+  quickai-run/             the headless program: the runtime with no window, for a server
+    src/ main.rs
 ```
 
-Dependency rule: `quickai-core` imports nothing effectful, `prims` never imports egui, `ui` never spawns or does
-HTTP (it goes through `runtime` and jobs), and documents name only primitive ids, never Rust types. A guard test
-greps for forbidden `use` lines. New dependencies: `toml`, `schemars` (build and docs), `regex`, `semver`, `sha2`,
+Dependency rule: `quickai-core` imports nothing effectful, `quickai-runtime` imports no toolkit (egui, eframe, rfd,
+webbrowser), the window installs, fetches, starts and stops nothing itself (it asks the runtime; opening a folder in the file
+manager is the one program it starts), neither program knows how the other works, and documents name only primitive ids, never Rust types. Guard tests grep for
+forbidden `use` lines (`quickai-core/tests/purity.rs`, `quickai-runtime/tests/no_window.rs`). New dependencies: `toml`, `schemars` (build and docs), `regex`, `semver`, `sha2`,
 `ruzstd` (Q14), `libc` (Unix only), `windows-sys` (Windows only, job objects).
 
 **`quickai_base`.** Bundle contents and size do not change; nothing Ollama-related is bundled. `next_to_exe`

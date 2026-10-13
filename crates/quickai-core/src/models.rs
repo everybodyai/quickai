@@ -189,6 +189,32 @@ pub fn recommended(
     entries
 }
 
+/// How to fetch the file `file` of the model `id` of the recommended list, from the entries `recommended`
+/// made: the offer whose weights are that file, with what the list pairs with them (a bundle's offer, a
+/// vision model with its projector, comes before the model alone). It is the one thing a configuration's
+/// `catalog` and `file` name, and what the window's *Get* and the headless program both fetch, so that they
+/// cannot fetch two different things for the same words. `None`: the list has no such file for this engine.
+pub fn catalog_fetch(
+    entries: &[crate::lookup::present::Entry],
+    id: &str,
+    file: &str,
+) -> Option<crate::lookup::present::Fetch> {
+    use crate::lookup::present::Fetch;
+    let key = format!("catalog:{id}");
+    entries.iter().filter(|e| e.key == key).find_map(|entry| {
+        let mut found: Vec<&crate::lookup::present::Offer> = entry
+            .offers
+            .iter()
+            .filter(|o| match &o.fetch {
+                Fetch::Files(d) => d.weights().is_some_and(|w| w.store_as == file),
+                Fetch::Reference(_) => false,
+            })
+            .collect();
+        found.sort_by_key(|o| o.bundle.is_none());
+        found.first().map(|o| o.fetch.clone())
+    })
+}
+
 /// A place the engine's models are found, with its path filled in.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileSource {

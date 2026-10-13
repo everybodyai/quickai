@@ -1,0 +1,3 @@
+integrated_multimodal_description: [Shot 1] Classic Indian children's comic-magazine cartoon, 2D-animated: bold ink outlines, flat saturated colours, lush green jungle, exaggerated slapstick expressions. Low shot from behind a rock. Behind a big rock higher up the slope Jeeva creeps forward on tiptoe, the net-gun raised, flour still on his moustache.
+overall_soundscape: Slow footsteps, a twig snapping.
+non_diegetic_music: N/A

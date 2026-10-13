@@ -25,6 +25,7 @@ pub mod loaderenv;
 pub mod lookup;
 pub mod models;
 pub mod plan;
+pub mod prerequisite;
 pub mod profile;
 pub mod registry;
 pub mod stream;

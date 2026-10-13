@@ -34,20 +34,21 @@ pub const PROVIDED: &[&str] = &[
     "decode@1",
     "lookup.ollama_library@1",
     "lookup.huggingface_gguf@1",
+    "prerequisite@1",
 ];
 
-/// A file of the application's shipped documents (`crates/quickai/manifests/<rel>`).
+/// A file of the application's shipped documents (`crates/quickai-runtime/manifests/<rel>`).
 pub fn manifest(rel: &str) -> String {
     read(
         &Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../quickai/manifests")
+            .join("../quickai-runtime/manifests")
             .join(rel),
     )
 }
 
 /// The catalog documents the application ships, `(file name, text)` in the order of the names.
 pub fn shipped_catalogs() -> Vec<(String, String)> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../quickai/manifests/catalog");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../quickai-runtime/manifests/catalog");
     let Ok(read) = std::fs::read_dir(&dir) else {
         return Vec::new();
     };
@@ -66,11 +67,11 @@ pub fn shipped_catalogs() -> Vec<(String, String)> {
         .collect()
 }
 
-/// A recorded answer of Hugging Face (`crates/quickai/tests/fixtures/huggingface/<rel>`).
+/// A recorded answer of Hugging Face (`crates/quickai-runtime/tests/fixtures/huggingface/<rel>`).
 pub fn fixture(rel: &str) -> String {
     read(
         &Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../quickai/tests/fixtures/huggingface")
+            .join("../quickai-runtime/tests/fixtures/huggingface")
             .join(rel),
     )
 }

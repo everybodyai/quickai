@@ -1,0 +1,156 @@
+# A configuration for a server: ComfyUI with the files of MiniMax H3, the open-weight video model that makes 4 to 15 seconds at 24 frames
+# a second with its sound, in both of its builds: the one for words, a first picture, a last picture or both (first and last frame), and
+# the one for reference pictures, videos and sounds (docs/headless.md). It carries no model. Each file says where it can be had from: a
+# repository of the hub (and the revision of it that was checked), the file in it, how big it is and what its SHA-256 is. `quickai-run up`
+# installs ComfyUI, fetches the seven files into the folders ComfyUI looks for each in, and starts it on 127.0.0.1:8188 (from your
+# computer: ssh -N -L 8189:127.0.0.1:8188 you@server).
+#
+#     quickai-run init  minimax-h3.toml                    # the file to fill in: where the models are kept, a login if you have one
+#     quickai-run check minimax-h3.toml --environment minimax-h3.environment.toml --accept-review
+#     quickai-run up    minimax-h3.toml --environment minimax-h3.environment.toml --accept-review
+#
+# The files are the ones ComfyUI's own templates of the model load (video_minimax_h3_i2v and video_minimax_h3_r2v, ComfyUI 0.39.0, the build
+# this program installs): the pruned weights in int8 (one file for each build), Qwen3-VL-32B as the text encoder in 4 bits (it does not need a
+# Blackwell card), the video VAE in int8, the audio VAE, and a Lightning LoRA for each build, which the templates switch on to make a clip in a
+# third of the steps (8 for the first, 4 for the second). The model's own nodes are in ComfyUI; nothing else is installed. About 65 GB of files
+# (60 GiB, which is how the program counts), and ComfyUI itself is about 7 GB more (with PyTorch for CUDA 13, as measured on an L40S).
+#
+# What the computer must have: an NVIDIA card of 48 GB (an L40S does; the model took 38.9 GB of its memory and 46.7 GB of the computer's in
+# the one measurement of it I found, for 10 seconds at 960x544) and 64 GB of memory, which nothing checks; and what `quickai-run` looks at
+# before it fetches anything (the `system` needs at the end of this file; the document of ComfyUI says how each is checked): a driver of the
+# 580 series or newer, because ComfyUI is installed with PyTorch for CUDA 13 (`nvidia-smi` says the driver), and a C compiler and the headers
+# of Python, because Triton (which PyTorch brings) builds a small helper in C the first time a kernel of the model is launched: without
+# them the first clip stops with a message that says only that gcc "returned non-zero exit status 1". After the install, and before the
+# files are fetched, it builds and runs such a kernel once. Before ComfyUI is installed it also looks for the venv module of the Python
+# its environment is made with (Debian and Ubuntu put it in a package of its own, python3.12-venv). Where something is missing it says what,
+# with the command that brings it (on Ubuntu: apt-get install -y python3.12-venv build-essential python3.12-dev), and
+# `--install-system-packages` lets it run that command, as the administrator or through sudo.
+#
+# The licence is MiniMax's, not this program's, and it is narrow. It covers the world EXCEPT the European Union, the United Kingdom,
+# the Republic of Korea and the United States of America, and it does not allow using, displaying or distributing the model OR WHAT IT MAKES
+# outside that territory (V.4). Above 20 million US dollars of yearly revenue you need MiniMax's written authorisation (IV.1); a commercial
+# product that uses it has to show "MiniMax H3" on its interface (IV.2); what it makes may not be used to improve another model (V.3).
+# Read it before you use the files: https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE
+schema = 1
+kind = "profile"
+id = "minimax-h3"
+requires = { app = ">=0.1" }
+name = "MiniMax H3 on ComfyUI"
+engine = "comfyui"
+
+[meta]
+note = "MiniMax H3, the pruned int8 builds for text, first frame, last frame or both, and for reference pictures, with their Lightning LoRAs, for an NVIDIA card of 48 GB. About 65 GB of files. Licence: not for the EU, UK, South Korea or USA."
+
+[[model]]
+role = "diffusion"
+name = "MiniMax H3 first/last frame, pruned, int8"
+file = "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+from = "huggingface:Comfy-Org/MiniMax-H3"
+path = "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors"      # in a folder of the repository
+revision = "e5eb578a89295337b8ff433a035929ce0279e0b6"                          # a commit: the same file for ever (2026-09-29)
+into = "diffusion_models"
+size = 20970379616
+sha256 = "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a"
+
+[[model]]
+role = "diffusion"
+name = "MiniMax H3 reference to video, pruned, int8"
+file = "minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+from = "huggingface:Comfy-Org/MiniMax-H3"
+path = "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+revision = "e5eb578a89295337b8ff433a035929ce0279e0b6"
+into = "diffusion_models"
+size = 20970379616
+sha256 = "9255f52b6677845ad238f20dfaafa94727053694127ab7f255c048f0f9365779"
+
+[[model]]
+role = "text_encoder"
+name = "Qwen3-VL 32B for MiniMax H3, 4 bits"
+file = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
+from = "huggingface:Comfy-Org/MiniMax-H3"
+path = "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
+revision = "e5eb578a89295337b8ff433a035929ce0279e0b6"
+into = "text_encoders"
+size = 15687142551
+sha256 = "35a88d51044231fe332301d7a62aa81e3f2cba62febeb446e2c1e3e0ef76f2c6"
+
+[[model]]
+role = "vae"
+name = "MiniMax H3 video VAE, int8"
+file = "minimax_h3_video_vae_int8_convrot.safetensors"
+from = "huggingface:Comfy-Org/MiniMax-H3"
+path = "vae/minimax_h3_video_vae_int8_convrot.safetensors"
+revision = "e5eb578a89295337b8ff433a035929ce0279e0b6"
+into = "vae"
+size = 2811065184
+sha256 = "52a2c8c73583c86e4f41cdcce3a6ad0ea562987bc0bf3d60a0cef5f5c8e60c0e"
+
+[[model]]
+role = "vae"
+name = "MiniMax H3 audio VAE"
+file = "minimax_h3_audio_vae_fp32.safetensors"
+from = "huggingface:Comfy-Org/MiniMax-H3"
+path = "vae/minimax_h3_audio_vae_fp32.safetensors"
+revision = "e5eb578a89295337b8ff433a035929ce0279e0b6"
+into = "vae"
+size = 605254808
+sha256 = "8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48"
+
+[[model]]
+role = "lora"
+name = "MiniMax H3 Lightning LoRA, first/last frame, 8 steps"
+file = "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+from = "huggingface:Comfy-Org/MiniMax-H3"
+path = "loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+revision = "e5eb578a89295337b8ff433a035929ce0279e0b6"
+into = "loras"
+size = 1956193000
+sha256 = "2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e"
+
+[[model]]
+role = "lora"
+name = "MiniMax H3 Lightning LoRA, reference to video, 4 steps"
+file = "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors"
+from = "huggingface:Comfy-Org/MiniMax-H3"
+path = "loras/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors"
+revision = "e5eb578a89295337b8ff433a035929ce0279e0b6"
+into = "loras"
+size = 1956193000
+sha256 = "5b9ab5ade15d0775676d01a907268a69a1468dc6033b3b0d3ded5502f3ebb84c"
+
+[values.comfyui]
+port = 8188
+
+[[needs]]                               # what this file cannot carry and whoever runs it has to say
+setting = "comfyui.models_dir"
+why = "Somewhere with 80 GB free: 65 GB of model files, and room for the clips it makes."
+
+[[needs]]                               # what the computer has to have: nobody gives these, `quickai-run` looks (the document of ComfyUI says how)
+system = "python_venv"
+why = "ComfyUI is installed into a Python environment of its own, and Debian and Ubuntu make none without the venv package of the Python (on Ubuntu python3.12-venv)."
+
+[[needs]]
+system = "nvidia_driver"
+why = "ComfyUI is installed with PyTorch for CUDA 13, which needs a driver of the 580 series or newer."
+
+[[needs]]
+system = "c_compiler"
+why = "The int8 and 4-bit files run through Triton, which builds a small helper in C the first time a clip is made; without a compiler that first clip stops with a message that says only that gcc returned non-zero exit status 1."
+
+[[needs]]
+system = "python_headers"
+why = "Triton builds that helper against the headers of Python (Python.h), which a server often lacks (on Ubuntu the package python3.12-dev)."
+
+[[needs]]
+system = "triton"
+why = "After the install and before the files are fetched, one kernel is built and run: the first clip is not the one that finds out."
+
+# More from the same repository and commit, if you want them, as [[model]] above (a configuration holds at most 8 models: these seven and one
+# more). Each was held against the hub's answer for the file at that commit, and `quickai-run check` read them as written here:
+#
+#   * the 4-step Lightning LoRA for first/last frame at 768p, a faster and rougher clip than the 8-step one:
+#       file = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"   path = "loras/<file>"   into = "loras"   role = "lora"
+#       size = 1956192992   sha256 = "c396a9a06f58399e9df9754b18299818d84a2ddd371724ba48fe4a41221437dc"
+#   * the text encoder in int8 INSTEAD of the 4-bit one (27 GB, for a computer with memory to spare; the templates use the 4-bit one above):
+#       file = "qwen3vl_32b_minimax_h3_int8_convrot.safetensors"   path = "text_encoders/<file>"   into = "text_encoders"   role = "text_encoder"
+#       size = 27141342152  sha256 = "bc2ced0fbea64757fa9acddccfc0b3f4819d1dcf1da6c124d690d368be283923"

@@ -160,16 +160,19 @@ impl App {
     /// What is known of the model that is selected, for naming it in a configuration.
     fn selected_model_facts(&self) -> Option<ModelFacts> {
         let model = self.models.get(self.selected)?;
+        // where it was fetched from, when the application remembers (a file of a look-up)
+        let recalled = crate::sources::recall_where(
+            std::path::Path::new(&self.host_facts.data_dir),
+            &model.filename,
+            model.size_bytes,
+        );
         Some(ModelFacts {
             size: Some(model.size_bytes).filter(|s| *s > 0),
             sha256: None,
             display: Some(model.display.clone()).filter(|d| *d != model.filename),
-            // where it was fetched from, when the application remembers (a file of a look-up)
-            source: crate::sources::recall(
-                std::path::Path::new(&self.host_facts.data_dir),
-                &model.filename,
-                model.size_bytes,
-            ),
+            source: recalled.as_ref().map(|r| r.source.clone()),
+            path: recalled.as_ref().and_then(|r| r.path.clone()),
+            revision: recalled.and_then(|r| r.revision),
         })
     }
 

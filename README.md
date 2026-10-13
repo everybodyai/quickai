@@ -44,10 +44,42 @@ Prebuilt Linux/AppImage and Windows binaries, attached to each
 build everything yourself with the scripts in `quickai_base` — see
 "Packaging" below.
 
+## On a server, with no window
+
+`quickai-run` is QuickAI without the window: it takes a configuration (the file the window exports), gets what it needs on that computer (programs
+and models, after printing what that is and how big), starts it and stays until it is stopped. It is for a rented server. It listens on the loopback
+only; reach it with an SSH tunnel.
+
+```sh
+quickai-run init  vision-chat.toml      # the file to fill in: what the configuration needs from you, and what is your computer's
+quickai-run check vision-chat.toml      # what would be done, from where, to where; changes nothing
+quickai-run up    vision-chat.toml      # do it, start it, stay (Ctrl-C or SIGTERM stops it)
+```
+
+A configuration says where the files of its models can be had from (a repository and the file in it, a revision, or an address) and never carries them; it says which program goes with the engine
+(Open WebUI beside Ollama, and which build of it) and what it needs from whoever runs it (a login, a folder, a variable). What is yours (a folder, a login, a mirror, a copy of a file you already have,
+the variables of a program's environment) you say in the file `init` writes, or on the command line (`--environment`, `--set`, `--env`, `--model-source`, `--models-from`, `--hf-token`, `--offline`).
+[docs/examples/profiles/wan22-ti2v-turbo.toml](docs/examples/profiles/wan22-ti2v-turbo.toml) is a whole example (the three files of a video model). [docs/examples/profiles/minimax-h3.toml](docs/examples/profiles/minimax-h3.toml) is another: both builds of MiniMax H3 (seven files, 65 GB) for an NVIDIA card of 48 GB, with a licence that does not cover the EU, UK, South Korea or USA; [minimax-h3-fl2va.toml](docs/examples/profiles/minimax-h3-fl2va.toml) is its lean half (the build for words and first and last frame: five files, 42 GB).
+
+A configuration can also say what the computer has to have (`[[needs]] system = "c_compiler"`: the engine's document says how each is looked at and which packages bring it). `quickai-run` looks
+before it fetches anything, says what is missing with the exact command (`sudo apt-get install -y build-essential python3.12-dev`, and code 6), installs the packages only with `--install-system-packages`,
+and, after the install and before the models are fetched, builds and runs a tiny Triton kernel once, so that the first clip is not the one that finds out the server lacks a compiler or `Python.h`
+([docs/headless.md](docs/headless.md) section 12).
+
+[docs/headless.md](docs/headless.md) says what it does, what has been run for real and what has not. The base repository's `build/headless.sh` builds
+and packages it.
+
 ## Layout
 
-- `crates/quickai/` — the GUI (`main.rs`, `app.rs`, `server_manager.rs`,
-  `models.rs`, `settings.rs`, `paths.rs`). Binary name: `quickai`.
+- `crates/quickai-core/` — the pure part: documents, expressions, the registry, the planner, the form model.
+  No processes, no network, no files, no window (a test holds it to that).
+- `crates/quickai-runtime/` — QuickAI without a window: finding, installing, fetching, starting and watching the
+  programs a configuration names, the settings and the configurations on disk, the documents and assets the
+  application ships (`manifests/`, `assets/`). No toolkit (a test holds it to that).
+- `crates/quickai/` — the window (`main.rs`, `app/`). Binary name: `quickai`. It draws; what it does to the
+  computer is the runtime's.
+- `crates/quickai-run/` — the headless program (docs/headless.md): the same runtime with no window, for a
+  server. Binary name: `quickai-run`.
 - `llama.cpp/` — vendored llama.cpp source (its own git checkout —
   gitignored here, see "First-time setup" below), built locally with
   `-DGGML_VULKAN=ON`. Binaries live in `llama.cpp/build/bin/`.
@@ -186,7 +218,7 @@ Both folder/binary overrides, the extra-args string, and the live-traffic
 toggle persist across restarts alongside the other settings.
 
 In dev (`cargo run`), the app falls back to this repo's own `llama.cpp/`
-and `models/` paths (see `crates/quickai/src/paths.rs`); in a packaged build
+and `models/` paths (see `crates/quickai-runtime/src/paths.rs`); in a packaged build
 it looks for `llama-server`/bundled `models/` right next to its own
 executable instead. Either way, that directory is treated as read-only —
 see "Adding more models" below for where downloads actually go.
@@ -240,7 +272,8 @@ is being fetched.
   with). It needs a Python 3.10 or newer that can make an environment (on Debian and Ubuntu `sudo apt install
   python3-venv`; QuickAI installs no Python), downloads the source of the release and a pack of GGUF nodes (checked
   against checksums), makes an environment of its own and installs PyTorch for your graphics card into it, and runs it
-  once to see that it works: **about twenty minutes and 17 GB** (30 GiB free are asked for). The window says where it is
+  once to see that it works: **about twenty minutes and 17 GB with PyTorch for AMD, about five minutes and 7 GB with
+  PyTorch for CUDA 13** (30 GiB free are asked for). The window says where it is
   (`Step 4 of 7 · PyTorch ... · downloading ...: 117.5 MB of 5.8 GB, 7.0 MB/s, about 13 min left`) and stays usable.
   **If it is interrupted** (the window is closed or killed, the machine is switched off, a step fails) nothing is
   lost: ⚙ Settings lists it under **Unfinished installs**, and **Continue** does the steps that are left; a directory
@@ -261,7 +294,7 @@ is being fetched.
   *The page's Download button* turns it off). If the window ever stops answering while something runs, `~/.quickai/ui-stalls.log` says when and
   what it was waiting in; nothing leaves the computer.
 - **Engines are documents.** What an engine is, how it starts and which settings it has is a TOML document
-  (`crates/quickai/manifests/engines/`, `docs/reference/engine-fields.md`); one in your configuration directory
+  (`crates/quickai-runtime/manifests/engines/`, `docs/reference/engine-fields.md`); one in your configuration directory
   patches it (`quickai config check` and `quickai plan --engine ollama --model NAME --explain` show what comes of
   it). A document of yours that starts a program QuickAI did not find or install asks you once before it does.
 
@@ -308,7 +341,7 @@ Three ways, from most to least manual:
   folder (next to the executable in a packaged build, or this repo's
   `models/` in dev) and click **Refresh** in the GUI. To give it a
   friendly display name/description instead of just its filename, add an
-  entry to `KNOWN_MODELS` in `crates/quickai/src/models.rs`.
+  entry to `KNOWN_MODELS` in `crates/quickai-runtime/src/models.rs`.
 - **Model URL / Path**: paste a direct link to a `.gguf` file, or a local
   filesystem path to one (Linux or Windows style — `/home/you/model.gguf`,
   `C:\Users\you\model.gguf`, a UNC share, whatever this OS understands),

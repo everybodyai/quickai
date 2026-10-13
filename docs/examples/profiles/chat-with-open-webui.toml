@@ -1,0 +1,41 @@
+# A configuration for a server: Ollama with a model it pulls by name, and Open WebUI beside it (docs/headless.md). The
+# configuration says that Open WebUI is part of it (`enabled`, its port, which build of it) and that whoever runs it has
+# to give the key that signs its logins; the key is the computer's, and so is whether anyone may sign up (ENABLE_SIGNUP,
+# which is false once your own account is made): they are lines of Open WebUI's environment, given in the file
+# `quickai-run init` writes, or with `--env openwebui:NAME=VALUE`. `quickai-run up` installs Ollama and Open WebUI (each below its own folder of ~/.quickai),
+# pulls the model, starts Open WebUI told where Ollama is, and says both addresses.
+#
+#     quickai-run init chat-with-open-webui.toml          # the file to fill in
+#     quickai-run up chat-with-open-webui.toml --environment chat-with-open-webui.environment.toml
+schema = 1
+kind = "profile"
+id = "chat-with-open-webui"
+requires = { app = ">=0.1" }
+name = "Chat with Open WebUI"
+engine = "ollama"
+
+[meta]
+note = "Qwen3 4B on Ollama, with Open WebUI beside it, for a server."
+
+[runtime]
+build = "v0.35.1-ollama-linux-amd64"   # Ollama's, named as the list of builds names it (the release and the file); left out, it is the one the document was tested with
+
+[runtime.openwebui]                     # a program that goes with the engine: which build of it
+build = "0.11.4"
+
+[[model]]
+role = "main"
+ollama = "qwen3:4b"
+size = 2500000000
+
+[values.ollama]
+ctx_size = 16384
+
+[values.openwebui]                      # what Open WebUI is told at every start: its box, its port, its internet access
+enabled = true
+port = 3000
+
+[[needs]]                               # what this file cannot carry and whoever runs it has to say
+env = "WEBUI_SECRET_KEY"
+for = "openwebui"
+why = "Signs the logins of Open WebUI; keep it the same between runs, or everyone is signed out."

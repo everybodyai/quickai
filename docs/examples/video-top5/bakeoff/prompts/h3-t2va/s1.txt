@@ -1,0 +1,3 @@
+integrated_multimodal_description: [Shot 1] Classic Indian children's comic-magazine cartoon, 2D-animated: bold ink outlines, flat saturated colours, lush green jungle, exaggerated slapstick expressions. Slow crane-up. Golden sunrise over the misty green hills of Sundar Van, birds lifting from the treetops and shafts of light through the canopy.
+overall_soundscape: Dawn chorus, a flute theme.
+non_diegetic_music: N/A

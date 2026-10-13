@@ -133,7 +133,7 @@ help = "Wants a lot of memory."
 # ---- APIs: what a client can call, and how the proxy reads it ------------------------------------------
 # `decode` drives the Live tab: framing, and JSON pointers to the text of a request and of a reply
 # (`error` says where the engine reports what went wrong). Relaying is never affected. The embedded
-# copy (crates/quickai/manifests/vocab/core.toml) has the same APIs; `adapter_kind` and the curl examples
+# copy (crates/quickai-runtime/manifests/vocab/core.toml) has the same APIs; `adapter_kind` and the curl examples
 # join it when the interface uses them.
 [[api]]
 id = "openai.chat"

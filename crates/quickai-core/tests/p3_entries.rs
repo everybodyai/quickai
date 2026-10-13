@@ -1,7 +1,7 @@
 //! Group V of docs/phase3-test-plan.md: what a look-up shows (work package 4.9). A look-up finds
 //! candidates; `present` makes of each what the window draws: its type, the buttons that fetch it,
 //! the size class of each. The documents are the ones the application ships, and the repositories
-//! are recordings of the real Hugging Face (`crates/quickai/tests/fixtures/huggingface/record.sh`),
+//! are recordings of the real Hugging Face (`crates/quickai-runtime/tests/fixtures/huggingface/record.sh`),
 //! so a change to a shipped document or a change of the world shows here.
 
 mod common;
@@ -460,7 +460,7 @@ fn p3_v05_a_card_of_the_library_has_a_button_for_every_size_and_says_how_big_it_
     let page = ollama_library::parse_search(
         &std::fs::read_to_string(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../quickai/tests/fixtures/ollama/library/popular_local.html"),
+                .join("../quickai-runtime/tests/fixtures/ollama/library/popular_local.html"),
         )
         .unwrap(),
     )

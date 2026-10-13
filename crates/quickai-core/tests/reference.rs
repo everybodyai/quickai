@@ -445,7 +445,34 @@ mode = [ { id = "embedding", label = "embedding server", help = "h", arg = ["--e
 order = 80
 bind = { arg = ["--mmproj", "${component.path}"] }
 "#;
-    for text in [keywords, names, python, wheel, lookups] {
+    let prerequisites = r#"
+[engine]
+name = "x"
+[[prerequisite]]
+id = "c_compiler"
+label = "a C compiler"
+when = "os == 'linux'"
+check = { use = "program", any_of = ["gcc", "clang"], env = "CC" }
+fix = { apt = ["build-essential"], dnf = ["gcc"], zypper = ["gcc"], pacman = ["base-devel"], apk = ["build-base"] }
+hint = "Install gcc or clang."
+[[prerequisite]]
+id = "python_headers"
+label = "the headers of Python"
+check = { use = "python_header", file = "Python.h" }
+[[prerequisite]]
+id = "python_venv"
+label = "the venv module"
+check = { use = "python_module", module = "ensurepip" }
+[[prerequisite]]
+id = "nvidia_driver"
+label = "an NVIDIA driver"
+check = { use = "nvidia_driver", at_least = "580" }
+[[prerequisite]]
+id = "triton"
+label = "a kernel of Triton"
+check = { use = "python_script", asset = "x/selftest.py", timeout = "180s" }
+"#;
+    for text in [keywords, names, python, wheel, lookups, prerequisites] {
         let table: toml::Table = toml::from_str(text).unwrap();
         let typed =
             read_body::<EngineDoc>(&table).unwrap_or_else(|e| panic!("{}: {}", e.path, e.message));
@@ -464,7 +491,8 @@ bind = { arg = ["--mmproj", "${component.path}"] }
                     || names.contains(&key)
                     || python.contains(&key)
                     || wheel.contains(&key)
-                    || lookups.contains(&key),
+                    || lookups.contains(&key)
+                    || prerequisites.contains(&key),
                 "`{}` of `{}` is not exercised by the variant document above",
                 attribute.name,
                 group.heading
@@ -487,6 +515,10 @@ made_on = { os = "linux", arch = "x86_64", gpu = ["amd"], memory_gb = 32 }
 build = "v0.40.0"
 version = "0.40.0"
 
+[runtime.openwebui]
+build = "0.11.4"
+version = "0.11.4"
+
 [[model]]
 role = "chat"
 name = "Qwen3-VL 8B"
@@ -495,6 +527,27 @@ file = "Qwen3-VL-8B-Q4_K_M.gguf"
 size = 6140000000
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 from = "huggingface:acme/Tiny-GGUF"
+
+[[model]]
+role = "vae"
+file = "x_vae.safetensors"
+from = "huggingface:acme/Tiny-Repackaged"
+path = "split_files/vae/x_vae.safetensors"
+revision = "main"
+into = "vae"
+
+[[model]]
+file = "y.safetensors"
+url = "https://example.org/files/y.safetensors"
+
+[[needs]]
+token = "huggingface"
+setting = "x.y"
+env = "WEBUI_SECRET_KEY"
+system = "c_compiler"
+for = "openwebui"
+secret = true
+why = "The repository is behind a login."
 
 [values.ollama]
 ctx_size = 16384

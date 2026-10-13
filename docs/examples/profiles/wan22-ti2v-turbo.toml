@@ -1,0 +1,55 @@
+# A configuration for a server: ComfyUI with the files of Wan 2.2 TI2V 5B in its Turbo build, as a video studio uses them
+# (docs/headless.md). It carries no model. Each file says where it can be had from: a repository of the hub (and the
+# revision of it that was checked), the file in it, how big it is and what its SHA-256 is. `quickai-run up` installs ComfyUI,
+# fetches the three files into the folders ComfyUI looks for each in, and starts it on 127.0.0.1:8188.
+#
+#     quickai-run check wan22-ti2v-turbo.toml --accept-review     # what would be done, from where, to where, how big
+#     quickai-run up    wan22-ti2v-turbo.toml --accept-review     # do it, and stay
+#
+# `--accept-review` is the person's yes to the places this file names (they are read first: they are not the recommended
+# list's). Where the computer keeps the models, a Python, a login for a hub or a mirror of it are the computer's, not this
+# file's: `quickai-run init wan22-ti2v-turbo.toml` writes the file to fill in. The three files are on the hub under
+# the names below, and the sizes and checksums were read from it on 2026-10-12.
+schema = 1
+kind = "profile"
+id = "wan22-ti2v-turbo"
+requires = { app = ">=0.1" }
+name = "Wan 2.2 TI2V 5B Turbo on ComfyUI"
+engine = "comfyui"
+
+[meta]
+note = "Wan 2.2 TI2V 5B, the Turbo build in Q8_0 (4 steps), with UMT5-XXL as its text encoder and the Wan 2.2 VAE. About 13 GB of files."
+
+[[model]]
+role = "diffusion"
+name = "Wan 2.2 TI2V 5B Turbo, Q8_0"
+file = "Wan2_2-TI2V-5B-Turbo-Q8_0.gguf"
+from = "huggingface:hum-ma/Wan2.2-TI2V-5B-Turbo-GGUF"
+revision = "9873ba175b4b204a81f4a43c9644e6c385ee4459"        # a commit: the same file for ever
+into = "diffusion_models"
+size = 5404990176
+sha256 = "b4d7d1888d5ec2c29046cc443239faad99614cd3d356c61d8192fcac5f4c98fc"
+
+[[model]]
+role = "text_encoder"
+name = "UMT5-XXL encoder, Q8_0"
+file = "umt5-xxl-encoder-Q8_0.gguf"
+from = "huggingface:city96/umt5-xxl-encoder-gguf"
+revision = "b535255bee98c2b0a59ea7c0ae2dcd0c6657b3b7"
+into = "text_encoders"
+size = 6043068256
+sha256 = "2521d4de0bf9e1cc6549866463ceae85e4ec3239bc6063f7488810be39033bbc"
+
+[[model]]
+role = "vae"
+name = "Wan 2.2 VAE"
+file = "Wan2.2_VAE.safetensors"
+from = "huggingface:QuantStack/Wan2.2-TI2V-5B-GGUF"
+path = "VAE/Wan2.2_VAE.safetensors"                          # in a folder of the repository
+revision = "57437632ddd08bdcbd1508c866aa22e126ed51d2"
+into = "vae"
+size = 1409400960
+sha256 = "e40321bd36b9709991dae2530eb4ac303dd168276980d3e9bc4b6e2b75fed156"
+
+[values.comfyui]
+port = 8188

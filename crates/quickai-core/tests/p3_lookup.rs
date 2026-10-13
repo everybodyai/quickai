@@ -10,7 +10,7 @@ use quickai_core::lookup::ollama_library::{
 
 fn page(file: &str) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../quickai/tests/fixtures/ollama/library")
+        .join("../quickai-runtime/tests/fixtures/ollama/library")
         .join(file);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }

@@ -1,0 +1,22 @@
+[package]
+name = "quickai-run"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "QuickAI with no window: it gets everything a configuration needs on this computer (programs, models), starts it, and stays until it is stopped. For a server. docs/headless.md."
+
+[[bin]]
+name = "quickai-run"
+path = "src/main.rs"
+
+[dependencies]
+quickai-runtime = { path = "../quickai-runtime" }
+serde_json = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+# the fakes the runtime's own tests use: a GitHub that lists releases, a file server, a hub
+quickai-runtime = { path = "../quickai-runtime", features = ["testkit"] }
+serde_json = "1"

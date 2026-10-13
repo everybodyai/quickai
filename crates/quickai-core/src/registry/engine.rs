@@ -17,7 +17,8 @@ use crate::doc::duration::parse_duration;
 use crate::doc::engine::{
     Acquire, ApiInfo, Assets, CallSpec, DiagnosticRule, EngineDoc, EnvEntry, FieldDefault,
     FieldType, InputRule, Install, LocateStrategy, ModelBundle, ModelLookup, ModelMode, Models,
-    OnTimeout, PortRole, Probe, Step, StopPolicy, StopSpec,
+    OnTimeout, PackageManager, PortRole, Prerequisite, PrerequisiteCheck, Probe, Step, StopPolicy,
+    StopSpec,
 };
 use crate::docpath::DocPath;
 use crate::expr::{self, funcs, Expr, Template, Type};
@@ -61,7 +62,22 @@ pub struct Engine {
     pub diagnostics: Vec<CompiledDiagnostic>,
     /// How each kind of companion file is attached, by kind.
     pub components: Vec<CompiledComponent>,
+    /// What `doc.prerequisites` hold that is a condition or a duration, parsed: one for each, in the
+    /// document's order.
+    pub prerequisites: Vec<CompiledPrerequisite>,
 }
+
+/// A `[[prerequisite]]`'s condition and time limit, parsed and checked at load.
+#[derive(Clone, Debug)]
+pub struct CompiledPrerequisite {
+    /// Only on a computer where this holds; always when `None`.
+    pub when: Option<Expr>,
+    /// For a script that is run: how long it may take.
+    pub timeout: Option<Duration>,
+}
+
+/// How long a script of a prerequisite may take when the document does not say.
+pub const DEFAULT_PREREQUISITE_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Where a component's arguments stand when its document does not say: after the fields of a lower
 /// `order`, before the person's own extra arguments (90).
@@ -596,6 +612,7 @@ pub fn compile(
         .as_ref()
         .and_then(|a| compile_api_info(&mut c, &doc, a));
     let diagnostics = compile_diagnostics(&mut c, &doc, &doc.diagnostics);
+    let prerequisites = compile_prerequisites(&mut c, &doc, known);
 
     let failed = c.failed();
     let out = c.out;
@@ -617,6 +634,7 @@ pub fn compile(
             api_info,
             diagnostics,
             components,
+            prerequisites,
         }),
         out,
     )
@@ -2464,6 +2482,264 @@ fn compile_api_info(c: &mut Checker, doc: &EngineDoc, info: &ApiInfo) -> Option<
         },
         example: info.example.clone(),
     })
+}
+
+/// A name the document gives a prerequisite's package: plain, and unable to pass for an option of the
+/// package manager. `${python.version}` and `${python.digits}` are the two words it may carry.
+fn is_system_package(text: &str) -> bool {
+    let plain = text
+        .replace("${python.version}", "3.12")
+        .replace("${python.digits}", "312");
+    plain.len() <= 80
+        && plain
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_alphanumeric())
+        && plain
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '.' | '-' | '_'))
+}
+
+/// A name of a program to look for: plain, with no path to it.
+fn is_looked_for_program(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 40
+        && !text.starts_with('-')
+        && text
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '.' | '-' | '_'))
+}
+
+/// A version to compare with: numbers with dots between them (`580`, `580.65`).
+fn is_version_number(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .split('.')
+            .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
+}
+
+/// `[[prerequisite]]`: what the computer has to have, checked as a document is loaded (the ids, the
+/// condition, the kind of check and what it names, the packages) so that what is run as the administrator
+/// is a plain name from a document and nothing else.
+fn compile_prerequisites(
+    c: &mut Checker,
+    doc: &EngineDoc,
+    known: &KnownPrimitives,
+) -> Vec<CompiledPrerequisite> {
+    let engine_schema = schema(doc, Site::Engine);
+    let python_app = matches!(
+        doc.acquire.as_ref().and_then(|a| a.install.as_ref()),
+        Some(Install::PythonApp { .. })
+    );
+    let mut ids: Vec<&str> = Vec::new();
+    let mut compiled = Vec::new();
+    for (i, item) in doc.prerequisites.iter().enumerate() {
+        let at = DocPath::default().key("prerequisite").index(i);
+        compiled.push(compile_prerequisite(
+            c,
+            item,
+            &at,
+            &engine_schema,
+            python_app,
+            known,
+            &ids,
+        ));
+        ids.push(&item.id);
+    }
+    compiled
+}
+
+fn compile_prerequisite(
+    c: &mut Checker,
+    item: &Prerequisite,
+    at: &DocPath,
+    engine_schema: &Type,
+    python_app: bool,
+    known: &KnownPrimitives,
+    earlier: &[&str],
+) -> CompiledPrerequisite {
+    if item.id.is_empty()
+        || !item
+            .id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    {
+        c.error_hint(
+            &at.clone().key("id"),
+            format!("`{}` is not a valid prerequisite id", item.id),
+            "use letters, digits and `_`",
+        );
+    }
+    if earlier.contains(&item.id.as_str()) {
+        c.error(
+            &at.clone().key("id"),
+            format!("the prerequisite id `{}` is used twice", item.id),
+        );
+    }
+    if item.label.trim().is_empty() || item.label.chars().count() > 120 {
+        c.error_hint(
+            &at.clone().key("label"),
+            "a prerequisite has a label of up to 120 characters",
+            "what a sentence calls it: `a C compiler`",
+        );
+    }
+    if item.hint.as_ref().is_some_and(|h| h.chars().count() > 600) {
+        c.error(
+            &at.clone().key("hint"),
+            "the hint is at most 600 characters",
+        );
+    }
+    let when = item
+        .when
+        .as_deref()
+        .and_then(|text| c.expr(&at.clone().key("when"), text, engine_schema, true));
+    let check_at = at.clone().key("check");
+    let mut timeout = None;
+    let needs_python_app = |c: &mut Checker, what: &str| {
+        if !python_app {
+            c.error_hint(
+                &check_at,
+                format!(
+                    "{what} is checked in the environment of a `python_app` install, and this engine's install is not one"
+                ),
+                "this check belongs to an engine that is an application written in Python",
+            );
+        }
+    };
+    match &item.check {
+        PrerequisiteCheck::Program { any_of, env } => {
+            if any_of.is_empty() {
+                c.error(
+                    &check_at.clone().key("any_of"),
+                    "`any_of` names no program, so nothing is ever looked for",
+                );
+            }
+            for name in any_of {
+                if !is_looked_for_program(name) {
+                    c.error_hint(
+                        &check_at.clone().key("any_of"),
+                        format!("`{name}` is not the name of a program"),
+                        "write a plain name, with no path: gcc",
+                    );
+                }
+            }
+            if let Some(name) = env {
+                let valid = !name.is_empty()
+                    && !name.starts_with(|ch: char| ch.is_ascii_digit())
+                    && name
+                        .chars()
+                        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+                if !valid {
+                    c.error(
+                        &check_at.clone().key("env"),
+                        format!("`{name}` is not the name of a variable"),
+                    );
+                }
+            }
+        }
+        PrerequisiteCheck::PythonHeader { file } => {
+            needs_python_app(c, "a Python header");
+            let valid = file.ends_with(".h")
+                && file.len() <= 40
+                && !file.starts_with('.')
+                && file
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'));
+            if !valid {
+                c.error_hint(
+                    &check_at.clone().key("file"),
+                    format!("`{file}` is not the name of a header file"),
+                    "write the file name alone, such as Python.h",
+                );
+            }
+        }
+        PrerequisiteCheck::PythonModule { module } => {
+            needs_python_app(c, "a Python module");
+            let valid = !module.is_empty()
+                && module.len() <= 60
+                && !module.starts_with(|ch: char| ch.is_ascii_digit() || ch == '.')
+                && !module.ends_with('.')
+                && !module.contains("..")
+                && module
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.'));
+            if !valid {
+                c.error_hint(
+                    &check_at.clone().key("module"),
+                    format!("`{module}` is not the name of a module"),
+                    "write it as Python does: ensurepip, or xml.dom",
+                );
+            }
+        }
+        PrerequisiteCheck::NvidiaDriver { at_least } => {
+            if !is_version_number(at_least) {
+                c.error_hint(
+                    &check_at.clone().key("at_least"),
+                    format!("`{at_least}` is not a version"),
+                    "write numbers with dots between them: 580 or 580.65",
+                );
+            }
+        }
+        PrerequisiteCheck::PythonScript {
+            asset,
+            timeout: text,
+        } => {
+            needs_python_app(c, "a script");
+            let path = check_at.clone().key("asset");
+            if !is_asset_name(asset) || !asset.ends_with(".py") {
+                c.error_hint(
+                    &path,
+                    format!("`{asset}` is not the name of one of the application's own scripts"),
+                    "a relative name with `/` between its parts, ending in .py",
+                );
+            } else if let Some(assets) = known.asset_names() {
+                if !assets.contains(asset) {
+                    let hint =
+                        match crate::expr::types::suggest(asset, assets.iter().map(String::as_str))
+                        {
+                            Some(near) => format!("did you mean `{near}`?"),
+                            None => "a document can only run scripts this version of QuickAI has"
+                                .to_string(),
+                        };
+                    c.error_hint(
+                        &path,
+                        format!("this version of QuickAI has no file called `{asset}`"),
+                        hint,
+                    );
+                }
+            }
+            timeout = match text {
+                Some(text) => c.duration(&check_at.clone().key("timeout"), text),
+                None => None,
+            };
+        }
+    }
+    // what brings it: only what a package manager can bring, and only plain names
+    let fix_at = at.clone().key("fix");
+    for manager in PackageManager::ALL {
+        for name in item.fix.packages(manager) {
+            if !is_system_package(name) {
+                c.error_hint(
+                    &fix_at,
+                    format!("`{name}` is not the name of a package"),
+                    "write the name alone: build-essential, python${python.version}-dev",
+                );
+            }
+        }
+    }
+    if !item.fix.is_empty()
+        && matches!(
+            item.check,
+            PrerequisiteCheck::NvidiaDriver { .. } | PrerequisiteCheck::PythonScript { .. }
+        )
+    {
+        c.error_hint(
+            &fix_at,
+            "a driver is not installed by this program, and a script that fails is put right by what it checked",
+            "say what to do in `hint`, and name the packages on the check that needs them",
+        );
+    }
+    CompiledPrerequisite { when, timeout }
 }
 
 fn compile_diagnostics(

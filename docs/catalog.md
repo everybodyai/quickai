@@ -59,7 +59,7 @@ What was fetched is **named as the list names it** in the model picker (`Qwen3.5
 
 ## 2. The list
 
-Eight documents, one for each category, in `crates/quickai/manifests/catalog/` (compiled into the application). They are **generated** by
+Eight documents, one for each category, in `crates/quickai-runtime/manifests/catalog/` (compiled into the application). They are **generated** by
 `scripts/catalog.py` from picks (section 5), so that every commit, size, SHA-256 and pull size is read from the real site and none is typed.
 
 | Page | Models | What is in it |

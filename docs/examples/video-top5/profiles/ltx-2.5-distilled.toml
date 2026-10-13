@@ -1,0 +1,136 @@
+# A configuration for a server: ComfyUI with the files of LTX-2.5 (Lightricks, August 2026), the open video model that makes a clip with its
+# sound in one pass: the 22B transformer in its distilled build (8 steps at half the size, then 3 at the full size), in int8 for ComfyUI.
+# It carries no model. Each file says where it can be had from: a repository of the hub, the commit of it that was checked, the file in it,
+# and how big it is. `quickai-run up` installs ComfyUI, fetches the four files below into the folders ComfyUI looks for each in, and starts it.
+#
+#     quickai-run init  ltx-2.5-distilled.toml                           # the file to fill in: where the models are kept, a login for the hub
+#     quickai-run check ltx-2.5-distilled.toml --environment ltx.environment.toml --accept-review
+#     quickai-run up    ltx-2.5-distilled.toml --environment ltx.environment.toml --accept-review
+#
+# The repository is GATED: before the first fetch, sign in to Hugging Face, open https://huggingface.co/Lightricks/LTX-2.5 and accept its terms
+# with the account whose token you give (`--hf-token`, the variable HF_TOKEN, or `huggingface_token` under [fetch] of the environment file).
+# The hub does not show a gated file's SHA-256 to someone who is not signed in, so the files below carry their size and not their checksum;
+# `hubmeta.py --token ...` (tools/) prints them once you have a token, and they can be added here.
+#
+# The files, 38.7 GB (36.1 GiB, which is how the program counts): the distilled transformer 21.5 GB, the text encoder (Gemma 4 12B
+# with LTX's projections, int8) 15.4 GB, the video VAE 1.5 GB and the audio VAE 0.4 GB.
+#
+# A FIFTH FILE THIS PROGRAM CANNOT FETCH YET: the spatial latent upscaler (1.0 GB, ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors), which
+# the text-to-video and image-to-video workflows need for their second stage (first/last frame does not use it). ComfyUI keeps it in the
+# folder `latent_upscale_models`, and the ComfyUI document of this program does not list that folder among the ones a configuration may fill
+# (`places` under [models.acquire] of engines/comfyui.toml: one word to add). Until it does, put the file there by hand, for example
+#     mkdir -p MODELS_DIR/latent_upscale_models && curl -L -H "Authorization: Bearer $HF_TOKEN" \
+#       https://huggingface.co/Lightricks/LTX-2.5/resolve/49b093a39c19169a8a81721dcc541e07e945232f/latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors \
+#       -o MODELS_DIR/latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors      # 995778752 bytes
+# and, once the folder is listed, add it here as a [[model]] with role = "upscaler", into = "latent_upscale_models" and
+# path = "latent_upscale_models/<file>" from huggingface:Lightricks/LTX-2.5 at revision = "49b093a39c19169a8a81721dcc541e07e945232f", size = 995778752.
+#
+# The official templates also load a small second Gemma (gemma4_e2b_it_int8_convrot.safetensors, 5.2 GB, Comfy-Org/gemma-4, Apache-2.0) that
+# rewrites a short prompt into a long one; the workflows of this package switch that off and do not need it. To have it anyway, add (a
+# configuration holds at most 8 models):
+#   [[model]] role = "text_encoder" file = "gemma4_e2b_it_int8_convrot.safetensors" from = "huggingface:Comfy-Org/gemma-4"
+#   path = "text_encoders/gemma4_e2b_it_int8_convrot.safetensors" revision = "63d0f7c476756b88910170c1df75e2384ea1af31" into = "text_encoders"
+#   size = 5199997904 sha256 = "efeca0fcad2f863e5ed0a75e3af952b72bc963604c1dda6d20aee87a32b17566"
+#
+# What it does: words, a first picture, or a first and a last picture to a clip of a few seconds (Lightricks says up to 20; the workflows of
+# this package are for 2 to 10) at 24 frames a second or more, with speech, sound effects and ambience made in the same pass; its other
+# pipelines (audio to video, dubbing, retake, control by IC-LoRA, training of a LoRA) and its multi-shot mode are in Lightricks' own
+# repository and are not in these workflows. Lightricks' own advice for 2D animation is to keep clips short (2 to 4 seconds) so the style
+# does not drift towards photographs.
+#
+# The licence is the LTX-2.x Community License: free for commercial and production use below 10 million US dollars of yearly revenue of
+# the whole entity; above it a paid agreement; no territory is excluded. Read it before you use the files.
+#
+# What the computer must have: an NVIDIA card of 24 GB at least (32 GB is what a hardware guide advises for the int8 files with the text
+# encoder; 48 GB is easy) and 32 GB of memory, which nothing checks; and what `quickai-run` looks at before it fetches anything (the `system`
+# needs at the end of this file; the document of ComfyUI says how each is checked): a driver of the 580 series or newer (PyTorch for CUDA 13),
+# and a C compiler and the headers of Python, because the int8 files run through Triton, which builds a small helper in C the first time a
+# kernel is launched. After the install, and before the files are fetched, it builds and runs a Triton kernel once. Before ComfyUI is
+# installed it also looks for the venv module of the Python its environment is made with (on Ubuntu the package python3.12-venv). Where
+# something is missing it says what, with the command that brings it (on Ubuntu: apt-get install -y python3.12-venv build-essential
+# python3.12-dev), and `--install-system-packages` lets it run that command. Sizes were read from the hub's listing on 2026-10-13; `quickai-run check` read the
+# file as written. It has not been fetched or run.
+schema = 1
+kind = "profile"
+id = "ltx-2-5-distilled"
+requires = { app = ">=0.1" }
+name = "LTX-2.5 distilled on ComfyUI"
+engine = "comfyui"
+
+[meta]
+note = "LTX-2.5 22B distilled in int8, with Gemma 4 12B (the x2 spatial upscaler, 1 GB, is put in by hand for now): words, a first picture or a first and a last picture to a clip of a few seconds with sound. About 40 GB of files. A gated repository: a Hugging Face token is needed."
+
+[[model]]
+role = "diffusion"
+name = "LTX-2.5 22B distilled, int8"
+file = "ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors"
+from = "huggingface:Lightricks/LTX-2.5"
+path = "diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors"
+revision = "49b093a39c19169a8a81721dcc541e07e945232f"
+into = "diffusion_models"
+size = 21504034224
+# sha256: the hub does not show it to someone who is not signed in (a gated repository); the size is checked
+
+[[model]]
+role = "text_encoder"
+name = "Gemma 4 12B with LTX-2.5 projections, int8"
+file = "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors"
+from = "huggingface:Lightricks/LTX-2.5"
+path = "text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors"
+revision = "49b093a39c19169a8a81721dcc541e07e945232f"
+into = "text_encoders"
+size = 15372969374
+# sha256: the hub does not show it to someone who is not signed in (a gated repository); the size is checked
+
+[[model]]
+role = "vae"
+name = "LTX-2.5 video VAE"
+file = "ltx-2.5-video-vae-bf16.safetensors"
+from = "huggingface:Lightricks/LTX-2.5"
+path = "vae/ltx-2.5-video-vae-bf16.safetensors"
+revision = "49b093a39c19169a8a81721dcc541e07e945232f"
+into = "vae"
+size = 1472223346
+# sha256: the hub does not show it to someone who is not signed in (a gated repository); the size is checked
+
+[[model]]
+role = "vae"
+name = "LTX-2.5 audio VAE"
+file = "ltx-2.5-audio-vae-bf16.safetensors"
+from = "huggingface:Lightricks/LTX-2.5"
+path = "vae/ltx-2.5-audio-vae-bf16.safetensors"
+revision = "49b093a39c19169a8a81721dcc541e07e945232f"
+into = "vae"
+size = 364866540
+# sha256: the hub does not show it to someone who is not signed in (a gated repository); the size is checked
+
+[values.comfyui]
+port = 8188
+
+[[needs]]
+token = "huggingface"
+why = "Lightricks/LTX-2.5 is a gated repository: accept its terms on huggingface.co with the account the token belongs to."
+
+[[needs]]                               # what this file cannot carry and whoever runs it has to say
+setting = "comfyui.models_dir"
+why = "Somewhere with 63 GB free: 39 GB of model files, and room for the clips it makes."
+
+[[needs]]                               # what the computer has to have: nobody gives these, `quickai-run` looks (the document of ComfyUI says how)
+system = "python_venv"
+why = "ComfyUI is installed into a Python environment of its own, and Debian and Ubuntu make none without the venv package of the Python (on Ubuntu python3.12-venv)."
+
+[[needs]]
+system = "nvidia_driver"
+why = "ComfyUI is installed with PyTorch for CUDA 13, which needs a driver of the 580 series or newer."
+
+[[needs]]
+system = "c_compiler"
+why = "The int8 and 4-bit files run through Triton, which builds a small helper in C the first time a clip is made; without a compiler that first clip stops with a message that says only that gcc returned non-zero exit status 1."
+
+[[needs]]
+system = "python_headers"
+why = "Triton builds that helper against the headers of Python (Python.h), which a server often lacks (on Ubuntu the package python3.12-dev)."
+
+[[needs]]
+system = "triton"
+why = "After the install and before the files are fetched, one kernel is built and run: the first clip is not the one that finds out."

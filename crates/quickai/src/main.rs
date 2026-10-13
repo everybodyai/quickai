@@ -4,32 +4,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
-mod assets;
-mod bundles;
-mod cli;
-mod config;
-mod configuration_cli;
-mod configurations;
-mod downloader;
-mod events;
-#[cfg(test)]
-mod golden;
-mod gpu;
-mod hardware;
-mod jobs;
-mod launch;
-mod models;
-#[cfg(test)]
-mod p3;
-mod paths;
-mod prims;
-mod proxy;
 
-mod runtime;
-mod settings;
-mod sources;
+// The window is a client of the runtime crate. These names keep the paths its modules were written
+// with (`crate::config`, `crate::runtime::Session`, ...), so that what the window does to the computer
+// is plainly the runtime's and the window's own code did not have to change to say so.
+use quickai_runtime::{
+    bundles, cli, config, configuration_cli, configurations, downloader, events, gpu, hardware,
+    jobs, launch, models, paths, prims, runtime, settings, sources,
+};
 #[cfg(test)]
-mod testkit;
+use quickai_runtime::{golden, testkit};
 
 /// Must match the AppImage's `.desktop` file (`StartupWMClass=quickai`, made
 /// by `build/appimage.sh` in the `quickai_base` repository) so window managers

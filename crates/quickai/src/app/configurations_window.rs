@@ -184,22 +184,8 @@ impl App {
                     return;
                 };
                 let entries = quickai_core::models::recommended(&self.registry, engine);
-                let key = format!("catalog:{id}");
                 // the weights of that file, with what goes with it when the list pairs them
-                let fetch = entries.iter().filter(|e| e.key == key).find_map(|entry| {
-                    let mut found: Vec<&quickai_core::lookup::present::Offer> = entry
-                        .offers
-                        .iter()
-                        .filter(|o| match &o.fetch {
-                            quickai_core::lookup::present::Fetch::Files(d) => {
-                                d.weights().is_some_and(|w| w.store_as == file)
-                            }
-                            quickai_core::lookup::present::Fetch::Reference(_) => false,
-                        })
-                        .collect();
-                    found.sort_by_key(|o| o.bundle.is_none());
-                    found.first().map(|o| o.fetch.clone())
-                });
+                let fetch = quickai_core::models::catalog_fetch(&entries, &id, &file);
                 match fetch {
                     Some(fetch) => {
                         self.fetch_offer(&fetch, ctx);
@@ -1728,10 +1714,13 @@ mod tests {
                 include_str!("configurations_window.rs"),
             ),
             ("configurations_ui.rs", include_str!("configurations_ui.rs")),
-            ("configurations.rs", include_str!("../configurations.rs")),
+            (
+                "configurations.rs",
+                include_str!("../../../quickai-runtime/src/configurations.rs"),
+            ),
             (
                 "configuration_cli.rs",
-                include_str!("../configuration_cli.rs"),
+                include_str!("../../../quickai-runtime/src/configuration_cli.rs"),
             ),
         ] {
             let code = source.split("#[cfg(test)]").next().unwrap();

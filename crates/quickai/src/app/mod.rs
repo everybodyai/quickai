@@ -14,7 +14,7 @@ use crate::paths;
 use crate::runtime::Session;
 use crate::settings::Settings;
 use engine::NamedModels;
-use lookup_view::LookupView;
+use lookup_view::{DownloadSource, LookupView};
 use quickai_core::form::{self, FormModel};
 use quickai_core::plan::{HostFacts, ModelInfo, Selection};
 use quickai_core::registry::Registry;
@@ -47,9 +47,6 @@ mod stall;
 mod values;
 mod widgets;
 mod workbench;
-
-/// The widgets a document may name, for the loader (`prims::known`).
-pub(crate) use widgets::NAMED as NAMED_WIDGETS;
 
 const MAX_LOG_LINES: usize = 2000;
 
@@ -114,7 +111,7 @@ pub struct App {
     download: Option<Job<String>>,
     /// Where the files of the download that is going come from (`huggingface:owner/repo`), remembered when
     /// it ends well so that a configuration can say where to get the model.
-    download_source: Option<String>,
+    download_source: Option<DownloadSource>,
     /// What the models area of an engine that runs on its own holds besides its models: the folder a
     /// file given by hand goes in, and what the last fetch did.
     bench: workbench::Bench,
@@ -686,11 +683,13 @@ impl App {
                 // where it came from is remembered, in the data directory and not in the models folder
                 if let Some(source) = source {
                     if let Ok(meta) = std::fs::metadata(self.models_dir.join(&filename)) {
-                        let _ = crate::sources::remember(
+                        let _ = crate::sources::remember_where(
                             std::path::Path::new(&self.host_facts.data_dir),
                             &filename,
                             meta.len(),
-                            &source,
+                            &source.place,
+                            source.path.as_deref(),
+                            source.revision.as_deref(),
                         );
                     }
                 }

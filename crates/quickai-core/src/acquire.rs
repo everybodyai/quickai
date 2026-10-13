@@ -326,6 +326,98 @@ pub fn backend<'a>(engine: &'a Engine, asset_name: &str) -> Option<&'a Backend> 
         .find(|b| lower.contains(&b.needle.to_ascii_lowercase()))
 }
 
+/// One build a feed offered, as far as choosing between builds needs to know it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Offered<'a> {
+    /// The release it belongs to.
+    pub tag: &'a str,
+    /// The file it is, whose name says what it was built for.
+    pub asset_name: &'a str,
+    /// It is the release the document was tested with.
+    pub tested: bool,
+    /// The document's pin and the feed's digest for the file disagree: it changed after it was tested.
+    pub conflict: bool,
+    /// What it downloads, when the feed says.
+    pub size: Option<u64>,
+}
+
+/// Which of the builds a feed offered to install when nobody named one and none is installed (the headless
+/// program has no list for a person to read). `offered` is in the feed's order, which puts the tested
+/// release first and the newest next; `vendors` are the lower-case keys of the cards this computer has
+/// (`nvidia`), empty when they could not be told. The rule is the same for every engine, and the document's
+/// words decide it:
+///
+/// 1. a build whose pin and digest disagree is never taken;
+/// 2. a build of a backend that needs a vendor's card (`needs_gpu`) is never taken unless that card is
+///    here, so a computer whose cards could not be told is not given CUDA;
+/// 3. the tested release is taken, else the newest, and where several of its builds are left the one whose
+///    backend the document lists first;
+/// 4. a build whose name says no backend is listed after all of them, except for a computer whose cards
+///    could not be told, which gets it before them: it is what a machine with no card runs;
+/// 5. of builds that rank the same, the smaller download: the plain build of a release is the smallest of
+///    those that name no backend the document knows (a document does not list every backend a project
+///    publishes: the first real run met an OpenVINO build of llama.cpp that no document names, 105 MB
+///    beside the plain build's 16).
+///
+/// `None` when nothing offered can run here; the program says so and installs nothing.
+pub fn pick_build(engine: &Engine, offered: &[Offered<'_>], vendors: &[&str]) -> Option<usize> {
+    let backends = engine
+        .doc
+        .acquire
+        .as_ref()
+        .map(|a| a.backends.as_slice())
+        .unwrap_or(&[]);
+    // None: cannot run here. Some(rank): lower is better.
+    let rank = |o: &Offered<'_>| -> Option<usize> {
+        if o.conflict {
+            return None;
+        }
+        let lower = o.asset_name.to_ascii_lowercase();
+        match backends
+            .iter()
+            .position(|b| lower.contains(&b.needle.to_ascii_lowercase()))
+        {
+            Some(at) => {
+                if let Some(vendor) = backends[at].needs_gpu.as_deref() {
+                    if !vendors.contains(&vendor) {
+                        return None;
+                    }
+                }
+                Some(if vendors.is_empty() { at + 1 } else { at })
+            }
+            None => Some(if vendors.is_empty() {
+                0
+            } else {
+                backends.len()
+            }),
+        }
+    };
+    // the releases in the order they are looked at: the tested one, then the feed's order
+    let mut tags: Vec<&str> = Vec::new();
+    for o in offered.iter().filter(|o| o.tested) {
+        if !tags.contains(&o.tag) {
+            tags.push(o.tag);
+        }
+    }
+    for o in offered {
+        if !tags.contains(&o.tag) {
+            tags.push(o.tag);
+        }
+    }
+    for tag in tags {
+        let best = offered
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| o.tag == tag)
+            .filter_map(|(i, o)| rank(o).map(|r| (r, o.size.unwrap_or(u64::MAX), i)))
+            .min();
+        if let Some((_, _, index)) = best {
+            return Some(index);
+        }
+    }
+    None
+}
+
 /// What the interface calls the backend a file was built for, or `default` when its name says
 /// nothing (CPU and Vulkan builds are often just left unlabelled).
 pub fn backend_label<'a>(engine: &'a Engine, asset_name: &str) -> &'a str {

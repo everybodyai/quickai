@@ -1,0 +1,26 @@
+subject_definitions:
+<Subject 1> is Shikari Shambu, a middle-aged Indian man, a huge cream pith helmet (sola topi) pulled low over his face, with a big bushy moustache underneath that curls up when he feels brave and droops when he is scared, wearing a green shirt and green shorts, brown boots, an old rifle slung on his back that he never fires, and a camera on a strap round his neck, shown in <Picture 1>.
+<Subject 2> is Jeeva Jeevantak, a tall, broad Indian man in his forties, black hair, slicked back, brown eyes, a waxed black moustache and a shiny gold front tooth, wearing a tan safari suit with many pockets, polished black boots and a big shiny net-gun, shown in <Picture 2>.
+<Subject 3> is the place, Chandanpur village square: a dusty village square with a big banyan tree, a stone well, a tea stall and clay-walled houses, shown in <Picture 3>.
+<Audio 1> is the voice-timbre reference for <Subject 1> (S1): a nervous, squeaky voice that turns boastful when he is praised.
+<Audio 2> is the voice-timbre reference for <Subject 2> (S2): a loud, booming, boastful voice.
+
+summary:
+[reference generation + audio reference] A 6-second close-up two-shot in <Subject 3>: <Subject 1> and <Subject 2> each gulp loudly and look at each other with forced smiles, their moustaches twitching.
+
+retention_analysis:
+<Subject 1> (in [Shot 1]): fully_preserved - face, costume and colours as drawn.
+<Subject 2> (in [Shot 1]): fully_preserved - face, costume and colours as drawn.
+<Subject 3> (behind the action in [Shot 1]): partially_preserved - the layout and look of the place.
+<Audio 1>: reference - timbre and delivery only, its words are not used.
+<Audio 2>: reference - timbre and delivery only, its words are not used.
+
+detailed_description:
+Classic Indian children's comic-magazine cartoon, 2D-animated: bold ink outlines, flat saturated colours, lush green jungle, exaggerated slapstick expressions.
+[Shot 1] Close-up two-shot, in <Subject 3>. <Subject 1> and <Subject 2> each gulp loudly and look at each other with forced smiles, their moustaches twitching. <Subject 1> (S1) says weakly: <d>[English] Together.</d> <Subject 2> (S2) says weakly: <d>[English] How lovely.</d>
+
+overall_soundscape:
+A synchronized gulp.
+
+non_diegetic_music:
+N/A

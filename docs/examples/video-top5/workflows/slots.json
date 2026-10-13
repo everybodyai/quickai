@@ -1,0 +1,1368 @@
+{
+ "01-h3-base/h3-t2v": {
+  "prompt": [
+   "104",
+   "prompt"
+  ],
+  "seed": [
+   "15",
+   "noise_seed"
+  ],
+  "width": [
+   "104",
+   "width"
+  ],
+  "height": [
+   "104",
+   "height"
+  ],
+  "frames": [
+   "104",
+   "length"
+  ],
+  "fps": [
+   "91",
+   "fps"
+  ],
+  "output": "92",
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 20
+ },
+ "01-h3-base/h3-i2v": {
+  "prompt": [
+   "104",
+   "prompt"
+  ],
+  "seed": [
+   "15",
+   "noise_seed"
+  ],
+  "width": [
+   "104",
+   "width"
+  ],
+  "height": [
+   "104",
+   "height"
+  ],
+  "frames": [
+   "104",
+   "length"
+  ],
+  "fps": [
+   "91",
+   "fps"
+  ],
+  "output": "92",
+  "first_image": [
+   "114",
+   "image"
+  ],
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 20
+ },
+ "01-h3-base/h3-flf2v": {
+  "prompt": [
+   "104",
+   "prompt"
+  ],
+  "seed": [
+   "15",
+   "noise_seed"
+  ],
+  "width": [
+   "104",
+   "width"
+  ],
+  "height": [
+   "104",
+   "height"
+  ],
+  "frames": [
+   "104",
+   "length"
+  ],
+  "fps": [
+   "91",
+   "fps"
+  ],
+  "output": "92",
+  "first_image": [
+   "114",
+   "image"
+  ],
+  "last_image": [
+   "115",
+   "image"
+  ],
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 20
+ },
+ "01-h3-base/h3-ref2v": {
+  "prompt": [
+   "136",
+   "prompt"
+  ],
+  "seed": [
+   "129",
+   "noise_seed"
+  ],
+  "width": [
+   "136",
+   "width"
+  ],
+  "height": [
+   "136",
+   "height"
+  ],
+  "frames": [
+   "136",
+   "length"
+  ],
+  "fps": [
+   "130",
+   "fps"
+  ],
+  "output": "92",
+  "ref_images": [
+   [
+    "137",
+    "image"
+   ],
+   [
+    "139",
+    "image"
+   ],
+   [
+    "150",
+    "image"
+   ]
+  ],
+  "ref_image_size": [
+   "136",
+   "ref_image_size"
+  ],
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 20
+ },
+ "01-h3-base/h3-ref2v-voice": {
+  "prompt": [
+   "136",
+   "prompt"
+  ],
+  "seed": [
+   "129",
+   "noise_seed"
+  ],
+  "width": [
+   "136",
+   "width"
+  ],
+  "height": [
+   "136",
+   "height"
+  ],
+  "frames": [
+   "136",
+   "length"
+  ],
+  "fps": [
+   "130",
+   "fps"
+  ],
+  "output": "92",
+  "ref_images": [
+   [
+    "137",
+    "image"
+   ],
+   [
+    "139",
+    "image"
+   ],
+   [
+    "150",
+    "image"
+   ]
+  ],
+  "ref_image_size": [
+   "136",
+   "ref_image_size"
+  ],
+  "ref_audios": [
+   [
+    "151",
+    "audio"
+   ],
+   [
+    "158",
+    "audio"
+   ]
+  ],
+  "audio_mode": "timbre",
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 20
+ },
+ "01-h3-base/h3-ref2v-track": {
+  "prompt": [
+   "136",
+   "prompt"
+  ],
+  "seed": [
+   "129",
+   "noise_seed"
+  ],
+  "width": [
+   "136",
+   "width"
+  ],
+  "height": [
+   "136",
+   "height"
+  ],
+  "frames": [
+   "136",
+   "length"
+  ],
+  "fps": [
+   "130",
+   "fps"
+  ],
+  "output": "92",
+  "ref_images": [
+   [
+    "137",
+    "image"
+   ],
+   [
+    "139",
+    "image"
+   ],
+   [
+    "150",
+    "image"
+   ]
+  ],
+  "ref_image_size": [
+   "136",
+   "ref_image_size"
+  ],
+  "ref_audios": [
+   [
+    "151",
+    "audio"
+   ]
+  ],
+  "audio_mode": "track",
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 20
+ },
+ "02-h3-turbo/h3-turbo-t2v": {
+  "prompt": [
+   "104",
+   "prompt"
+  ],
+  "seed": [
+   "15",
+   "noise_seed"
+  ],
+  "width": [
+   "104",
+   "width"
+  ],
+  "height": [
+   "104",
+   "height"
+  ],
+  "frames": [
+   "104",
+   "length"
+  ],
+  "fps": [
+   "91",
+   "fps"
+  ],
+  "output": "92",
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 8
+ },
+ "02-h3-turbo/h3-turbo-i2v": {
+  "prompt": [
+   "104",
+   "prompt"
+  ],
+  "seed": [
+   "15",
+   "noise_seed"
+  ],
+  "width": [
+   "104",
+   "width"
+  ],
+  "height": [
+   "104",
+   "height"
+  ],
+  "frames": [
+   "104",
+   "length"
+  ],
+  "fps": [
+   "91",
+   "fps"
+  ],
+  "output": "92",
+  "first_image": [
+   "114",
+   "image"
+  ],
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 8
+ },
+ "02-h3-turbo/h3-turbo-flf2v": {
+  "prompt": [
+   "104",
+   "prompt"
+  ],
+  "seed": [
+   "15",
+   "noise_seed"
+  ],
+  "width": [
+   "104",
+   "width"
+  ],
+  "height": [
+   "104",
+   "height"
+  ],
+  "frames": [
+   "104",
+   "length"
+  ],
+  "fps": [
+   "91",
+   "fps"
+  ],
+  "output": "92",
+  "first_image": [
+   "114",
+   "image"
+  ],
+  "last_image": [
+   "115",
+   "image"
+  ],
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 8
+ },
+ "02-h3-turbo/h3-turbo-ref2v": {
+  "prompt": [
+   "136",
+   "prompt"
+  ],
+  "seed": [
+   "129",
+   "noise_seed"
+  ],
+  "width": [
+   "136",
+   "width"
+  ],
+  "height": [
+   "136",
+   "height"
+  ],
+  "frames": [
+   "136",
+   "length"
+  ],
+  "fps": [
+   "130",
+   "fps"
+  ],
+  "output": "92",
+  "ref_images": [
+   [
+    "137",
+    "image"
+   ],
+   [
+    "139",
+    "image"
+   ],
+   [
+    "150",
+    "image"
+   ]
+  ],
+  "ref_image_size": [
+   "136",
+   "ref_image_size"
+  ],
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 4
+ },
+ "02-h3-turbo/h3-turbo-ref2v-voice": {
+  "prompt": [
+   "136",
+   "prompt"
+  ],
+  "seed": [
+   "129",
+   "noise_seed"
+  ],
+  "width": [
+   "136",
+   "width"
+  ],
+  "height": [
+   "136",
+   "height"
+  ],
+  "frames": [
+   "136",
+   "length"
+  ],
+  "fps": [
+   "130",
+   "fps"
+  ],
+  "output": "92",
+  "ref_images": [
+   [
+    "137",
+    "image"
+   ],
+   [
+    "139",
+    "image"
+   ],
+   [
+    "150",
+    "image"
+   ]
+  ],
+  "ref_image_size": [
+   "136",
+   "ref_image_size"
+  ],
+  "ref_audios": [
+   [
+    "151",
+    "audio"
+   ],
+   [
+    "158",
+    "audio"
+   ]
+  ],
+  "audio_mode": "timbre",
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 4
+ },
+ "02-h3-turbo/h3-turbo-ref2v-track": {
+  "prompt": [
+   "136",
+   "prompt"
+  ],
+  "seed": [
+   "129",
+   "noise_seed"
+  ],
+  "width": [
+   "136",
+   "width"
+  ],
+  "height": [
+   "136",
+   "height"
+  ],
+  "frames": [
+   "136",
+   "length"
+  ],
+  "fps": [
+   "130",
+   "fps"
+  ],
+  "output": "92",
+  "ref_images": [
+   [
+    "137",
+    "image"
+   ],
+   [
+    "139",
+    "image"
+   ],
+   [
+    "150",
+    "image"
+   ]
+  ],
+  "ref_image_size": [
+   "136",
+   "ref_image_size"
+  ],
+  "ref_audios": [
+   [
+    "151",
+    "audio"
+   ]
+  ],
+  "audio_mode": "track",
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 4
+ },
+ "03-fasth3-v2/fasth3-t2v": {
+  "prompt": [
+   "104",
+   "prompt"
+  ],
+  "seed": [
+   "15",
+   "noise_seed"
+  ],
+  "width": [
+   "104",
+   "width"
+  ],
+  "height": [
+   "104",
+   "height"
+  ],
+  "frames": [
+   "104",
+   "length"
+  ],
+  "fps": [
+   "91",
+   "fps"
+  ],
+  "output": "92",
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 8
+ },
+ "03-fasth3-v2/fasth3-i2v": {
+  "prompt": [
+   "104",
+   "prompt"
+  ],
+  "seed": [
+   "15",
+   "noise_seed"
+  ],
+  "width": [
+   "104",
+   "width"
+  ],
+  "height": [
+   "104",
+   "height"
+  ],
+  "frames": [
+   "104",
+   "length"
+  ],
+  "fps": [
+   "91",
+   "fps"
+  ],
+  "output": "92",
+  "first_image": [
+   "136",
+   "image"
+  ],
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 8
+ },
+ "03-fasth3-v2/fasth3-flf2v": {
+  "prompt": [
+   "104",
+   "prompt"
+  ],
+  "seed": [
+   "15",
+   "noise_seed"
+  ],
+  "width": [
+   "104",
+   "width"
+  ],
+  "height": [
+   "104",
+   "height"
+  ],
+  "frames": [
+   "104",
+   "length"
+  ],
+  "fps": [
+   "91",
+   "fps"
+  ],
+  "output": "92",
+  "first_image": [
+   "136",
+   "image"
+  ],
+  "last_image": [
+   "115",
+   "image"
+  ],
+  "sizes": {
+   "16:9": [
+    1344,
+    768
+   ],
+   "9:16": [
+    768,
+    1344
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 17,
+   "extra": 5
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   5,
+   15
+  ],
+  "steps": 8
+ },
+ "04-ltx-2.5/ltx25-t2v": {
+  "prompt": [
+   "364",
+   "text"
+  ],
+  "negative": [
+   "373",
+   "text"
+  ],
+  "seed": [
+   "339",
+   "noise_seed"
+  ],
+  "width": [
+   "372",
+   "value"
+  ],
+  "height": [
+   "360",
+   "value"
+  ],
+  "fps": [
+   "361",
+   "value"
+  ],
+  "frames": [
+   "1001",
+   "value"
+  ],
+  "output": "75",
+  "sizes": {
+   "16:9": [
+    1280,
+    704
+   ],
+   "9:16": [
+    704,
+    1280
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 8,
+   "extra": 1
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   2,
+   10
+  ],
+  "steps": "8 + 3"
+ },
+ "04-ltx-2.5/ltx25-i2v": {
+  "prompt": [
+   "364",
+   "text"
+  ],
+  "negative": [
+   "373",
+   "text"
+  ],
+  "seed": [
+   "339",
+   "noise_seed"
+  ],
+  "width": [
+   "372",
+   "value"
+  ],
+  "height": [
+   "360",
+   "value"
+  ],
+  "fps": [
+   "361",
+   "value"
+  ],
+  "frames": [
+   "1001",
+   "value"
+  ],
+  "output": "75",
+  "first_image": [
+   "395",
+   "image"
+  ],
+  "sizes": {
+   "16:9": [
+    1280,
+    704
+   ],
+   "9:16": [
+    704,
+    1280
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 8,
+   "extra": 1
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   2,
+   10
+  ],
+  "steps": "8 + 3"
+ },
+ "04-ltx-2.5/ltx25-flf2v": {
+  "prompt": [
+   "222",
+   "text"
+  ],
+  "negative": [
+   "217",
+   "text"
+  ],
+  "seed": [
+   "196",
+   "noise_seed"
+  ],
+  "width": [
+   "215",
+   "value"
+  ],
+  "height": [
+   "216",
+   "value"
+  ],
+  "fps": [
+   "205",
+   "value"
+  ],
+  "frames": [
+   "1001",
+   "value"
+  ],
+  "output": "68",
+  "first_image": [
+   "31",
+   "image"
+  ],
+  "last_image": [
+   "39",
+   "image"
+  ],
+  "sizes": {
+   "16:9": [
+    1280,
+    704
+   ],
+   "9:16": [
+    704,
+    1280
+   ],
+   "1:1": [
+    768,
+    768
+   ]
+  },
+  "frames_rule": {
+   "step": 8,
+   "extra": 1
+  },
+  "default_fps": 24,
+  "seconds_range": [
+   2,
+   10
+  ],
+  "steps": "8 + 3"
+ },
+ "05-wan22-14b/wan22-i2v-lightning": {
+  "prompt": [
+   "93",
+   "text"
+  ],
+  "negative": [
+   "89",
+   "text"
+  ],
+  "seed": [
+   "86",
+   "noise_seed"
+  ],
+  "width": [
+   "98",
+   "width"
+  ],
+  "height": [
+   "98",
+   "height"
+  ],
+  "frames": [
+   "98",
+   "length"
+  ],
+  "fps": [
+   "94",
+   "fps"
+  ],
+  "first_image": [
+   "97",
+   "image"
+  ],
+  "output": "108",
+  "sizes": {
+   "16:9": [
+    1280,
+    720
+   ],
+   "9:16": [
+    720,
+    1280
+   ],
+   "1:1": [
+    720,
+    720
+   ]
+  },
+  "frames_rule": {
+   "step": 4,
+   "extra": 1
+  },
+  "default_fps": 16,
+  "seconds_range": [
+   2,
+   5
+  ],
+  "steps": 4
+ },
+ "05-wan22-14b/wan22-flf2v-lightning": {
+  "prompt": [
+   "90",
+   "text"
+  ],
+  "negative": [
+   "78",
+   "text"
+  ],
+  "seed": [
+   "84",
+   "noise_seed"
+  ],
+  "width": [
+   "81",
+   "width"
+  ],
+  "height": [
+   "81",
+   "height"
+  ],
+  "frames": [
+   "81",
+   "length"
+  ],
+  "fps": [
+   "86",
+   "fps"
+  ],
+  "first_image": [
+   "80",
+   "image"
+  ],
+  "last_image": [
+   "89",
+   "image"
+  ],
+  "output": "83",
+  "sizes": {
+   "16:9": [
+    1280,
+    720
+   ],
+   "9:16": [
+    720,
+    1280
+   ],
+   "1:1": [
+    720,
+    720
+   ]
+  },
+  "frames_rule": {
+   "step": 4,
+   "extra": 1
+  },
+  "default_fps": 16,
+  "seconds_range": [
+   2,
+   5
+  ],
+  "steps": 4
+ },
+ "05-wan22-14b/wan22-i2v-full": {
+  "prompt": [
+   "93",
+   "text"
+  ],
+  "negative": [
+   "89",
+   "text"
+  ],
+  "seed": [
+   "86",
+   "noise_seed"
+  ],
+  "width": [
+   "98",
+   "width"
+  ],
+  "height": [
+   "98",
+   "height"
+  ],
+  "frames": [
+   "98",
+   "length"
+  ],
+  "fps": [
+   "94",
+   "fps"
+  ],
+  "first_image": [
+   "97",
+   "image"
+  ],
+  "output": "108",
+  "sizes": {
+   "16:9": [
+    1280,
+    720
+   ],
+   "9:16": [
+    720,
+    1280
+   ],
+   "1:1": [
+    720,
+    720
+   ]
+  },
+  "frames_rule": {
+   "step": 4,
+   "extra": 1
+  },
+  "default_fps": 16,
+  "seconds_range": [
+   2,
+   5
+  ],
+  "steps": 20
+ },
+ "05-wan22-14b/wan22-flf2v-full": {
+  "prompt": [
+   "90",
+   "text"
+  ],
+  "negative": [
+   "78",
+   "text"
+  ],
+  "seed": [
+   "84",
+   "noise_seed"
+  ],
+  "width": [
+   "81",
+   "width"
+  ],
+  "height": [
+   "81",
+   "height"
+  ],
+  "frames": [
+   "81",
+   "length"
+  ],
+  "fps": [
+   "86",
+   "fps"
+  ],
+  "first_image": [
+   "80",
+   "image"
+  ],
+  "last_image": [
+   "89",
+   "image"
+  ],
+  "output": "83",
+  "sizes": {
+   "16:9": [
+    1280,
+    720
+   ],
+   "9:16": [
+    720,
+    1280
+   ],
+   "1:1": [
+    720,
+    720
+   ]
+  },
+  "frames_rule": {
+   "step": 4,
+   "extra": 1
+  },
+  "default_fps": 16,
+  "seconds_range": [
+   2,
+   5
+  ],
+  "steps": 20
+ }
+}

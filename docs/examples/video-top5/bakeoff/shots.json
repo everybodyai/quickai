@@ -1,0 +1,168 @@
+{
+ "note": "Six shots of the series 'Shikari Shambu' of the user's bampu (a copy of its database, read 2026-10-13; the script was written by the demo AI, so these show the SHAPE of a Bampu shot, not the final writing). aspect is 16:9 unless a shot says another.",
+ "series": {
+  "title": "Shikari Shambu",
+  "language": "en",
+  "style": "Classic Indian children's comic-magazine cartoon: bold ink outlines, flat saturated colours, lush green jungle, exaggerated slapstick expressions",
+  "aspect": "16:9"
+ },
+ "cast": {
+  "Shikari Shambu": {
+   "age_range": "a middle-aged Indian man",
+   "marks": "a huge cream pith helmet (sola topi) pulled low over his face, with a big bushy moustache underneath that curls up when he feels brave and droops when he is scared",
+   "outfit": "a green shirt and green shorts, brown boots, an old rifle slung on his back that he never fires, and a camera on a strap round his neck",
+   "eye_color": null,
+   "hair_color": null,
+   "hair_style": null,
+   "voice_style": "a nervous, squeaky voice that turns boastful when he is praised"
+  },
+  "Jeeva Jeevantak": {
+   "age_range": "a tall, broad Indian man in his forties",
+   "marks": "a waxed black moustache and a shiny gold front tooth",
+   "outfit": "a tan safari suit with many pockets, polished black boots and a big shiny net-gun",
+   "eye_color": "brown",
+   "hair_color": "black",
+   "hair_style": "slicked back",
+   "voice_style": "a loud, booming, boastful voice"
+  }
+ },
+ "places": {
+  "Chandanpur village square": "a dusty village square with a big banyan tree, a stone well, a tea stall and clay-walled houses",
+  "Sundar Van jungle trail": "a lush Indian sal forest with a winding dirt trail, hanging vines, tall trees, birdsong and dappled light",
+  "The dry waterhole": "a wide clearing with a cracked-mud waterhole, a dead tree at its edge; later full of clear water",
+  "Rani's cave": "a shady cave in a rocky hillside with a flat stone ledge where the tigress sleeps"
+ },
+ "shots": [
+  {
+   "id": "s1",
+   "why": "establishing shot, no cast, a caption",
+   "source_shot": "sht_01M4C22C3M38NK5F5SK71XC9HH",
+   "summary": "Sundar Van sunrise",
+   "seconds": 8,
+   "camera": "Slow crane-up",
+   "place": "Sundar Van jungle trail",
+   "cast": [],
+   "seen": "Golden sunrise over the misty green hills of Sundar Van, birds lifting from the treetops and shafts of light through the canopy",
+   "heard": "Dawn chorus, a flute theme",
+   "lines": [
+    {
+     "kind": "caption",
+     "speaker": null,
+     "manner": "",
+     "text": "Sundar Van, India"
+    }
+   ]
+  },
+  {
+   "id": "s2",
+   "why": "slapstick action, one character, no dialogue",
+   "source_shot": "sht_01M4C22C5YYT53MR73G5ZVXX22",
+   "summary": "Creeping Jeeva",
+   "seconds": 8,
+   "camera": "Low shot from behind a rock",
+   "place": "The dry waterhole",
+   "cast": [
+    "Jeeva Jeevantak"
+   ],
+   "seen": "Behind a big rock higher up the slope Jeeva creeps forward on tiptoe, the net-gun raised, flour still on his moustache",
+   "heard": "Slow footsteps, a twig snapping",
+   "lines": []
+  },
+  {
+   "id": "s3",
+   "why": "one short line, one character (dazed)",
+   "source_shot": "sht_01M4C22C602ZMC6QZF9HSVA9E4",
+   "summary": "Dizzy",
+   "seconds": 6,
+   "camera": "Medium shot",
+   "place": "Rani's cave",
+   "cast": [
+    "Shikari Shambu"
+   ],
+   "seen": "Shambu sits on the cave floor, dizzy, stars circling his helmet, with the camera hanging by its strap",
+   "heard": "Cartoon tweeting stars",
+   "lines": [
+    {
+     "kind": "dialogue",
+     "speaker": "Shikari Shambu",
+     "manner": "dazed",
+     "text": "Are we... at the waterhole?"
+    }
+   ]
+  },
+  {
+   "id": "s4",
+   "why": "one long boasting line (17 words), one character",
+   "source_shot": "sht_01M4C22C3V9ZN0A6SFNCKN3SWJ",
+   "summary": "The rival arrives",
+   "seconds": 9,
+   "camera": "Low-angle hero shot",
+   "place": "Chandanpur village square",
+   "cast": [
+    "Jeeva Jeevantak"
+   ],
+   "seen": "Jeeva Jeevantak, in a tan safari suit with a net-gun on his shoulder, leaps from the red jeep and flashes his gold front tooth",
+   "heard": "A fanfare of the horn",
+   "lines": [
+    {
+     "kind": "dialogue",
+     "speaker": "Jeeva Jeevantak",
+     "manner": "booming",
+     "text": "Make way! Jeeva Jeevantak has arrived! The Ghost Tiger is as good as caught!"
+    }
+   ]
+  },
+  {
+   "id": "s5",
+   "why": "two characters, one line each",
+   "source_shot": "sht_01M4C22C517XZ7AXBZY79P69NC",
+   "summary": "Both gulp",
+   "seconds": 6,
+   "camera": "Close-up two-shot",
+   "place": "Chandanpur village square",
+   "cast": [
+    "Shikari Shambu",
+    "Jeeva Jeevantak"
+   ],
+   "seen": "Shambu and Jeeva each gulp loudly and look at each other with forced smiles, their moustaches twitching",
+   "heard": "A synchronized gulp",
+   "lines": [
+    {
+     "kind": "dialogue",
+     "speaker": "Shikari Shambu",
+     "manner": "weakly",
+     "text": "Together."
+    },
+    {
+     "kind": "dialogue",
+     "speaker": "Jeeva Jeevantak",
+     "manner": "weakly",
+     "text": "How lovely."
+    }
+   ]
+  },
+  {
+   "id": "s6",
+   "why": "the same shot as s3 in a vertical frame (9:16), for a short",
+   "source_shot": "sht_01M4C22C602ZMC6QZF9HSVA9E4",
+   "summary": "Dizzy",
+   "seconds": 6,
+   "camera": "Medium shot",
+   "place": "Rani's cave",
+   "cast": [
+    "Shikari Shambu"
+   ],
+   "seen": "Shambu sits on the cave floor, dizzy, stars circling his helmet, with the camera hanging by its strap",
+   "heard": "Cartoon tweeting stars",
+   "lines": [
+    {
+     "kind": "dialogue",
+     "speaker": "Shikari Shambu",
+     "manner": "dazed",
+     "text": "Are we... at the waterhole?"
+    }
+   ],
+   "aspect": "9:16"
+  }
+ ]
+}

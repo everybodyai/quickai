@@ -453,7 +453,7 @@ environment-based settings, and the UI says so.
 ### 6.10 Module layout, features, dependencies
 
 ```
-crates/quickai/src/
+crates/quickai-runtime/src/
 ├── main.rs
 ├── app/                       UI only; no backend names outside panels/
 │   ├── mod.rs                 state and frame loop

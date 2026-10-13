@@ -481,6 +481,78 @@ Both keys may be given; then both must hold. One at least is needed.
 | `log_matches` | regular expression | Looked for in the lines of the log; a pattern that does not compile is an error when the document loads. |
 | `exited_during` | `starting` or `running` | The run ended while it was in this state. |
 
+## `[[prerequisite]]`
+
+Something the computer has to have for a configuration of the engine to work, how to tell whether it has it, and how to put it right. A configuration says which of them it needs (`[[needs]] system = "<id>"`); the packages are named here and nowhere else, because a package that is installed as the administrator must not come from a file that was given away. `quickai-run` looks at the computer before it fetches anything, says what is missing and the exact command that brings it, and installs the packages only when it is told to (`--install-system-packages`).
+
+| Key | Value | Meaning |
+|---|---|---|
+| `id` | text | What a configuration calls it. Letters, digits and `_`. Required. |
+| `label` | text | What a sentence calls it (`a C compiler`), up to 120 characters. Required. |
+| `when` | condition | Only on a computer where this holds (`os == 'linux'`); always when left out. |
+| `check` | table, below | How to tell. Required. |
+| `fix` | table, below | The packages that bring it, by package manager. Left out, the program only says what is missing, and `hint` what to do. |
+| `hint` | text | What to tell the person when nothing here can put it right, or when it did not help, up to 600 characters. |
+
+## `[[prerequisite]]` `check`, `use = "program"`
+
+One of the programs is on the computer, in a folder of the `PATH`, or the one a variable names is.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `use` | `program` | The kind of check. |
+| `any_of` | list of text | Names of programs, any of which will do (`["gcc", "clang"]`). Plain names, with no path. |
+| `env` | text | A variable that names the program instead (`CC`), as the tool that needs it reads it. When it is set and not empty it decides: the program it names must be there, and the packages of `fix` are not offered. |
+
+## `[[prerequisite]]` `check`, `use = "python_header"`
+
+A header file of Python is in the folder of Python's headers, for the Python the engine's environment is made with (the one the install will use, or the one the installed environment was made with). Only for an engine installed by `python_app`. The packages of `fix` are offered only when that Python is the system's.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `use` | `python_header` | The kind of check. |
+| `file` | text | The file, by its name alone (`Python.h`). |
+
+## `[[prerequisite]]` `check`, `use = "python_module"`
+
+A module of Python's own library can be imported by the Python the engine's environment is made with: `ensurepip`, which Debian and Ubuntu leave out of the Python and put in the package `python3.12-venv`, without which no environment can be made. Only for an engine installed by `python_app`; made before the install with the Python the install will use, and an environment that exists was made, so it passes. The packages of `fix` are offered only when that Python is the system's.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `use` | `python_module` | The kind of check. |
+| `module` | text | The module, as Python names it (`ensurepip`). |
+
+## `[[prerequisite]]` `check`, `use = "nvidia_driver"`
+
+The driver of an NVIDIA card is of this version or a newer, read from the driver's own file or from `nvidia-smi`. A driver is not installed by this program: say what to do in `hint`.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `use` | `nvidia_driver` | The kind of check. |
+| `at_least` | text | The version, as numbers with dots between them (`580`, `580.65`), compared number by number. |
+
+## `[[prerequisite]]` `check`, `use = "python_script"`
+
+A script of the application's own files is run by the Python of the engine's environment, with the environment the engine is started with, and passes when it ends with status 0. What it prints is shown when it fails. It tests that the installed environment works, so it is run after the install and before the engine is started. Only for an engine installed by `python_app`.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `use` | `python_script` | The kind of check. |
+| `asset` | text | The script, as a name of the application's own files, ending in `.py` (`comfyui/selftest/triton_kernel.py`). |
+| `timeout` | duration | How long it may take (default `120s`). |
+
+## `[[prerequisite]]` `fix`
+
+The packages that bring a prerequisite, for each package manager that has them. Plain package names only. `${python.version}` (`3.12`) and `${python.digits}` (`312`) stand for the Python of the environment. Only for `program`, `python_module` and `python_header`.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `apt` | list of text | Debian and Ubuntu, installed with `apt-get` (its list of packages is refreshed first). |
+| `dnf` | list of text | Fedora and Red Hat, installed with `dnf`. |
+| `zypper` | list of text | openSUSE, installed with `zypper`. |
+| `pacman` | list of text | Arch, installed with `pacman`. |
+| `apk` | list of text | Alpine, installed with `apk`. |
+
 ## `[acquire]`
 
 Where builds of the engine come from and where they are kept. It configures the runtime manager in Settings.

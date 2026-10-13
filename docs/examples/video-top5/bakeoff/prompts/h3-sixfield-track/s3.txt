@@ -1,0 +1,22 @@
+subject_definitions:
+<Subject 1> is Shikari Shambu, a middle-aged Indian man, a huge cream pith helmet (sola topi) pulled low over his face, with a big bushy moustache underneath that curls up when he feels brave and droops when he is scared, wearing a green shirt and green shorts, brown boots, an old rifle slung on his back that he never fires, and a camera on a strap round his neck, shown in <Picture 1>.
+<Subject 2> is the place, Rani's cave: a shady cave in a rocky hillside with a flat stone ledge where the tigress sleeps, shown in <Picture 2>.
+<Audio 1> is the recorded line of <Subject 1>, to be used as it is.
+
+summary:
+[reference generation + audio reuse] A 6-second medium shot in <Subject 2>: <Subject 1> sits on the cave floor, dizzy, stars circling his helmet, with the camera hanging by its strap.
+
+retention_analysis:
+<Subject 1> (in [Shot 1]): fully_preserved - face, costume and colours as drawn.
+<Subject 2> (behind the action in [Shot 1]): partially_preserved - the layout and look of the place.
+<Audio 1>: fully_copy - the recorded line, as it is.
+
+detailed_description:
+Classic Indian children's comic-magazine cartoon, 2D-animated: bold ink outlines, flat saturated colours, lush green jungle, exaggerated slapstick expressions.
+[Shot 1] Medium shot, in <Subject 2>. <Subject 1> sits on the cave floor, dizzy, stars circling his helmet, with the camera hanging by its strap. <Subject 1> speaks the words of <Audio 1> with the mouth in time with them.
+
+overall_soundscape:
+Cartoon tweeting stars.
+
+non_diegetic_music:
+N/A

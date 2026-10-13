@@ -16,7 +16,7 @@ made_with = "QuickAI 0.1.0"
 made_on = { os = "linux", arch = "x86_64", gpu = ["amd"], memory_gb = 32 }
 
 [runtime]
-build = "v0.40.0"
+build = "v0.40.0-ollama-linux-amd64"   # a build as the list of builds names it: the release and the file it comes in
 
 [[model]]
 role = "main"

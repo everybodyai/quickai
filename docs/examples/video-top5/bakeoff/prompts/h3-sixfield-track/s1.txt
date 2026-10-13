@@ -1,0 +1,18 @@
+subject_definitions:
+<Subject 1> is the place, Sundar Van jungle trail: a lush Indian sal forest with a winding dirt trail, hanging vines, tall trees, birdsong and dappled light, shown in <Picture 1>.
+
+summary:
+[reference generation] An 8-second slow crane-up in <Subject 1>: Golden sunrise over the misty green hills of Sundar Van, birds lifting from the treetops and shafts of light through the canopy.
+
+retention_analysis:
+<Subject 1> (behind the action in [Shot 1]): partially_preserved - the layout and look of the place.
+
+detailed_description:
+Classic Indian children's comic-magazine cartoon, 2D-animated: bold ink outlines, flat saturated colours, lush green jungle, exaggerated slapstick expressions.
+[Shot 1] Slow crane-up, in <Subject 1>. Golden sunrise over the misty green hills of Sundar Van, birds lifting from the treetops and shafts of light through the canopy.
+
+overall_soundscape:
+Dawn chorus, a flute theme.
+
+non_diegetic_music:
+N/A

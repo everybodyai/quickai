@@ -67,14 +67,15 @@ made_with = "QuickAI 0.1.0"
 made_on = { os = "linux", arch = "x86_64", gpu = ["amd"], memory_gb = 32 }    # coarse on purpose: nothing that names a person or a computer
 
 [runtime]                                 # the program as who it is, never as where it is
-build = "v0.40.0"                         # the label of a build in the manager's list
+build = "v0.40.0-ollama-linux-amd64"      # the label of a build in the manager's list: the release and the file
 version = "0.40.0"                        # what the program said it was; for the notes
 
 [[model]]
 role = "main"
 ollama = "qwen3-vl:8b"                    # one source: a name the engine takes (the key is one of its `accepts.refs`), a `catalog` id (+ `file`), or a `file`. Never a path
 size = 6140000000                         # to recognise it by, and to say what getting it costs
-# from = "huggingface:owner/repo"         # for a file that is no entry of the list: where it can be had, said and never fetched from by itself
+# from = "huggingface:owner/repo"         # for a file that is no entry of the list: where it can be had; the window says it and fetches on a click, `quickai-run` fetches from it (headless.md, section 6)
+# path = "VAE/x.safetensors"              # ... the file in that repository (left out: at the top, called `file`); `revision`, `into` and `url` are there too
 
 [values.ollama]                           # field values by field id; only those that differ from the document's default
 ctx_size = 16384
@@ -96,8 +97,9 @@ Every key is on the generated page [reference/profile-fields.md](reference/profi
 | `name` | any text up to 60 characters (control and direction characters are taken out). The file's id is made from it (lower case, letters, digits, `-`; a number is added if it is taken); the name is never used as a path |
 | `[meta]` | `note` (typed by the person who exports), `made_with`, `made_on`. No user name, host name or folder is ever written |
 | `engine` | an engine a person can choose; a companion is not one |
-| `[runtime]` | `build`, `version`. Absent: the program this computer uses by default (for llama.cpp, the one the package ships) |
-| `[[model]]` | `role`, one source (§5), `size`, `sha256`, `name` for people, `from`. Several are allowed; the first is the one the engine loads |
+| `[runtime]` | `build`, `version`. Absent: the program this computer uses by default (for llama.cpp, the one the package ships). `[runtime.<program>]` pins the build of a program that goes with the engine (`[runtime.openwebui]`): only `quickai-run` installs from it |
+| `[[model]]` | `role`, one source (§5), `size`, `sha256`, `name` for people, and for a file where it can be had from: `from`, `path`, `revision`, `into`, or `url`. Several are allowed; the first is the one the engine loads |
+| `[[needs]]` | what whoever runs the file has to give besides it: a login (`token`), a setting of a computer (`setting`), a variable of a program's environment (`env`, and `for`), each with `why` (headless.md, section 7); and what the computer has to have (`system`: the id of a prerequisite of the engine's document, such as `c_compiler`, which the document says how to look for and what brings: headless.md, section 12). Only `quickai-run` asks for them; the window keeps them when it saves |
 | `[values.<engine>]` | field values by field id, for the engine and for its companions |
 | `[app]` | `traffic_proxy` |
 | unknown keys | kept when the file is written again (at the top and in `[meta]`) and told as a warning, as in every document |
@@ -166,10 +168,16 @@ A configuration says *who* a model is, never where it is on a disk.
 | `catalog = "lfm2.5-vl-450m"`, `file = "...Q4_K_M.gguf"` | an entry of the recommended list and one of its files; its projector follows from the entry | the file is in a models folder at the size the entry pins | the note has **Get**, which is the Recommended window's own download (with the projector when the list pairs it), after a click |
 | `file = "name.gguf"`, `size`, `from` | a file of the models folder, by name only (a name with a separator, `..`, a drive or a direction character is refused) | a file of that name and size | `from` known: the note says where it can be had; **Look up online** with the repository's name in the box. Not known: the same button with the file's name, and the note says its source is not known |
 
+The third form says where the file can be had from, because **a configuration never carries a model** and a computer that has not got the file must be able to get it: `from` (a kind of place and a name in it:
+`huggingface:owner/repo`), `path` (the file in that repository, when it is not at the top), `revision` (a branch, a tag or a commit; a commit is the same file for ever), `into` (the folder of the models folder, for an engine that keeps its
+files by the folder: it is one the engine's document names) or, instead of `from`, `url` (`https://`, no login in it, no fragment; this computer's own over `http`). None of them takes a path of a computer. The window **says** it (the note has
+the repository and the file in it) and fetches on a click, as it always did; `quickai-run` fetches from it, after a file from outside has been read ([headless.md](headless.md), section 6). The recommended list keeps its own way, `catalog`.
+
 An export finds a `catalog` entry by itself: the file's name and size are looked for in the loaded catalogs, which pin them. **A fetched file remembers where it
 came from**: when a download of files ends, the application writes the name, the size and the place (`huggingface:owner/repo`) into
 `model-sources.json` in its own data directory. (Not beside the weights: no models folder gets a file it did not have, and the tests of the folders'
-contents are as they were.) The export puts it in the file as `from`, a hint that is said and never fetched from by itself; a file fetched before, or put there by hand, is
+contents are as they were.) With the place it keeps where in the repository the file is when that is not the top, and the revision when it is not `main`, so that a file of a folder (the VAE of Wan 2.2 is in `VAE/`) is
+exported with the `path` that fetches it. The export puts it in the file as `from` (and `path`, `revision`), which the window says and never fetches from by itself; a file fetched before, or put there by hand, is
 exported by its name and size and the note says its source is not known.
 
 **Builds.** `runtime.build` is the label of a build in the manager's list (the engine's label rule makes it from the release and the file). Choosing the
@@ -267,8 +275,9 @@ Two more notes wait for the engine's `--version` and `--help` to be asked (WP4.4
 
 A configuration comes from a stranger as often as from the person. The threat is the file, and the answers are in the design, not in a prompt.
 
-* **It is data.** The `profile` kind is data-tier: it can pick things the registry already knows and cannot name a program, a host or
-  an address to fetch from. A model is a name, a catalog id or a file name (and `from`, which is said and never fetched from); a build is a label of an installed build.
+* **It is data.** The `profile` kind is data-tier: it can pick things the registry already knows and cannot name a program or a host to run. A model is a name, a catalog id or a file name, and may say where the file can be had from (`from` and
+  its `path` and `revision`, or an `https` address without a login), which the window says and `quickai-run` fetches from only after the person has read it (a file from outside; C122, C125); a build is a label of an installed build. The model is never in the file, and
+  no key takes a path of a computer.
 * **Free text is looked at.** Everything that becomes a command-line word or an environment entry is shown in full and is taken only if ticked. Unticked,
   it is not stored. Lines the engine protects (`OLLAMA_HOST`, the isolation of C92) cannot be set by a file, as they cannot by the person; names on the vocabulary's
   deny-list, and a floor the code keeps that no document can lower (`LD_*`, `DYLD_*`, `PATH`, `PYTHON*`), are refused even when ticked, and again when a file that was put in the folder by hand is chosen.
@@ -365,8 +374,8 @@ closing it any way writes what was changed):
      6 settings differ from what you have set now.
      [ Use ] [ Save here ] [ Rename ] [ Duplicate ] [ Export... ] [ Delete ]
      Sets: Context size 16384, Extra environment ..., Open WebUI Port 3000
-     Program: v0.40.0
-     Warns  Made with v0.40.0, which is not installed here, and no build of this program is.   [ Look up builds ]
+     Program: v0.40.0-ollama-linux-amd64
+     Warns  Made with v0.40.0-ollama-linux-amd64, which is not installed here, and no build of this program is.   [ Look up builds ]
      Warns  Open WebUI is switched on and is not installed here.                               [ Set up ]
      Says   Ollama is not running, so it cannot be told whether qwen3-vl:8b is here. Start Ollama to see.
  Files that could not be used
@@ -408,7 +417,7 @@ quickai config docs profile                             # the reference page
 | C106 | **Choosing is refused while something runs or is fetched**, as the engine row is, and starts nothing. | The same rule the person already knows. Alternative: *Stop and switch* as a button, later |
 | C107 | **The sentence of a note is the vocabulary's and its level is the code's**, and the code keeps a floor of names a file may never set that no document can lower. | A document, which may come from anyone, must not turn a question into a statement, or take away the names that make a program load other code |
 | C108 | **A configuration that names no model does not mind which one is selected**, and a model it names that the window cannot hold is not a difference (`matches_run`). | The Default names none, and the application chooses a model on a first run: without it every fresh install showed the Default as modified, which the window found in its first run |
-| C109 | **Where a file was fetched from is kept in the data directory** (`model-sources.json`), and a configuration carries it as a hint (`from`), said and never fetched from by itself. | The plan said "in the record beside the weights"; that record is written for bundles and modes only, and a record for every download changes the folders that tests and people look at. A data-tier document must not name an address |
+| C109 | **Where a file was fetched from is kept in the data directory** (`model-sources.json`), and a configuration carries it as a hint (`from`), said and never fetched from by itself. | The plan said "in the record beside the weights"; that record is written for bundles and modes only, and a record for every download changes the folders that tests and people look at. A data-tier document must not name an address (changed for the headless program by C125: a file may say where its model can be had from; the window still fetches only on a click) |
 | C110 | **Deleting the configuration in use makes the Default the one in use and leaves the window as it is.** | Applying the Default would change what a person runs because they deleted a file. The plan said "chooses the Default" |
 | C111 | **The field that remembers a companion's first address is named by the companion's document** (`[engine] first_address_field`, a `hidden` field of the same document), not by the code. | The first version of the code said `first_ollama`; the source scan of the configuration code (A54) found an engine's name in it, and the same word was in the companion's own code. A document that names a field that does not exist or is not hidden is an error with its line; one that is not a companion's is a warning |
 | C112 | **The first start adopts what the person had set: the settings as the file had them, and a model only when they had chosen one.** | The window had picked a model for a person who never chose one, and the Default pinned it; with a file that was not the one of the recommended list the dot showed at once (found by the GUI suite, TC-CNF-002; A69) |
@@ -453,3 +462,15 @@ the theme; a Windows or macOS run (the paths are the platform's, nothing was run
 * A configuration that names an engine's field that is renamed in a later version: noted and ignored (`unknown_setting`), never an error, so old files keep opening.
 * The page has a section more under the title row, 44 pixels of it: the GUI suites that read the page by position were recalibrated, and the keywords that waited for a row that the whole-window read lost after the move (`Configuration:`, and with the tabs on the picker's `Refresh`) read the row of the section from a region of its own (TC-CNF-001, `Open Main Tab`); reading the window in bands every 50 pixels instead of 70 found the rows and lost the first line of every question, so it stays at 70.
 * A badge that appears while a person types: the section keeps the room for it, and A73 compares the places of everything before and after.
+
+## 11. Running one without a window
+
+`quickai-run up <configuration>` (WP4.18, [headless.md](headless.md)) takes the same file and does what the buttons of the notes do, one after the other:
+it installs the build the file names or the one its engine's document chooses, fetches the models, starts the engine and the program that goes with it, and
+stays until it is told to stop. It is the person typing its name that makes this different from rule 1 above (a configuration *selects*, the window
+installs only when a button is pressed): the program prints what it is going to do, and how big it is, before it does it (`quickai-run check` stops
+there), and a file from outside that asks about free text or wider access is not used unless `--accept-review` says so. It never writes the working
+state (`settings.json`) or the configurations of the person. For an engine that runs on its own (ComfyUI) the models are the file's `[[model]]` entries,
+put in the folders the engine looks in; the window writes one model when it exports (with the place, the path in the repository and the revision it fetched it at), so a set of files (the three of a video model)
+is written by hand, or kept by the window while its first model stays the first. What belongs to the computer that runs it (a folder, a login, a mirror, the variables of a program's environment, a copy of a file that is already there)
+is said by the person who runs it, in a file `quickai-run init` writes, and a configuration can say what it needs from them (`[[needs]]`): [headless.md](headless.md), sections 6 to 8.

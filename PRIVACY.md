@@ -113,6 +113,20 @@ install it through do their own data collection, independent of anything the app
   model you fetched can be had again, the app keeps `~/.quickai/model-sources.json`: the name and size of a file and the
   repository it was fetched from (`huggingface:owner/repo`), for the models you fetch from a look-up or from the
   recommended list; it holds no address and no account, and is never sent anywhere.
+- **The headless program.** `quickai-run` is the same application without the window, for a server. It contacts the same hosts for the
+  same things, but as one command and not one button at a time: `quickai-run up` (or `prepare`) reads a configuration you name and installs
+  the programs and fetches the models it needs, from the hosts above (GitHub for the builds, Hugging Face for model files, the Python
+  package index and PyTorch's for what ComfyUI and Open WebUI are made of). It prints what it is going to do, and how big it is, before it
+  does it, and `quickai-run check` prints that and does nothing. It contacts nothing else, listens on the loopback only, writes only
+  below `~/.quickai` (and, when you run `quickai-run configuration import`, your configurations, and when you run `quickai-run init`, the one
+  file you asked for, readable by you only), and a file from outside that asks to
+  set free text or wider access, or to fetch from a repository or an address that is not on the recommended list, is not used unless you pass
+  `--accept-review`. A configuration says where a model can be had from and never holds the model; where the files of a model come from is
+  yours to change (a file you have, a folder, another address, a mirror of the hub, no network at all). **A login you give** (`--hf-token`, `HF_TOKEN`
+  or an environment file for Hugging Face; `--github-token`, `GITHUB_TOKEN` for GitHub's list of builds) is sent to that site and to no other: not to the
+  host a hub sends a file on to, not to an address you name on another host, and not to anything the program starts. It is not printed, not in the
+  JSON, not in the ready file; the environment file `quickai-run init` writes is readable by you only. Other variables you give a program
+  (`--env`, `--set`) are passed to that program and are not printed when their names look like secrets.
 - **Models and builds you download or import.** Models are saved under `~/.quickai/models` (or the folder you pick
   in ⚙ Settings) and llama.cpp builds under `~/.quickai/llama-bin`; on Windows `.quickai` is in your user profile
   folder. Importing a local `.gguf` file creates a hard link or a copy there; the original is not changed or
