@@ -1484,6 +1484,10 @@ fn p3_a19_the_difference_is_a_list_of_settings_in_the_order_of_the_form() {
         size: None,
         sha256: None,
         from: None,
+        path: None,
+        revision: None,
+        url: None,
+        into: None,
     });
     with_all.traffic_proxy = Some(true);
     with_all.runtime.build = Some("b11007".into());
@@ -2120,6 +2124,10 @@ fn p3_a28_the_name_of_an_import_that_is_in_use_asks_and_what_will_change_is_said
         size: None,
         sha256: None,
         from: None,
+        path: None,
+        revision: None,
+        url: None,
+        into: None,
     });
     let list = changes(&r, &st, &first_run(), None, &many);
     assert_eq!(list.len(), 7);

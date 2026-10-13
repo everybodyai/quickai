@@ -29,6 +29,10 @@ pub struct EngineDoc {
     /// Advice to show when the log or the way the engine ended says what went wrong.
     #[serde(default, rename = "diagnostic")]
     pub diagnostics: Vec<DiagnosticRule>,
+    /// What the computer has to have for some configuration of this engine to work, how to tell, and how
+    /// to put it right. A configuration says which of them it needs (`[[needs]] system = "<id>"`).
+    #[serde(default, rename = "prerequisite")]
+    pub prerequisites: Vec<Prerequisite>,
     #[serde(default, rename = "field")]
     pub fields: Vec<Field>,
     /// How each kind of file that goes with a model (a projector) is attached to the program.
@@ -818,6 +822,197 @@ pub struct DiagnosticWhen {
     pub log_matches: Option<String>,
     /// The run ended while it was in this state (`starting`).
     pub exited_during: Option<String>,
+}
+
+/// One thing the computer has to have for a configuration of the engine to work: a program, a header
+/// file of Python, a driver of a graphics card, or a small test that the environment of the engine passes.
+/// It says how to tell whether the computer has it and, for what a package manager can bring, how to
+/// put it right. Whether a configuration needs it is for the configuration to say; the packages are for
+/// the document to name, because a package that is installed as the administrator must not come from a
+/// file that was given away.
+#[derive(Clone, Debug, Deserialize)]
+pub struct Prerequisite {
+    /// What a configuration calls it (`[[needs]] system = "c_compiler"`): letters, digits and `_`.
+    pub id: String,
+    /// What a sentence calls it (`a C compiler`).
+    pub label: String,
+    /// Only on a computer where this holds (`os == 'linux'`); always when left out.
+    pub when: Option<String>,
+    /// How to tell.
+    pub check: PrerequisiteCheck,
+    /// The packages that bring it, by package manager.
+    #[serde(default)]
+    pub fix: Fix,
+    /// What to tell the person when nothing here can put it right, or when it did not help: a sentence.
+    pub hint: Option<String>,
+}
+
+/// How a prerequisite is checked: a closed list, because each is a thing the program does to the computer.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(tag = "use", rename_all = "snake_case")]
+pub enum PrerequisiteCheck {
+    /// One of the programs is on the computer (on the `PATH`), or the one a variable names is.
+    Program {
+        /// Program names, any of which will do (`["gcc", "clang"]`).
+        any_of: Vec<String>,
+        /// A variable that names the program instead (`CC`), as the tool that needs it reads it.
+        env: Option<String>,
+    },
+    /// A header file of Python is in the folder of Python's headers, for the Python the engine's
+    /// environment is made with. It is a check of a `python_app` install, and is made before the install,
+    /// with the Python that install will use.
+    PythonHeader {
+        /// The file (`Python.h`).
+        file: String,
+    },
+    /// A module of Python's own library can be imported by the Python the engine's environment is made with
+    /// (`ensurepip`, which Debian and Ubuntu leave out of the Python and put in the package `python3.12-venv`:
+    /// without it no environment can be made). A check of a `python_app` install, made before the install with the
+    /// Python the install will use; an environment that exists was made, so it passes.
+    PythonModule {
+        /// The module (`ensurepip`).
+        module: String,
+    },
+    /// The driver of an NVIDIA card is of this version or a newer.
+    NvidiaDriver {
+        /// The version (`580`, or `580.65`): compared number by number.
+        at_least: String,
+    },
+    /// A script of the application's own files, run by the Python of the engine's environment, in the
+    /// environment the engine is started with. It passes when it ends with status 0. It is a test that the
+    /// installed environment works, so it is run after the install and before the engine is started.
+    PythonScript {
+        /// The script (`comfyui/selftest/triton_kernel.py`).
+        asset: String,
+        /// How long it may take (`180s`; default `120s`).
+        timeout: Option<String>,
+    },
+}
+
+/// The packages that bring a prerequisite, by package manager. In a name, `${python.version}` is the
+/// version of the Python of the environment (`3.12`) and `${python.digits}` the same without the dot
+/// (`312`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct Fix {
+    /// Debian and Ubuntu (`apt-get`).
+    #[serde(default)]
+    pub apt: Vec<String>,
+    /// Fedora and Red Hat (`dnf`).
+    #[serde(default)]
+    pub dnf: Vec<String>,
+    /// openSUSE (`zypper`).
+    #[serde(default)]
+    pub zypper: Vec<String>,
+    /// Arch (`pacman`).
+    #[serde(default)]
+    pub pacman: Vec<String>,
+    /// Alpine (`apk`).
+    #[serde(default)]
+    pub apk: Vec<String>,
+}
+
+/// The package managers a document names packages for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PackageManager {
+    Apt,
+    Dnf,
+    Zypper,
+    Pacman,
+    Apk,
+}
+
+impl PackageManager {
+    /// In the order they are looked for.
+    pub const ALL: [PackageManager; 5] = [
+        PackageManager::Apt,
+        PackageManager::Dnf,
+        PackageManager::Zypper,
+        PackageManager::Pacman,
+        PackageManager::Apk,
+    ];
+
+    /// The program, as it is typed.
+    pub fn program(self) -> &'static str {
+        match self {
+            PackageManager::Apt => "apt-get",
+            PackageManager::Dnf => "dnf",
+            PackageManager::Zypper => "zypper",
+            PackageManager::Pacman => "pacman",
+            PackageManager::Apk => "apk",
+        }
+    }
+
+    /// How long, in seconds, a program that installs waits for a lock that another process holds (the upgrades
+    /// a computer that is rented and left runs by itself, in its first hours above all) before it gives up with
+    /// the manager's own words.
+    pub const LOCK_WAIT_SECONDS: u64 = 120;
+
+    /// The commands that install `packages`, each a program and its words, in the order they are run: where
+    /// the manager keeps a list of packages that goes stale on a computer that is rented and left (apt's), it
+    /// is refreshed first. Nothing asks a question. These are the words a person types.
+    pub fn install_commands(self, packages: &[String]) -> Vec<Vec<String>> {
+        self.commands(packages, false)
+    }
+
+    /// The same commands as a program runs them. Where the manager can be told to wait for a lock another
+    /// process holds, instead of ending at once, the install is told to: apt's `-o DPkg::Lock::Timeout=120`
+    /// (measured with apt 2.8 and a process holding `/var/lib/dpkg/lock-frontend`: without the option
+    /// `apt-get install` ends at once with code 100 and `Could not get lock`; with it, it prints `Waiting for
+    /// cache lock` once a second and goes on when the lock is let go, or ends with `Unable to acquire the dpkg
+    /// frontend lock` when the time is up). It is on the install only: the refresh takes the lock of the
+    /// lists, which the option does not cover (with that lock held it ends at once, with the option or
+    /// without, and the install goes on with the list there is). A person who types the command sees the
+    /// manager's refusal and tries again, so `install_commands` does not carry the option. The other managers
+    /// are run as they are printed: what they do at a held lock was not looked at.
+    pub fn install_commands_to_run(self, packages: &[String]) -> Vec<Vec<String>> {
+        self.commands(packages, true)
+    }
+
+    fn commands(self, packages: &[String], waiting: bool) -> Vec<Vec<String>> {
+        let words = |head: &[&str]| -> Vec<String> {
+            head.iter()
+                .map(|w| w.to_string())
+                .chain(packages.iter().cloned())
+                .collect()
+        };
+        match self {
+            PackageManager::Apt => {
+                let wait = format!("DPkg::Lock::Timeout={}", Self::LOCK_WAIT_SECONDS);
+                let install = if waiting {
+                    words(&["apt-get", "install", "-y", "-o", &wait])
+                } else {
+                    words(&["apt-get", "install", "-y"])
+                };
+                vec![vec!["apt-get".to_string(), "update".to_string()], install]
+            }
+            PackageManager::Dnf => vec![words(&["dnf", "install", "-y"])],
+            PackageManager::Zypper => vec![words(&["zypper", "--non-interactive", "install"])],
+            PackageManager::Pacman => {
+                vec![words(&["pacman", "-S", "--needed", "--noconfirm"])]
+            }
+            PackageManager::Apk => vec![words(&["apk", "add"])],
+        }
+    }
+}
+
+impl Fix {
+    /// The packages for one manager, as the document names them.
+    pub fn packages(&self, manager: PackageManager) -> &[String] {
+        match manager {
+            PackageManager::Apt => &self.apt,
+            PackageManager::Dnf => &self.dnf,
+            PackageManager::Zypper => &self.zypper,
+            PackageManager::Pacman => &self.pacman,
+            PackageManager::Apk => &self.apk,
+        }
+    }
+
+    /// Whether the document names no package at all.
+    pub fn is_empty(&self) -> bool {
+        PackageManager::ALL
+            .iter()
+            .all(|m| self.packages(*m).is_empty())
+    }
 }
 
 /// One rule of the model box: when `when` holds (always, when it is left out) the input is pulled as

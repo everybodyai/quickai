@@ -50,6 +50,10 @@ pub struct ModelFacts {
     pub display: Option<String>,
     /// Where it was fetched from (`huggingface:owner/repo`), when the application remembers.
     pub source: Option<String>,
+    /// Where in that repository the file is, when it is not at the top (`VAE/Wan2.2_VAE.safetensors`).
+    pub path: Option<String>,
+    /// The branch, tag or commit it was fetched at, when it is not `main`.
+    pub revision: Option<String>,
 }
 
 /// Something of this computer that a configuration does not take with it.
@@ -164,6 +168,10 @@ fn model_pick(
                 size,
                 sha256: facts.and_then(|f| f.sha256.clone()),
                 from: None,
+                path: None,
+                revision: None,
+                url: None,
+                into: None,
             },
             true,
         );
@@ -183,6 +191,10 @@ fn model_pick(
                     .clone()
                     .or_else(|| facts.and_then(|f| f.sha256.clone())),
                 from: None,
+                path: None,
+                revision: None,
+                url: None,
+                into: None,
             },
             true,
         );
@@ -192,6 +204,13 @@ fn model_pick(
         .and_then(|f| f.source.clone())
         .filter(|s| super::valid_from(s));
     let known = from.is_some();
+    // where in the repository a file is only means something with the repository
+    let path = facts
+        .and_then(|f| f.path.clone())
+        .filter(|p| from.is_some() && super::valid_repo_path(p));
+    let revision = facts
+        .and_then(|f| f.revision.clone())
+        .filter(|r| from.is_some() && super::valid_revision(r));
     (
         ModelPick {
             role: "main".into(),
@@ -202,6 +221,10 @@ fn model_pick(
             size,
             sha256: facts.and_then(|f| f.sha256.clone()),
             from,
+            path,
+            revision,
+            url: None,
+            into: None,
         },
         known,
     )
@@ -270,6 +293,7 @@ pub fn capture(
             runtime: Runtime {
                 build: state.build.clone(),
                 version: None,
+                companions: BTreeMap::new(),
             },
             models,
             values,

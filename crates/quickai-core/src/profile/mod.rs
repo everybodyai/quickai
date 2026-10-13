@@ -10,6 +10,7 @@
 //! about them is the vocabulary's.
 
 pub mod check;
+pub mod environment;
 pub mod notes;
 pub mod screen;
 pub mod state;
@@ -17,7 +18,7 @@ pub mod state;
 use std::collections::BTreeMap;
 
 use crate::doc::engine::{Field, FieldType, Share};
-use crate::doc::profile::{AppDoc, MadeOnDoc, MetaDoc, ModelDoc, ProfileDoc, RuntimeDoc};
+use crate::doc::profile::{AppDoc, MadeOnDoc, MetaDoc, ModelDoc, NeedDoc, ProfileDoc, RuntimeDoc};
 use crate::doc::read_body;
 use crate::docpath::DocPath;
 use crate::plan::resolve::check_value;
@@ -34,6 +35,10 @@ pub const MAX_TEXT_BYTES: usize = 4096;
 /// The most settings, and the most models, one file may hold.
 pub const MAX_VALUES: usize = 512;
 pub const MAX_MODELS: usize = 8;
+/// The most things a file may say that whoever runs it has to give.
+pub const MAX_NEEDS: usize = 16;
+/// The most characters an address of a model may have.
+pub const MAX_URL_CHARS: usize = 2000;
 
 /// The key a setting has in a selection and in the working state: `<engine>.<field>`.
 pub fn value_key(engine: &str, field: &str) -> String {
@@ -56,6 +61,8 @@ pub struct Configuration {
     /// Settings by `<engine>.<field>`, only those the file gave and this version holds.
     pub values: BTreeMap<String, Value>,
     pub traffic_proxy: Option<bool>,
+    /// What whoever runs the file has to give besides it (`[[needs]]`).
+    pub needs: Vec<Need>,
     /// Keys at the top of the file that this version does not know, kept so that saving does not lose
     /// what a newer version wrote.
     pub extra: toml::Table,
@@ -82,6 +89,8 @@ pub struct MadeOn {
 pub struct Runtime {
     pub build: Option<String>,
     pub version: Option<String>,
+    /// The programs that go with the engine, by id (`openwebui`): the build of each that the file wants.
+    pub companions: BTreeMap<String, Runtime>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -96,6 +105,75 @@ pub struct ModelPick {
     /// Where it can be got from (`huggingface:owner/repo`), when it is a file that is no entry of the list
     /// and the application remembers where it was fetched from.
     pub from: Option<String>,
+    /// Where in that repository the file is, when it is not at the top (`split_files/vae/x.safetensors`).
+    pub path: Option<String>,
+    /// The branch, tag or commit of the repository (default `main`).
+    pub revision: Option<String>,
+    /// An address (`https://...`) the file can be fetched from, instead of `from`.
+    pub url: Option<String>,
+    /// The folder of the models folder the file is kept in (`vae`), when its engine finds files by folder.
+    pub into: Option<String>,
+}
+
+/// What a login is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Token {
+    Huggingface,
+    Github,
+}
+
+impl Token {
+    /// The word a file uses: `huggingface`, `github`.
+    pub fn word(self) -> &'static str {
+        match self {
+            Token::Huggingface => "huggingface",
+            Token::Github => "github",
+        }
+    }
+
+    fn named(word: &str) -> Option<Token> {
+        match word {
+            "huggingface" => Some(Token::Huggingface),
+            "github" => Some(Token::Github),
+            _ => None,
+        }
+    }
+}
+
+/// What whoever runs a configuration has to give besides the file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NeedKind {
+    /// A login for the site the files are fetched from.
+    Token(Token),
+    /// A setting that belongs to a computer, by `<engine>.<field>`.
+    Setting { key: String },
+    /// A variable of a program's environment.
+    Env { program: String, name: String },
+    /// Something the computer has to have, by the id of a prerequisite in the engine's document. Nobody
+    /// gives it: the program looks at the computer.
+    System { id: String },
+}
+
+/// One `[[needs]]`: what, why, and whether its value is a secret.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Need {
+    pub kind: NeedKind,
+    pub why: Option<String>,
+    /// A secret is never shown. A token always is one.
+    pub secret: bool,
+}
+
+impl Need {
+    /// What a sentence calls it: `comfyui.models_dir`, `WEBUI_SECRET_KEY` (for `openwebui`), `a Hugging Face token`.
+    pub fn label(&self) -> String {
+        match &self.kind {
+            NeedKind::Token(Token::Huggingface) => "a Hugging Face token".to_string(),
+            NeedKind::Token(Token::Github) => "a GitHub token".to_string(),
+            NeedKind::Setting { key } => key.clone(),
+            NeedKind::Env { program, name } => format!("{name} (for {program})"),
+            NeedKind::System { id } => id.clone(),
+        }
+    }
 }
 
 /// Who a model is, never where it is on a disk.
@@ -240,6 +318,130 @@ pub fn from_label(from: &str) -> String {
     }
 }
 
+/// The path of a file inside a repository: names of the kind a file has, joined by `/`, none of them
+/// `..`, at most eight of them and 300 characters.
+pub fn valid_repo_path(path: &str) -> bool {
+    !path.is_empty()
+        && path.chars().count() <= 300
+        && path.split('/').count() <= 8
+        && path.split('/').all(valid_file_name)
+}
+
+/// A branch, a tag or a commit: letters, digits, `.`, `_` and `-`, and nothing that climbs.
+pub fn valid_revision(revision: &str) -> bool {
+    !revision.is_empty()
+        && revision.len() <= 100
+        && revision != "."
+        && !revision.contains("..")
+        && revision
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+}
+
+/// Whether `host` is this computer's own.
+pub fn is_loopback_host(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "[::1]") || host.starts_with("127.")
+}
+
+/// The parts of an address that a configuration may hold: `https://host[:port]/path[?query]`, or
+/// `http://` for this computer's own. No sign-in in the address (`user:password@`), no fragment, no space
+/// or control character, at most `MAX_URL_CHARS`. `(secure, host, path-with-query)`.
+pub fn split_url(url: &str) -> Option<(bool, &str, &str)> {
+    split_url_with(url, false)
+}
+
+/// As `split_url`; `insecure_ok` lets `http://` stand for any host, for what a person says on their own
+/// command line (a configuration, which is given away, never may).
+pub fn split_url_with(url: &str, insecure_ok: bool) -> Option<(bool, &str, &str)> {
+    if url.chars().count() > MAX_URL_CHARS
+        || url.chars().any(|c| {
+            c.is_control() || c.is_whitespace() || is_direction(c) || "\\\"<>^`{|}#".contains(c)
+        })
+    {
+        return None;
+    }
+    let (secure, rest) = if let Some(rest) = url.strip_prefix("https://") {
+        (true, rest)
+    } else {
+        (false, url.strip_prefix("http://")?)
+    };
+    let end = rest.find(['/', '?']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(end);
+    if authority.is_empty() || authority.contains('@') {
+        return None;
+    }
+    let host = if authority.starts_with('[') {
+        let close = authority.find(']')?;
+        let (host, port) = authority.split_at(close + 1);
+        if !(port.is_empty() || (port.starts_with(':') && valid_port(&port[1..]))) {
+            return None;
+        }
+        host
+    } else {
+        let (host, port) = match authority.rsplit_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (authority, None),
+        };
+        if port.is_some_and(|p| !valid_port(p)) {
+            return None;
+        }
+        host
+    };
+    let bracketed = host.len() > 2 && host.starts_with('[');
+    let named = !host.is_empty()
+        && !host.starts_with(['.', '-'])
+        && !host.ends_with(['.', '-'])
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".-".contains(c));
+    if !(bracketed || named) || !(secure || insecure_ok || is_loopback_host(host)) {
+        return None;
+    }
+    Some((secure, host, tail))
+}
+
+fn valid_port(port: &str) -> bool {
+    !port.is_empty() && port.len() <= 5 && port.parse::<u16>().is_ok_and(|p| p > 0)
+}
+
+/// Whether `url` is an address a configuration may name a model's file at.
+pub fn valid_url(url: &str) -> bool {
+    split_url(url).is_some()
+}
+
+/// An address as a sentence names it: the host and the path, and no query (it may hold a secret).
+pub fn url_label(url: &str) -> String {
+    match split_url(url) {
+        Some((_, host, tail)) => {
+            let path = tail.split('?').next().unwrap_or("");
+            format!("{host}{path}")
+        }
+        None => clean_text(url, 80, false),
+    }
+}
+
+/// Where a file can be had from, as a sentence names it: the repository and the path in it, or the
+/// address without its query. `None` for a file that says nothing of where.
+pub fn source_label(pick: &ModelPick) -> Option<String> {
+    if let Some(url) = &pick.url {
+        return Some(url_label(url));
+    }
+    pick.from.as_deref().map(|from| match &pick.path {
+        Some(path) => format!("{}/{path}", from_label(from)),
+        None => from_label(from),
+    })
+}
+
+/// Whether `name` is a variable of an environment: a letter or `_`, then letters, digits and `_`.
+pub fn valid_env_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && name.len() <= 100
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 fn valid_sha256(text: &str) -> bool {
     text.len() == 64 && text.chars().all(|c| c.is_ascii_hexdigit())
 }
@@ -318,8 +520,15 @@ pub fn read(
         ));
     }
 
-    let runtime = read_runtime(doc.runtime.as_ref(), &mut fatal);
+    let mut typed_unknown = typed.unknown;
+    let runtime = read_runtime(
+        doc.runtime.as_ref(),
+        &family(engines, engine_id),
+        &mut typed_unknown,
+        &mut fatal,
+    );
     let models = read_models(&doc.models, engines.get(engine_id), &mut fatal);
+    let needs = read_needs(&doc.needs, engine_id, engines, &mut fatal);
     let meta = read_meta(&doc.meta, body, &mut fatal);
 
     // ---- the values ----
@@ -387,7 +596,7 @@ pub fn read(
     // ---- the keys this version does not know ----
     // those at the top are kept when the file is written again; every one is told
     let mut extra = toml::Table::new();
-    for path in &typed.unknown {
+    for path in &typed_unknown {
         let text = path.to_string();
         if !text.contains(['.', '[']) {
             if let Some(value) = body.get(&text) {
@@ -395,7 +604,7 @@ pub fn read(
             }
         }
     }
-    let mut unknown_names: Vec<String> = typed.unknown.iter().map(DocPath::to_string).collect();
+    let mut unknown_names: Vec<String> = typed_unknown.iter().map(DocPath::to_string).collect();
     unknown_names.sort();
     if !unknown_names.is_empty() {
         notes.push(Note::new(
@@ -417,10 +626,11 @@ pub fn read(
             models,
             values,
             traffic_proxy,
+            needs,
             extra,
         },
         notes,
-        unknown: typed.unknown,
+        unknown: typed_unknown,
     })
 }
 
@@ -485,34 +695,80 @@ pub fn fit(field: &Field, value: &Value) -> Result<Value, String> {
     }
 }
 
-fn read_runtime(doc: Option<&RuntimeDoc>, fatal: &mut Vec<Fatal>) -> Runtime {
+fn read_runtime(
+    doc: Option<&RuntimeDoc>,
+    members: &[&Engine],
+    unknown: &mut Vec<DocPath>,
+    fatal: &mut Vec<Fatal>,
+) -> Runtime {
     let Some(doc) = doc else {
         return Runtime::default();
     };
-    let build = doc.build.as_ref().and_then(|build| {
-        if valid_label(build) {
-            Some(build.clone())
-        } else {
-            fatal.push(
-                Fatal::at(
-                    DocPath::default().key("runtime").key("build"),
-                    format!(
-                        "`{}` is not the label of a build",
-                        clean_text(build, 40, false)
-                    ),
-                )
-                .hint("a label is a name like `v0.40.0`, with no folder in it"),
-            );
-            None
-        }
-    });
-    Runtime {
-        build,
-        version: doc
-            .version
+    let label = |build: &Option<String>, at: DocPath, fatal: &mut Vec<Fatal>| -> Option<String> {
+        build.as_ref().and_then(|build| {
+            if valid_label(build) {
+                Some(build.clone())
+            } else {
+                fatal.push(
+                    Fatal::at(
+                        at,
+                        format!(
+                            "`{}` is not the label of a build",
+                            clean_text(build, 40, false)
+                        ),
+                    )
+                    .hint("a label is a name like `v0.40.0`, with no folder in it"),
+                );
+                None
+            }
+        })
+    };
+    let version = |version: &Option<String>| -> Option<String> {
+        version
             .as_ref()
             .map(|v| clean_text(v, 64, false))
-            .filter(|v| !v.is_empty()),
+            .filter(|v| !v.is_empty())
+    };
+    let build = label(
+        &doc.build,
+        DocPath::default().key("runtime").key("build"),
+        fatal,
+    );
+    // the programs that go with the engine: a table each, of the same two keys; any other key is one this
+    // version does not know
+    let mut companions = BTreeMap::new();
+    for (id, value) in &doc.others {
+        let at = DocPath::default().key("runtime").key(id);
+        let goes_with = members.iter().skip(1).any(|m| m.id == *id);
+        let Some(table) = value.as_table().filter(|_| goes_with || members.is_empty()) else {
+            unknown.push(at);
+            continue;
+        };
+        let text = |key: &str| {
+            table
+                .get(key)
+                .and_then(toml::Value::as_str)
+                .map(str::to_string)
+        };
+        for key in table
+            .keys()
+            .filter(|k| !matches!(k.as_str(), "build" | "version"))
+        {
+            unknown.push(at.clone().key(key));
+        }
+        companions.insert(
+            id.clone(),
+            Runtime {
+                build: label(&text("build"), at.clone().key("build"), fatal),
+                version: version(&text("version")),
+                companions: BTreeMap::new(),
+            },
+        );
+    }
+    Runtime {
+        build,
+        version: version(&doc.version),
+        companions,
     }
 }
 
@@ -692,6 +948,127 @@ fn read_models(
             }
             None => None,
         };
+        // where the file can be had from, and where it goes: for a file that is no entry of the list
+        let is_file = matches!(source, ModelSource::File { .. });
+        let mut wrong = false;
+        for (key, given) in [
+            ("path", doc.path.is_some()),
+            ("revision", doc.revision.is_some()),
+            ("url", doc.url.is_some()),
+            ("into", doc.into.is_some()),
+        ] {
+            if given && !is_file {
+                fatal.push(
+                    Fatal::at(
+                        at.clone().key(key),
+                        format!(
+                            "`{key}` goes with a `file` that is no entry of the recommended list"
+                        ),
+                    )
+                    .hint("the list says where its own files are"),
+                );
+                wrong = true;
+            }
+        }
+        if doc.from.is_some() && doc.url.is_some() {
+            fatal.push(
+                Fatal::at(
+                    at.clone().key("url"),
+                    "a model says where it can be had from once: `from` (a place and a name in it) or `url` (an address)",
+                )
+                .hint("keep the one that is meant"),
+            );
+            wrong = true;
+        }
+        if (doc.path.is_some() || doc.revision.is_some()) && doc.from.is_none() {
+            let key = if doc.path.is_some() {
+                "path"
+            } else {
+                "revision"
+            };
+            fatal.push(
+                Fatal::at(
+                    at.clone().key(key),
+                    format!("`{key}` says where in the repository that `from` names the file is: add `from`"),
+                )
+                .hint("for example `from = \"huggingface:owner/repo\"`"),
+            );
+            wrong = true;
+        }
+        let path = match &doc.path {
+            Some(path) if valid_repo_path(path) => Some(path.clone()),
+            Some(_) => {
+                if is_file {
+                    fatal.push(
+                        Fatal::at(
+                            at.clone().key("path"),
+                            "`path` is names joined by `/`, with no `..`, no drive and no `\\`",
+                        )
+                        .hint("for example `split_files/vae/wan2.2_vae.safetensors`"),
+                    );
+                }
+                wrong = true;
+                None
+            }
+            None => None,
+        };
+        let revision = match &doc.revision {
+            Some(revision) if valid_revision(revision) => Some(revision.clone()),
+            Some(_) => {
+                if is_file {
+                    fatal.push(
+                        Fatal::at(
+                            at.clone().key("revision"),
+                            "`revision` is a branch, a tag or a commit: letters, digits, `.`, `_` and `-`",
+                        )
+                        .hint("for example `main`, `v1.0` or a commit"),
+                    );
+                }
+                wrong = true;
+                None
+            }
+            None => None,
+        };
+        let url = match &doc.url {
+            Some(url) if valid_url(url) => Some(url.clone()),
+            Some(url) => {
+                if is_file {
+                    fatal.push(
+                        Fatal::at(
+                            at.clone().key("url"),
+                            format!(
+                                "`{}` is not an address a configuration may name: it is `https://host/path`, with no sign-in in it",
+                                clean_text(url, 60, false)
+                            ),
+                        )
+                        .hint("an address with a login in it belongs on the command line of whoever runs the file"),
+                    );
+                }
+                wrong = true;
+                None
+            }
+            None => None,
+        };
+        let into = match &doc.into {
+            Some(into) if crate::lookup::present::is_place(into) => Some(into.clone()),
+            Some(_) => {
+                if is_file {
+                    fatal.push(
+                        Fatal::at(
+                            at.clone().key("into"),
+                            "`into` is the name of one folder of the models folder: lower case letters, digits, `_` and `-`",
+                        )
+                        .hint("for example `vae`"),
+                    );
+                }
+                wrong = true;
+                None
+            }
+            None => None,
+        };
+        if wrong {
+            continue;
+        }
         out.push(ModelPick {
             role,
             source,
@@ -703,7 +1080,169 @@ fn read_models(
             size: doc.size,
             sha256,
             from,
+            path,
+            revision,
+            url,
+            into,
         });
+    }
+    out
+}
+
+/// `[[needs]]`: what whoever runs the file has to give, or the computer has to have. A need is exactly one
+/// of a token, a setting, a variable of an environment and a thing of the computer's; the setting and the
+/// program are held to the engines of the file, and the thing to the prerequisites of the engine's
+/// document, which say how it is checked.
+fn read_needs(
+    docs: &[NeedDoc],
+    engine_id: &str,
+    engines: &BTreeMap<String, Engine>,
+    fatal: &mut Vec<Fatal>,
+) -> Vec<Need> {
+    if docs.len() > MAX_NEEDS {
+        fatal.push(Fatal::at(
+            DocPath::default().key("needs"),
+            format!(
+                "a configuration says at most {MAX_NEEDS} things that whoever runs it has to give"
+            ),
+        ));
+        return Vec::new();
+    }
+    let members = family(engines, engine_id);
+    let mut out = Vec::new();
+    for (index, doc) in docs.iter().enumerate() {
+        let at = DocPath::default().key("needs").index(index);
+        let given = usize::from(doc.token.is_some())
+            + usize::from(doc.setting.is_some())
+            + usize::from(doc.env.is_some())
+            + usize::from(doc.system.is_some());
+        if given != 1 {
+            fatal.push(
+                Fatal::at(
+                    at,
+                    "a need is exactly one of `token`, `setting`, `env` and `system`",
+                )
+                .hint("for example `token = \"huggingface\"`"),
+            );
+            continue;
+        }
+        let why = doc
+            .why
+            .as_ref()
+            .map(|w| clean_text(w, 300, false))
+            .filter(|w| !w.is_empty());
+        let kind = if let Some(word) = &doc.token {
+            match Token::named(word) {
+                Some(token) => NeedKind::Token(token),
+                None => {
+                    fatal.push(
+                        Fatal::at(
+                            at.key("token"),
+                            format!(
+                                "`{}` is not a site this takes a token for",
+                                clean_text(word, 30, false)
+                            ),
+                        )
+                        .hint("`huggingface` or `github`"),
+                    );
+                    continue;
+                }
+            }
+        } else if let Some(id) = &doc.system {
+            let known: Vec<&str> = members
+                .iter()
+                .flat_map(|m| m.doc.prerequisites.iter().map(|p| p.id.as_str()))
+                .collect();
+            // with no engine to ask (a file read for its shape alone) any id is taken
+            if !members.is_empty() && !known.contains(&id.as_str()) {
+                let hint = if known.is_empty() {
+                    "this engine's document names no prerequisite".to_string()
+                } else {
+                    format!("this engine's document names: {}", known.join(", "))
+                };
+                fatal.push(
+                    Fatal::at(
+                        at.key("system"),
+                        format!(
+                            "`{}` is not something the document of this engine knows how to check",
+                            clean_text(id, 40, false)
+                        ),
+                    )
+                    .hint(hint),
+                );
+                continue;
+            }
+            NeedKind::System { id: id.clone() }
+        } else if let Some(key) = &doc.setting {
+            let field_ok = split_key(key).is_some_and(|(owner, field)| {
+                members.is_empty()
+                    || members.iter().any(|m| {
+                        m.id == owner
+                            && m.doc.fields.iter().any(|f| {
+                                f.id == field
+                                    && !matches!(f.ty, FieldType::Hidden | FieldType::ModelRef)
+                            })
+                    })
+            });
+            if !field_ok {
+                fatal.push(
+                    Fatal::at(
+                        at.key("setting"),
+                        format!(
+                            "`{}` is not a setting of this engine or of what goes with it",
+                            clean_text(key, 60, false)
+                        ),
+                    )
+                    .hint("the id of the engine, a dot, and the id of its setting"),
+                );
+                continue;
+            }
+            NeedKind::Setting { key: key.clone() }
+        } else {
+            let name = doc.env.clone().unwrap_or_default();
+            if !valid_env_name(&name) {
+                fatal.push(
+                    Fatal::at(
+                        at.key("env"),
+                        format!(
+                            "`{}` is not the name of a variable",
+                            clean_text(&name, 40, false)
+                        ),
+                    )
+                    .hint("letters, digits and `_`, not starting with a digit"),
+                );
+                continue;
+            }
+            let program = doc
+                .for_program
+                .clone()
+                .unwrap_or_else(|| engine_id.to_string());
+            let takes_lines = members.is_empty()
+                || members.iter().any(|m| {
+                    m.id == program && m.doc.fields.iter().any(|f| f.bind.env_lines.is_some())
+                });
+            if !takes_lines {
+                fatal.push(
+                    Fatal::at(
+                        at.key("for"),
+                        format!(
+                            "`{}` is not an engine or a program of this configuration that takes lines of environment",
+                            clean_text(&program, 40, false)
+                        ),
+                    )
+                    .hint("`for` is the id of the engine, or of a program that goes with it, whose environment it is"),
+                );
+                continue;
+            }
+            NeedKind::Env { program, name }
+        };
+        let secret = doc.secret
+            || match &kind {
+                NeedKind::Token(_) => true,
+                NeedKind::Env { name, .. } => crate::plan::is_secret_name(name),
+                NeedKind::Setting { .. } | NeedKind::System { .. } => false,
+            };
+        out.push(Need { kind, why, secret });
     }
     out
 }
@@ -803,13 +1342,31 @@ impl Configuration {
             }
             doc["meta"] = Item::Table(meta);
         }
-        if self.runtime.build.is_some() || self.runtime.version.is_some() {
+        let has_pins = self
+            .runtime
+            .companions
+            .values()
+            .any(|c| c.build.is_some() || c.version.is_some());
+        if self.runtime.build.is_some() || self.runtime.version.is_some() || has_pins {
             let mut runtime = Table::new();
             if let Some(build) = &self.runtime.build {
                 runtime["build"] = value(build.as_str());
             }
             if let Some(version) = &self.runtime.version {
                 runtime["version"] = value(version.as_str());
+            }
+            for (id, pin) in &self.runtime.companions {
+                if pin.build.is_none() && pin.version.is_none() {
+                    continue;
+                }
+                let mut table = Table::new();
+                if let Some(build) = &pin.build {
+                    table["build"] = value(build.as_str());
+                }
+                if let Some(version) = &pin.version {
+                    table["version"] = value(version.as_str());
+                }
+                runtime[id.as_str()] = Item::Table(table);
             }
             doc["runtime"] = Item::Table(runtime);
         }
@@ -842,9 +1399,51 @@ impl Configuration {
                 if let Some(from) = &pick.from {
                     model["from"] = value(from.as_str());
                 }
+                if let Some(path) = &pick.path {
+                    model["path"] = value(path.as_str());
+                }
+                if let Some(revision) = &pick.revision {
+                    model["revision"] = value(revision.as_str());
+                }
+                if let Some(url) = &pick.url {
+                    model["url"] = value(url.as_str());
+                }
+                if let Some(into) = &pick.into {
+                    model["into"] = value(into.as_str());
+                }
                 models.push(model);
             }
             doc["model"] = Item::ArrayOfTables(models);
+        }
+        if !self.needs.is_empty() {
+            let mut needs = ArrayOfTables::new();
+            for need in &self.needs {
+                let mut table = Table::new();
+                match &need.kind {
+                    NeedKind::Token(token) => table["token"] = value(token.word()),
+                    NeedKind::Setting { key } => table["setting"] = value(key.as_str()),
+                    NeedKind::Env { program, name } => {
+                        table["env"] = value(name.as_str());
+                        if *program != self.engine {
+                            table["for"] = value(program.as_str());
+                        }
+                    }
+                    NeedKind::System { id } => table["system"] = value(id.as_str()),
+                }
+                let implied = match &need.kind {
+                    NeedKind::Token(_) => true,
+                    NeedKind::Env { name, .. } => crate::plan::is_secret_name(name),
+                    NeedKind::Setting { .. } | NeedKind::System { .. } => false,
+                };
+                if need.secret && !implied {
+                    table["secret"] = value(true);
+                }
+                if let Some(why) = &need.why {
+                    table["why"] = value(why.as_str());
+                }
+                needs.push(table);
+            }
+            doc["needs"] = Item::ArrayOfTables(needs);
         }
         // settings by owner, each in the order of the engine's fields
         let mut owners: BTreeMap<&str, Vec<(&str, &Value)>> = BTreeMap::new();

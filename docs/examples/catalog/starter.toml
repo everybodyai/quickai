@@ -1,5 +1,5 @@
 # NOTE (2026-10-07): the application reads `kind = "catalog"` documents now, for the list of recommended models it ships
-# (crates/quickai/manifests/catalog/*.toml, described in docs/catalog.md and in reference/catalog-fields.md). That form is
+# (crates/quickai-runtime/manifests/catalog/*.toml, described in docs/catalog.md and in reference/catalog-fields.md). That form is
 # smaller than the recipes below: a model has `[model.run.<engine>]` with `repo`, `rev`, `files` (each with its SHA-256),
 # `companions` and `mode`, or a `ref` and a `size` for an engine that pulls names. The components, sources and adapters shown
 # here are the later recipe tier of Phase 4, which this version does not interpret.

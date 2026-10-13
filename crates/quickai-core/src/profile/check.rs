@@ -290,7 +290,7 @@ fn source_of(registry: &Registry, engine: &str, pick: &ModelPick) -> Option<Stri
                     Run::Reference(_) => None,
                 })
         }
-        ModelSource::File { .. } => pick.from.as_deref().map(super::from_label),
+        ModelSource::File { .. } => super::source_label(pick),
     }
 }
 

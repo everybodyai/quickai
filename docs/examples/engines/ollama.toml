@@ -1,7 +1,7 @@
 # Ollama as data, with one piece of Rust that is about Ollama's website and not its program: the reading of
 # the library's search page (`lookup.ollama_library@1`), because the library has no list a program can read.
 # This is the document the application ships
-# (crates/quickai/manifests/engines/ollama.toml has the same content, and a test keeps them equal), and
+# (crates/quickai-runtime/manifests/engines/ollama.toml has the same content, and a test keeps them equal), and
 # a document of the same id in the user's configuration directory patches it.
 #
 # Facts behind it: docs/engine-facts.md (O1 to O10, A1 to A17). Compare with llamacpp.toml: the same

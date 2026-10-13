@@ -515,6 +515,78 @@ pub const GROUPS: &[Group] = &[
         ],
     },
     Group {
+        heading: "`[[prerequisite]]`",
+        intro: "Something the computer has to have for a configuration of the engine to work, how to tell whether it has it, and how to put it right. A configuration says which of them it needs (`[[needs]] system = \"<id>\"`); the packages are named here and nowhere else, because a package that is installed as the administrator must not come from a file that was given away. `quickai-run` looks at the computer before it fetches anything, says what is missing and the exact command that brings it, and installs the packages only when it is told to (`--install-system-packages`).",
+        source: Some("Prerequisite"),
+        attributes: &[
+            a("id", "text", "What a configuration calls it. Letters, digits and `_`. Required."),
+            a("label", "text", "What a sentence calls it (`a C compiler`), up to 120 characters. Required."),
+            a("when", "condition", "Only on a computer where this holds (`os == 'linux'`); always when left out."),
+            a("check", "table, below", "How to tell. Required."),
+            a("fix", "table, below", "The packages that bring it, by package manager. Left out, the program only says what is missing, and `hint` what to do."),
+            a("hint", "text", "What to tell the person when nothing here can put it right, or when it did not help, up to 600 characters."),
+        ],
+    },
+    Group {
+        heading: "`[[prerequisite]]` `check`, `use = \"program\"`",
+        intro: "One of the programs is on the computer, in a folder of the `PATH`, or the one a variable names is.",
+        source: None,
+        attributes: &[
+            a("use", "`program`", "The kind of check."),
+            a("any_of", "list of text", "Names of programs, any of which will do (`[\"gcc\", \"clang\"]`). Plain names, with no path."),
+            a("env", "text", "A variable that names the program instead (`CC`), as the tool that needs it reads it. When it is set and not empty it decides: the program it names must be there, and the packages of `fix` are not offered."),
+        ],
+    },
+    Group {
+        heading: "`[[prerequisite]]` `check`, `use = \"python_header\"`",
+        intro: "A header file of Python is in the folder of Python's headers, for the Python the engine's environment is made with (the one the install will use, or the one the installed environment was made with). Only for an engine installed by `python_app`. The packages of `fix` are offered only when that Python is the system's.",
+        source: None,
+        attributes: &[
+            a("use", "`python_header`", "The kind of check."),
+            a("file", "text", "The file, by its name alone (`Python.h`)."),
+        ],
+    },
+    Group {
+        heading: "`[[prerequisite]]` `check`, `use = \"python_module\"`",
+        intro: "A module of Python's own library can be imported by the Python the engine's environment is made with: `ensurepip`, which Debian and Ubuntu leave out of the Python and put in the package `python3.12-venv`, without which no environment can be made. Only for an engine installed by `python_app`; made before the install with the Python the install will use, and an environment that exists was made, so it passes. The packages of `fix` are offered only when that Python is the system's.",
+        source: None,
+        attributes: &[
+            a("use", "`python_module`", "The kind of check."),
+            a("module", "text", "The module, as Python names it (`ensurepip`)."),
+        ],
+    },
+    Group {
+        heading: "`[[prerequisite]]` `check`, `use = \"nvidia_driver\"`",
+        intro: "The driver of an NVIDIA card is of this version or a newer, read from the driver's own file or from `nvidia-smi`. A driver is not installed by this program: say what to do in `hint`.",
+        source: None,
+        attributes: &[
+            a("use", "`nvidia_driver`", "The kind of check."),
+            a("at_least", "text", "The version, as numbers with dots between them (`580`, `580.65`), compared number by number."),
+        ],
+    },
+    Group {
+        heading: "`[[prerequisite]]` `check`, `use = \"python_script\"`",
+        intro: "A script of the application's own files is run by the Python of the engine's environment, with the environment the engine is started with, and passes when it ends with status 0. What it prints is shown when it fails. It tests that the installed environment works, so it is run after the install and before the engine is started. Only for an engine installed by `python_app`.",
+        source: None,
+        attributes: &[
+            a("use", "`python_script`", "The kind of check."),
+            a("asset", "text", "The script, as a name of the application's own files, ending in `.py` (`comfyui/selftest/triton_kernel.py`)."),
+            a("timeout", "duration", "How long it may take (default `120s`)."),
+        ],
+    },
+    Group {
+        heading: "`[[prerequisite]]` `fix`",
+        intro: "The packages that bring a prerequisite, for each package manager that has them. Plain package names only. `${python.version}` (`3.12`) and `${python.digits}` (`312`) stand for the Python of the environment. Only for `program`, `python_module` and `python_header`.",
+        source: Some("Fix"),
+        attributes: &[
+            a("apt", "list of text", "Debian and Ubuntu, installed with `apt-get` (its list of packages is refreshed first)."),
+            a("dnf", "list of text", "Fedora and Red Hat, installed with `dnf`."),
+            a("zypper", "list of text", "openSUSE, installed with `zypper`."),
+            a("pacman", "list of text", "Arch, installed with `pacman`."),
+            a("apk", "list of text", "Alpine, installed with `apk`."),
+        ],
+    },
+    Group {
         heading: "`[acquire]`",
         intro: "Where builds of the engine come from and where they are kept. It configures the runtime manager in Settings.",
         source: Some("Acquire"),
@@ -1072,7 +1144,8 @@ pub const PROFILE_GROUPS: &[Group] = &[
             a("meta", "table, below", "For the person who is given the file. Nothing in it changes what runs."),
             a("engine", "text", "The id of the engine it runs: one a person can choose, not a companion. Required. An engine this version does not have is told to the person who opens the file, and nothing is stored."),
             a("runtime", "table, below", "Which program, as who it is and not where it is."),
-            a("model", "list of tables, below", "The models it uses, as who they are and never as a path. The first is the one the engine loads."),
+            a("model", "list of tables, below", "The models it uses, as who they are and where they can be had from, never as a path and never the model itself. The first is the one the engine loads."),
+            a("needs", "list of tables, below", "What whoever runs the configuration has to give besides the file: a login, a setting that belongs to a computer, a variable of a program's environment. The file never carries them."),
             a("values", "table of tables", "The value of settings: `[values.<engine>]` holds the fields of that engine by their ids (`ctx_size = 16384`), and a companion's settings sit in a table of its own (`[values.openwebui]`). Only what differs from the default is written. A field whose `share` is `never`, and one the engine does not have, is told and ignored; a value that does not fit its field is told and the default is used."),
             a("app", "table, below", "Settings of the application that are part of a run."),
         ],
@@ -1100,7 +1173,7 @@ pub const PROFILE_GROUPS: &[Group] = &[
     },
     Group {
         heading: "`[runtime]`",
-        intro: "The program a configuration runs. Left out, it is the program the computer uses by default.",
+        intro: "The program a configuration runs, and the programs that go with it. Left out, it is the program the computer uses by default.",
         source: Some("RuntimeDoc"),
         attributes: &[
             a("build", "text", "The label of a build in the manager's list (`v0.40.0`): the name of the directory it is installed in, with no folder in it. Choosing the configuration sets the engine's program to the installed build of that label, and to nothing else. One that is not installed is told, with the labels that are."),
@@ -1108,8 +1181,17 @@ pub const PROFILE_GROUPS: &[Group] = &[
         ],
     },
     Group {
+        heading: "`[runtime.<program>]`",
+        intro: "A program that goes with the engine (`[runtime.openwebui]` for Open WebUI beside Ollama), with the same two keys. `quickai-run` installs that build of it, and the window leaves the file's pin as it is when it saves. A key that is none of these is one this version does not know.",
+        source: None,
+        attributes: &[
+            a("build", "text", "The label of the build of that program to install and run."),
+            a("version", "text", "The version the program said it was, for the notes."),
+        ],
+    },
+    Group {
         heading: "`[[model]]`",
-        intro: "One model, by exactly one source: a name the engine takes (the key is one of the engine's `accepts.refs`: `ollama = \"qwen3:8b\"`), an entry of the recommended list (`catalog`, and `file` for one of its files), or a file of the models folder (`file`). A path is never a source. Choosing a configuration selects a model that is here and fetches nothing: one that is not here is told, with its size and where it can be had.",
+        intro: "One model, by exactly one source: a name the engine takes (the key is one of the engine's `accepts.refs`: `ollama = \"qwen3:8b\"`), an entry of the recommended list (`catalog`, and `file` for one of its files), or a file (`file`) with, if it is to be fetched, where it can be had from (`from`, and `path` and `revision` in it, or `url`). A path of a computer is never a source, and the model is never in the file. Choosing a configuration in the window selects a model that is here and fetches nothing: one that is not here is told, with its size and where it can be had. `quickai-run` fetches it from where the file says, once whoever runs it has read where that is.",
         source: Some("ModelDoc"),
         attributes: &[
             a("role", "text", "What it is for (`chat`, `embedding`); letters, digits, `_` and `-`. Default `main`."),
@@ -1118,7 +1200,25 @@ pub const PROFILE_GROUPS: &[Group] = &[
             a("file", "text", "A file name, with no folder in it: the file of a `catalog` entry, or a file of the models folder."),
             a("size", "whole number", "Its size in bytes, to recognise it by and to say what getting it costs."),
             a("sha256", "text", "Its SHA-256, 64 hexadecimal digits."),
-            a("from", "text", "Where it can be got from, as a kind of place and a name in it (`huggingface:owner/repo`), for a file that is no entry of the recommended list and that the application remembers fetching. It is said to whoever has not got the model, and is never fetched from by itself: the person asks, and looks it up."),
+            a("from", "text", "Where it can be got from, as a kind of place and a name in it (`huggingface:owner/repo`), for a file that is no entry of the recommended list. The window says it and never fetches from it by itself (the person asks, and looks it up); `quickai-run` fetches from it."),
+            a("path", "text", "Where in the repository `from` names the file is (`split_files/vae/wan2.2_vae.safetensors`): names joined by `/`, none of them `..`, at most eight. Left out, the file is at the top and is called `file`. Needs `from`."),
+            a("revision", "text", "The branch, tag or commit of the repository: letters, digits, `.`, `_` and `-`. Left out, `main`. A commit is the same file for ever. Needs `from`."),
+            a("url", "text", "An address the file can be fetched from instead of `from`: `https://host/path`, with no sign-in in it (`http://` only for this computer's own). Not with `from`."),
+            a("into", "text", "The folder of the models folder the file is kept in (`diffusion_models`, `vae`), for an engine that finds its files by the folder they are in: one name of lower case letters, digits, `_` and `-`. Left out, the folder the engine's document gives a file like this."),
+        ],
+    },
+    Group {
+        heading: "`[[needs]]`",
+        intro: "One thing that whoever runs the configuration has to give, because the file cannot carry it, or that the computer has to have: exactly one of `token`, `setting`, `env` and `system`. `quickai-run` stops before it fetches anything, says which are missing and how to give them, and `quickai-run init` writes the file to fill in; it is given in an environment file, on the command line, or, for a login, in the usual variable. What the computer has to have is looked at on the computer, and the engine's document says how.",
+        source: Some("NeedDoc"),
+        attributes: &[
+            a("token", "text", "A login the fetching needs: `huggingface` or `github`."),
+            a("setting", "text", "A setting that belongs to a computer, as `<engine>.<field>` (`comfyui.models_dir`)."),
+            a("env", "text", "A variable of a program's environment (`WEBUI_SECRET_KEY`)."),
+            a("system", "text", "Something the computer has to have, as the id of a `[[prerequisite]]` of the engine's document (`c_compiler`): the document says how it is checked and what brings it, and the file says only that it is needed and why. An id the document does not know is refused when the file is read."),
+            a("for", "text", "The program an `env` goes to (`openwebui`). Left out, the engine of the configuration."),
+            a("secret", "bool", "Whether the value is a secret, that is never shown. A token always is one, and so is a variable whose name has KEY, TOKEN, SECRET or PASSWORD in it."),
+            a("why", "text", "Said to whoever has not given it, up to 300 characters."),
         ],
     },
     Group {
@@ -1146,7 +1246,8 @@ pub fn render_profile() -> String {
          window has one active configuration, a dropdown chooses it, and a file can be given to someone else, who is \
          told what their computer lacks or does differently before anything is taken (docs/configurations.md). \
          Configurations are data: they can pick things the application already knows (an engine, a model, a build, \
-         the value of a setting) and cannot name a program, a host or an address to fetch from. The application \
+         the value of a setting), say where a model file can be had from, and cannot name a program. They never \
+         carry a model, a folder of a computer, a login or a secret. The application \
          ships `default`; a package may ship more in `<exe>/config/profiles/`; the person's own are files in \
          `profiles/` of their configuration directory, and one with the same `id` and `replace = true` stands in for \
          a shipped one. A key this version does not know is kept when the file is written again and told as a \
@@ -1184,7 +1285,11 @@ pub fn render_profile() -> String {
          - a `[[model]]` has exactly one source, of the kind the engine takes, and no name in it is a path (no `/` or \
          `\\\\` in a file, no `..`, no drive, no NUL, no control character);\n\
          - `runtime.build` is a label, not a path;\n\
-         - at most 512 settings and eight models.\n\n\
+         - a model's `path` is names joined by `/` with no `..`, its `revision` is a branch, tag or commit, its \
+         `url` is `https://host/path` with no sign-in, its `into` is one folder name, and `from` and `url` are \
+         not both given;\n\
+         - a need is exactly one of `token`, `setting` and `env`;\n\
+         - at most 512 settings, eight models and sixteen needs.\n\n\
          A warning, that leaves the document in use: a setting the engine does not have or does not carry, a value \
          that does not fit its field (the default is used), keys this version does not know.\n",
     );

@@ -2,7 +2,7 @@
 //! docs/architecture.md section 8: `[[models.lookup]]`). What is asked of the network and when is the
 //! application's; what an address is, what the answer says, what kind of model it describes, which
 //! buttons fetch it and which files go together is here, so that it is tested on answers recorded
-//! from the real sites (`crates/quickai/tests/fixtures/`) and never needs the internet.
+//! from the real sites (`crates/quickai-runtime/tests/fixtures/`) and never needs the internet.
 //!
 //! ```text
 //! source ──► Candidate ──present(rules)──► Entry { type, offers } ──arrange(filter)──► sections

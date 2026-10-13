@@ -1,0 +1,119 @@
+# A configuration for a server: ComfyUI with the files of Wan 2.2 14B for image to video, as ComfyUI's own templates of the model load them:
+# the two experts (the one that draws the first half of the denoising, the one that finishes it) in fp8, UMT5-XXL as the text encoder, the Wan
+# 2.1 VAE, and the 4-step LightX2V LoRA for each expert, which the templates switch on to make a clip in 4 steps instead of 20. It carries no
+# model. Each file says where it can be had from: a repository of the hub, the commit of it that was checked, the file in it, how big it is
+# and what its SHA-256 is. `quickai-run up` installs ComfyUI, fetches the six files into the folders ComfyUI looks for each in, and starts it.
+#
+#     quickai-run init  wan22-14b-i2v-lightning.toml                     # the file to fill in: where the models are kept
+#     quickai-run check wan22-14b-i2v-lightning.toml --environment wan.environment.toml --accept-review
+#     quickai-run up    wan22-14b-i2v-lightning.toml --environment wan.environment.toml --accept-review
+#
+# 38.0 GB of files (35.4 GiB, which is how the program counts). The same six files serve image to video and first-and-last-frame
+# to video; text to video needs the other pair of experts (wan2.2_t2v_*), which this file leaves out (a configuration holds at most 8 models).
+#
+# What it does and does not do: a clip from a picture (or from a first and a last picture) of up to about 5 seconds at 16 frames a second
+# (81 frames; the model is trained for that), at 480p or 720p, with NO sound. ComfyUI's own note on the Lightning LoRAs: "Using the Wan2.2
+# Lighting LoRA will result in the loss of video dynamics, but it will reduce the generation time." Its own table (an RTX 4090D of 24 GB,
+# 640x640, 81 frames): about 513 s for 20 steps and about 71 s with the LoRAs once the models are loaded (97 to 108 s the first time).
+# The workflows of this package come in both forms (wan22-*-lightning and wan22-*-full).
+#
+# The licence is Apache-2.0 (the model, the repackaging and the LoRAs): no territory, no revenue limit.
+#
+# What the computer must have: an NVIDIA card with 24 GB (fp8; 48 GB is comfortable at 720p) and 64 GB of memory is comfortable, which nothing
+# checks; and what `quickai-run` looks at before it fetches anything (the `system` needs at the end of this file): the venv module of the
+# Python its environment is made with (on Ubuntu the package python3.12-venv) and a driver of the 580 series or newer (ComfyUI is installed
+# with PyTorch for CUDA 13). It does not ask for a compiler or the headers of Python, because nothing in
+# these workflows is known to launch a kernel of Triton's (the fp8 files are run by PyTorch; this was not measured on a card). The other
+# configurations of this folder ask for them (`c_compiler`, `python_headers`, `triton`), and so would this one if it used a custom node that
+# does. Sizes and checksums were read from the hub's listing on 2026-10-13; `quickai-run check` read the file as written. It has not been
+# fetched or run.
+schema = 1
+kind = "profile"
+id = "wan22-14b-i2v"
+requires = { app = ">=0.1" }
+name = "Wan 2.2 14B image to video on ComfyUI"
+engine = "comfyui"
+
+[meta]
+note = "Wan 2.2 14B image to video and first-and-last-frame video in fp8, with the 4-step LightX2V LoRAs: clips of up to 5 seconds at 16 frames a second, no sound. About 38 GB of files. Apache-2.0."
+
+[[model]]
+role = "diffusion"
+name = "Wan 2.2 14B image to video, high noise, fp8"
+file = "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
+from = "huggingface:Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
+path = "split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
+revision = "ee6f4a40737a995bf5818954cfce6d59443b0f04"
+into = "diffusion_models"
+size = 14294742832
+sha256 = "6122e79d55e0f235698d11d657f3b196c5273c830da00b2b013c5a048d5e6a42"
+
+[[model]]
+role = "diffusion"
+name = "Wan 2.2 14B image to video, low noise, fp8"
+file = "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
+from = "huggingface:Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
+path = "split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
+revision = "ee6f4a40737a995bf5818954cfce6d59443b0f04"
+into = "diffusion_models"
+size = 14294742832
+sha256 = "5471a457b6ac404202a5fbe6c11595a3d5641fc766b00f38763f72303fffc21e"
+
+[[model]]
+role = "text_encoder"
+name = "UMT5-XXL encoder, fp8"
+file = "umt5_xxl_fp8_e4m3fn_scaled.safetensors"
+from = "huggingface:Comfy-Org/Wan_2.1_ComfyUI_repackaged"
+path = "split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
+revision = "123acf1cc74bccbb9bfff8ac1ee72edc08c2341d"
+into = "text_encoders"
+size = 6735906897
+sha256 = "c3355d30191f1f066b26d93fba017ae9809dce6c627dda5f6a66eaa651204f68"
+
+[[model]]
+role = "vae"
+name = "Wan 2.1 VAE (the 14B models use it)"
+file = "wan_2.1_vae.safetensors"
+from = "huggingface:Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
+path = "split_files/vae/wan_2.1_vae.safetensors"
+revision = "ee6f4a40737a995bf5818954cfce6d59443b0f04"
+into = "vae"
+size = 253815318
+sha256 = "2fc39d31359a4b0a64f55876d8ff7fa8d780956ae2cb13463b0223e15148976b"
+
+[[model]]
+role = "lora"
+name = "LightX2V 4-step LoRA, image to video, high noise"
+file = "wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors"
+from = "huggingface:Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
+path = "split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors"
+revision = "ee6f4a40737a995bf5818954cfce6d59443b0f04"
+into = "loras"
+size = 1226977424
+sha256 = "d176c808d6fc461999b68e321efcb7501b20b8c3797523ed0df14f7d1deff11e"
+
+[[model]]
+role = "lora"
+name = "LightX2V 4-step LoRA, image to video, low noise"
+file = "wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors"
+from = "huggingface:Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
+path = "split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors"
+revision = "ee6f4a40737a995bf5818954cfce6d59443b0f04"
+into = "loras"
+size = 1226977424
+sha256 = "024f21de095bc8fad9809ded3e9e49a2e170dcf27075da8145ba7d60d8aab7f9"
+
+[values.comfyui]
+port = 8188
+
+[[needs]]                               # what this file cannot carry and whoever runs it has to say
+setting = "comfyui.models_dir"
+why = "Somewhere with 63 GB free: 39 GB of model files, and room for the clips it makes."
+
+[[needs]]                               # what the computer has to have: nobody gives it, `quickai-run` looks (the document of ComfyUI says how)
+system = "python_venv"
+why = "ComfyUI is installed into a Python environment of its own, and Debian and Ubuntu make none without the venv package of the Python (on Ubuntu python3.12-venv)."
+
+[[needs]]
+system = "nvidia_driver"
+why = "ComfyUI is installed with PyTorch for CUDA 13, which needs a driver of the 580 series or newer."

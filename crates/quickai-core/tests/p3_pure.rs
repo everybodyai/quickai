@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 
 fn recorded(name: &str) -> Vec<u8> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../quickai/tests/fixtures/ollama/recorded")
+        .join("../quickai-runtime/tests/fixtures/ollama/recorded")
         .join(name);
     std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }

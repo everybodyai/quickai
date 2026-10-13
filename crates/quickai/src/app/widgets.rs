@@ -24,9 +24,12 @@ pub enum Reply {
     Invoke(String),
 }
 
-/// The widgets a document may name with `ui.widget`, as opposed to the one the field's type has.
-/// What the loader holds a document to (`prims::known`), so a name here is one that something draws.
-pub const NAMED: &[&str] = &["runtime_manager", "button"];
+/// The widgets a document may name with `ui.widget`, as opposed to the one the field's type has. The list
+/// is the runtime's, because the loader is (`prims::known`): a name in it is one that something must draw,
+/// and the test below holds it to what this window draws, so that a widget cannot be named in a document
+/// that no window has.
+#[cfg(test)]
+pub const NAMED: &[&str] = quickai_runtime::prims::WIDGET_NAMES;
 
 /// The red of a message under a field.
 pub(super) const PROBLEM: egui::Color32 = egui::Color32::from_rgb(192, 57, 43);

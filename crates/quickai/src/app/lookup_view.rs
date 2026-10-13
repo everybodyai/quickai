@@ -49,6 +49,33 @@ impl LookupView {
     }
 }
 
+/// Where the files of a download came from, as far as the application remembers it for the file it names
+/// when the person gives the configuration away: the place, the path in the repository when it is not at the top
+/// and the revision when it is not `main`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct DownloadSource {
+    pub place: String,
+    pub path: Option<String>,
+    pub revision: Option<String>,
+}
+
+impl DownloadSource {
+    pub(super) fn of(download: &Download) -> DownloadSource {
+        let weights = download.primary();
+        DownloadSource {
+            place: download.source.clone(),
+            path: weights
+                .filter(|p| !p.name.is_empty() && p.name != p.store_as)
+                .map(|p| p.name.clone()),
+            revision: weights
+                .and_then(|p| p.url.split("/resolve/").nth(1))
+                .and_then(|rest| rest.split('/').next())
+                .filter(|r| *r != "main")
+                .map(str::to_string),
+        }
+    }
+}
+
 impl App {
     /// Whether the engine's document declares a look-up of models online: only then is there a
     /// button for it.
@@ -156,7 +183,7 @@ impl App {
         }
         let ctx = ctx.clone();
         self.bench_fetching(&download);
-        self.download_source = Some(download.source.clone());
+        self.download_source = Some(DownloadSource::of(&download));
         self.download = Some(downloader::spawn_files(
             download,
             self.models_dir.clone(),
@@ -654,6 +681,46 @@ pub(super) fn compact_count(count: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use quickai_core::lookup::present::Piece;
+
+    fn piece(url: &str, name: &str, store_as: &str) -> Piece {
+        Piece {
+            kind: None,
+            label: "model".into(),
+            url: url.into(),
+            store_as: store_as.into(),
+            name: name.into(),
+            size: Some(1),
+            sha256: None,
+            place: None,
+        }
+    }
+
+    /// Y09: what the window remembers of a download is where its weights are in the repository when that is not the
+    /// top, and the revision when it is not `main`: what an export needs to be fetched from the same file.
+    #[test]
+    fn p3_y09_a_download_remembers_the_path_in_the_repository_and_the_revision() {
+        let download = |p: Piece| Download {
+            files: vec![p],
+            bundle: None,
+            source: "huggingface:acme/Wan".into(),
+            mode: None,
+        };
+        let deep = DownloadSource::of(&download(piece(
+            "https://huggingface.co/acme/Wan/resolve/abc123/VAE/Wan2.2_VAE.safetensors",
+            "VAE/Wan2.2_VAE.safetensors",
+            "Wan2.2_VAE.safetensors",
+        )));
+        assert_eq!(deep.place, "huggingface:acme/Wan");
+        assert_eq!(deep.path.as_deref(), Some("VAE/Wan2.2_VAE.safetensors"));
+        assert_eq!(deep.revision.as_deref(), Some("abc123"));
+        let top = DownloadSource::of(&download(piece(
+            "https://huggingface.co/acme/Wan/resolve/main/m.gguf",
+            "m.gguf",
+            "m.gguf",
+        )));
+        assert_eq!((top.path, top.revision), (None, None));
+    }
 
     fn words() -> Vec<BundleWords> {
         vec![BundleWords {

@@ -171,7 +171,7 @@ the first of the day's top GGUF repositories was an object detector, which is wh
 
 Rows V01 to V16 and B01 to B20 of [phase3-test-plan.md](phase3-test-plan.md), written with the code and each held by a mutation check (the
 logic was broken one piece at a time and a test failed every time): the pure half in `crates/quickai-core/tests/p3_entries.rs` and `p3_bundles.rs`
-on the recorded answers of the real Hugging Face (`crates/quickai/tests/fixtures/huggingface/`, made by `record.sh`) and on the documents the
+on the recorded answers of the real Hugging Face (`crates/quickai-runtime/tests/fixtures/huggingface/`, made by `record.sh`) and on the documents the
 application ships; the primitive in `prims/hub.rs` against `testkit::fake_hub`; the download, the record, the picker, Start and Delete in
 `downloader.rs`, `bundles.rs`, `models.rs` and `app/engine.rs`; the window in the GUI suite `lookup_results` (against `test/resources/fake_hub.py`)
 and in `ollama_lookup` for Ollama's side. V15 (and U18 for Ollama) run by hand against the real sites:

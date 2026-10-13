@@ -19,7 +19,7 @@
 schema = 1
 kind = "engine"
 id = "comfyui"
-requires = { primitives = ["locate.setting@1", "locate.installed@1", "feed.github_release@1", "install.python_app@1", "spawn@1", "attach@1", "probe.http@1", "decode@1", "lookup.huggingface_gguf@1"] }
+requires = { primitives = ["locate.setting@1", "locate.installed@1", "feed.github_release@1", "install.python_app@1", "spawn@1", "attach@1", "probe.http@1", "decode@1", "lookup.huggingface_gguf@1", "prerequisite@1"] }
 
 [engine]
 name = "ComfyUI"
@@ -401,6 +401,63 @@ label = "ComfyUI launcher"
 type = "runtime_path"
 help = "Override the launcher QuickAI finds: a program that runs ComfyUI's main.py and passes its arguments on. Leave blank to use the installed build."
 ui = { section = "advanced", widget = "runtime_manager", order = 2, hint = "Local launcher path..." }
+
+# ---- what the computer has to have ---------------------------------------------------------------------------
+# A configuration says which of these it needs (`[[needs]] system = "c_compiler"`), and quickai-run looks at the computer
+# before it fetches anything, says what is missing with the exact command that brings it, and installs the packages only
+# when it is told to (--install-system-packages); docs/headless.md, section 12. The packages are named here and not in the
+# configuration, because a package that is installed as the administrator must not come from a file that was given away.
+#
+# Why these: Triton, which the PyTorch of a graphics card brings, builds a small helper in C the first time a kernel is
+# launched, with the computer's compiler and the headers of Python; the int8 and 4-bit builds of MiniMax H3 launch kernels
+# of their own, so on a computer without them the first clip fails with a message that says only that gcc "returned
+# non-zero exit status 1", and the cause stays in the log of the server (measured on a rented server, 2026-10-13: Python.h
+# was missing; F29). Triton's own build.py (3.8) takes the compiler from the variable CC, else gcc, else clang (not `cc`),
+# and the headers from the folder the default scheme of sysconfig names (Debian's `posix_local` read as `posix_prefix`).
+
+# Not a prerequisite of Triton but the first of the server's: Debian and Ubuntu leave `ensurepip` out of the Python and put it in
+# `python3.12-venv`, and without it `python -m venv` ends with "ensurepip is not available": the install of this document cannot make
+# its environment. The sentence the installer says then names the package for any version; this names the one for the Python that
+# will be used, before anything is downloaded, and installs it when it is told to. Not asked of an environment that is made.
+[[prerequisite]]
+id = "python_venv"
+label = "the venv module of the Python that ComfyUI's environment is made with (ensurepip)"
+when = "os == 'linux'"
+check = { use = "python_module", module = "ensurepip" }
+fix = { apt = ["python${python.version}-venv"] }
+hint = "Install the venv package of that Python (python3-venv, or python3.12-venv for a 3.12), or make the environment with a Python that has the module (--python PATH): the Pythons that pyenv and uv build have it."
+
+[[prerequisite]]
+id = "c_compiler"
+label = "a C compiler"
+when = "os == 'linux'"
+check = { use = "program", any_of = ["gcc", "clang"], env = "CC" }
+fix = { apt = ["build-essential"], dnf = ["gcc"], zypper = ["gcc"], pacman = ["gcc"] }
+hint = "Install gcc or clang, or name the compiler to use with the variable CC."
+
+[[prerequisite]]
+id = "python_headers"
+label = "the headers of the Python that ComfyUI's environment is made with (Python.h)"
+when = "os == 'linux'"
+check = { use = "python_header", file = "Python.h" }
+fix = { apt = ["python${python.version}-dev"], dnf = ["python${python.version}-devel"], zypper = ["python${python.digits}-devel"] }
+hint = "Install the development package of that Python (python3-dev, or python3.12-dev for a 3.12), or make the environment with a Python that has its headers (--python PATH): the Pythons that pyenv and uv build have them."
+
+# The PyTorch this document installs for an NVIDIA card is the one built for CUDA 13 (`torch_nvidia`, above); keep the two in step.
+[[prerequisite]]
+id = "nvidia_driver"
+label = "an NVIDIA driver of the 580 series or newer"
+when = "os == 'linux' and has(gpu.vendors, 'nvidia')"
+check = { use = "nvidia_driver", at_least = "580" }
+hint = "PyTorch for CUDA 13, which this installs for an NVIDIA card, needs it. Install a newer driver from your distribution (on Ubuntu: ubuntu-drivers install) or from NVIDIA, restart the computer, and run this again."
+
+# Run after the install and before ComfyUI is started, from a cache of Triton's that is empty, so that the helper is built here.
+[[prerequisite]]
+id = "triton"
+label = "a Triton kernel that builds with this computer's compiler and runs on the card"
+when = "os == 'linux' and has(gpu.vendors, 'nvidia')"
+check = { use = "python_script", asset = "comfyui/selftest/triton_kernel.py", timeout = "180s" }
+hint = "The lines above are the compiler's and Triton's own. If the compiler or a header file is what is missing, the prerequisites c_compiler and python_headers say what to install."
 
 # ---- advice for a run that went wrong ------------------------------------------------------------------------
 [[diagnostic]]

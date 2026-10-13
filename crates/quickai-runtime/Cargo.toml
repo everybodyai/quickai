@@ -1,0 +1,45 @@
+[package]
+name = "quickai-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "QuickAI without a window: it finds, installs, fetches, starts, watches and stops the programs a configuration names, and keeps the files that say what they are. The window and the headless program are both clients of it."
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# The fakes of the four things QuickAI talks to and the golden files, for the tests of the crates that use this one
+# (they are always there for this crate's own tests). Nothing that ships turns it on.
+testkit = []
+
+[dependencies]
+quickai-core = { path = "../quickai-core" }
+crossbeam-channel = "0.5.16"
+directories = "6"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+regex = "1"
+ruzstd = "0.8"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+serde_json = "1"
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+tar = "0.4"
+tiny_http = "0.12.0"
+ureq = { version = "3", features = ["json"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+include_dir = "0.7.4"
+
+# Process hygiene (docs/architecture.md, section 11.2): process groups and the parent-death signal on
+# Unix, a job object on Windows.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
