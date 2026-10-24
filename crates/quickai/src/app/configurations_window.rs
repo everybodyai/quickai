@@ -1490,7 +1490,7 @@ mod tests {
             ..Default::default()
         };
         let mut output = ctx.run_ui(raw, |ui| {
-            egui::CentralPanel::default().show(ui, |ui| app.show_header(ui));
+            app.show_window(ui);
             app.show_configuration_modals(ui.ctx(), false);
             app.show_configurations_window(ui.ctx());
         });

@@ -161,8 +161,9 @@ impl App {
         }
     }
 
-    /// Start, Stop, Open Chat UI, API and the status label.
-    pub(super) fn show_run_bar(&mut self, ui: &mut egui::Ui, state: ServerState, active: bool) {
+    /// The buttons of the toolbar: Start, Stop, the engine's page or its chat, and Connect an app. What the server is
+    /// doing is said by the status bar, not here.
+    pub(super) fn show_run_buttons(&mut self, ui: &mut egui::Ui, state: ServerState, active: bool) {
         let server = self.server_name();
         let loadable = self.can_load_selected();
         // an engine that lists its own models can start with none: the daemon runs, empty, and the
@@ -180,12 +181,7 @@ impl App {
         let web_ui = self
             .engine_doc()
             .and_then(|e| e.doc.provides.web_ui.clone());
-        let height = 32.0;
-        let status = self.run_status_text(state);
-        let companion = self.companion_status();
-        // beside the buttons while it fits there, on a row of its own under them when it does not: the engine's words and
-        // its companion's can be longer than what the buttons leave, and a line cut off by the window's edge is no way to read it
-        let mut status_below = false;
+        let height = 28.0;
         ui.horizontal(|ui| {
             let can_press_start = (!active && can_start) || loadable;
             let start = theme::button_sized(
@@ -279,7 +275,7 @@ impl App {
                 ui,
                 Role::Normal,
                 state == ServerState::Running,
-                "🔌 API",
+                "Connect an app",
                 egui::vec2(0.0, height),
             )
             .on_hover_text(if alone {
@@ -291,23 +287,12 @@ impl App {
             {
                 self.show_api_info = !self.show_api_info;
             }
-
-            ui.add_space(12.0);
-            if status_width(ui, &status, companion.as_ref()) <= ui.available_width() {
-                show_status(ui, state, &status, companion.as_ref());
-            } else {
-                status_below = true;
-            }
         });
-        if status_below {
-            ui.add_space(4.0);
-            ui.horizontal_wrapped(|ui| show_status(ui, state, &status, companion.as_ref()));
-        }
     }
 
     /// What the line of the run bar says of the engine: the model and port while it serves one, what a manager
     /// engine or one that runs on its own is doing, or the state's own word.
-    fn run_status_text(&self, state: ServerState) -> String {
+    pub(super) fn run_status_text(&self, state: ServerState) -> String {
         match (state, self.session.model_name(), self.session.port()) {
             (ServerState::Running, Some(name), Some(port)) => {
                 format!("Running: {name} (port {port})")
@@ -332,35 +317,4 @@ impl App {
             _ => state.label().to_string(),
         }
     }
-}
-
-/// The engine's line and, after a dot, the program that goes with it while one is being used.
-fn show_status(
-    ui: &mut egui::Ui,
-    state: ServerState,
-    status: &str,
-    companion: Option<&(String, ServerState)>,
-) {
-    ui.colored_label(App::state_color(state), status);
-    if let Some((text, companion_state)) = companion {
-        ui.label(egui::RichText::new("·").color(theme::palette().muted));
-        ui.colored_label(App::state_color(*companion_state), text);
-    }
-}
-
-/// How wide `show_status` is on one line.
-fn status_width(ui: &egui::Ui, status: &str, companion: Option<&(String, ServerState)>) -> f32 {
-    let font = egui::TextStyle::Body.resolve(ui.style());
-    let width = |text: &str| {
-        ui.painter()
-            .layout_no_wrap(text.to_string(), font.clone(), egui::Color32::WHITE)
-            .size()
-            .x
-    };
-    let gap = ui.spacing().item_spacing.x;
-    let mut total = width(status);
-    if let Some((text, _)) = companion {
-        total += gap + width("·") + gap + width(text);
-    }
-    total
 }

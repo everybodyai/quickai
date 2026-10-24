@@ -18,7 +18,7 @@ impl App {
         let can_look_up = self.can_look_up();
         ui.horizontal(|ui| {
             ui.add_enabled_ui(!active && self.download.is_none(), |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Get:").on_hover_text(
                         "One box, three things it can mean: a direct https:// link \
                          downloads that file, an existing local path imports it, and \

@@ -24,57 +24,12 @@ fn capability_help(word: &str) -> &'static str {
 }
 
 impl App {
-    /// The picker of the models the engine listed, its Refresh button and, under them, what is said of the model.
-    pub(super) fn show_named_model_bar(&mut self, ui: &mut egui::Ui, active: bool) {
+    /// The chosen model's name (it is chosen in the list on the left) and, under it, what the engine says it can do.
+    pub(super) fn show_named_model_bar(&mut self, ui: &mut egui::Ui) {
         let name = self.engine_name();
-        let server = self.server_name();
-        let mut chip_fits = true;
-        ui.horizontal(|ui| {
-            ui.label("Model:").on_hover_text(format!(
-                "Which model {server} loads on Start. These are the models {name} has: \
-                 they are listed by the running {server}, and by what it listed last time \
-                 while it is stopped. Pull another with the box below."
-            ));
-            let prev_selected = self.selected;
-            egui::ComboBox::from_id_salt("model_combo")
-                .width(320.0)
-                .selected_text(
-                    self.models
-                        .get(self.selected)
-                        .map(|m| m.display.as_str())
-                        .unwrap_or("(no models listed)"),
-                )
-                .show_ui(ui, |ui| {
-                    for (i, m) in self.models.iter().enumerate() {
-                        let label =
-                            if self.recommended_filename.as_deref() == Some(m.filename.as_str()) {
-                                format!("{} (recommended)", m.display)
-                            } else {
-                                m.display.clone()
-                            };
-                        ui.selectable_value(&mut self.selected, i, label);
-                    }
-                });
-            if self.selected != prev_selected {
-                self.apply_model_defaults();
-            }
-            ui.add_enabled_ui(!active, |ui| {
-                if ui
-                    .button("Refresh")
-                    .on_hover_text(format!(
-                        "Ask the running {server} which models it has. Stopped, this shows \
-                         what it listed the last time it ran: nothing is asked of a program \
-                         that is not running."
-                    ))
-                    .clicked()
-                {
-                    self.refresh_models(ui.ctx());
-                }
-            });
-            chip_fits = self.show_speed_chip_in_row(ui);
-        });
         match self.models.get(self.selected) {
             Some(m) => {
+                ui.heading(m.display.as_str());
                 // what the engine says the model can do is a chip each; `completion` is what every model that
                 // chats does, and is not worth a chip
                 let mut chips: Vec<Fact> = m
@@ -97,7 +52,7 @@ impl App {
                         hover: format!("(as {name} listed them the last time it ran)"),
                     });
                 }
-                self.show_model_facts(ui, chips, None, !chip_fits);
+                self.show_model_facts(ui, chips, None, true);
             }
             None => {
                 ui.add_space(2.0);
@@ -115,7 +70,7 @@ impl App {
         let engine_name = self.engine_name();
         let can_look_up = self.can_look_up();
         let pulling = self.named.pull.is_some();
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.add_enabled_ui(!pulling, |ui| {
                 ui.label("Get:").on_hover_text(format!(
                     "A model's name (qwen3:4b), or a Hugging Face reference \

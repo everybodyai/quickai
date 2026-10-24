@@ -1,4 +1,4 @@
-//! The ⚙ Settings window: the downloaded-models folder and list, live traffic, and the
+//! The Settings window: the downloaded-models folder and list, live traffic, and the
 //! "Advanced: llama.cpp" block (binary override, installed builds, build look-up, extra arguments).
 //!
 //! It is a window of its own, not a panel drawn over the main one: it can be put beside the main window,
@@ -98,7 +98,7 @@ impl App {
     }
 
     /// Closes the Settings and writes down what was changed in them, however they were closed: by their
-    /// Close button, their window's own close button or the ⚙ icon. A question asked in them (a delete
+    /// Close button, their window's own close button or the Settings button. A question asked in them (a delete
     /// waiting for its yes) goes with them: nobody is left to answer it.
     pub(super) fn close_settings(&mut self) {
         self.show_settings = false;
@@ -135,10 +135,10 @@ impl App {
                             "Show live conversation traffic",
                         )
                         .on_hover_text(format!(
-                            "Adds a small local proxy in front of {server} so a new \"📡 \
-                 Live\" button can show chat/completion requests and replies live, \
-                 from any client — the built-in chat UI or an external app via the \
-                 🔌 API. Off by default: clients then connect straight to \
+                            "Adds a small local proxy in front of {server} so the \"Live \
+                 traffic\" tab can show chat/completion requests and replies live, \
+                 from any client — the built-in chat UI or an external app connected \
+                 with Connect an app. Off by default: clients then connect straight to \
                  {server}, with no extra hop or overhead. Takes effect the next \
                  time you click Start."
                         ))
@@ -399,7 +399,7 @@ impl App {
 }
 
 /// How many rows the "Downloaded models"/"Installed builds" delete lists
-/// (⚙ Settings) show before scrolling, so a long download history doesn't
+/// (Settings) show before scrolling, so a long download history doesn't
 /// push the rest of the window down.
 pub(super) const DELETE_LIST_MAX_ROWS: usize = 4;
 
@@ -422,7 +422,6 @@ mod tests {
     use super::super::runtime_manager::Scan;
     use super::*;
     use crate::config::{build_registry, ConfigDirs};
-    use crate::events::ServerState;
     use crate::prims::install::InstallSpec;
     use crate::settings::Settings;
     use crate::testkit::{scratch, wait_until};
@@ -543,13 +542,7 @@ mod tests {
             ..Default::default()
         };
         let mut output = ctx.run_ui(raw, |ui| {
-            egui::CentralPanel::default().show(ui, |ui| {
-                app.show_header(ui);
-                app.show_models_area(ui, false);
-                app.show_controls(ui);
-                app.show_run_bar(ui, ServerState::Idle, false);
-                app.show_log_pane(ui);
-            });
+            app.show_window(ui);
             app.show_settings_window(ui.ctx());
         });
         output.textures_delta.clear();

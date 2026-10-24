@@ -32,7 +32,7 @@ adding a third engine should mean adding one folder, not editing the core.
   collides with `~/.quickai/llama-bin` or with the user's own `~/.ollama`.
 - **Additive settings.** Every existing `settings.json` key keeps its name and meaning (the GUI suite probes
   them). New: `backend`, plus one `backends.<id>` object per new engine.
-- **The window does not move in llama.cpp mode.** The Engine selector lives in ⚙ Settings. The header and main
+- **The window does not move in llama.cpp mode.** The Engine selector lives in Settings. The header and main
   panel keep their layout in llama.cpp mode, because the GUI suite's OCR crops are calibrated to it.
 - **Phased.** Phase 0 is a behaviour-preserving refactor with llama.cpp only, gated by the existing 213-case
   suite. Ollama arrives in Phases 1-3 on top of it (§9).
@@ -56,7 +56,7 @@ Each has a recommended default. The rest of the document assumes the recommendat
 | D1 | When Ollama already answers on the configured port, attach to it or refuse? | **Attach.** Mode `auto`: attach if something answers, otherwise spawn. The status line says "attached, not started by QuickAI". | Most Ollama users already run it as a service. Attaching makes Start/Stop mean load/unload a model, and Stop leaves their daemon alone. |
 | D2 | Which model store does a QuickAI-started Ollama use? | **Its own** (`~/.quickai/ollama/models`), with a Settings switch for Ollama's default store. | Pull and Delete in QuickAI must not touch models the user pulled with the Ollama CLI. |
 | D3 | Version policy | **Offer a tested version first** (pinned tag and sha256 in the source), newest second, via an explicit look-up. | Ollama ships often (v0.35.1 on 2026-09-29). The look-up is the user's click, never a background check. |
-| D4 | Where does the engine switch live? | **⚙ Settings → Engine.** | A header or main-panel control would move the "📡 Live" tab and shift the existing suite's OCR crops. |
+| D4 | Where does the engine switch live? | **Settings → Engine.** | A header or main-panel control would move the "Live traffic" tab and shift the existing suite's OCR crops. |
 | D5 | "Open Chat UI" for Ollama | **Hide it in v1.** A QuickAI-hosted chat page, served by the proxy for both engines, is a separate feature. | Ollama has nothing to open. |
 | D6 | The bundled Bonsai Q1_0 models under Ollama | **Not offered** until a smoke chat proves Ollama can run them. | They are llama.cpp-specific today (A5). |
 | D7 | zstd decoder | **`ruzstd`** (pure Rust), behind a throughput check; `zstd` (C) if too slow. | Builds go through `cross` in old-glibc Docker images and cross-compile for Windows. A C dependency adds risk there. |
@@ -67,7 +67,7 @@ Each has a recommended default. The rest of the document assumes the recommendat
 **Goals**
 
 - Ollama is selectable as an engine. It can be installed in the app or found on the machine; started, attached
-  to and stopped; models can be pulled, listed and deleted; the 🔌 API panel and 📡 Live tab work.
+  to and stopped; models can be pulled, listed and deleted; the Connect an app panel and Live traffic tab work.
 - llama.cpp behaves exactly as it does today, including the layout the GUI suite reads.
 - Packaging is untouched: nothing Ollama-related is bundled.
 - A new backend needs no change to the core or to another backend.
@@ -204,7 +204,7 @@ pub struct Caps {
 | `Launcher` | `plan(StartRequest) → LaunchPlan`, pure. | argv builder, `parse_extra_args`, `LD_LIBRARY_PATH` | env builder, warm-up and unload calls, attach |
 | `ModelCatalog` | List local models. Classify what was typed in the Model box. Acquire (download, import, pull) as a `Job`. Remove. Look up online. Recommend. | `models.rs`, `downloader.rs`, `remote.rs` | `ollama/api.rs`: tags, pull, delete; curated list; Hugging Face refs |
 | `TrafficDecoder` | Classify a request path, summarise a request body, pick the response framing, extract text. | Today's functions in `proxy.rs` | OpenAI decoder plus a native NDJSON decoder |
-| `api_info` | What the 🔌 API panel shows. | `http://127.0.0.1:<port>/v1`, model value ignored | OpenAI and native URLs, exact `name:tag` required |
+| `api_info` | What the Connect an app panel shows. | `http://127.0.0.1:<port>/v1`, model value ignored | OpenAI and native URLs, exact `name:tag` required |
 | `diagnose` | Turn an exit or log tail into hints. | "unknown model architecture" → try another build | port taken, out of memory, no GPU found, unknown model name |
 
 ### 6.3 `LaunchPlan`: the central seam
@@ -378,7 +378,7 @@ pub enum JobEvent { Progress { downloaded: u64, total: Option<u64> }, Status(Str
 pub enum JobOutput { ModelFile(String), ModelPulled(String), Runtime(PathBuf) }
 ```
 
-### 6.7 Traffic proxy and 📡 Live
+### 6.7 Traffic proxy and Live traffic
 
 - `Event`, `ServerState` and `TrafficEvent` move to `events.rs`; the proxy stops importing `server_manager`.
 - `proxy::spawn` receives the backend's `TrafficDecoder` along with the two ports.
@@ -432,11 +432,11 @@ environment-based settings, and the UI says so.
 
 ### 6.9 UI
 
-- **Engine selector** at the top of ⚙ Settings ("llama.cpp (bundled)" or "Ollama (downloaded)"), disabled while a
+- **Engine selector** at the top of Settings ("llama.cpp (bundled)" or "Ollama (downloaded)"), disabled while a
   session is active, like the proxy checkbox. Choosing Ollama without a runtime shows the setup card there and in
   the main panel's model area.
 - **Main panel in llama.cpp mode: unchanged.** In Ollama mode: model combo (from the catalog), Model box (Pull or
-  Search), Port, Context size, GPU (Auto/Off), Start, Stop, 🔌 API (no "Open Chat UI"), and a status line such as
+  Search), Port, Context size, GPU (Auto/Off), Start, Stop, Connect an app (no "Open Chat UI"), and a status line such as
   `Running: qwen3:4b (port 11434)` or `Attached: qwen3:4b (port 11434)`.
 - **Text** comes from `BackendInfo.help`. After Phase 0 no hover text names llama.cpp outside `backend/llamacpp`.
 - **API panel** comes from `Backend::api_info()`. For Ollama it shows the OpenAI base URL and the native URL, and
@@ -537,7 +537,7 @@ Phase 0 moves files; it does not rewrite their logic.
 | Daemon dies while running | Crashed (child exit, or the liveness probe when attached). |
 | Warm-up fails (out of memory, unsupported model) | Log Ollama's error, stop what QuickAI started, Crashed with hints (smaller model or context). |
 | Pull fails (offline, unknown name) | The job fails with Ollama's message; unknown name adds a hint "check the spelling or use hf.co/…". |
-| Another client asks for a different model | Ollama loads it, evicting ours (`MAX_LOADED_MODELS=1`). The 📡 Live row shows the model name. |
+| Another client asks for a different model | Ollama loads it, evicting ours (`MAX_LOADED_MODELS=1`). The Live traffic row shows the model name. |
 | Ollama finds no usable GPU | Its log says so; the hint explains the Vulkan driver requirement on Linux. |
 
 ## 8. Impact outside `quickai/`
@@ -568,7 +568,7 @@ the staged package.
   a test can assert that neither the daemon nor its child survives Stop.
 - A new suite `ollama_backend` with `docs/15_ollama_backend.md`: engine selection, runtime found in the throw-away
   HOME (`~/.quickai/ollama/<tag>/bin/ollama`), attach, Start/Stop, the exact environment mapping, pull progress,
-  delete confirm, picker, API panel text, no "Open Chat UI", and 📡 Live with NDJSON.
+  delete confirm, picker, API panel text, no "Open Chat UI", and Live traffic with NDJSON.
 - Existing suites to update: settings_window (Engine row), persistence (`backend`, `backends`), network_privacy (an
   idle session with the Ollama engine makes no outside request; install and pull are the only triggers).
 - The download and extract pipeline is tested in Rust, not through the GUI: an in-process `tiny_http` server serves
@@ -655,4 +655,4 @@ Vulkan-in-base is for)
 | `DELETE /api/delete` | Delete | 3 |
 | `GET /api/ps` | Optional: confirm the model is resident; real `size_vram` in place of the RAM heuristic | 3+ |
 | `POST /api/show` | Optional: model capabilities (embedding-only) | 3+ |
-| `/v1/*`, `/api/chat`, `/api/generate` from clients | Not called by QuickAI; decoded by the proxy for 📡 Live only | 3 |
+| `/v1/*`, `/api/chat`, `/api/generate` from clients | Not called by QuickAI; decoded by the proxy for Live traffic only | 3 |

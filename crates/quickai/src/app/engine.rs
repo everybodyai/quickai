@@ -644,14 +644,12 @@ mod tests {
             ..Default::default()
         };
         let mut output = ctx.run_ui(raw, |ui| {
-            egui::CentralPanel::default().show(ui, |ui| {
-                app.show_header(ui);
-                app.show_models_area(ui, false);
-                app.show_controls(ui);
-                app.show_run_bar(ui, state, false);
+            app.show_window(ui);
+            // what the window draws only in a state the session is not in here
+            egui::Area::new(egui::Id::new("in-this-state")).show(ui.ctx(), |ui| {
+                app.show_run_buttons(ui, state, false);
                 app.show_api_info_panel(ui, state);
                 app.show_diagnostics(ui, state);
-                app.show_log_pane(ui);
             });
             // (the question of a delete is asked in the Settings window, where its button is)
             app.show_settings_window(ui.ctx());

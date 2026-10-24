@@ -443,7 +443,7 @@ Which of the engine's APIs the Live tab reads.
 
 ## `[api_info]`
 
-What the 🔌 API panel says to a person who connects an app. Every text is a template over the engine's context (`${public_port}`, `${session.model_display}`).
+What the Connect an app panel says to a person who connects an app. Every text is a template over the engine's context (`${public_port}`, `${session.model_display}`).
 
 | Key | Value | Meaning |
 |---|---|---|

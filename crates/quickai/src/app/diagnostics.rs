@@ -26,7 +26,7 @@ impl App {
             ui.add_space(8.0);
             theme::alert(ui, Tone::Bad, |ui| {
                 ui.label(format!(
-                    "{name} is not installed. Open ⚙ Settings > Advanced: {name} and click \
+                    "{name} is not installed. Open Settings > Advanced: {name} and click \
                      \"Look up {name} builds\" to download one; nothing is downloaded until you do."
                 ));
             });
@@ -79,7 +79,7 @@ impl App {
             ui.label(
                 egui::RichText::new(
                     "Worth trying a different llama-server build:\n\
-                     1. Open ⚙ Settings > Advanced: llama.cpp.\n\
+                     1. Open Settings > Advanced: llama.cpp.\n\
                      2. Click \"Look up llama.cpp builds\" and pick one for your \
                         platform/GPU from the list — it installs and applies \
                         automatically.\n\

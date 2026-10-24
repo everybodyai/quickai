@@ -1,4 +1,4 @@
-//! The server log at the bottom of the main window (panel `log`).
+//! The server log, the first tab of the dock at the foot of the main window (panel `log`).
 
 use eframe::egui;
 
@@ -9,19 +9,16 @@ use super::App;
 const INSET: f32 = 8.0;
 
 impl App {
-    /// The scrolling log, in a well that takes the rest of the window.
+    /// The scrolling log, in a well that takes the rest of the dock.
     pub(super) fn show_log_pane(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(8.0);
         let p = theme::palette();
         let room = ui.available_size();
         egui::Frame::new()
             .fill(p.log)
-            .stroke(egui::Stroke::new(1.0, p.line))
-            .corner_radius(egui::CornerRadius::same(8))
             .inner_margin(egui::Margin::same(INSET as i8))
             .show(ui, |ui| {
                 // the frame fills what is left of the window (less than a line leaves it its own size)
-                let inside = egui::vec2(2.0 * (INSET + 1.0), 2.0 * (INSET + 1.0));
+                let inside = egui::vec2(2.0 * INSET, 2.0 * INSET);
                 ui.set_min_size((room - inside).max(egui::Vec2::ZERO));
                 egui::ScrollArea::vertical()
                     .stick_to_bottom(true)

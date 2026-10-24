@@ -34,7 +34,7 @@ pub enum Event {
     Traffic(TrafficEvent),
 }
 
-/// One update about traffic passing through the proxy, for the GUI's 📡 Live
+/// One update about traffic passing through the proxy, for the GUI's Live traffic
 /// window. `id` correlates a request with its (possibly streamed) response.
 #[derive(Clone, Debug)]
 pub enum TrafficEvent {
@@ -54,7 +54,7 @@ pub enum TrafficEvent {
         /// Best-effort description of any non-text parts of that same
         /// message — an attached image, PDF, etc. — so a client that sends
         /// a document alongside its text still shows up as more than a
-        /// blank prompt in the 📡 Live window. Empty when the message had
+        /// blank prompt in the Live traffic window. Empty when the message had
         /// no such parts, or wasn't in a shape this recognises.
         attachments: Vec<String>,
     },

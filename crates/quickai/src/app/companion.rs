@@ -255,7 +255,7 @@ impl App {
                 label: "Set up chat UI...".to_string(),
                 enabled: true,
                 hover: format!(
-                    "{name} is a chat page for {server}'s models. Set it up in ⚙ Settings; nothing is downloaded until you ask."
+                    "{name} is a chat page for {server}'s models. Set it up in Settings; nothing is downloaded until you ask."
                 ),
                 action: ChatAction::SetUp,
             });
@@ -387,7 +387,7 @@ impl App {
                 .is_some_and(|c| c.said_not_installed);
             if !said {
                 self.push_log(format!(
-                    "[{name}] not started: it is not installed. Open ⚙ Settings and install it; nothing is downloaded until you do."
+                    "[{name}] not started: it is not installed. Open Settings and install it; nothing is downloaded until you do."
                 ));
                 if let Some(companion) = self.companion.as_mut() {
                     companion.said_not_installed = true;
@@ -956,8 +956,8 @@ mod tests {
         let button = app.chat_button().unwrap();
         assert!(button.enabled && button.label == "Open Chat UI");
         assert!(matches!(button.action, ChatAction::Open(ref u) if *u == url));
-        // the run bar draws the pair
-        let drawn = painted(&ctx, |ui| app.show_run_bar(ui, ServerState::Running, true));
+        // the window draws the pair: the button in the toolbar, what the page is doing in the status bar
+        let drawn = painted(&ctx, |ui| app.show_window(ui));
         assert!(
             drawn.contains("Open Chat UI") && drawn.contains(&format!("Open WebUI on port {port}")),
             "{drawn}"

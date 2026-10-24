@@ -1226,9 +1226,11 @@ mod tests {
         };
         let mut output = ctx.run_ui(raw, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                if app.show_page_top(ui) {
+                // as the page draws it: in a column of the Main tab's width
+                super::super::theme::column(ui, super::super::theme::PAGE_WIDTH, |ui| {
+                    app.show_configuration_section(ui);
                     ui.label(UNDER);
-                }
+                });
             });
             app.show_configuration_modals(ui.ctx(), false);
         });
@@ -1296,7 +1298,6 @@ mod tests {
         let drawable =
             ctx.fonts_mut(|f| f.has_glyphs(&egui::FontId::proportional(14.0), UNSAVED_MARK));
         assert!(drawable, "the fonts have no {UNSAVED_MARK}");
-        assert!(said.iter().any(|t| t == "QuickAI"), "{said:?}");
         assert!(said.iter().any(|t| t == "Configuration:"), "{said:?}");
         assert!(said.iter().any(|t| t == "Default"), "{said:?}");
         for none in [badge_text().as_str(), "Save", "Save as...", "Revert"] {
@@ -1492,59 +1493,98 @@ mod tests {
     }
 
     #[test]
-    fn p3_a70_the_title_row_keeps_its_parts_apart_at_every_width_the_window_can_have() {
+    fn p3_a70_the_menu_bar_the_toolbar_and_the_dock_keep_their_parts_apart_at_every_width_the_window_can_have(
+    ) {
         let dir = scratch("a70");
         let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
+        // every text the whole window paints, with where (a text that is drawn twice is here twice)
+        let painted = |app: &mut App, width: f32| -> Vec<(String, egui::Rect)> {
+            let mut output = None;
+            for _ in 0..4 {
+                let raw = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(width, 560.0),
+                    )),
+                    ..Default::default()
+                };
+                let mut out = ctx.run_ui(raw, |ui| app.show_window(ui));
+                out.textures_delta.clear();
+                output = Some(out);
+            }
+            let mut into = Vec::new();
+            fn walk(shape: &egui::epaint::Shape, into: &mut Vec<(String, egui::Rect)>) {
+                match shape {
+                    egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, into)),
+                    egui::epaint::Shape::Text(t) => into.push((
+                        t.galley.text().to_string(),
+                        t.galley.rect.translate(t.pos.to_vec2()),
+                    )),
+                    _ => {}
+                }
+            }
+            for clipped in &output.unwrap().shapes {
+                walk(&clipped.shape, &mut into);
+            }
+            into
+        };
         for live in [false, true] {
             app.enable_traffic_proxy = live;
-            for width in [520.0, 560.0, 600.0, 680.0, 760.0, 1000.0] {
-                let found = rects(&settled_at(&mut app, &ctx, width));
-                let at = |text: &str| {
-                    *found
-                        .get(text)
-                        .unwrap_or_else(|| panic!("{text} at {width}: {:?}", found.keys()))
-                };
-                let (heading, gear, info) = (at("QuickAI"), at("⚙"), at("ℹ"));
-                // the order along the row: the heading, the tabs, then the icons (the first one added is
-                // the last on the row: the theme, the speed, the settings, the about)
-                assert!(
-                    heading.right() < info.left(),
-                    "{width} {live}: {heading:?} {info:?}"
-                );
-                assert!(
-                    info.right() <= gear.left(),
-                    "{width} {live}: {info:?} {gear:?}"
-                );
-                assert!(gear.right() <= width, "{width} {live}: {gear:?}");
-                if live {
-                    let (main, tab) = (at("Main"), at("📡 Live"));
-                    assert!(
-                        heading.right() < main.left(),
-                        "{width}: {heading:?} {main:?}"
-                    );
-                    assert!(main.right() <= tab.left(), "{width}: {main:?} {tab:?}");
-                    // the tab ends before the first icon of the row begins: nothing is drawn over a tab
-                    let first_icon = found
+            // from the least the window can be (main.rs) to a wide screen
+            for width in [640.0, 680.0, 760.0, 1000.0, 1400.0] {
+                let found = painted(&mut app, width);
+                // the first rect of a text in a band of the window
+                let at = |text: &str, top: f32, bottom: f32| {
+                    found
                         .iter()
-                        .filter(|(text, rect)| {
-                            rect.left() > tab.right()
-                                && rect.center().y < 40.0
-                                && text.as_str() != "QuickAI"
-                        })
-                        .map(|(_, rect)| rect.left())
-                        .fold(f32::INFINITY, f32::min);
-                    assert!(
-                        tab.right() < first_icon,
-                        "{width}: {tab:?} before {first_icon}"
-                    );
-                }
-                // the dropdown is not in this row any more: it is the section under it
-                let row = heading.center().y;
-                let name = at("Default");
+                        .find(|(t, r)| t == text && r.center().y > top && r.center().y < bottom)
+                        .map(|(_, r)| *r)
+                        .unwrap_or_else(|| panic!("{text} at {width} {live}: {found:?}"))
+                };
+                // the menus, in their order along the first row, inside the window
+                let menus: Vec<egui::Rect> = ["File", "Server", "Models", "View", "Help"]
+                    .iter()
+                    .map(|m| at(m, 0.0, 24.0))
+                    .collect();
                 assert!(
-                    name.center().y > row + 12.0,
-                    "{width} {live}: the name of the configuration is in the title row: {name:?} {heading:?}"
+                    menus
+                        .windows(2)
+                        .all(|pair| pair[0].right() < pair[1].left()),
+                    "{width} {live}: {menus:?}"
+                );
+                // the toolbar: the buttons in their order, none over another, and Settings whole at the right end
+                let tools: Vec<egui::Rect> = [
+                    "Start",
+                    "Stop",
+                    "Open Chat UI",
+                    "Connect an app",
+                    "Settings",
+                ]
+                .iter()
+                .map(|t| at(t, 24.0, 70.0))
+                .collect();
+                assert!(
+                    tools
+                        .windows(2)
+                        .all(|pair| pair[0].right() < pair[1].left()),
+                    "{width} {live}: {tools:?}"
+                );
+                assert!(tools[4].right() <= width, "{width} {live}: {:?}", tools[4]);
+                // the dock's tabs, the log first, and the live traffic's only when it is on
+                let log = at("Log", 70.0, 540.0);
+                let tab = found.iter().find(|(t, r)| {
+                    t == "Live traffic" && (r.center().y - log.center().y).abs() < 4.0
+                });
+                assert_eq!(tab.is_some(), live, "{width}: {found:?}");
+                if let Some((_, tab)) = tab {
+                    assert!(log.right() < tab.left(), "{width}: {log:?} {tab:?}");
+                }
+                // and the status bar under it all
+                let state = at("Stopped", 530.0, 560.0);
+                assert!(
+                    state.top() > log.bottom(),
+                    "{width} {live}: {state:?} {log:?}"
                 );
             }
         }
@@ -1552,7 +1592,7 @@ mod tests {
     }
 
     #[test]
-    fn p3_a72_the_configuration_is_a_section_under_the_title_row_whole_at_every_width() {
+    fn p3_a72_the_configuration_is_a_section_at_the_top_of_the_page_whole_at_every_width() {
         let dir = scratch("a72");
         let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
@@ -1568,7 +1608,6 @@ mod tests {
                         .get(text)
                         .unwrap_or_else(|| panic!("{text} at {width}: {:?}", found.keys()))
                 };
-                let heading = at("QuickAI");
                 let (label, name) = (at("Configuration:"), at("Default"));
                 let (badge, save, save_as, revert) = (
                     at(&badge_text()),
@@ -1576,8 +1615,7 @@ mod tests {
                     at("Save as..."),
                     at("Revert"),
                 );
-                // under the title row, and as wide as the page: one outline, from edge to edge
-                assert!(label.top() > heading.bottom(), "{width}: {label:?}");
+                // as wide as the page: one outline, from edge to edge
                 let section = frames(&output)
                     .into_iter()
                     .filter(|(rect, _)| rect.top() < label.top() && rect.bottom() > label.bottom())
@@ -1671,12 +1709,16 @@ mod tests {
         app.values.set("port", 8080u16);
         app.choose_configuration("default");
         app.values.set("port", 9000u16);
-        // the Live tab is drawn instead of the section, not under it (choosing a configuration sets the proxy as it says)
+        // the live traffic is a tab of the dock at the foot of the window: with it open the section is where it was
+        // (choosing a configuration sets the proxy as it says)
         app.enable_traffic_proxy = true;
         app.active_tab = Tab::Live;
         let found = rects(&settled_at(&mut app, &ctx, 760.0));
-        assert!(!found.contains_key("Configuration:"), "{:?}", found.keys());
-        assert!(!found.contains_key(UNDER), "{:?}", found.keys());
+        assert!(
+            found.contains_key("Configuration:") && found.contains_key(UNDER),
+            "{:?}",
+            found.keys()
+        );
         app.active_tab = Tab::Main;
         let found = rects(&settled_at(&mut app, &ctx, 760.0));
         assert!(found.contains_key("Configuration:") && found.contains_key(UNDER));
@@ -1715,9 +1757,9 @@ mod tests {
                 .find(|(_, color)| *color == amber)
                 .unwrap_or_else(|| panic!("{width}: no outline in the colour of a change"))
                 .0;
-            // nothing moves: the label, the dropdown, the title row and what the page has under the section
-            // are where they were, and so is the section (its outline is the same rectangle)
-            for text in ["QuickAI", "Configuration:", "Default", UNDER] {
+            // nothing moves: the label, the dropdown and what the page has under the section are where they
+            // were, and so is the section (its outline is the same rectangle)
+            for text in ["Configuration:", "Default", UNDER] {
                 assert_eq!(
                     said[text], changed[text],
                     "{width}: {text} moved when a change was made"

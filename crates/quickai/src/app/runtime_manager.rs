@@ -413,7 +413,7 @@ impl App {
                             .map(|d| format!(", stopped {} ago", hardware::format_duration(d)))
                             .unwrap_or_default();
                         self.push_log(format!(
-                            "{name}: an install of {} stopped before it was whole ({} of {} steps done, {} on disk{ago}). Go on with it, or delete it, in ⚙ Settings → Advanced → Unfinished installs.",
+                            "{name}: an install of {} stopped before it was whole ({} of {} steps done, {} on disk{ago}). Go on with it, or delete it, in Settings → Advanced → Unfinished installs.",
                             u.label,
                             u.done,
                             u.total,

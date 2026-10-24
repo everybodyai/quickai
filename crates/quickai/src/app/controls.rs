@@ -22,7 +22,7 @@ impl App {
         let enabled = fields.iter().all(|f| f.enabled);
         let mut edits = Vec::new();
         let mut actions = Vec::new();
-        theme::card(ui, |ui| {
+        theme::group(ui, "Server", |ui| {
             let row = ui
                 .add_enabled_ui(enabled, |ui| {
                     let row = ui.horizontal(|ui| {

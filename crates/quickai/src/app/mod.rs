@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use eframe::egui;
 
 use crate::config;
-use crate::events::{ServerState, TrafficEvent};
+use crate::events::TrafficEvent;
 use crate::gpu::{self, GpuVendor};
 use crate::hardware;
 use crate::jobs::Job;
@@ -43,6 +43,7 @@ mod named_models;
 mod run_bar;
 mod runtime_manager;
 mod settings_window;
+mod shell;
 mod stall;
 mod theme;
 mod values;
@@ -50,13 +51,6 @@ mod widgets;
 mod workbench;
 
 const MAX_LOG_LINES: usize = 2000;
-
-/// The least height the log is given while there is a page above it that is taller than the window leaves
-/// room for, and the least that page is given. After a crash the log has more: the panel of the crash says to
-/// look there for the reason, and the reason is four lines from the end, which a pane of 72 px cut in half.
-const LOG_LEAST: f32 = 72.0;
-const LOG_AFTER_CRASH: f32 = 104.0;
-const PAGE_LEAST: f32 = 120.0;
 
 /// What the log pane starts with: the problems found in the configuration, if any (the notes that
 /// need no action are left out). A clean start shows nothing, as it always has.
@@ -136,10 +130,10 @@ pub struct App {
     /// The Settings were asked for while open: the window comes to the front once.
     raise_settings: bool,
     show_about: bool,
-    /// `None` unless the user picked a custom folder in ⚙ Settings; see
+    /// `None` unless the user picked a custom folder in Settings; see
     /// `Settings::models_dir_override` for why this isn't always Some.
     models_dir_override: Option<PathBuf>,
-    /// Scratch text-edit buffer for the ⚙ Settings window, separate from the `PathBuf` above so a
+    /// Scratch text-edit buffer for the Settings window, separate from the `PathBuf` above so a
     /// half-typed path doesn't take effect until "Apply" is clicked.
     models_dir_input: String,
     settings_error: Option<String>,
@@ -148,13 +142,13 @@ pub struct App {
     active_tab: Tab,
     traffic: VecDeque<TrafficTurn>,
     /// `None` shows every session at once; `Some(session_key)` filters the
-    /// 📡 Live tab down to just that client — see `TrafficTurn::session`.
+    /// Live traffic tab down to just that client — see `TrafficTurn::session`.
     selected_session: Option<String>,
     /// GPU vendor(s) this machine looks like it has — see `gpu::detect`.
     /// Best-effort and computed once; only used to warn about a vendor-
     /// locked llama.cpp build (CUDA/ROCm) that won't match the hardware.
     gpu_vendors: Vec<GpuVendor>,
-    /// The binary box, the installed builds and the look-up of new ones (⚙ Settings → Advanced).
+    /// The binary box, the installed builds and the look-up of new ones (Settings → Advanced).
     runtime: RuntimeManager,
     /// A delete awaiting user confirmation — see `PendingDelete` and
     /// `show_confirm_delete_modal`.
@@ -193,7 +187,7 @@ enum Tab {
     Live,
 }
 
-/// One request/response pair shown in the 📡 Live tab. `response` fills
+/// One request/response pair shown in the Live traffic tab. `response` fills
 /// in as it streams; `done`/`error` mark when there's nothing more coming.
 struct TrafficTurn {
     id: u64,
@@ -484,7 +478,7 @@ impl App {
     }
 
     /// Re-scans both models folders, keeping the current selection if it's
-    /// still present. Shared by the Refresh button and the ⚙ Settings
+    /// still present. Shared by the Refresh button and the Settings
     /// "Apply"/"Reset to default" actions on the downloaded-models folder.
     fn rescan_models(&mut self) {
         let current = self.models.get(self.selected).map(|m| m.filename.clone());
@@ -622,7 +616,7 @@ impl App {
         }
     }
 
-    /// Applies one proxy `TrafficEvent` to the 📡 Live tab's turn list.
+    /// Applies one proxy `TrafficEvent` to the Live traffic tab's turn list.
     fn apply_traffic_event(&mut self, event: TrafficEvent) {
         match event {
             TrafficEvent::Request {
@@ -735,30 +729,6 @@ impl App {
             None => self.download = Some(job),
         }
     }
-
-    fn state_color(state: ServerState) -> egui::Color32 {
-        theme::state_color(state)
-    }
-}
-
-impl App {
-    /// The models and the way to get them: the picker and the model box of an engine that is given a
-    /// model to start, or the list of what is installed for one that runs on its own.
-    pub(super) fn show_models_area(&mut self, ui: &mut egui::Ui, active: bool) {
-        theme::card(ui, |ui| {
-            if self.runs_alone() {
-                self.show_workbench(ui, active);
-            } else {
-                self.show_model_bar(ui, active);
-
-                // what is picked above, and the ways to get another one below it
-                ui.add_space(2.0);
-                ui.separator();
-                ui.add_space(2.0);
-                self.show_acquire(ui, active);
-            }
-        });
-    }
 }
 
 /// A function that asks the window to repaint soon, however many times it is asked: an install or a
@@ -797,56 +767,7 @@ impl eframe::App for App {
         self.poll_companion(ui.ctx());
         self.poll_named_models(ui.ctx());
 
-        let active = self.session.is_active();
-        let state = self.session.state();
-        if state == ServerState::Running {
-            self.run_reached_running = true;
-        }
-
-        egui::CentralPanel::default()
-            .frame(theme::page_frame())
-            .show(ui, |ui| {
-                if !self.show_page_top(ui) {
-                    return;
-                }
-
-                // What is above the log scrolls when the window is too short for it and for the least the log
-                // is given (a crash panel, the API panel and the results of a look-up are as tall as they are
-                // and used to push the log out of the window); in a window that has room it is all in view.
-                // While the results of a look-up or the way to connect an app are on the page they have the
-                // whole of it, as they always had, and the log is under them: it is not what is being read.
-                let browsing =
-                    self.lookup.open || (self.show_api_info && state == ServerState::Running);
-                let crashed = state == ServerState::Crashed
-                    || self.companion_state() == Some(ServerState::Crashed);
-                theme::column(ui, theme::PAGE_WIDTH, |ui| {
-                    let room = if browsing {
-                        ui.available_height()
-                    } else {
-                        let log = if crashed { LOG_AFTER_CRASH } else { LOG_LEAST };
-                        (ui.available_height() - log - 8.0).max(PAGE_LEAST)
-                    };
-                    egui::ScrollArea::vertical()
-                        .id_salt("page")
-                        .max_height(room)
-                        .auto_shrink([false, true])
-                        .show(ui, |ui| {
-                            self.show_models_area(ui, active);
-
-                            ui.add_space(6.0);
-                            self.show_controls(ui);
-
-                            ui.add_space(10.0);
-                            self.show_run_bar(ui, state, active);
-
-                            self.show_api_info_panel(ui, state);
-                            self.show_diagnostics(ui, state);
-                        });
-                    if !browsing {
-                        self.show_log_pane(ui);
-                    }
-                });
-            });
+        self.show_window(ui);
 
         self.show_settings_window(ui.ctx());
         self.show_about_window(ui.ctx());
