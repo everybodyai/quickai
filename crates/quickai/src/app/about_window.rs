@@ -111,7 +111,12 @@ impl App {
                         ui.add_space(6.0);
 
                         ui.label(egui::RichText::new("License").strong());
-                        ui.label("QuickAI's own source code is licensed under the PolyForm Noncommercial License 1.0.0.");
+                        ui.label(
+                            "QuickAI's own source code is licensed under the PolyForm Noncommercial \
+                         License 1.0.0: free for personal use, study and research, and for \
+                         charities, schools and public institutions. Using it in or for a business \
+                         needs a commercial license: see everybodyai.dev/licensing.",
+                        );
                         ui.add_space(4.0);
                         ui.label(
                             "This package also bundles, unmodified and under their own licenses:",

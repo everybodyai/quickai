@@ -1,22 +1,6 @@
 # Headless: `quickai-run`
 
-_Status: **built** (WP4.18, WP4.19 and WP4.20 of [implementation-plan.md](implementation-plan.md)), 2026-10-12, 2026-10-13 (WP4.20, what the computer has to have: section 12) · Asked for by the user the same day, twice ·
-The tests are groups O and Y of [phase3-test-plan.md](phase3-test-plan.md); the GUI repository has a Robot suite of its own that runs the real program,
-[docs/21_headless.md](../../test/docs/21_headless.md) there (68 cases, no display needed)._
-
-The user had a server of their own that runs ComfyUI, and asked how to use it from another program; the answer was that QuickAI has no
-headless mode, only a window and two development commands. Then: "what about creating another cli application that can run with a given
-configuration - it has to get all the info from the config, download/configure itself and start?", and, to the plan: "Go for it. make
-things modular in the current QuickAI, test, then go for implementations." (WP4.18.) When it was built, and could not yet carry the files of a video
-model, the user wrote:
-
-> The configuration should never carry a model, it should just carry the information about where to fetch it from and the runtime will autofetch - or the user should have the ability to specify the location or provide alternate means to get it.
->
-> If a configuration uses additional runtimes e.g. the open chat for ollama - the configuration should specify that as well and must be able to download and configure that too - The environmet specific variables if any are to be specified by the user - either through a configuration file(which you ask the user to fill) or via commandline etc.
->
-> apart from that make necssary e2e tests with robot - test/ - and make the tests.
-
-That is WP4.19, and it is sections 6 to 9 below.
+`quickai-run` runs a QuickAI configuration on a computer with no display, such as a rented GPU server: it installs what the configuration needs, fetches its models, starts it and stays until it is stopped. This page says what it does, how, and what has been run for real.
 
 ## 1. In short
 

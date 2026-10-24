@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in QuickAI doesn't work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Pick the model ...
+        2. Press Start ...
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: QuickAI version
+      description: Shown in the ℹ About window.
+    validations:
+      required: true
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      options: [llama.cpp, Ollama, ComfyUI, Open WebUI, quickai-run (headless), Not engine-related]
+  - type: input
+    id: system
+    attributes:
+      label: System
+      placeholder: e.g. Ubuntu 24.04, AMD RX 6700 XT, 32 GB RAM / Windows 11, NVIDIA RTX 4060
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: The relevant lines of the log pane, if any. Remove anything private first.
+      render: text

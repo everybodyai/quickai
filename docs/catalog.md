@@ -1,12 +1,5 @@
 # The recommended models
 
-_Status: built 2026-10-07 (WP4.10 of [implementation-plan.md](implementation-plan.md); rows J of [phase3-test-plan.md](phase3-test-plan.md)) ·
-Asked for by the user on 2026-10-07: "scan major projects that can be run today using the quickai, this will be a curated list that will be packaged
-along with the app. Ideally small models that helps the users, also medium and big ones for giants. We focus on small/medium guys now. Provide all
-categories. If you need create another button or some UI stuff that helps the users navigate this list and get them." and, while it was built: "for
-models with dependencies, e.g. projectors, ensure to add those to the list, ideally bundle it together for download", "it's the users who has to choose
-whether he downloads, for e.g., a projector"._
-
 This is the first piece of the architecture's `catalog` document kind ([architecture.md](architecture.md), 5.1 and 6.4) that the application uses: the models
 it recommends, as documents it ships, with a window to find one and get it. The recipe side of the catalog (components chosen by hand, adapters, LoRA) is
 still Phase 4's. Where this document and the generated page ([reference/catalog-fields.md](reference/catalog-fields.md)) differ on a key, the page wins.

@@ -1,11 +1,5 @@
 # Look-up results, categories and bundles
 
-_Status: built and verified 2026-10-07 (WP4.9 of [implementation-plan.md](implementation-plan.md); rows V and B of
-[phase3-test-plan.md](phase3-test-plan.md)) · Asked for by the user on 2026-10-07: "make the lookup results look similar on
-both ollama and llamacpp. Try to categorize based on model types and size. For models requiring projection and so on place
-them next to each other, also provide a bundled download option. Provide provision to configure these bundles, e.g. projection
-+ llm for vision etc."_
-
 This pulls three pieces of Phase 4 forward (WP4.2's Hugging Face look-up as a declared primitive, WP4.3's several files fetched as one
 thing, and WP4.4's component attached to a model when it starts, as far as `bind.arg`) and leaves the rest of Phase 4 alone: no catalog of recipes, no
 Adapters panel, no LoRA, no modality discovery. Where this document and the generated references

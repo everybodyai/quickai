@@ -1,0 +1,21 @@
+name: Feature request
+description: An idea for QuickAI
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The problem or the goal, in your own words. What makes it hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: How you imagine it working. Rough is fine.
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy
+      description: Would this need QuickAI to contact the internet or store anything new? QuickAI stays private by default, so say how.
