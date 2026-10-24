@@ -1607,6 +1607,7 @@ fn compile_python_app(
         space,
         pip,
         nodes,
+        options,
         ..
     }) = &acquire.install
     else {
@@ -1722,10 +1723,61 @@ fn compile_python_app(
         }
     }
 
+    // what the person may choose, and what it makes the launcher pass on
+    let mut option_ids: Vec<&str> = Vec::new();
+    for (i, option) in options.iter().enumerate() {
+        let option_at = install_at.clone().key("options").index(i);
+        if option.id.is_empty()
+            || !option
+                .id
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        {
+            c.error_hint(
+                &option_at.clone().key("id"),
+                format!("`{}` is not a valid option id", option.id),
+                "use letters, digits and `_`",
+            );
+        }
+        if option_ids.contains(&option.id.as_str()) {
+            c.error(
+                &option_at.clone().key("id"),
+                format!("the option id `{}` is used twice", option.id),
+            );
+        }
+        option_ids.push(&option.id);
+        if option.label.trim().is_empty() {
+            c.error_hint(
+                &option_at.clone().key("label"),
+                "an option has no words for its box",
+                "write what the box says, such as Install ComfyUI-Manager",
+            );
+        }
+        // the words go into the launcher, a script the person runs: one plain word of a command line each
+        for arg in &option.launch_args {
+            if !is_launch_arg(arg) {
+                c.error_hint(
+                    &option_at.clone().key("launch_args"),
+                    format!("`{arg}` is not one plain word of a command line"),
+                    "write an option such as --enable-manager-legacy-ui: it starts with - and holds letters, digits and - _ . =",
+                );
+            }
+        }
+    }
+
     let mut ids: Vec<&str> = Vec::new();
     let mut pip_when = Vec::new();
     for (i, step) in pip.iter().enumerate() {
         let step_at = install_at.clone().key("pip").index(i);
+        if let Some(option) = &step.option {
+            if !option_ids.contains(&option.as_str()) {
+                c.error_hint(
+                    &step_at.clone().key("option"),
+                    format!("`{option}` is not an option of this install"),
+                    "name one that [[acquire.install.options]] declares",
+                );
+            }
+        }
         if step.id.is_empty()
             || !step
                 .id
@@ -1856,6 +1908,20 @@ fn compile_python_app(
         );
     }
     (pip_when, node_when)
+}
+
+/// One plain word of a command line that an install's launcher passes on: `--enable-manager-legacy-ui`. It is written
+/// into a script, so it is never anything a shell would read as more than the one word.
+pub fn is_launch_arg(text: &str) -> bool {
+    let Some(name) = text.strip_prefix("--").or_else(|| text.strip_prefix('-')) else {
+        return false;
+    };
+    name.chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '='))
 }
 
 /// A folder of the models folder: one plain name, so that nothing climbs out of it or goes below it.

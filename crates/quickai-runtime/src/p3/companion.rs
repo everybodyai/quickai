@@ -418,6 +418,7 @@ impl World {
                     },
                 ],
                 nodes: Vec::new(),
+                launch_args: Vec::new(),
                 space: None,
             })),
             ..Default::default()

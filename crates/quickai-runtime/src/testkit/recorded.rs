@@ -108,19 +108,25 @@ pub fn load() -> Recorded {
     }
 }
 
-/// The hosts a real ComfyUI contacted when the page's Download button fetched a model, `host:port`
-/// (`tests/fixtures/comfyui/recorded/egress.txt`, and how it was made, in the README beside it).
+/// The hosts a real ComfyUI contacted, `host:port`: when the page's Download button fetched a model
+/// (`tests/fixtures/comfyui/recorded/egress.txt`) and, with ComfyUI-Manager, when it started and a model was
+/// asked of its Model Manager (`egress_manager.txt`); how each was made is in the README beside them.
 pub fn comfyui_egress() -> Vec<String> {
-    std::fs::read_to_string(
-        super::fixtures_dir()
-            .join("comfyui")
-            .join("recorded")
-            .join("egress.txt"),
-    )
-    .expect("the recording of what ComfyUI contacted is in the repository")
-    .lines()
-    .map(str::to_string)
-    .collect()
+    ["egress.txt", "egress_manager.txt"]
+        .into_iter()
+        .flat_map(|file| {
+            std::fs::read_to_string(
+                super::fixtures_dir()
+                    .join("comfyui")
+                    .join("recorded")
+                    .join(file),
+            )
+            .expect("the recording of what ComfyUI contacted is in the repository")
+            .lines()
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 impl Recorded {

@@ -405,9 +405,16 @@ fn p3_f01_the_embedded_set_has_a_comfyui_engine_that_loads_clean() {
     assert_eq!(engine.doc.engine.license.as_deref(), Some("GPL-3.0"));
     assert_eq!(
         engine.doc.engine.egress,
-        ["huggingface.co", "*.cdn.hf.co"],
-        "the page is held to --offline; the one thing ComfyUI contacts is the hub, when the person presses \
-         Download in its page (F22 of docs/engine-facts.md; X08 holds it to what a real fetch contacted)"
+        [
+            "huggingface.co",
+            "*.cdn.hf.co",
+            "raw.githubusercontent.com",
+            "api.comfy.org",
+            "github.com"
+        ],
+        "the page is held to --offline; ComfyUI itself contacts the hub, when the person presses Download in its \
+         page (F22 of docs/engine-facts.md), and ComfyUI-Manager, which is an option of the install, its lists \
+         and the site a model of its own list is on (F35); X08 holds it to what a real run contacted"
     );
     assert!(!engine.doc.provides.needs_model, "it starts on its own");
     assert_eq!(engine.doc.provides.default_port, Some(8188));
@@ -615,6 +622,261 @@ fn p3_f06_what_an_install_puts_on_the_machine_is_said_in_a_sentence() {
             &facts(&[], &[], "linux")
         ),
         None
+    );
+}
+
+/// An install with one option (the Manager of ComfyUI, in a document of its own) and the one step that belongs to it.
+const WITH_OPTION: &str = r#"[acquire.install]
+use = "python_app"
+binary = { name = "pyapp" }
+entry = "main.py"
+python = { versions = ["3.13"] }
+
+[[acquire.install.options]]
+id = "manager"
+label = "Install the Manager"
+badge = "highly recommended"
+default = true
+launch_args = ["--enable-manager"]
+
+[[acquire.install.pip]]
+id = "requirements"
+requirements = "requirements.txt"
+
+[[acquire.install.pip]]
+id = "manager"
+option = "manager"
+requirements = "manager_requirements.txt"
+"#;
+
+#[test]
+fn p3_f93_the_document_offers_comfyui_manager_as_a_ticked_option_of_the_install_that_adds_a_step_and_a_word(
+) {
+    use quickai_core::acquire;
+    let registry = shipped_registry(&[]);
+    let engine = registry.engine("comfyui").unwrap();
+    let on = facts(LINUX_AMD, &["gfx1031"], "linux");
+
+    // what the window offers: one box, ticked, with the words of a recommendation and what the pointer is told
+    let options = acquire::install_options(engine, &on);
+    assert_eq!(options.len(), 1, "{options:#?}");
+    let manager = options[0];
+    assert_eq!(manager.id, "manager");
+    assert_eq!(manager.label, "Install ComfyUI-Manager");
+    assert_eq!(manager.badge.as_deref(), Some("highly recommended"));
+    assert!(manager.default, "it is ticked until the person unticks it");
+    let help = manager.help.as_deref().unwrap_or_default();
+    for word in [
+        "Model Manager",
+        "raw.githubusercontent.com",
+        "api.comfy.org",
+        "another person's program",
+    ] {
+        assert!(help.contains(word), "the box says `{word}`: {help}");
+    }
+    assert_eq!(acquire::default_options(engine, &on), ["manager"]);
+
+    // chosen nothing (the headless runner, an install of before): the steps of before and no word for the launcher
+    let ids = |chosen: &[&str]| -> Vec<String> {
+        acquire::pip_steps_with(engine, &on, chosen)
+            .iter()
+            .map(|s| s.id.clone())
+            .collect()
+    };
+    assert_eq!(ids(&[]), ["torch_amd", "requirements"]);
+    assert_eq!(
+        acquire::pip_steps(engine, &on).len(),
+        2,
+        "pip_steps is the install of nobody's choice"
+    );
+    assert!(acquire::launch_args(engine, &[]).is_empty());
+
+    // chosen: ComfyUI's own file of what the Manager needs, after what ComfyUI needs, and the flag of the classic interface
+    assert_eq!(ids(&["manager"]), ["torch_amd", "requirements", "manager"]);
+    let steps = acquire::pip_steps_with(engine, &on, &["manager"]);
+    assert_eq!(
+        steps[2].requirements.as_deref(),
+        Some("manager_requirements.txt")
+    );
+    assert!(
+        steps[2].packages.is_empty() && steps[2].index.is_none(),
+        "from PyPI, as ComfyUI's release names it"
+    );
+    assert_eq!(
+        acquire::launch_args(engine, &["manager"]),
+        ["--enable-manager-legacy-ui"]
+    );
+    // an option the document does not have changes nothing
+    assert_eq!(ids(&["nothing"]), ids(&[]));
+    assert!(acquire::launch_args(engine, &["nothing"]).is_empty());
+
+    // it is offered on every machine the install is, and PyTorch is the same one with it
+    for (vendors, os) in [(&["nvidia"][..], "windows"), (&[][..], "macos")] {
+        let machine = facts(vendors, &[], os);
+        assert_eq!(acquire::default_options(engine, &machine), ["manager"]);
+        let with = ids_of(engine, &machine, &["manager"]);
+        let without = ids_of(engine, &machine, &[]);
+        assert_eq!(with[..without.len()], without[..]);
+        assert_eq!(with.last().map(String::as_str), Some("manager"));
+    }
+
+    // the sentence under the button says what is ticked
+    let said = |chosen: &[&str]| acquire::install_summary_with(engine, &on, chosen).unwrap();
+    assert!(
+        said(&["manager"]).contains("ComfyUI-Manager"),
+        "{}",
+        said(&["manager"])
+    );
+    assert!(!said(&[]).contains("ComfyUI-Manager"), "{}", said(&[]));
+    assert_eq!(
+        acquire::install_summary(engine, &on).unwrap(),
+        said(&[]),
+        "the sentence of before"
+    );
+
+    // an install that stopped is gone on with what it was begun with: its steps say it
+    let stopped = |ids: &[&str]| -> Vec<String> { ids.iter().map(|s| s.to_string()).collect() };
+    assert_eq!(
+        acquire::options_of_steps(
+            engine,
+            &stopped(&[
+                "source",
+                "venv",
+                "pip:torch_amd",
+                "pip:requirements",
+                "pip:manager",
+                "check"
+            ])
+        ),
+        ["manager"]
+    );
+    assert!(acquire::options_of_steps(
+        engine,
+        &stopped(&[
+            "source",
+            "venv",
+            "pip:torch_amd",
+            "pip:requirements",
+            "check"
+        ])
+    )
+    .is_empty());
+    assert!(acquire::options_of_steps(engine, &[]).is_empty());
+
+    // the other engines have no option, and no box
+    for other in ["ollama", "llamacpp"] {
+        if let Some(engine) = registry.engine(other) {
+            assert!(acquire::install_options(engine, &on).is_empty(), "{other}");
+        }
+    }
+}
+
+fn ids_of(
+    engine: &quickai_core::registry::Engine,
+    machine: &HostFacts,
+    chosen: &[&str],
+) -> Vec<String> {
+    quickai_core::acquire::pip_steps_with(engine, machine, chosen)
+        .iter()
+        .map(|s| s.id.clone())
+        .collect()
+}
+
+#[test]
+fn p3_f94_an_option_is_held_to_what_it_may_say_and_the_words_it_puts_in_the_launcher_are_plain() {
+    // the document that is right loads, and its option and its step are as written
+    let registry = registry_of(&[("embedded:engines/pyapp.toml", &engine(WITH_OPTION))]);
+    let problems = texts(&registry, Severity::Error);
+    assert!(problems.is_empty(), "{problems:#?}");
+    let pyapp = registry.engine("pyapp").unwrap();
+    let on = facts(&[], &[], "linux");
+    assert_eq!(
+        quickai_core::acquire::launch_args(pyapp, &["manager"]),
+        ["--enable-manager"]
+    );
+
+    // (what is wrong, the piece of the document that says it, what it is changed to, what the error says)
+    let bad: &[(&str, &str, &str, &str)] = &[
+        (
+            "a step of an option the document does not have",
+            "option = \"manager\"",
+            "option = \"another\"",
+            "is not an option of this install",
+        ),
+        (
+            "an option with a name that is no name",
+            "id = \"manager\"\nlabel",
+            "id = \"the manager\"\nlabel",
+            "is not a valid option id",
+        ),
+        (
+            "an option with no words for its box",
+            "label = \"Install the Manager\"",
+            "label = \"  \"",
+            "no words for its box",
+        ),
+        (
+            "two options of the same name",
+            "[[acquire.install.pip]]\nid = \"requirements\"",
+            "[[acquire.install.options]]\nid = \"manager\"\nlabel = \"Again\"\n\n[[acquire.install.pip]]\nid = \"requirements\"",
+            "the option id `manager` is used twice",
+        ),
+        (
+            "a word for the launcher that a shell would read as two",
+            "launch_args = [\"--enable-manager\"]",
+            "launch_args = [\"--enable-manager --listen\"]",
+            "is not one plain word of a command line",
+        ),
+        (
+            "a word for the launcher that ends the command",
+            "launch_args = [\"--enable-manager\"]",
+            "launch_args = [\"--x;rm\"]",
+            "is not one plain word of a command line",
+        ),
+        (
+            "a word for the launcher that expands",
+            "launch_args = [\"--enable-manager\"]",
+            "launch_args = [\"--x=$HOME\"]",
+            "is not one plain word of a command line",
+        ),
+        (
+            "a word for the launcher that is not an option",
+            "launch_args = [\"--enable-manager\"]",
+            "launch_args = [\"main.py\"]",
+            "is not one plain word of a command line",
+        ),
+        (
+            "a word for the launcher that is nothing",
+            "launch_args = [\"--enable-manager\"]",
+            "launch_args = [\"--\"]",
+            "is not one plain word of a command line",
+        ),
+    ];
+    for (what, from, to, says) in bad {
+        assert!(
+            WITH_OPTION.contains(from),
+            "{what}: `{from}` is not in the document"
+        );
+        let found = errors_of(&WITH_OPTION.replacen(from, to, 1));
+        assert!(
+            found.iter().any(|e| e.contains(says)),
+            "{what}: expected `{says}` in {found:#?}"
+        );
+    }
+    // and a plain word with a value is fine, as is a short option
+    for good in ["--cache-lru=10", "-v", "--enable-manager-legacy-ui"] {
+        let ok = errors_of(&WITH_OPTION.replacen(
+            "launch_args = [\"--enable-manager\"]",
+            &format!("launch_args = [\"{good}\"]"),
+            1,
+        ));
+        assert!(ok.is_empty(), "{good}: {ok:#?}");
+    }
+    // an option nobody ticks and no step belongs to is not offered (the engine has nothing to put in it)
+    let lonely = WITH_OPTION.replacen("option = \"manager\"\n", "", 1);
+    let registry = registry_of(&[("embedded:engines/pyapp.toml", &engine(&lonely))]);
+    assert!(
+        quickai_core::acquire::install_options(registry.engine("pyapp").unwrap(), &on).is_empty()
     );
 }
 
@@ -830,6 +1092,7 @@ fn p3_p13_the_comfyui_plan_puts_the_bridge_before_it_starts_and_tells_comfyui_to
         json!([
             {"asset": "comfyui/extra_model_paths.yaml", "to": "/data/comfyui/extra_model_paths.yaml"},
             {"asset": "comfyui/quickai_bridge", "to": "/data/comfyui/extensions/quickai_bridge"},
+            {"asset": "comfyui/quickai_manager", "to": "/data/comfyui/extensions/quickai_manager"},
         ])
     );
     // the file ComfyUI is told to read is the file that is written

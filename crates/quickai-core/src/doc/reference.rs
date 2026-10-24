@@ -699,6 +699,20 @@ pub const GROUPS: &[Group] = &[
             a("space", "size", "How much free room an install needs (`30GiB`): the download and the environment together. Checked before anything is asked of the network."),
             a("pip", "list of tables, below", "The packages of the environment, in the order they are installed."),
             a("nodes", "list of tables, below", "Packs of extra nodes, unpacked into the source."),
+            a("options", "list of tables, below", "Parts of the install that are the person's to choose: a box in the window, ticked or not, and the `pip` steps that belong to it."),
+        ],
+    },
+    Group {
+        heading: "`[[acquire.install.options]]`",
+        intro: "One part of the install that the person chooses (ComfyUI-Manager), and what the build made with it does differently. Its steps are the `pip` steps that name it; the window offers it as a box, above the list of builds, and what was chosen is what the install does, what the line under the bar counts and what an install that stopped is gone on with. A caller that chooses nothing (the headless runner) gets the install without it.",
+        source: Some("InstallOption"),
+        attributes: &[
+            a("id", "text", "Letters, digits and `_`; the `pip` steps that belong to it name it with `option`."),
+            a("label", "text", "What the box says (`Install ComfyUI-Manager`)."),
+            a("badge", "text", "A few words beside the label, in the colour of a recommendation (`highly recommended`)."),
+            a("help", "text", "What the pointer on the box is told."),
+            a("default", "bool", "Ticked until the person unticks it. Default false: a part nobody asked for is not installed."),
+            a("launch_args", "list of text", "What the launcher of a build made with it passes to the program before the arguments it is given, one plain word each (`--enable-manager-legacy-ui`): the build is the one that knows what it has, so a build made without it is started without it."),
         ],
     },
     Group {
@@ -709,6 +723,7 @@ pub const GROUPS: &[Group] = &[
             a("id", "text", "Letters, digits and `_`; a document of the person's replaces a step by it."),
             a("label", "text", "What the log and the window call it (`PyTorch for AMD GPUs (ROCm 7.2)`)."),
             a("when", "condition", "Only on a machine where this holds (`has(gpu.vendors, 'amd')`); always when left out."),
+            a("option", "text", "Only when the person has chosen this option of the install (the `id` of an `[[acquire.install.options]]`); always when left out."),
             a("packages", "list of text", "Packages, as requirement specifiers (`torch`, `torchvision==0.29.1`)."),
             a("requirements", "text", "A requirements file of the unpacked source, relative to it (`requirements.txt`)."),
             a("wheel", "bool", "Installs the wheel the build is (`assets` of `by = \"wheel\"`): the file that was downloaded and checked, with what it needs from the index. A build that is a wheel has exactly one such step, and it names no packages or requirements file."),

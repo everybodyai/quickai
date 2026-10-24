@@ -122,6 +122,10 @@ fn source_tar() -> Vec<u8> {
     tar_gz(&[
         Entry::file("Comfy-9.9.9/main.py", b"print('comfy')\n"),
         Entry::file("Comfy-9.9.9/requirements.txt", b"torch\n"),
+        Entry::file(
+            "Comfy-9.9.9/manager_requirements.txt",
+            b"comfyui_manager==9.9.9\n",
+        ),
         Entry::file("Comfy-9.9.9/custom_nodes/example.py", b"\n"),
     ])
 }
@@ -216,6 +220,7 @@ impl World {
                     into: "custom_nodes/gguf".into(),
                     requirements: Some("requirements.txt".into()),
                 }],
+                launch_args: Vec::new(),
                 space: None,
             })),
             ..Default::default()
@@ -870,6 +875,200 @@ fn p3_f71_an_install_that_stopped_for_another_plan_is_started_again() {
         "the environment was made twice"
     );
     assert_eq!(entries(&world.root()), ["v9"]);
+}
+
+/// The plan of a build with the Manager, made by hand for the stand-in release: ComfyUI's own file of what it needs, in the
+/// environment after what ComfyUI needs, and the word its launcher passes (what the document says, F96).
+#[cfg(unix)]
+fn with_the_manager(spec: &mut InstallSpec) {
+    let InstallKind::PythonApp(app) = &mut spec.kind else {
+        unreachable!()
+    };
+    app.pip.push(PipPlan {
+        id: "manager".into(),
+        label: "ComfyUI-Manager".into(),
+        packages: Vec::new(),
+        requirements: Some("manager_requirements.txt".into()),
+        wheel: false,
+        index: None,
+        weight: 1,
+    });
+    app.launch_args = vec!["--enable-manager-legacy-ui".into()];
+}
+
+#[test]
+fn p3_f96_the_install_the_document_makes_has_the_managers_step_and_word_only_when_it_is_chosen() {
+    use quickai_core::plan::HostFacts;
+    let registry = crate::config::build_registry(&crate::config::ConfigDirs::default());
+    let engine = registry.engine("comfyui").expect("the ComfyUI document");
+    let facts = HostFacts {
+        os: "linux".into(),
+        arch: "x86_64".into(),
+        data_dir: "/data".into(),
+        ..Default::default()
+    };
+    let made = |chosen: Option<&[&str]>| -> (Vec<(String, Option<String>)>, Vec<String>) {
+        let spec = match chosen {
+            Some(chosen) => InstallSpec::from_engine_with(engine, &facts, chosen),
+            None => InstallSpec::from_engine(engine, &facts),
+        }
+        .expect("an install spec");
+        let InstallKind::PythonApp(app) = spec.kind else {
+            panic!("a python_app install")
+        };
+        (
+            app.pip
+                .iter()
+                .map(|p| (p.id.clone(), p.requirements.clone()))
+                .collect(),
+            app.launch_args,
+        )
+    };
+    // the install of nobody's choice (the headless runner, the installs of before) is what it was
+    let (steps, words) = made(None);
+    let ids: Vec<&str> = steps.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(ids, ["torch_cpu", "requirements"]);
+    assert!(words.is_empty());
+    assert_eq!(made(Some(&[])), made(None));
+    // chosen: one step more, last of the packages, from the file ComfyUI's release has for it, and its word
+    let (steps, words) = made(Some(&["manager"]));
+    assert_eq!(
+        steps.last(),
+        Some(&(
+            "manager".to_string(),
+            Some("manager_requirements.txt".to_string())
+        ))
+    );
+    assert_eq!(steps.len(), 3);
+    assert_eq!(words, ["--enable-manager-legacy-ui"]);
+    // what is not an option of the document is not one
+    assert_eq!(made(Some(&["something"])), made(None));
+}
+
+#[cfg(unix)]
+#[test]
+fn p3_f97_a_build_made_with_the_manager_has_its_step_and_its_word_and_one_made_without_has_neither()
+{
+    let world = World::new("f97", "ok");
+    let mut spec = world.spec();
+    with_the_manager(&mut spec);
+    let ran = run(&spec, &world.pinned());
+    let launcher = ran
+        .outcome
+        .clone()
+        .unwrap_or_else(|e| panic!("{e}\n{:#?}", ran.said));
+    let root = world.root();
+    let staging = format!("{}/v9.partial", root.display());
+
+    // the step is a pip of ComfyUI's own file, wheels only and from PyPI, after what ComfyUI needs and before the pack's
+    let log = lines(&world.log);
+    assert_eq!(log.len(), 6, "{log:#?}");
+    assert!(log[2].contains(&format!("-r {staging}/app/requirements.txt")));
+    assert!(
+        log[3].contains(&format!("-r {staging}/app/manager_requirements.txt"))
+            && log[3].contains("--only-binary=:all:")
+            && !log[3].contains("--index-url"),
+        "{}",
+        log[3]
+    );
+    assert!(
+        log[4].contains("/custom_nodes/gguf/requirements.txt"),
+        "{}",
+        log[4]
+    );
+    assert!(said(&ran, "Installing ComfyUI-Manager"), "{:#?}", ran.said);
+    let titles: Vec<&str> = ran
+        .details
+        .iter()
+        .map(String::as_str)
+        .filter(|d| d.starts_with("Step "))
+        .collect();
+    assert_eq!(titles[5], "Step 6 of 8 · ComfyUI-Manager", "{titles:#?}");
+
+    // the launcher passes the word before what it is given, and the check runs through it: a build that does not start with its
+    // Manager is not a build
+    let text = std::fs::read_to_string(&launcher).unwrap();
+    assert!(
+        text.contains(
+            r#"exec "$here/venv/bin/python" "$here/app/main.py" --enable-manager-legacy-ui "$@""#
+        ),
+        "{text}"
+    );
+    assert!(
+        log[5].ends_with("/app/main.py --enable-manager-legacy-ui --quick-test-for-ci --cpu"),
+        "{}",
+        log[5]
+    );
+    assert!(std::process::Command::new(&launcher)
+        .args(["--port", "1"])
+        .status()
+        .unwrap()
+        .success());
+    assert!(
+        lines(&world.log)
+            .last()
+            .unwrap()
+            .ends_with("/v9/app/main.py --enable-manager-legacy-ui --port 1"),
+        "{:#?}",
+        lines(&world.log)
+    );
+
+    // made without it, the same release has neither
+    let other = World::new("f97b", "ok");
+    let ran = run(&other.spec(), &other.pinned());
+    let launcher = ran.outcome.clone().unwrap();
+    let text = std::fs::read_to_string(launcher).unwrap();
+    assert!(
+        text.contains(r#""$here/app/main.py" "$@""#) && !text.contains("manager"),
+        "{text}"
+    );
+    assert_eq!(lines(&other.log).len(), 5);
+    assert!(!said(&ran, "Manager"));
+}
+
+#[cfg(unix)]
+#[test]
+fn p3_f98_an_install_that_stopped_with_the_manager_is_not_gone_on_with_without_it_and_the_other_way_round(
+) {
+    // begun with the Manager, gone on with the Manager: what was done is believed
+    let world = World::new("f98", "fail");
+    let mut with = world.spec();
+    with_the_manager(&mut with);
+    assert!(run(&with, &world.pinned()).outcome.is_err());
+    world.mode("ok");
+    let ran = run(&with, &world.pinned());
+    assert!(ran.outcome.is_ok(), "{:#?}", ran.said);
+    assert!(
+        said(&ran, "Going on with the install that stopped"),
+        "{:#?}",
+        ran.said
+    );
+
+    // begun without it, gone on with it (the box was ticked in between): the environment on disk is not the one this
+    // install would make, and the install begins again, saying so
+    let world = World::new("f98b", "fail");
+    assert!(run(&world.spec(), &world.pinned()).outcome.is_err());
+    world.mode("ok");
+    let mut with = world.spec();
+    with_the_manager(&mut with);
+    let ran = run(&with, &world.pinned());
+    assert!(ran.outcome.is_ok(), "{:#?}", ran.said);
+    assert!(said(&ran, "made for other things"), "{:#?}", ran.said);
+    assert!(lines(&world.log)
+        .iter()
+        .any(|l| l.contains("manager_requirements.txt")));
+
+    // begun with it, gone on with without it: the same
+    let world = World::new("f98c", "fail");
+    let mut with = world.spec();
+    with_the_manager(&mut with);
+    assert!(run(&with, &world.pinned()).outcome.is_err());
+    world.mode("ok");
+    let ran = run(&world.spec(), &world.pinned());
+    assert!(ran.outcome.is_ok(), "{:#?}", ran.said);
+    assert!(said(&ran, "made for other things"), "{:#?}", ran.said);
+    let text = std::fs::read_to_string(ran.outcome.unwrap()).unwrap();
+    assert!(!text.contains("manager"), "{text}");
 }
 
 #[cfg(unix)]
