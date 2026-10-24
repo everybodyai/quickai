@@ -208,6 +208,10 @@ struct TrafficTurn {
     response: String,
     done: bool,
     error: Option<String>,
+    /// When the request came in, and when its answer ended (or failed): the Live tab says how long ago
+    /// and how long it took.
+    started: std::time::Instant,
+    ended: Option<std::time::Instant>,
 }
 
 const MAX_TRAFFIC_TURNS: usize = 200;
@@ -642,6 +646,8 @@ impl App {
                     response: String::new(),
                     done: false,
                     error: None,
+                    started: std::time::Instant::now(),
+                    ended: None,
                 });
             }
             TrafficEvent::ResponseDelta { id, text } => {
@@ -655,12 +661,14 @@ impl App {
                         turn.response = text;
                     }
                     turn.done = true;
+                    turn.ended = Some(std::time::Instant::now());
                 }
             }
             TrafficEvent::ResponseError { id, message } => {
                 if let Some(turn) = self.traffic.iter_mut().rev().find(|t| t.id == id) {
                     turn.error = Some(message);
                     turn.done = true;
+                    turn.ended = Some(std::time::Instant::now());
                 }
             }
         }
@@ -811,31 +819,33 @@ impl eframe::App for App {
                     self.lookup.open || (self.show_api_info && state == ServerState::Running);
                 let crashed = state == ServerState::Crashed
                     || self.companion_state() == Some(ServerState::Crashed);
-                let room = if browsing {
-                    ui.available_height()
-                } else {
-                    let log = if crashed { LOG_AFTER_CRASH } else { LOG_LEAST };
-                    (ui.available_height() - log - 8.0).max(PAGE_LEAST)
-                };
-                egui::ScrollArea::vertical()
-                    .id_salt("page")
-                    .max_height(room)
-                    .auto_shrink([false, true])
-                    .show(ui, |ui| {
-                        self.show_models_area(ui, active);
+                theme::column(ui, theme::PAGE_WIDTH, |ui| {
+                    let room = if browsing {
+                        ui.available_height()
+                    } else {
+                        let log = if crashed { LOG_AFTER_CRASH } else { LOG_LEAST };
+                        (ui.available_height() - log - 8.0).max(PAGE_LEAST)
+                    };
+                    egui::ScrollArea::vertical()
+                        .id_salt("page")
+                        .max_height(room)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            self.show_models_area(ui, active);
 
-                        ui.add_space(6.0);
-                        self.show_controls(ui);
+                            ui.add_space(6.0);
+                            self.show_controls(ui);
 
-                        ui.add_space(10.0);
-                        self.show_run_bar(ui, state, active);
+                            ui.add_space(10.0);
+                            self.show_run_bar(ui, state, active);
 
-                        self.show_api_info_panel(ui, state);
-                        self.show_diagnostics(ui, state);
-                    });
-                if !browsing {
-                    self.show_log_pane(ui);
-                }
+                            self.show_api_info_panel(ui, state);
+                            self.show_diagnostics(ui, state);
+                        });
+                    if !browsing {
+                        self.show_log_pane(ui);
+                    }
+                });
             });
 
         self.show_settings_window(ui.ctx());

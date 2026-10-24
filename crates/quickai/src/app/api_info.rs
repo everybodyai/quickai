@@ -1,7 +1,7 @@
 //! How to connect an external app (panel `api_info`), from the engine's `[api_info]`.
 
 use eframe::egui;
-use quickai_core::api_info::api_panel;
+use quickai_core::api_info::{api_panel, ApiPanel};
 use quickai_core::plan::ModelInfo;
 
 use super::App;
@@ -9,12 +9,9 @@ use crate::events::ServerState;
 use crate::launch;
 
 impl App {
-    /// The "Connect an app to this model" box, shown while the server runs and 🔌 API is on.
-    pub(super) fn show_api_info_panel(&mut self, ui: &mut egui::Ui, state: ServerState) {
-        if !(self.show_api_info && state == ServerState::Running) {
-            return;
-        }
-        // what is asked is the model that is running, by the name the engine knows it by
+    /// How to connect an app to the server that is running: what the engine's `[api_info]` says, for the model that is
+    /// loaded, by the name the engine knows it by.
+    pub(super) fn connection_panel(&self) -> Option<ApiPanel> {
         let selection = launch::selection_from_values(
             &self.engine,
             self.session.model_name().map(|name| ModelInfo {
@@ -26,7 +23,15 @@ impl App {
             self.values.map(),
             self.traffic_proxy_on(),
         );
-        let Some(panel) = api_panel(&self.registry, &selection, &self.form_facts()) else {
+        api_panel(&self.registry, &selection, &self.form_facts())
+    }
+
+    /// The "Connect an app to this model" box, shown while the server runs and 🔌 API is on.
+    pub(super) fn show_api_info_panel(&mut self, ui: &mut egui::Ui, state: ServerState) {
+        if !(self.show_api_info && state == ServerState::Running) {
+            return;
+        }
+        let Some(panel) = self.connection_panel() else {
             return;
         };
         ui.add_space(8.0);

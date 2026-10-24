@@ -950,9 +950,9 @@ Y71 to Y99d are WP4.20, 2026-10-13: what the computer has to have for a configur
 | Y99c | 4.20.3 | ready | **The venv module is asked of the Python that is going to make the environment and of no other**: found, missing with the package of that Python (`python3.12-venv`), missing with no package when the Python is a pyenv's or uv's, passed unasked when the environment is made, and left unchecked when no Python was found. | `runtime/provision/prerequisites.rs` |
 | Y99d | 4.20.3 | ready | **An environment that is made is not asked for the module that made it**: through the whole run, with the Python beside the launcher lacking `ensurepip`, the look says the environment is made and the Python is not asked. | `runtime/p3/prerequisites.rs` |
 
-### I. The window as a person reads it: theme, title row, the card of the model (WP4.21)
+### I. The window as a person reads it: theme, title row, the card of the model, the Live tab (WP4.21, WP4.22)
 
-Asked for on 2026-10-23 ("Lets stick to classic, but lets turn things around a bit and make it more user friendly - try to fit appropriately the widgets at the right locations"): the window keeps its shape and the order of its panels, in cards, in one theme made of a palette for each of the two themes; what is about the model is drawn with it, and what is about the server is drawn where it is always in view. The cases of the panels themselves (what Start does, what a field holds) are those of the other groups and of the GUI suites, which were calibrated against this window.
+Asked for on 2026-10-23 ("Lets stick to classic, but lets turn things around a bit and make it more user friendly - try to fit appropriately the widgets at the right locations"): the window keeps its shape and the order of its panels, in cards, in one theme made of a palette for each of the two themes; what is about the model is drawn with it, and what is about the server is drawn where it is always in view. The cases of the panels themselves (what Start does, what a field holds) are those of the other groups and of the GUI suites, which were calibrated against this window. Asked for again on 2026-10-24 ("can we make the UI a bit more compact and less filled with text? Also the live view looks not so good - it has to be made better", and "including the settings", WP4.22): what is said of a model is chips and not lines of small print, a look-up says its count once, the page of the Main tab is a column that is no wider than 960 px, the Settings are on cards, and the Live tab is a list of the clients with the conversation as bubbles.
 
 | ID | WP | State | Case | Where |
 |---|---|---|---|---|
@@ -965,6 +965,20 @@ Asked for on 2026-10-23 ("Lets stick to classic, but lets turn things around a b
 | I13 | 4.21 | ready | The logo is made from the application's icon in the size it is drawn at, by the mean of the pixels that fall in each of the new ones weighed by how opaque they are: a red pixel with a transparent one beside it is red and half as opaque, not a darker red, so that the edge of the picture has no dark rim. | `app/header.rs` |
 | I14 | 4.21 | ready | A download that failed says so in a red card under the box it was asked for in, with a Dismiss button that takes it away: the log has the same words, and the results of a look-up, which have the whole page, hide the log. | `app/header.rs` |
 | I15 | 4.21 | ready | A look-up of builds that ends has its list brought into view for three frames (the Settings window scrolls, and a list under its fold shows only the sentence that says how many there are, and a list is as tall as its rows a frame after they came); one that is closed does not keep the scroll for when it is opened again. | `app/runtime_manager.rs` |
+| I16 | 4.22 | ready | A Live tab with no traffic says so ("No traffic yet") under the heading it always had, with the list of clients showing All and 0 messages and a Clear all button, and, while the server is not running, a button that opens the Main tab, which opens it. | `app/live_traffic.rs` |
+| I17 | 4.22 | ready | What a client asked is a bubble at the right edge of the conversation and the answer is one at its left edge, in the order it happened, under a line that says what was asked of the server (`POST /v1/chat/completions`) and how long ago. | `app/live_traffic.rs` |
+| I18 | 4.22 | ready | Each client is a row with a number, one name for it everywhere (`Session N`), the count of its messages and the last of what it asked; with all of them shown each exchange has the tag of its client, and the row that is picked leaves only that client's exchanges. | `app/live_traffic.rs` |
+| I19 | 4.22 | ready | The Clear all button is at the foot of the window however many clients there are (it was under a list that took the height of the panel, out of the window), and it empties the tab. | `app/live_traffic.rs` |
+| I20 | 4.22 | ready | An answer that is on its way has the live marker and the words so far and no time; the one that is over has the time it took and no marker; one that failed says `error:` and why, in the place of the answer. | `app/live_traffic.rs` |
+| I21 | 4.22 | ready | The number of a client reads (4.5 to 1 at least) on the disc that is tinted with its colour, on the card, on the row that is picked and on the page, in both themes, and the first six clients have six colours. | `app/live_traffic.rs` |
+| I22 | 4.22 | ready | How long ago and how long it took are said in words a row has room for (`just now`, `5 s ago`, `2 min ago`, `under 1 ms`, `4.5 s`), and a row's last words are the prompt on one line, cut where it is long and never blank. | `app/live_traffic.rs` |
+| I23 | 4.22 | ready | What the Copy button puts on the clipboard is the conversation shown, as plain text: the client and what was asked of the server, the attachments, the prompt with each line marked, the answer and the error. | `app/live_traffic.rs` |
+| I24 | 4.22 | ready | What is said of a model an engine lists is chips on one row under the picker (what it can do, `★ Recommended`, `from the last run`), not three lines of small print: `completion` is not a chip, and the box that gets another model is no further down than under one line. | `app/header.rs` |
+| I25 | 4.22 | ready | A note of a model is cut at its first sentence (all of it when it is one) and a model with no note has no row for it. | `app/header.rs` |
+| I26 | 4.22 | ready | A column is the window in a window that is not wider than it, and in a wider one it keeps its width in the middle with the same room on each side. | `app/theme.rs` |
+| I27 | 4.22 | ready | A look-up that found models says its count in the heading of the results and not again in a sentence (what the sentence added, that there are more, stays in the row of the sizes); while it looks and when it failed its sentence is what is said; a model with one row of buttons has them on the line of its name and one with several keeps them under it. | `app/header.rs` |
+| I28 | 4.22 | ready | In the Settings the buttons of the models folder are on the row of its label (Apply before Reset to default), the window has no caption over its first row, and the engine and the Advanced section are each on a card. | `app/settings_window.rs` |
+| I29 | 4.22 | ready | A choice of the Settings (a short box) is beside its label and not under it; a path, which wants the width of the window, is under its label. | `app/settings_window.rs` |
 
 ### N. llama.cpp must not change
 
@@ -978,7 +992,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 661 / 0 / 15 / 5 (total 681). The test kit has 29 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 675 / 0 / 15 / 5 (total 695). The test kit has 29 tests of its own and the Python fake
 22, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 

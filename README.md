@@ -178,7 +178,11 @@ the server runs), the buttons (**Start** is the green one while the server is st
 runs) with the state in words, and under them the log. At the end of the picker's row a speed chip (🐢/🐂/🐎) estimates how
 fast the *currently selected* model will run on this machine — from its file size relative to detected RAM, downgraded a tier
 if GPU layers is `0`. It's a rough, hardware-only estimate (no VRAM detection, no live token/sec measurement), not a
-benchmark — hover it for the exact reasoning.
+benchmark — hover it for the exact reasoning. Under the picker one row of chips says what else is known of the model: what it
+can do (an engine that lists its models says *vision*, *tools*, *thinking*), a green **★ Recommended** when it is the one this
+computer is recommended (hover it for the RAM that was detected and why), and *from the last run* when the engine is not
+running and the list is what it said then; a model the application knows has the first sentence of its note beside them (the
+rest is there when the pointer is on it). In a window wider than about 960 px the cards keep that width, in the middle.
 
 Top-right of the window: a pill that says what the server is doing (Stopped, Starting, Running or Crashed; it is there on
 the Live tab too), then **ℹ** (about/usage/license), **⚙** (settings, see below) and a subtle theme toggle (☀/🌙, persisted
@@ -327,11 +331,18 @@ responses, streaming included.
 The proxy also sniffs `/v1/chat/completions`- and `/completion`-shaped
 traffic (nothing else — page assets, `/health` checks, etc. are relayed
 but not logged) to feed the **📡 Live** tab, next to **Main** — laid out
-like a chat app: a session list down the left (one row per client
-connection, each showing a live indicator, a prompt preview, and a message
-count — click a row, or **All**, to switch) with the picked session's
-requests and replies filling the rest of the tab on the right as they
-stream in. **Clear all** empties the list.
+like a chat app: a list of the clients down the left (one row per client
+connection: its number in a colour of its own, a live dot while an answer is
+on its way, when it was last heard, and its message count and last prompt —
+click a row, or **All**, to switch) with the picked client's conversation on
+the right as it happens: what the client asked in a bubble at the right, the
+answer filling in a bubble at the left (with three dots while it is awaited
+and a **live** marker), each exchange with the request line, how long ago it
+came and how long the answer took. With **All** every exchange has the tag
+of its client. **Copy** puts what is shown on the clipboard as plain text and
+**Clear all**, at the foot of the list, empties it. Before the first request
+the tab says so and, while the server runs, shows the address to give an app
+(with a copy button); while it does not run it has a button to the Main tab.
 
 This sniffing is best-effort and never affects what a client actually
 receives — a parsing miss just leaves an entry blank in the 📡 window.

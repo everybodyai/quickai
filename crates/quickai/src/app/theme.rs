@@ -116,6 +116,11 @@ pub(super) fn palette() -> &'static Palette {
     }
 }
 
+/// Whether the theme that is drawn now is the dark one.
+pub(super) fn is_dark() -> bool {
+    DARK.load(Ordering::Relaxed)
+}
+
 /// The colours of one theme.
 pub(super) fn palette_of(dark: bool) -> &'static Palette {
     if dark {
@@ -263,6 +268,27 @@ pub(super) fn page_frame() -> egui::Frame {
     egui::Frame::new()
         .fill(palette().page)
         .inner_margin(Margin::symmetric(14, 8))
+}
+
+/// The widest the page of the Main tab is drawn. In a window wider than this the cards keep this width, in the middle, and
+/// the page's own colour is on both sides: a row of controls a screen wide has its labels and its buttons far apart and
+/// is read with the head turning.
+pub(super) const PAGE_WIDTH: f32 = 960.0;
+
+/// `add`, in a column of at most `width` in the middle of the room there is. In a window that is not wider than the column
+/// this is the page as it is, and the same call is made for each part of a page so that all of it has the same sides.
+pub(super) fn column<R>(ui: &mut egui::Ui, width: f32, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let room = ui.available_rect_before_wrap();
+    let side = ((room.width() - width) / 2.0).floor();
+    if side <= 0.0 {
+        return add(ui);
+    }
+    let column = egui::Rect::from_min_max(
+        egui::pos2(room.left() + side, room.top()),
+        egui::pos2(room.right() - side, room.bottom()),
+    );
+    ui.scope_builder(egui::UiBuilder::new().max_rect(column), add)
+        .inner
 }
 
 /// A section of the page, as wide as the page: what belongs together, on a card. `add` draws in it.
@@ -607,6 +633,53 @@ mod tests {
                     .max(a.b().abs_diff(b.b()))
             };
             assert!(spread(p.raised, p.card) > 12, "{dark}");
+        }
+    }
+
+    #[test]
+    fn p3_i26_a_column_is_in_the_middle_of_a_window_wider_than_it_and_is_the_window_in_one_that_is_not(
+    ) {
+        let ctx = egui::Context::default();
+        let column_in = |window: f32| -> (f32, f32) {
+            let mut seen = (f32::NAN, f32::NAN);
+            // a few frames, as a window is drawn: the first has no room worked out
+            for _ in 0..3 {
+                let raw = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(window, 300.0),
+                    )),
+                    ..Default::default()
+                };
+                let mut output = ctx.run_ui(raw, |ui| {
+                    egui::CentralPanel::default()
+                        .frame(egui::Frame::NONE)
+                        .show(ui, |ui| {
+                            column(ui, PAGE_WIDTH, |ui| {
+                                let room = ui.available_rect_before_wrap();
+                                seen = (room.left(), room.width());
+                            });
+                        });
+                });
+                output.textures_delta.clear();
+            }
+            seen
+        };
+        // not wider than the column: the window is the page, as it was
+        assert_eq!(column_in(700.0), (0.0, 700.0));
+        assert_eq!(column_in(PAGE_WIDTH), (0.0, PAGE_WIDTH));
+        // wider: the column keeps its width and has the same room on both sides (an odd room gives one pixel to the column)
+        for window in [1000.0, 1400.0, 1861.0] {
+            let (left, width) = column_in(window);
+            assert!(
+                (PAGE_WIDTH..=PAGE_WIDTH + 1.0).contains(&width),
+                "{window}: the column is {width} wide"
+            );
+            assert!(
+                (window - (left + width) - left).abs() <= 1.0,
+                "{window}: {left} on the left and {} on the right",
+                window - (left + width)
+            );
         }
     }
 }

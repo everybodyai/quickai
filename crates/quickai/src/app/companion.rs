@@ -523,8 +523,6 @@ impl App {
         };
         let installed = self.companion_installed();
         let enabled = self.companion_enabled();
-        ui.add_space(10.0);
-        ui.separator();
         ui.add_space(6.0);
         // open while it is the thing to do: it is wanted and not there yet, or the person pressed the button that
         // sets it up
@@ -536,58 +534,60 @@ impl App {
         } else {
             header
         };
-        header.show(ui, |ui| {
-            if !summary.is_empty() {
-                ui.label(
-                    egui::RichText::new(summary)
-                        .small()
-                        .color(super::theme::palette().muted),
-                );
-            }
-            let line = match (license, homepage) {
-                (Some(license), Some(home)) => Some(format!("License: {license} · {home}")),
-                (Some(license), None) => Some(format!("License: {license}")),
-                (None, Some(home)) => Some(home),
-                (None, None) => None,
-            };
-            if let Some(line) = line {
-                ui.label(
-                    egui::RichText::new(line)
-                        .small()
-                        .color(super::theme::palette().muted),
-                );
-            }
-            ui.add_space(4.0);
-            self.as_companion(|app| {
-                let form = app.form();
-                let section = |id: &str| -> Vec<FormField> {
-                    form.as_ref()
-                        .and_then(|f| f.section(id))
-                        .map(|s| s.fields.iter().filter(|f| f.visible).cloned().collect())
-                        .unwrap_or_default()
+        super::theme::card(ui, |ui| {
+            header.show(ui, |ui| {
+                if !summary.is_empty() {
+                    ui.label(
+                        egui::RichText::new(summary)
+                            .small()
+                            .color(super::theme::palette().muted),
+                    );
+                }
+                let line = match (license, homepage) {
+                    (Some(license), Some(home)) => Some(format!("License: {license} · {home}")),
+                    (Some(license), None) => Some(format!("License: {license}")),
+                    (None, Some(home)) => Some(home),
+                    (None, None) => None,
                 };
-                app.show_fields(ui, &section("primary"), None);
-                ui.add_space(8.0);
-                // the manager of its builds is the field that is the program: where it is, and how to get it
-                let advanced = section("advanced");
-                for field in advanced
-                    .iter()
-                    .filter(|f| f.widget.as_deref() == Some("runtime_manager"))
-                {
-                    app.show_runtime_manager(ui, field);
+                if let Some(line) = line {
+                    ui.label(
+                        egui::RichText::new(line)
+                            .small()
+                            .color(super::theme::palette().muted),
+                    );
                 }
-                let others: Vec<FormField> = advanced
-                    .iter()
-                    .filter(|f| f.widget.as_deref() != Some("runtime_manager"))
-                    .cloned()
-                    .collect();
-                if !others.is_empty() {
+                ui.add_space(4.0);
+                self.as_companion(|app| {
+                    let form = app.form();
+                    let section = |id: &str| -> Vec<FormField> {
+                        form.as_ref()
+                            .and_then(|f| f.section(id))
+                            .map(|s| s.fields.iter().filter(|f| f.visible).cloned().collect())
+                            .unwrap_or_default()
+                    };
+                    app.show_fields(ui, &section("primary"), None);
                     ui.add_space(8.0);
-                    egui::CollapsingHeader::new("More")
-                        .id_salt("companion_more")
-                        .default_open(false)
-                        .show(ui, |ui| app.show_fields(ui, &others, None));
-                }
+                    // the manager of its builds is the field that is the program: where it is, and how to get it
+                    let advanced = section("advanced");
+                    for field in advanced
+                        .iter()
+                        .filter(|f| f.widget.as_deref() == Some("runtime_manager"))
+                    {
+                        app.show_runtime_manager(ui, field);
+                    }
+                    let others: Vec<FormField> = advanced
+                        .iter()
+                        .filter(|f| f.widget.as_deref() != Some("runtime_manager"))
+                        .cloned()
+                        .collect();
+                    if !others.is_empty() {
+                        ui.add_space(8.0);
+                        egui::CollapsingHeader::new("More")
+                            .id_salt("companion_more")
+                            .default_open(false)
+                            .show(ui, |ui| app.show_fields(ui, &others, None));
+                    }
+                });
             });
         });
     }
@@ -614,15 +614,29 @@ impl App {
             // a checkbox and a button carry their own label
             let own_label = field.ty == quickai_core::doc::engine::FieldType::Bool
                 || field.widget.as_deref() == Some("button");
-            if !own_label {
+            // a choice is a short box: it is beside its label, where a path or a text, which want the width of the window,
+            // are under theirs
+            let beside = field.ty == quickai_core::doc::engine::FieldType::Choice && !own_label;
+            let draw_label = |ui: &mut egui::Ui| {
                 let label = ui.label(format!("{}:", field.label));
                 if let Some(help) = &field.help {
                     label.on_hover_text(help);
                 }
-            }
-            let reply = ui
-                .add_enabled_ui(field.enabled, |ui| widgets::show(ui, field))
-                .inner;
+            };
+            let reply = if beside {
+                ui.horizontal(|ui| {
+                    draw_label(ui);
+                    ui.add_enabled_ui(field.enabled, |ui| widgets::show(ui, field))
+                        .inner
+                })
+                .inner
+            } else {
+                if !own_label {
+                    draw_label(ui);
+                }
+                ui.add_enabled_ui(field.enabled, |ui| widgets::show(ui, field))
+                    .inner
+            };
             match reply {
                 Some(Reply::Set(value)) => edits.push(Edit {
                     key: field.key.clone(),

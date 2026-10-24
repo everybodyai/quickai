@@ -5,13 +5,26 @@
 
 use eframe::egui;
 
+use super::model_bar::Fact;
 use super::theme;
 use super::widgets;
 use super::App;
-use crate::hardware;
+
+/// What a word the engine uses for what a model can do says to a person who has not met it.
+fn capability_help(word: &str) -> &'static str {
+    match word {
+        "vision" => "Can look at pictures.",
+        "tools" => "Can call tools: functions an app offers it.",
+        "thinking" => "Reasons step by step before it answers.",
+        "embedding" => "Turns text into numbers for searching: it does not chat.",
+        "insert" => "Can fill in the middle of a text, as code completion does.",
+        "audio" => "Can listen to audio.",
+        _ => "",
+    }
+}
 
 impl App {
-    /// The picker of the models the engine listed, its Refresh button and the recommendation line.
+    /// The picker of the models the engine listed, its Refresh button and, under them, what is said of the model.
     pub(super) fn show_named_model_bar(&mut self, ui: &mut egui::Ui, active: bool) {
         let name = self.engine_name();
         let server = self.server_name();
@@ -60,39 +73,36 @@ impl App {
             });
             chip_fits = self.show_speed_chip_in_row(ui);
         });
-        if !chip_fits {
-            self.show_speed_chip_below(ui);
-        }
         match self.models.get(self.selected) {
             Some(m) => {
-                if !m.note.is_empty() {
-                    ui.add_space(2.0);
-                    ui.label(theme::muted(&m.note));
+                // what the engine says the model can do is a chip each; `completion` is what every model that
+                // chats does, and is not worth a chip
+                let mut chips: Vec<Fact> = m
+                    .note
+                    .split(", ")
+                    .filter(|word| !word.is_empty() && *word != "completion")
+                    .map(|word| Fact {
+                        text: word.to_string(),
+                        tone: None,
+                        hover: capability_help(word).to_string(),
+                    })
+                    .collect();
+                if self.recommended_filename.as_deref() == Some(m.filename.as_str()) {
+                    chips.push(self.recommended_fact());
                 }
                 if self.named.stale {
-                    ui.add_space(2.0);
-                    ui.label(theme::muted(format!(
-                        "(as {name} listed them the last time it ran)"
-                    )));
+                    chips.push(Fact {
+                        text: "from the last run".to_string(),
+                        tone: None,
+                        hover: format!("(as {name} listed them the last time it ran)"),
+                    });
                 }
-                if self.recommended_filename.as_deref() == Some(m.filename.as_str()) {
-                    ui.add_space(2.0);
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "★ Recommended for this machine (~{} RAM detected{})",
-                            hardware::format_bytes(self.total_ram_bytes),
-                            if self.gpu_offload() { "" } else { ", CPU only" }
-                        ))
-                        .color(theme::palette().ok)
-                        .small(),
-                    );
-                }
+                self.show_model_facts(ui, chips, None, !chip_fits);
             }
             None => {
                 ui.add_space(2.0);
                 ui.label(theme::muted(format!(
-                    "No models listed yet. Start {name} to see what it has, or to pull \
-                     one with the box below."
+                    "No models yet. Start {name} to list them, or pull one below."
                 )));
             }
         }
