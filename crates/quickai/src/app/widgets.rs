@@ -32,7 +32,9 @@ pub enum Reply {
 pub const NAMED: &[&str] = quickai_runtime::prims::WIDGET_NAMES;
 
 /// The red of a message under a field.
-pub(super) const PROBLEM: egui::Color32 = egui::Color32::from_rgb(192, 57, 43);
+pub(super) fn problem_color() -> egui::Color32 {
+    super::theme::palette().bad
+}
 
 /// Rows a box of key-value lines shows before it scrolls.
 const KV_ROWS: usize = 4;
@@ -127,7 +129,7 @@ fn number_box(ui: &mut egui::Ui, field: &FormField) -> Option<Reply> {
     }
     let changed = ui.add(edit).changed();
     for problem in problem_lines(field.error.as_deref()) {
-        ui.colored_label(PROBLEM, problem);
+        ui.colored_label(problem_color(), problem);
     }
     if !changed {
         return None;
@@ -175,7 +177,7 @@ fn combo(ui: &mut egui::Ui, field: &FormField) -> Option<Reply> {
     // row, by whoever drew it, since a sentence beside the box would be off the window
     if ui.layout().main_dir().is_vertical() {
         for problem in problem_lines(field.error.as_deref()) {
-            ui.colored_label(PROBLEM, problem);
+            ui.colored_label(problem_color(), problem);
         }
     }
     (chosen != current).then_some(Reply::Set(Value::Str(chosen)))
@@ -205,7 +207,7 @@ fn kv_lines(ui: &mut egui::Ui, field: &FormField) -> Option<Reply> {
     }
     let changed = ui.add(edit).changed();
     for problem in problem_lines(field.error.as_deref()) {
-        ui.colored_label(PROBLEM, problem);
+        ui.colored_label(problem_color(), problem);
     }
     changed.then_some(Reply::Set(Value::Str(text)))
 }
@@ -278,7 +280,11 @@ pub fn progress_bar(ui: &mut egui::Ui, fraction: Option<f32>) {
         Some(f) => egui::ProgressBar::new(f.clamp(0.0, 1.0)),
         None => egui::ProgressBar::new(0.0).animate(true),
     };
-    ui.add(bar);
+    ui.add(
+        bar.fill(super::theme::palette().accent)
+            .corner_radius(egui::CornerRadius::same(4))
+            .desired_height(8.0),
+    );
 }
 
 #[cfg(test)]

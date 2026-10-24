@@ -33,6 +33,10 @@ pub struct RuntimeManager {
     pub input: String,
     /// The list of builds is open.
     pub show_lookup: bool,
+    /// A look-up has just ended: the frames to come bring its list into view (in a window that scrolls it is
+    /// otherwise under the fold, with only the sentence that says how many there are showing). More than one
+    /// frame, because a list that is as tall as its rows is that tall a frame after they came.
+    pub scroll_to_results: u8,
     pub lookup_rx: Option<Receiver<BuildLookupEvent>>,
     pub lookup_results: Vec<LookupRow>,
     pub lookup_status: String,
@@ -350,6 +354,7 @@ impl App {
                 }
             }
             if done {
+                self.runtime.scroll_to_results = 3;
                 // a look-up that failed keeps the sentence it gave: nothing was *found* is another thing
                 if !failed {
                     self.runtime.lookup_status = if self.runtime.lookup_results.is_empty() {
@@ -720,7 +725,7 @@ impl App {
             ui.label(
                 egui::RichText::new("Looking at what is installed...")
                     .small()
-                    .color(egui::Color32::GRAY),
+                    .color(super::theme::palette().muted),
             );
         }
         if !installed.is_empty() {
@@ -876,13 +881,13 @@ impl App {
             ui.label(
                 egui::RichText::new(summary)
                     .small()
-                    .color(egui::Color32::GRAY),
+                    .color(super::theme::palette().muted),
             );
         }
         if let Some(job) = &self.runtime.install {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.colored_label(egui::Color32::from_rgb(212, 160, 23), job.progress_line());
+                ui.colored_label(super::theme::palette().warn, job.progress_line());
                 if let Some(cancel) = &self.runtime.cancel {
                     if ui
                         .small_button("Cancel")
@@ -901,24 +906,27 @@ impl App {
                 ui.label(
                     egui::RichText::new(detail)
                         .small()
-                        .color(egui::Color32::GRAY),
+                        .color(super::theme::palette().muted),
                 );
             }
         }
         if let Some(deleting) = &self.runtime.delete {
             ui.add_space(4.0);
             ui.colored_label(
-                egui::Color32::from_rgb(212, 160, 23),
+                super::theme::palette().warn,
                 texts.deleting_line(&deleting.label),
             );
         }
 
+        if !self.runtime.show_lookup {
+            self.runtime.scroll_to_results = 0;
+        }
         if self.runtime.show_lookup {
             ui.add_space(4.0);
             ui.label(
                 egui::RichText::new(&self.runtime.lookup_status)
                     .small()
-                    .color(egui::Color32::GRAY),
+                    .color(super::theme::palette().muted),
             );
             if self.runtime.lookup_results.len() > 4 {
                 ui.horizontal(|ui| {
@@ -942,9 +950,12 @@ impl App {
             let mut reset_to_default = false;
             let filter = self.runtime.filter.trim().to_ascii_lowercase();
 
-            egui::ScrollArea::vertical()
+            // (the list is as tall as its rows up to 200 px, wherever it is in the window that scrolls: a scroll area
+            // inside one is given only what is left of the one outside to be seen, which was two rows low in the page)
+            let list = egui::ScrollArea::vertical()
                 .id_salt("llama_lookup_results_scroll")
                 .auto_shrink([false, true])
+                .min_scrolled_height(200.0)
                 .max_height(200.0)
                 .show(ui, |ui| {
                     let is_default = self.bin_override().is_none();
@@ -965,7 +976,7 @@ impl App {
                             ui.label(
                                 egui::RichText::new(default_note(&texts, &binary))
                                     .small()
-                                    .color(egui::Color32::GRAY),
+                                    .color(super::theme::palette().muted),
                             );
                         });
                     }
@@ -1019,7 +1030,7 @@ impl App {
                                     "This file is not the one this version was tested with (its checksum differs), so it is not installed.",
                                 )
                                 .small()
-                                .color(egui::Color32::from_rgb(212, 160, 23)),
+                                .color(super::theme::palette().warn),
                             );
                         }
                         for overlay in &b.overlays {
@@ -1035,7 +1046,7 @@ impl App {
                             ui.label(
                                 egui::RichText::new(warning)
                                     .small()
-                                    .color(egui::Color32::from_rgb(212, 160, 23)),
+                                    .color(super::theme::palette().warn),
                             );
                         }
                     }
@@ -1046,10 +1057,15 @@ impl App {
                                 self.runtime.filter.trim()
                             ))
                             .small()
-                            .color(egui::Color32::GRAY),
+                            .color(super::theme::palette().muted),
                         );
                     }
                 });
+            if self.runtime.scroll_to_results > 0 {
+                self.runtime.scroll_to_results -= 1;
+                ui.scroll_to_rect(list.inner_rect, Some(egui::Align::Max));
+                ui.ctx().request_repaint();
+            }
 
             if let Some(id) = toggled_overlay {
                 match self.runtime.overlays.iter().position(|o| *o == id) {
@@ -1670,5 +1686,30 @@ backends = [ { match = "gpu", label = "GPU" } ]
             "a calm one is not: {:?}",
             &delays[1..4]
         );
+    }
+
+    #[test]
+    fn p3_i15_a_look_up_of_builds_that_ends_has_its_list_brought_into_view_for_a_few_frames() {
+        let dir = scratch("z15");
+        let mut app = app_for(&dir, "llamacpp");
+        let field = manager_field(&app);
+        let ctx = egui::Context::default();
+        let (tx, rx) = crossbeam_channel::unbounded();
+        app.runtime.lookup_rx = Some(rx);
+        app.runtime.show_lookup = true;
+        tx.send(BuildLookupEvent::Done).unwrap();
+        app.poll_runtime_manager();
+        assert_eq!(app.runtime.scroll_to_results, 3);
+        // a list is as tall as its rows a frame after they came, so one frame is not enough
+        for left in [2, 1, 0, 0] {
+            painted(&ctx, |ui| app.show_runtime_manager(ui, &field));
+            assert_eq!(app.runtime.scroll_to_results, left);
+        }
+        // a list that is closed does not keep the scroll for when it is opened again
+        app.runtime.scroll_to_results = 3;
+        app.runtime.show_lookup = false;
+        painted(&ctx, |ui| app.show_runtime_manager(ui, &field));
+        assert_eq!(app.runtime.scroll_to_results, 0);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

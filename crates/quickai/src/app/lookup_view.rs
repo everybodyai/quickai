@@ -200,11 +200,13 @@ impl App {
         ui.add_space(4.0);
         // grey while it looks and when it has found, red when it could not look
         let colour = if self.lookup.failed {
-            egui::Color32::from_rgb(192, 57, 43)
+            super::theme::palette().bad
         } else {
-            egui::Color32::GRAY
+            super::theme::palette().muted
         };
-        ui.horizontal(|ui| {
+        // what it says wraps at the width of the card: a sentence that is longer than the window (the reason a
+        // look-up failed, with the proxy's words in it) would widen the cards and the page with it
+        ui.horizontal_wrapped(|ui| {
             ui.label(
                 egui::RichText::new(&self.lookup.status)
                     .small()
@@ -242,6 +244,7 @@ impl App {
         egui::CollapsingHeader::new(format!("Results ({})", entries.len()))
             .default_open(true)
             .show(ui, |ui| {
+                super::theme::compact(ui);
                 if !sizes.is_empty() {
                     ui.horizontal_wrapped(|ui| {
                         ui.label(egui::RichText::new("Size:").small());
@@ -269,7 +272,7 @@ impl App {
                             ui.label(
                                 egui::RichText::new("Nothing found in this size range.")
                                     .small()
-                                    .color(egui::Color32::GRAY),
+                                    .color(super::theme::palette().muted),
                             );
                         }
                         for section in &sections {
@@ -365,12 +368,12 @@ pub(super) fn show_entry(
             ui.label(egui::RichText::new(&entry.name).strong());
             let facts = facts_line(entry);
             if !facts.is_empty() {
-                ui.label(egui::RichText::new(facts).small().color(egui::Color32::GRAY));
+                ui.label(egui::RichText::new(facts).small().color(super::theme::palette().muted));
             }
             if let Some(decor) = decor {
                 let offers: Vec<&Offer> = entry.offers.iter().collect();
                 if offers.iter().any(|o| (decor.installed)(o)) {
-                    let green = egui::Color32::from_rgb(46, 160, 67);
+                    let green = super::theme::palette().ok;
                     check_mark(ui, green);
                     ui.label(egui::RichText::new("Installed").small().color(green));
                 }
@@ -378,7 +381,7 @@ pub(super) fn show_entry(
                     ui.label(
                         egui::RichText::new("Too big for this computer")
                             .small()
-                            .color(egui::Color32::from_rgb(212, 160, 23)),
+                            .color(super::theme::palette().warn),
                     );
                 }
             }

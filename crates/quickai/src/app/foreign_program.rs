@@ -85,7 +85,7 @@ impl App {
                     "Document {shown_hash}. QuickAI asks once for each version of a document."
                 ))
                 .small()
-                .color(egui::Color32::GRAY),
+                .color(super::theme::palette().muted),
             );
             ui.add_space(10.0);
             ui.horizontal(|ui| {

@@ -541,7 +541,7 @@ impl App {
                 ui.label(
                     egui::RichText::new(summary)
                         .small()
-                        .color(egui::Color32::GRAY),
+                        .color(super::theme::palette().muted),
                 );
             }
             let line = match (license, homepage) {
@@ -551,7 +551,11 @@ impl App {
                 (None, None) => None,
             };
             if let Some(line) = line {
-                ui.label(egui::RichText::new(line).small().color(egui::Color32::GRAY));
+                ui.label(
+                    egui::RichText::new(line)
+                        .small()
+                        .color(super::theme::palette().muted),
+                );
             }
             ui.add_space(4.0);
             self.as_companion(|app| {
@@ -635,7 +639,7 @@ impl App {
                     ui.label(
                         egui::RichText::new(format!("(Owned by the running {owner}.)"))
                             .small()
-                            .color(egui::Color32::GRAY),
+                            .color(super::theme::palette().muted),
                     );
                 }
             }

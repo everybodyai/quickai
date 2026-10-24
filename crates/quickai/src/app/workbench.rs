@@ -164,7 +164,7 @@ impl App {
     /// to do next.
     pub(super) fn show_workbench(&mut self, ui: &mut egui::Ui, _active: bool) {
         let engine = self.engine_name();
-        ui.group(|ui| {
+        ui.scope(|ui| {
             ui.horizontal(|ui| {
                 ui.label("Models:").on_hover_text(format!(
                     "The files {engine}'s workflows use: the weights of a model, its text encoder, its \
@@ -223,12 +223,7 @@ impl App {
                     open_folder(&self.models_dir);
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if self.lookup.has_results()
-                        && ui
-                            .add(egui::Button::new("X").small())
-                            .on_hover_text("Close lookup results")
-                            .clicked()
-                    {
+                    if self.lookup.has_results() && super::named_models::close_button(ui).clicked() {
                         self.lookup.open = false;
                     }
                 });
@@ -248,7 +243,7 @@ impl App {
                     ui.label(
                         egui::RichText::new(&model.note)
                             .small()
-                            .color(egui::Color32::GRAY),
+                            .color(super::theme::palette().muted),
                     );
                 }
             }
@@ -259,13 +254,13 @@ impl App {
                         self.models.len() - SHOWN
                     ))
                     .small()
-                    .color(egui::Color32::GRAY),
+                    .color(super::theme::palette().muted),
                 );
             }
 
             if let Some(job) = &self.download {
                 ui.add_space(4.0);
-                ui.colored_label(egui::Color32::from_rgb(212, 160, 23), job.progress_line());
+                ui.colored_label(super::theme::palette().warn, job.progress_line());
                 if let Some(fraction) = job.fraction() {
                     super::widgets::progress_bar(ui, Some(fraction));
                 }
@@ -273,9 +268,9 @@ impl App {
             if let Some(note) = &self.bench.note {
                 ui.add_space(2.0);
                 let colour = if note.failed {
-                    egui::Color32::from_rgb(192, 57, 43)
+                    super::theme::palette().bad
                 } else {
-                    egui::Color32::from_rgb(46, 160, 67)
+                    super::theme::palette().ok
                 };
                 ui.add(egui::Label::new(egui::RichText::new(&note.text).small().color(colour)).wrap());
             }
@@ -289,7 +284,7 @@ impl App {
                      then Open {engine}."
                 ))
                 .small()
-                .color(egui::Color32::GRAY),
+                .color(super::theme::palette().muted),
             );
         });
     }
@@ -369,7 +364,7 @@ impl App {
             ui.label(
                 egui::RichText::new(why)
                     .small()
-                    .color(egui::Color32::from_rgb(192, 57, 43)),
+                    .color(super::theme::palette().bad),
             );
         } else if let Given::Link(link) = &given {
             let name = file_name_of(link);
@@ -377,7 +372,7 @@ impl App {
                 ui.label(
                     egui::RichText::new(format!("{name} will be kept in the {folder} folder."))
                         .small()
-                        .color(egui::Color32::GRAY),
+                        .color(super::theme::palette().muted),
                 );
             }
         }
@@ -629,7 +624,7 @@ mod tests {
             shown.contains("press Start, then Open ComfyUI"),
             "the next step is said: {shown}"
         );
-        // it is not llama.cpp's picker (no `.gguf` to find in a folder, no "Model:" box), but it has the ways
+        // it is not llama.cpp's picker (no `.gguf` to find in a folder, no picker), but it has the ways
         // to get a model that llama.cpp's has: a look-up of the hub, and a box for a link and the folder
         assert!(
             !shown.contains("(no models found)") && !shown.contains("Model:"),

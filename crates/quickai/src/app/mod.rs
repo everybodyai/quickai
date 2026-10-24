@@ -44,11 +44,19 @@ mod run_bar;
 mod runtime_manager;
 mod settings_window;
 mod stall;
+mod theme;
 mod values;
 mod widgets;
 mod workbench;
 
 const MAX_LOG_LINES: usize = 2000;
+
+/// The least height the log is given while there is a page above it that is taller than the window leaves
+/// room for, and the least that page is given. After a crash the log has more: the panel of the crash says to
+/// look there for the reason, and the reason is four lines from the end, which a pane of 72 px cut in half.
+const LOG_LEAST: f32 = 72.0;
+const LOG_AFTER_CRASH: f32 = 104.0;
+const PAGE_LEAST: f32 = 120.0;
 
 /// What the log pane starts with: the problems found in the configuration, if any (the notes that
 /// need no action are left out). A clean start shows nothing, as it always has.
@@ -175,6 +183,8 @@ pub struct App {
     /// The person pressed the chat button that sets the companion up: its section is open the next time it
     /// is drawn, whatever it was.
     companion_section_wanted: bool,
+    /// The application's icon as a picture the title row draws; made when the first frame needs it.
+    logo: Option<egui::TextureHandle>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -231,11 +241,7 @@ impl App {
         let settings = Settings::load();
         let config_dirs = config::ConfigDirs::from_environment();
         let registry = config::build_registry(&config_dirs);
-        cc.egui_ctx.set_visuals(if settings.dark_mode {
-            egui::Visuals::dark()
-        } else {
-            egui::Visuals::light()
-        });
+        theme::apply(&cc.egui_ctx, settings.dark_mode);
         let mut app = Self::build(
             settings,
             registry,
@@ -375,6 +381,7 @@ impl App {
             show_configurations: false,
             raise_configurations: false,
             companion_section_wanted: false,
+            logo: None,
         };
         // the executable, the models and the panels' state of the engine in use
         app.load_engine_state();
@@ -722,12 +729,7 @@ impl App {
     }
 
     fn state_color(state: ServerState) -> egui::Color32 {
-        match state {
-            ServerState::Idle => egui::Color32::GRAY,
-            ServerState::Starting | ServerState::Stopping => egui::Color32::from_rgb(212, 160, 23),
-            ServerState::Running => egui::Color32::from_rgb(46, 139, 50),
-            ServerState::Crashed => egui::Color32::from_rgb(192, 57, 43),
-        }
+        theme::state_color(state)
     }
 }
 
@@ -735,14 +737,19 @@ impl App {
     /// The models and the way to get them: the picker and the model box of an engine that is given a
     /// model to start, or the list of what is installed for one that runs on its own.
     pub(super) fn show_models_area(&mut self, ui: &mut egui::Ui, active: bool) {
-        if self.runs_alone() {
-            self.show_workbench(ui, active);
-        } else {
-            self.show_model_bar(ui, active);
+        theme::card(ui, |ui| {
+            if self.runs_alone() {
+                self.show_workbench(ui, active);
+            } else {
+                self.show_model_bar(ui, active);
 
-            ui.add_space(8.0);
-            self.show_acquire(ui, active);
-        }
+                // what is picked above, and the ways to get another one below it
+                ui.add_space(2.0);
+                ui.separator();
+                ui.add_space(2.0);
+                self.show_acquire(ui, active);
+            }
+        });
     }
 }
 
@@ -788,23 +795,48 @@ impl eframe::App for App {
             self.run_reached_running = true;
         }
 
-        egui::CentralPanel::default().show(ui, |ui| {
-            if !self.show_page_top(ui) {
-                return;
-            }
+        egui::CentralPanel::default()
+            .frame(theme::page_frame())
+            .show(ui, |ui| {
+                if !self.show_page_top(ui) {
+                    return;
+                }
 
-            self.show_models_area(ui, active);
+                // What is above the log scrolls when the window is too short for it and for the least the log
+                // is given (a crash panel, the API panel and the results of a look-up are as tall as they are
+                // and used to push the log out of the window); in a window that has room it is all in view.
+                // While the results of a look-up or the way to connect an app are on the page they have the
+                // whole of it, as they always had, and the log is under them: it is not what is being read.
+                let browsing =
+                    self.lookup.open || (self.show_api_info && state == ServerState::Running);
+                let crashed = state == ServerState::Crashed
+                    || self.companion_state() == Some(ServerState::Crashed);
+                let room = if browsing {
+                    ui.available_height()
+                } else {
+                    let log = if crashed { LOG_AFTER_CRASH } else { LOG_LEAST };
+                    (ui.available_height() - log - 8.0).max(PAGE_LEAST)
+                };
+                egui::ScrollArea::vertical()
+                    .id_salt("page")
+                    .max_height(room)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        self.show_models_area(ui, active);
 
-            ui.add_space(8.0);
-            self.show_controls(ui);
+                        ui.add_space(6.0);
+                        self.show_controls(ui);
 
-            ui.add_space(8.0);
-            self.show_run_bar(ui, state, active);
+                        ui.add_space(10.0);
+                        self.show_run_bar(ui, state, active);
 
-            self.show_api_info_panel(ui, state);
-            self.show_diagnostics(ui, state);
-            self.show_log_pane(ui);
-        });
+                        self.show_api_info_panel(ui, state);
+                        self.show_diagnostics(ui, state);
+                    });
+                if !browsing {
+                    self.show_log_pane(ui);
+                }
+            });
 
         self.show_settings_window(ui.ctx());
         self.show_about_window(ui.ctx());

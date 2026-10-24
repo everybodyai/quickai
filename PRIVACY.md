@@ -141,7 +141,7 @@ app does not always do that for you.
 The app never connects to the internet by itself: not at startup, not while it runs, not while you chat. It does so
 only when you press a button, or Enter in a box, for one of these:
 
-- **Searching for a model.** **Look up online**, or typing a name into the Model box (anything that is neither a
+- **Searching for a model.** **Look up online**, or typing a name into the Get box (anything that is neither a
   link nor the path of an existing file is treated as a search) and pressing Enter or **Search**. The app asks
   Hugging Face (`huggingface.co`) for popular GGUF models and, for each repository it shows, for its tags and the
   names, sizes and checksums of its files (one request each: a look-up makes about thirty). The words you typed are
@@ -154,7 +154,7 @@ only when you press a button, or Enter in a box, for one of these:
   closing it contact no one. A button of it fetches what it says (below), from the host the list names: Hugging Face
   for files, and for Ollama the name is pulled by Ollama itself from its registry (`registry.ollama.ai`). Every file is
   checked against the SHA-256 the list holds, and one that does not match is deleted.
-- **Downloading a model.** **Get** on a result, or a link pasted into the Model box. The file is requested from that
+- **Downloading a model.** **Get** on a result, or a link pasted into the Get box. The file is requested from that
   address: Hugging Face for results, or whatever address you entered. That server sees your IP address and the
   request. A result that comes with a second file (a vision model's projector) fetches both from the same place,
   one after the other; QuickAI writes a small record of the pair (`<model>.bundle.json`) beside the model in
@@ -182,7 +182,7 @@ only when you press a button, or Enter in a box, for one of these:
   (`github.com`, which sends the file from `release-assets.githubusercontent.com`), and the app checks it against
   the checksum GitHub lists (and the one recorded in the app for the release it was tested with) before it unpacks
   anything.
-- **Looking up Ollama models.** With Ollama chosen, **Look up online** beside the Model box asks the library at
+- **Looking up Ollama models.** With Ollama chosen, **Look up online** beside the Get box asks the library at
   Ollama's website, `ollama.com`, for models that run on your computer: the page of its search for the words in the
   box, or the models it shows first when the box is empty. The words are part of the request (a `:tag` after a name is
   left out), and the request identifies itself as `quickai` with its version. The site sets an anonymous cookie on
@@ -191,7 +191,7 @@ only when you press a button, or Enter in a box, for one of these:
   gets back and lists the models that page names, and pulls nothing until you choose one (see the next item). The
   look-up is the app's own request, not Ollama's, so it needs no Ollama installed or running. Nothing is looked up
   just because Ollama was chosen.
-- **Pulling an Ollama model.** A name typed into the Model box with Ollama chosen (or a Hugging Face reference
+- **Pulling an Ollama model.** A name typed into the Get box with Ollama chosen (or a Hugging Face reference
   such as `hf.co/user/repo`) is pulled only when you press Enter or **Pull**. QuickAI asks the local Ollama to do
   it, and **Ollama** then contacts its registry, `registry.ollama.ai`, or Hugging Face for an `hf.co/`
   reference: `hf.co`, and the servers the files come from, `*.cdn.hf.co` (both measured with a real Ollama, which

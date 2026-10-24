@@ -3,6 +3,7 @@
 use eframe::egui;
 
 use super::companion::ChatAction;
+use super::theme::{self, Role};
 use super::App;
 use crate::events::ServerState;
 use crate::launch;
@@ -179,47 +180,65 @@ impl App {
         let web_ui = self
             .engine_doc()
             .and_then(|e| e.doc.provides.web_ui.clone());
+        let height = 32.0;
+        let status = self.run_status_text(state);
+        let companion = self.companion_status();
+        // beside the buttons while it fits there, on a row of its own under them when it does not: the engine's words and
+        // its companion's can be longer than what the buttons leave, and a line cut off by the window's edge is no way to read it
+        let mut status_below = false;
         ui.horizontal(|ui| {
-            if ui
-                .add_enabled(
-                    (!active && can_start) || loadable,
-                    egui::Button::new("Start"),
-                )
-                .on_hover_text(start_hint)
-                .clicked()
-            {
+            let can_press_start = (!active && can_start) || loadable;
+            let start = theme::button_sized(
+                ui,
+                if can_press_start {
+                    Role::Primary
+                } else {
+                    Role::Normal
+                },
+                can_press_start,
+                "Start",
+                egui::vec2(72.0, height),
+            )
+            .on_hover_text(start_hint);
+            if start.clicked() {
                 if loadable {
                     self.load_selected();
                 } else {
                     self.start_selected(ui.ctx());
                 }
             }
-            if ui
-                .add_enabled(
-                    matches!(state, ServerState::Starting | ServerState::Running),
-                    egui::Button::new("Stop"),
-                )
-                .on_hover_text(format!("Stop the running {server} process."))
-                .clicked()
+            let can_stop = matches!(state, ServerState::Starting | ServerState::Running);
+            if theme::button_sized(
+                ui,
+                if can_stop { Role::Danger } else { Role::Normal },
+                can_stop,
+                "Stop",
+                egui::vec2(60.0, height),
+            )
+            .on_hover_text(format!("Stop the running {server} process."))
+            .clicked()
             {
                 // the page goes with what it talks to
                 self.stop_companion();
                 self.session.stop();
             }
             if let Some(web_ui) = &web_ui {
-                if ui
-                    .add_enabled(
-                        state == ServerState::Running,
-                        egui::Button::new(web_ui.label.as_str()),
+                let ready = state == ServerState::Running;
+                if theme::button_sized(
+                    ui,
+                    if ready { Role::Primary } else { Role::Normal },
+                    ready,
+                    web_ui.label.as_str(),
+                    egui::vec2(0.0, height),
+                )
+                .on_hover_text(if alone {
+                    format!("Open the running {server} in your browser.")
+                } else {
+                    format!(
+                        "Open {server}'s built-in web chat for the running model in your browser."
                     )
-                    .on_hover_text(if alone {
-                        format!("Open the running {server} in your browser.")
-                    } else {
-                        format!(
-                            "Open {server}'s built-in web chat for the running model in your browser."
-                        )
-                    })
-                    .clicked()
+                })
+                .clicked()
                 {
                     if let Some(port) = self.session.port() {
                         // the page at the root is the address without a path, as it always was
@@ -230,10 +249,22 @@ impl App {
             }
             if web_ui.is_none() {
                 if let Some(chat) = self.chat_button() {
-                    if ui
-                        .add_enabled(chat.enabled, egui::Button::new(chat.label.as_str()))
-                        .on_hover_text(chat.hover.as_str())
-                        .clicked()
+                    // the one that matters is the chat page itself, once it can be opened: setting it up is
+                    // not what the person is here for, and Start is the green button until it is pressed
+                    let opens = matches!(chat.action, ChatAction::Open(_));
+                    if theme::button_sized(
+                        ui,
+                        if chat.enabled && opens {
+                            Role::Primary
+                        } else {
+                            Role::Normal
+                        },
+                        chat.enabled,
+                        chat.label.as_str(),
+                        egui::vec2(0.0, height),
+                    )
+                    .on_hover_text(chat.hover.as_str())
+                    .clicked()
                     {
                         match chat.action {
                             ChatAction::Open(url) => {
@@ -244,48 +275,92 @@ impl App {
                     }
                 }
             }
-            if ui
-                .add_enabled(state == ServerState::Running, egui::Button::new("🔌 API"))
-                .on_hover_text(if alone {
-                    format!("Show how to connect an external app to the running {server}")
-                } else {
-                    "Show how to connect an external app to this running model".to_string()
-                })
-                .clicked()
+            if theme::button_sized(
+                ui,
+                Role::Normal,
+                state == ServerState::Running,
+                "🔌 API",
+                egui::vec2(0.0, height),
+            )
+            .on_hover_text(if alone {
+                format!("Show how to connect an external app to the running {server}")
+            } else {
+                "Show how to connect an external app to this running model".to_string()
+            })
+            .clicked()
             {
                 self.show_api_info = !self.show_api_info;
             }
 
             ui.add_space(12.0);
-            let label = match (state, self.session.model_name(), self.session.port()) {
-                (ServerState::Running, Some(name), Some(port)) => {
-                    format!("Running: {name} (port {port})")
-                }
-                (ServerState::Running, None, Some(port)) if self.lists_models() => {
-                    match self.session.loading() {
-                        Some(model) => {
-                            format!(
-                                "{} ready, loading {model} (port {port})",
-                                self.engine_name()
-                            )
-                        }
-                        None => format!(
-                            "{} ready, no model loaded (port {port})",
-                            self.engine_name()
-                        ),
-                    }
-                }
-                (ServerState::Running, None, Some(port)) if alone => {
-                    format!("{} running (port {port})", self.engine_name())
-                }
-                _ => state.label().to_string(),
-            };
-            ui.colored_label(Self::state_color(state), label);
-            // the program that goes with the engine, while one is being used
-            if let Some((text, companion_state)) = self.companion_status() {
-                ui.label(egui::RichText::new("·").color(egui::Color32::GRAY));
-                ui.colored_label(Self::state_color(companion_state), text);
+            if status_width(ui, &status, companion.as_ref()) <= ui.available_width() {
+                show_status(ui, state, &status, companion.as_ref());
+            } else {
+                status_below = true;
             }
         });
+        if status_below {
+            ui.add_space(4.0);
+            ui.horizontal_wrapped(|ui| show_status(ui, state, &status, companion.as_ref()));
+        }
     }
+
+    /// What the line of the run bar says of the engine: the model and port while it serves one, what a manager
+    /// engine or one that runs on its own is doing, or the state's own word.
+    fn run_status_text(&self, state: ServerState) -> String {
+        match (state, self.session.model_name(), self.session.port()) {
+            (ServerState::Running, Some(name), Some(port)) => {
+                format!("Running: {name} (port {port})")
+            }
+            (ServerState::Running, None, Some(port)) if self.lists_models() => {
+                match self.session.loading() {
+                    Some(model) => {
+                        format!(
+                            "{} ready, loading {model} (port {port})",
+                            self.engine_name()
+                        )
+                    }
+                    None => format!(
+                        "{} ready, no model loaded (port {port})",
+                        self.engine_name()
+                    ),
+                }
+            }
+            (ServerState::Running, None, Some(port)) if self.runs_alone() => {
+                format!("{} running (port {port})", self.engine_name())
+            }
+            _ => state.label().to_string(),
+        }
+    }
+}
+
+/// The engine's line and, after a dot, the program that goes with it while one is being used.
+fn show_status(
+    ui: &mut egui::Ui,
+    state: ServerState,
+    status: &str,
+    companion: Option<&(String, ServerState)>,
+) {
+    ui.colored_label(App::state_color(state), status);
+    if let Some((text, companion_state)) = companion {
+        ui.label(egui::RichText::new("·").color(theme::palette().muted));
+        ui.colored_label(App::state_color(*companion_state), text);
+    }
+}
+
+/// How wide `show_status` is on one line.
+fn status_width(ui: &egui::Ui, status: &str, companion: Option<&(String, ServerState)>) -> f32 {
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let width = |text: &str| {
+        ui.painter()
+            .layout_no_wrap(text.to_string(), font.clone(), egui::Color32::WHITE)
+            .size()
+            .x
+    };
+    let gap = ui.spacing().item_spacing.x;
+    let mut total = width(status);
+    if let Some((text, _)) = companion {
+        total += gap + width("·") + gap + width(text);
+    }
+    total
 }

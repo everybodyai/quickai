@@ -29,15 +29,19 @@ impl App {
         let Some(panel) = api_panel(&self.registry, &selection, &self.form_facts()) else {
             return;
         };
-        ui.add_space(6.0);
-        ui.group(|ui| {
+        ui.add_space(8.0);
+        super::theme::card(ui, |ui| {
+            // close set: the card is long (a title, four values with their notes and the example), and it is read
+            // with the window's buttons above it
+            super::theme::compact(ui);
             ui.label(
                 egui::RichText::new(if self.runs_alone() {
                     format!("Connect an app to {}", self.engine_name())
                 } else {
                     "Connect an app to this model".to_string()
                 })
-                .strong(),
+                .size(15.0)
+                .color(super::theme::palette().accent_text),
             );
             ui.horizontal(|ui| {
                 ui.label("Base URL:");
@@ -86,6 +90,10 @@ impl App {
 /// The small grey sentence under a value.
 fn note(ui: &mut egui::Ui, text: Option<&str>) {
     if let Some(text) = text {
-        ui.label(egui::RichText::new(text).small().color(egui::Color32::GRAY));
+        ui.label(
+            egui::RichText::new(text)
+                .small()
+                .color(super::theme::palette().muted),
+        );
     }
 }
