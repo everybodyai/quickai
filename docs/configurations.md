@@ -1,15 +1,6 @@
 # Configurations
 
-_Status: **built** (WP4.17 of [implementation-plan.md](implementation-plan.md)), 2026-10-11 · Asked for by the user the same day · The tests are group A of
-[phase3-test-plan.md](phase3-test-plan.md): every row is `ready` but one that needs a real Open WebUI and the internet and is run by hand (A67) ·
-The GUI suite `configurations` is in the test repository ([docs/20_configurations.md](../../test/docs/20_configurations.md) there)._
-
-The user: "I need to drive the QuickAI by configuration/s. This means There will be a top-level configuration that can be
-imported/exported/selected - These configuration will contain the details of QuickAi runtime, including models, command line arguments, and other
-settings. These settings can be shared with others so the same runtime is available there also. of course ensure to warn about incompatibility.
-Also provide a new section(similar to settings) to manage multiple configurations. provide a top-level configuration dropdown too - There should be a
-default - The user may choose to save by a different name etc. Think and come up with a plan(We need data-driven design). I understand that for
-sometings like Open WebUI - then environment may not be mutalbe - so leave this out for the OpenWebUI if not possible"
+A configuration is a whole QuickAI runtime in one small file: the engine, the model, the build and the settings, chosen from a dropdown, saved under a name and shared with others. This page says how they are made, checked and shared safely.
 
 ## 1. In short
 

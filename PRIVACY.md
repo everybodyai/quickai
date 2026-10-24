@@ -1,6 +1,6 @@
 # Privacy policy: QuickAI
 
-_Last updated: 2026-10-11_
+_Last updated: 2026-10-24_
 
 QuickAI ("the app") is a desktop program for running language models on your own computer: you pick a model,
 start it, and chat with it in your browser or from another program on the same machine. It can run them with
@@ -284,4 +284,5 @@ If this policy changes, the new version is published in this file with a new dat
 
 ## Contact
 
-Questions about this policy: open an issue at <https://github.com/nujufas/QuickAI/issues>.
+QuickAI is made by EverybodyAI (Nihal Abdul Kader). Questions about this policy: write to
+<hello@everybodyai.dev>, or open an issue at <https://github.com/nihal-kader/quickai/issues>.
