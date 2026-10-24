@@ -33,7 +33,9 @@ impl App {
             self.show_live_traffic_tab(ui);
             return false;
         }
-        self.show_configuration_section(ui);
+        theme::column(ui, theme::PAGE_WIDTH, |ui| {
+            self.show_configuration_section(ui);
+        });
         ui.add_space(8.0);
         true
     }
@@ -479,6 +481,244 @@ mod tests {
         click(&mut app, &ctx, dismiss.center());
         assert_eq!(app.catalog.note, None);
         assert!(!said(&rects(&settled(&mut app, &ctx, true))));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A model of the picker, as an engine that lists its models, or the folder of the bundled ones, gave it.
+    fn listed(name: &str, note: &str) -> crate::models::ModelEntry {
+        crate::models::ModelEntry {
+            filename: name.to_string(),
+            path: std::path::PathBuf::new(),
+            display: name.to_string(),
+            note: note.to_string(),
+            bundled: false,
+            size_bytes: 6 * GB,
+            companions: Vec::new(),
+            mode: None,
+        }
+    }
+
+    #[test]
+    fn p3_i24_what_is_said_of_a_listed_model_is_chips_on_one_row_and_not_lines_of_small_print() {
+        let dir = scratch("z24");
+        let mut app = app_in(&dir, "ollama");
+        let ctx = egui::Context::default();
+        app.models = vec![listed("qwen3-vl:8b", "completion, vision, tools, thinking")];
+        app.selected = 0;
+        app.recommended_filename = Some("qwen3-vl:8b".to_string());
+        app.named.stale = true;
+        let found = rects(&settled(&mut app, &ctx, true));
+        let picker = *found.get("Model:").expect("the picker's label");
+        let get = *found.get("Get:").expect("the box that gets another model");
+        let chips: Vec<egui::Rect> = [
+            "vision",
+            "tools",
+            "thinking",
+            "★ Recommended",
+            "from the last run",
+        ]
+        .iter()
+        .map(|text| {
+            *found
+                .get(*text)
+                .unwrap_or_else(|| panic!("{text}: {:?}", found.keys()))
+        })
+        .collect();
+        // all on one row, under the picker's and over the box that gets another model
+        for chip in &chips {
+            assert!(
+                chip.top() > picker.bottom() && chip.bottom() < get.top(),
+                "{chip:?} is not between {picker:?} and {get:?}"
+            );
+            assert!(
+                (chip.center().y - chips[0].center().y).abs() < 3.0,
+                "{chip:?} is not on the row of {:?}",
+                chips[0]
+            );
+        }
+        // the three lines they replace are gone, and so is `completion`, which every model that chats has
+        for text in found.keys() {
+            assert!(
+                !text.contains("RAM detected")
+                    && !text.starts_with("(as ")
+                    && !text.contains("completion"),
+                "{text:?} is still there"
+            );
+        }
+        // the row is the height of its chips: the box under it is not further down than it was under one line of print
+        assert!(
+            get.top() - picker.bottom() < 60.0,
+            "{get:?} is far below {picker:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn p3_i25_a_note_is_cut_at_its_first_sentence_and_the_rest_is_there_when_the_pointer_is() {
+        use super::super::model_bar::first_sentence;
+        assert_eq!(first_sentence("A, b. C d."), "A, b.");
+        assert_eq!(first_sentence("One sentence."), "One sentence.");
+        assert_eq!(first_sentence("No stop at all"), "No stop at all");
+        assert_eq!(first_sentence(""), "");
+        let (note, mode) =
+            super::super::model_bar::split_mode("A note. Starts as an embedding server.");
+        assert_eq!(
+            (note, mode.map(|m| m.text)),
+            ("A note.", Some("embedding server".to_string()))
+        );
+        let (note, mode) = super::super::model_bar::split_mode("Only a note.");
+        assert_eq!((note, mode.is_none()), ("Only a note.", true));
+
+        let dir = scratch("z25");
+        let mut app = app_in(&dir, "llamacpp");
+        let ctx = egui::Context::default();
+        app.models = vec![listed(
+            "Bonsai-1.7B-Q1_0.gguf",
+            "1-bit quantized, ~0.25 GB, Apache-2.0. Bundled with this package \u{2014} the lighter pick if the 8B runs slowly on this machine.",
+        )];
+        app.selected = 0;
+        let found = rects(&settled(&mut app, &ctx, true));
+        assert!(
+            found.contains_key("1-bit quantized, ~0.25 GB, Apache-2.0."),
+            "{:?}",
+            found.keys()
+        );
+        assert!(
+            !found
+                .keys()
+                .any(|text| text.contains("Bundled with this package")),
+            "{:?}",
+            found.keys()
+        );
+        // a note that is one sentence is all there
+        app.models[0].note = "Instruction-tuned chat model, small and fast.".to_string();
+        let found = rects(&settled(&mut app, &ctx, true));
+        assert!(found.contains_key("Instruction-tuned chat model, small and fast."));
+        // how a model is started is a chip, whatever else its note says: it is not left for the hover
+        app.models[0].note =
+            "Turns text into numbers for the tests. Starts as an embedding server.".to_string();
+        let found = rects(&settled(&mut app, &ctx, true));
+        assert!(
+            found.contains_key("embedding server")
+                && found.contains_key("Turns text into numbers for the tests."),
+            "{:?}",
+            found.keys()
+        );
+        assert!(
+            !found.keys().any(|text| text.contains("Starts as")),
+            "{:?}",
+            found.keys()
+        );
+        app.models[0].note =
+            "It is meant to start in the mode `rerank`, which this engine does not have."
+                .to_string();
+        let found = rects(&settled(&mut app, &ctx, true));
+        assert!(
+            found.contains_key("mode this engine lacks"),
+            "{:?}",
+            found.keys()
+        );
+        // and a model with none has no row for it: the box is where it was under a picker alone
+        app.models[0].note = String::new();
+        let found = rects(&settled(&mut app, &ctx, true));
+        let (picker, get) = (found["Model:"], found["Get:"]);
+        assert!(
+            get.top() - picker.bottom() < 40.0,
+            "{get:?} is far below {picker:?} with nothing said of the model"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A look-up that is over and found `entries` of a card with the one row of buttons each: the first has
+    /// `latest`, the second two sizes in the one row and a bundle in another.
+    fn looked_up(app: &mut App, status: &str) {
+        use quickai_core::lookup::present::{Entry, Fetch, Offer};
+        let offer = |label: &str, bundle: Option<&str>| Offer {
+            bundle: bundle.map(str::to_string),
+            label: label.to_string(),
+            hover: format!("Pull {label}"),
+            bytes: Some(1),
+            estimated: true,
+            class: None,
+            recommended: false,
+            fetch: Fetch::Reference(label.to_string()),
+        };
+        let entry = |name: &str, offers: Vec<Offer>| Entry {
+            key: format!("k:{name}"),
+            name: name.to_string(),
+            description: format!("What {name} is."),
+            downloads: None,
+            likes: None,
+            tags: Vec::new(),
+            model_type: Some("chat".to_string()),
+            offers,
+            card: None,
+        };
+        app.lookup.open = true;
+        app.lookup.status = status.to_string();
+        app.lookup.entries = vec![
+            entry("plain", vec![offer("latest", None)]),
+            entry(
+                "bundled",
+                vec![offer("Q4", None), offer("Q4 with eyes", Some("vision"))],
+            ),
+        ];
+    }
+
+    #[test]
+    fn p3_i27_a_look_up_that_found_models_says_its_count_once_and_a_model_has_its_sizes_beside_its_name(
+    ) {
+        let dir = scratch("z27");
+        let mut app = app_in(&dir, "ollama");
+        let ctx = egui::Context::default();
+        looked_up(
+            &mut app,
+            "Found 2 models in ollama.com's library. There are more: type some words to narrow the search.",
+        );
+        let found = rects(&settled(&mut app, &ctx, true));
+        // the heading has the count; the sentence that said it again is not drawn, and what it added is, in the row of
+        // the sizes
+        let heading = found
+            .get("Results (2)")
+            .expect("the heading of the results");
+        assert!(
+            !found.keys().any(|text| text.starts_with("Found ")),
+            "{:?}",
+            found.keys()
+        );
+        let more = found
+            .get("There are more: type some words to narrow the search.")
+            .expect("what the sentence added");
+        let size = found.get("Size:").expect("the row of sizes");
+        assert!(more.top() > heading.bottom(), "{more:?} {heading:?}");
+        assert!(
+            more.center().y - size.center().y < 30.0,
+            "{more:?} is not by the sizes {size:?}"
+        );
+        // a model with one row of buttons has them on the line of its name, and its words under that
+        let (name, button, said) = (found["plain"], found["latest"], found["What plain is."]);
+        assert!(
+            (button.center().y - name.center().y).abs() < 6.0 && button.left() > name.right(),
+            "{button:?} is not beside {name:?}"
+        );
+        assert!(said.top() > name.bottom(), "{said:?} {name:?}");
+        // a model with a row for the model and one for a bundle keeps them under its name, a row each
+        let name = found["bundled"];
+        let (plain, with_eyes) = (found["Q4"], found["Q4 with eyes"]);
+        assert!(
+            plain.top() > name.bottom() && with_eyes.top() > plain.bottom(),
+            "{name:?} {plain:?} {with_eyes:?}"
+        );
+
+        // when it could not look, or found nothing, its sentence is what is said
+        app.lookup.status = "ollama.com did not answer.".to_string();
+        app.lookup.failed = true;
+        let found = rects(&settled(&mut app, &ctx, true));
+        assert!(
+            found.contains_key("ollama.com did not answer."),
+            "{:?}",
+            found.keys()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

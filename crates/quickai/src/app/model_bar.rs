@@ -6,6 +6,48 @@ use super::theme::{self, Tone};
 use super::App;
 use crate::hardware;
 
+/// One thing that is said of the picked model, as a chip: its words, the tone it is drawn in and what is said more of
+/// it when the pointer rests on it (nothing when it needs no more).
+pub(super) struct Fact {
+    pub text: String,
+    pub tone: Option<Tone>,
+    pub hover: String,
+}
+
+/// What the end of a note says of how the model is started (`models::say_modes` puts the sentence there): a chip of its
+/// own, since it is not a part of the note that can be cut and left for the hover. The note without it comes with it.
+pub(super) fn split_mode(note: &str) -> (&str, Option<Fact>) {
+    if let Some(at) = note.rfind("Starts as an ") {
+        let sentence = &note[at..];
+        let label = sentence
+            .trim_start_matches("Starts as an ")
+            .trim_end_matches('.');
+        let fact = Fact {
+            text: label.to_string(),
+            tone: None,
+            hover: sentence.to_string(),
+        };
+        return (note[..at].trim_end(), Some(fact));
+    }
+    if let Some(at) = note.rfind("It is meant to start in the mode") {
+        let fact = Fact {
+            text: "mode this engine lacks".to_string(),
+            tone: Some(Tone::Warn),
+            hover: note[at..].to_string(),
+        };
+        return (note[..at].trim_end(), Some(fact));
+    }
+    (note, None)
+}
+
+/// `note` up to and including its first full stop (all of it when it has none).
+pub(super) fn first_sentence(note: &str) -> &str {
+    match note.find(". ") {
+        Some(end) => &note[..=end],
+        None => note,
+    }
+}
+
 impl App {
     /// How fast the selected model is likely to run here: the words of the chip, its tone and what its hover text says. It is
     /// said of the model, so it is drawn with the model (it was an icon in the title row).
@@ -49,16 +91,67 @@ impl App {
         true
     }
 
-    /// The chip on a line of its own, for the picker whose row had no room for it.
-    pub(super) fn show_speed_chip_below(&self, ui: &mut egui::Ui) {
-        let (text, tone, hover) = self.speed_chip_parts();
+    /// The badge that says the picked model is the one this computer is recommended: what it rests on is said when the
+    /// pointer is on it.
+    pub(super) fn recommended_fact(&self) -> Fact {
+        Fact {
+            text: "★ Recommended".to_string(),
+            tone: Some(Tone::Good),
+            hover: format!(
+                "Recommended for this machine (~{} RAM detected{}). A starting point, not a guarantee: \
+                 based on total RAM and whether GPU offload is enabled, favoring a smaller/faster \
+                 model on CPU-only setups since a big model stays slow token-by-token no matter how \
+                 much RAM is free. This can't see actual VRAM, so a model with GPU offload on can \
+                 still run slower than expected if it doesn't fully fit on the GPU.",
+                hardware::format_bytes(self.total_ram_bytes),
+                if self.gpu_offload() { "" } else { ", CPU only" }
+            ),
+        }
+    }
+
+    /// What is said of the picked model under the picker, on one row: the chips (what it can do, that it is the
+    /// recommended one, that what is said of it is from the last run), then a sentence of what the application knows
+    /// of it, cut at its first full stop and whole when the pointer is on it. `with_speed` puts the speed chip in
+    /// front, for a picker whose row had no room for it. Nothing is drawn when there is nothing to say.
+    pub(super) fn show_model_facts(
+        &self,
+        ui: &mut egui::Ui,
+        chips: Vec<Fact>,
+        sentence: Option<&str>,
+        with_speed: bool,
+    ) {
+        if chips.is_empty() && sentence.is_none() && !with_speed {
+            return;
+        }
         ui.add_space(2.0);
-        ui.horizontal(|ui| {
-            theme::chip(ui, &text, tone).on_hover_text(hover);
+        // a row of small print and chips is as high as they are and not as a button (the height of a wrapped row is
+        // the room it is begun with, so it is set on the ui that begins it)
+        ui.scope(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            ui.spacing_mut().interact_size.y = 20.0;
+            ui.horizontal_wrapped(|ui| {
+                if with_speed {
+                    let (text, tone, hover) = self.speed_chip_parts();
+                    theme::chip(ui, &text, tone).on_hover_text(hover);
+                }
+                for fact in chips {
+                    let chip = theme::chip(ui, &fact.text, fact.tone);
+                    if !fact.hover.is_empty() {
+                        chip.on_hover_text(fact.hover);
+                    }
+                }
+                if let Some(sentence) = sentence {
+                    let first = first_sentence(sentence);
+                    let label = ui.label(theme::muted(first));
+                    if first.len() < sentence.len() {
+                        label.on_hover_text(sentence);
+                    }
+                }
+            });
         });
     }
 
-    /// The model picker, its Refresh button, the model's note and the recommendation line.
+    /// The model picker, its Refresh button, and under them what is said of the model.
     pub(super) fn show_model_bar(&mut self, ui: &mut egui::Ui, active: bool) {
         if self.lists_models() {
             self.show_named_model_bar(ui, active);
@@ -122,34 +215,16 @@ impl App {
             });
             chip_fits = self.show_speed_chip_in_row(ui);
         });
-        if !chip_fits {
-            self.show_speed_chip_below(ui);
-        }
         if let Some(m) = self.models.get(self.selected) {
-            if !m.note.is_empty() {
-                ui.add_space(2.0);
-                ui.label(theme::muted(&m.note));
-            }
+            let mut chips = Vec::new();
             if self.recommended_filename.as_deref() == Some(m.filename.as_str()) {
-                ui.add_space(2.0);
-                ui.label(
-                    egui::RichText::new(format!(
-                        "★ Recommended for this machine (~{} RAM detected{})",
-                        hardware::format_bytes(self.total_ram_bytes),
-                        if self.gpu_offload() { "" } else { ", CPU only" }
-                    ))
-                    .color(theme::palette().ok)
-                    .small(),
-                )
-                .on_hover_text(
-                    "A starting point, not a guarantee: based on total RAM and \
-                     whether GPU offload is enabled, favoring a smaller/faster \
-                     model on CPU-only setups since a big model stays slow \
-                     token-by-token no matter how much RAM is free. This can't \
-                     see actual VRAM, so a model with GPU offload on can still \
-                     run slower than expected if it doesn't fully fit on the GPU.",
-                );
+                chips.push(self.recommended_fact());
             }
+            // how it is started (an embedding server) is a chip, and the rest of the note is cut at its first sentence
+            let (note, mode) = split_mode(&m.note);
+            chips.extend(mode);
+            let sentence = (!note.is_empty()).then_some(note);
+            self.show_model_facts(ui, chips, sentence, !chip_fits);
         } else {
             ui.colored_label(
                 theme::palette().bad,

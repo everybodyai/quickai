@@ -204,18 +204,33 @@ impl App {
         } else {
             super::theme::palette().muted
         };
-        // what it says wraps at the width of the card: a sentence that is longer than the window (the reason a
-        // look-up failed, with the proxy's words in it) would widen the cards and the page with it
-        ui.horizontal_wrapped(|ui| {
-            ui.label(
-                egui::RichText::new(&self.lookup.status)
-                    .small()
-                    .color(colour),
-            );
-            if self.lookup.running() {
-                ui.add(egui::Spinner::new().size(12.0));
-            }
-        });
+        // A look-up that is over and found models says how many in the heading of what it found: its sentence is
+        // read while it looks, when it found nothing and when it could not look. What it adds to the count (there
+        // are more than it lists) stays, at the end of the row of sizes.
+        let found =
+            !self.lookup.entries.is_empty() && !self.lookup.running() && !self.lookup.failed;
+        let more = found
+            .then(|| {
+                self.lookup
+                    .status
+                    .split_once(". ")
+                    .map(|(_, more)| more.to_string())
+            })
+            .flatten();
+        if !found {
+            // what it says wraps at the width of the card: a sentence that is longer than the window (the reason a
+            // look-up failed, with the proxy's words in it) would widen the cards and the page with it
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    egui::RichText::new(&self.lookup.status)
+                        .small()
+                        .color(colour),
+                );
+                if self.lookup.running() {
+                    ui.add(egui::Spinner::new().size(12.0));
+                }
+            });
+        }
         if self.lookup.entries.is_empty() {
             return;
         }
@@ -245,11 +260,13 @@ impl App {
             .default_open(true)
             .show(ui, |ui| {
                 super::theme::compact(ui);
-                if !sizes.is_empty() {
+                if !sizes.is_empty() || more.is_some() {
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(egui::RichText::new("Size:").small());
-                        if ui.selectable_label(size.is_none(), "Any").clicked() {
-                            size = None;
+                        if !sizes.is_empty() {
+                            ui.label(egui::RichText::new("Size:").small());
+                            if ui.selectable_label(size.is_none(), "Any").clicked() {
+                                size = None;
+                            }
                         }
                         for class in &sizes {
                             let on = size.as_deref() == Some(class.id.as_str());
@@ -260,6 +277,10 @@ impl App {
                             if chip.clicked() {
                                 size = Some(class.id.clone());
                             }
+                        }
+                        if let Some(more) = &more {
+                            ui.add_space(8.0);
+                            ui.label(super::theme::muted(more));
                         }
                     });
                 }
@@ -362,13 +383,135 @@ pub(super) fn show_entry(
     decor: Option<&Decor<'_>>,
 ) {
     let weak = ui.visuals().weak_text_color();
+    // the rows, in the order the entry has them (a look-up puts the model alone first, the list the bundles)
+    let mut groups: Vec<Row<'_>> = Vec::new();
+    for offer in shown.iter().map(|i| &entry.offers[*i]) {
+        let group = row_of(offer);
+        if !groups.contains(&group) {
+            groups.push(group);
+        }
+    }
+    let has_bundles = entry.offers.iter().any(|o| o.bundle.is_some());
+    let has_only = entry.offers.iter().any(|o| o.only().is_some());
+    // what a row of buttons says in front of them, what resting the pointer on those words says, and the offers it has
+    let parts_of = |group: Row<'_>| -> (String, String, Vec<&Offer>) {
+        let in_group: Vec<&Offer> = shown
+            .iter()
+            .map(|i| &entry.offers[*i])
+            .filter(|o| row_of(o) == group)
+            .collect();
+        let entry_bundles: Vec<&str> = entry
+            .offers
+            .iter()
+            .filter_map(|o| o.bundle.as_deref())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let (label, hover) = match group {
+            Row::Only(_) => (only_label(&in_group), only_hover(&in_group)),
+            // beside a file of a kind by itself the model's own row says that it is the model
+            Row::Model if has_only && !has_bundles => ("Get model:".to_string(), String::new()),
+            Row::Model => (
+                row_label(None, has_bundles, &in_group, bundle_labels),
+                row_hover(None, &entry_bundles, bundle_labels),
+            ),
+            Row::Bundle(id) => (
+                row_label(Some(id), has_bundles, &in_group, bundle_labels),
+                row_hover(Some(id), &entry_bundles, bundle_labels),
+            ),
+        };
+        (label, hover, in_group)
+    };
+    // one row of buttons: the words and the buttons of a row, in whatever row they are put
+    let mut show_group = |ui: &mut egui::Ui, group: Row<'_>| {
+        let (label, hover, in_group) = parts_of(group);
+        let words = ui.label(egui::RichText::new(label).small());
+        if !hover.is_empty() {
+            words.on_hover_text(hover);
+        }
+        for offer in in_group {
+            let installed = decor.is_some_and(|d| (d.installed)(offer));
+            let fit = decor.map(|d| (d.fit)(offer));
+            let mut text = egui::RichText::new(&offer.label);
+            if offer.recommended {
+                text = text.strong();
+            }
+            if fit == Some(Fit::TooBig) {
+                text = text.color(weak);
+            }
+            let hover = if installed {
+                "Already in your models folder.".to_string()
+            } else {
+                match (fit, decor) {
+                    (Some(Fit::TooBig), Some(d)) => format!(
+                        "{} This is more than the memory of this computer ({}).",
+                        offer.hover,
+                        crate::hardware::format_bytes(d.ram)
+                    ),
+                    (Some(Fit::Tight), Some(d)) => format!(
+                        "{} It will fit in the memory of this computer ({}), with little to spare.",
+                        offer.hover,
+                        crate::hardware::format_bytes(d.ram)
+                    ),
+                    _ => offer.hover.clone(),
+                }
+            };
+            if ui
+                .add_enabled(!busy && !installed, egui::Button::new(text).small())
+                .on_hover_text(hover)
+                .clicked()
+            {
+                *chosen = Some(offer.fetch.clone());
+            }
+        }
+    };
+    // A model that has one row of buttons has them after its name, when the name, what is said of it and the whole row
+    // of buttons fit on one line, and under it when they do not: a line of a model with its sizes beside it is a row of
+    // a list, and a line of its own for the buttons was a third of the height of the list; but a row that is broken
+    // in the middle, a button left alone on the next line, is worse than the line of its own.
+    let alone = (groups.len() == 1).then(|| groups[0]).filter(|group| {
+        let small = egui::TextStyle::Small.resolve(ui.style());
+        let body = egui::TextStyle::Body.resolve(ui.style());
+        let gap = ui.spacing().item_spacing.x;
+        let width = |text: &str, font: &egui::FontId| {
+            ui.painter()
+                .layout_no_wrap(text.to_string(), font.clone(), egui::Color32::WHITE)
+                .size()
+                .x
+        };
+        let facts = facts_line(entry);
+        let mut need = width(&entry.name, &body) + gap + 8.0;
+        if !facts.is_empty() {
+            need += width(&facts, &small) + gap;
+        }
+        if let Some(decor) = decor {
+            let offers: Vec<&Offer> = entry.offers.iter().collect();
+            if offers.iter().any(|o| (decor.installed)(o)) {
+                need += 10.0 + width("Installed", &small) + 2.0 * gap;
+            }
+            if !offers.is_empty() && offers.iter().all(|o| (decor.fit)(o) == Fit::TooBig) {
+                need += width("Too big for this computer", &small) + gap;
+            }
+        }
+        let (label, _, offers) = parts_of(*group);
+        need += width(&label, &small) + gap;
+        let padding = 2.0 * ui.spacing().button_padding.x;
+        for offer in offers {
+            need += width(&offer.label, &small) + padding + gap;
+        }
+        need <= ui.available_width()
+    });
     ui.push_id(&entry.key, |ui| {
         ui.spacing_mut().item_spacing.y = 2.0;
         ui.horizontal_wrapped(|ui| {
             ui.label(egui::RichText::new(&entry.name).strong());
             let facts = facts_line(entry);
             if !facts.is_empty() {
-                ui.label(egui::RichText::new(facts).small().color(super::theme::palette().muted));
+                ui.label(
+                    egui::RichText::new(facts)
+                        .small()
+                        .color(super::theme::palette().muted),
+                );
             }
             if let Some(decor) = decor {
                 let offers: Vec<&Offer> = entry.offers.iter().collect();
@@ -385,6 +528,10 @@ pub(super) fn show_entry(
                     );
                 }
             }
+            if let Some(group) = alone {
+                ui.add_space(8.0);
+                show_group(ui, group);
+            }
         });
         if let Some(card) = &entry.card {
             let chips = card_chips(card);
@@ -397,86 +544,10 @@ pub(super) fn show_entry(
             // leaves a person looking for the rest of it, and a list cannot be scrolled sideways
             ui.add(egui::Label::new(egui::RichText::new(&entry.description).small()).wrap());
         }
-        // the rows, in the order the entry has them (a look-up puts the model alone first, the list the bundles)
-        let mut groups: Vec<Row<'_>> = Vec::new();
-        for offer in shown.iter().map(|i| &entry.offers[*i]) {
-            let group = row_of(offer);
-            if !groups.contains(&group) {
-                groups.push(group);
+        if alone.is_none() {
+            for group in groups.iter().copied() {
+                ui.horizontal_wrapped(|ui| show_group(ui, group));
             }
-        }
-        let has_bundles = entry.offers.iter().any(|o| o.bundle.is_some());
-        let has_only = entry.offers.iter().any(|o| o.only().is_some());
-        for group in groups {
-            ui.horizontal_wrapped(|ui| {
-                let in_group: Vec<&Offer> = shown
-                    .iter()
-                    .map(|i| &entry.offers[*i])
-                    .filter(|o| row_of(o) == group)
-                    .collect();
-                let entry_bundles: Vec<&str> = entry
-                    .offers
-                    .iter()
-                    .filter_map(|o| o.bundle.as_deref())
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .into_iter()
-                    .collect();
-                let (label, hover) = match group {
-                    Row::Only(_) => (only_label(&in_group), only_hover(&in_group)),
-                    // beside a file of a kind by itself the model's own row says that it is the model
-                    Row::Model if has_only && !has_bundles => (
-                        "Get model:".to_string(),
-                        String::new(),
-                    ),
-                    Row::Model => (
-                        row_label(None, has_bundles, &in_group, bundle_labels),
-                        row_hover(None, &entry_bundles, bundle_labels),
-                    ),
-                    Row::Bundle(id) => (
-                        row_label(Some(id), has_bundles, &in_group, bundle_labels),
-                        row_hover(Some(id), &entry_bundles, bundle_labels),
-                    ),
-                };
-                let words = ui.label(egui::RichText::new(label).small());
-                if !hover.is_empty() {
-                    words.on_hover_text(hover);
-                }
-                for offer in in_group {
-                    let installed = decor.is_some_and(|d| (d.installed)(offer));
-                    let fit = decor.map(|d| (d.fit)(offer));
-                    let mut text = egui::RichText::new(&offer.label);
-                    if offer.recommended {
-                        text = text.strong();
-                    }
-                    if fit == Some(Fit::TooBig) {
-                        text = text.color(weak);
-                    }
-                    let hover = if installed {
-                        "Already in your models folder.".to_string()
-                    } else {
-                        match (fit, decor) {
-                            (Some(Fit::TooBig), Some(d)) => format!(
-                                "{} This is more than the memory of this computer ({}).",
-                                offer.hover,
-                                crate::hardware::format_bytes(d.ram)
-                            ),
-                            (Some(Fit::Tight), Some(d)) => format!(
-                                "{} It will fit in the memory of this computer ({}), with little to spare.",
-                                offer.hover,
-                                crate::hardware::format_bytes(d.ram)
-                            ),
-                            _ => offer.hover.clone(),
-                        }
-                    };
-                    if ui
-                        .add_enabled(!busy && !installed, egui::Button::new(text).small())
-                        .on_hover_text(hover)
-                        .clicked()
-                    {
-                        *chosen = Some(offer.fetch.clone());
-                    }
-                }
-            });
         }
         ui.add_space(6.0);
     });

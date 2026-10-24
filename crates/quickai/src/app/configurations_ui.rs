@@ -1584,8 +1584,10 @@ mod tests {
                     .map(|(rect, _)| rect)
                     .next()
                     .unwrap_or_else(|| panic!("{width}: no frame round the section"));
+                // (the page is as wide as the window leaves it, and no wider than a column of the Main tab's)
                 assert!(
-                    (section.width() - (width - 16.0)).abs() < 2.0,
+                    (section.width() - (width - 16.0).min(super::super::theme::PAGE_WIDTH)).abs()
+                        < 2.0,
                     "{width}: the section is {} wide",
                     section.width()
                 );

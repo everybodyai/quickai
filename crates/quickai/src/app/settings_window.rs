@@ -73,12 +73,14 @@ impl App {
                     }
                     ui.add_space(6.0);
                 });
-                egui::CentralPanel::default().show(ui, |ui| {
-                    egui::ScrollArea::vertical()
-                        .id_salt("settings_scroll")
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| self.show_settings_body(ui, &form));
-                });
+                egui::CentralPanel::default()
+                    .frame(super::theme::page_frame())
+                    .show(ui, |ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt("settings_scroll")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| self.show_settings_body(ui, &form));
+                    });
             }
             // every delete button of the window asks its question in the window, where it was pressed
             self.show_confirm_delete_modal(ui.ctx());
@@ -109,27 +111,104 @@ impl App {
         self.save_settings();
     }
 
-    /// What the window holds, in the order it is read: the engine, the models, the traffic proxy, the
-    /// engine's Advanced section and what went wrong.
+    /// What the window holds, in the order it is read, each part on a card as the main window's are: the engine, the
+    /// models and the traffic proxy; what goes with the engine; its Advanced section; and what went wrong.
     fn show_settings_body(&mut self, ui: &mut egui::Ui, form: &Option<FormModel>) {
-        ui.label(egui::RichText::new("App").strong());
-        ui.add_space(4.0);
-        self.show_engine_row(ui);
+        super::theme::card(ui, |ui| {
+            self.show_engine_row(ui);
 
-        if self.lists_models() {
-            self.show_named_models_list(ui);
-        } else {
+            if self.lists_models() {
+                self.show_named_models_list(ui);
+            } else {
+                self.show_models_folder(ui, form);
+            }
+
+            let active = self.session.is_active();
+            let server = self.server_name();
+            // an engine with no conversation to show has nothing for the proxy to do
+            if self.reads_traffic() {
+                ui.add_space(6.0);
+                ui.add_enabled_ui(!active, |ui| {
+                    if ui
+                        .checkbox(
+                            &mut self.enable_traffic_proxy,
+                            "Show live conversation traffic",
+                        )
+                        .on_hover_text(format!(
+                            "Adds a small local proxy in front of {server} so a new \"📡 \
+                 Live\" button can show chat/completion requests and replies live, \
+                 from any client — the built-in chat UI or an external app via the \
+                 🔌 API. Off by default: clients then connect straight to \
+                 {server}, with no extra hop or overhead. Takes effect the next \
+                 time you click Start."
+                        ))
+                        .changed()
+                    {
+                        self.save_settings();
+                    }
+                });
+                if active {
+                    ui.label(
+                        egui::RichText::new(
+                            "(Stop the server to change this — it applies on the next Start.)",
+                        )
+                        .small()
+                        .color(super::theme::palette().muted),
+                    );
+                }
+            }
+        });
+
+        // the program that goes with the engine, when one does (Open WebUI beside Ollama)
+        self.show_companion_settings(ui);
+
+        ui.add_space(6.0);
+        let engine_name = self
+            .registry
+            .engine(&self.engine)
+            .map(|e| e.doc.engine.name.clone())
+            .unwrap_or_default();
+        super::theme::card(ui, |ui| {
+            egui::CollapsingHeader::new(format!("Advanced: {engine_name}"))
+                .default_open(false)
+                .show(ui, |ui| {
+                    let advanced: Vec<FormField> = form
+                        .as_ref()
+                        .and_then(|f| f.section("advanced"))
+                        .map(|s| s.fields.iter().filter(|f| f.visible).cloned().collect())
+                        .unwrap_or_default();
+                    self.show_fields(ui, &advanced, Some(&engine_name));
+                });
+        });
+
+        if let Some(msg) = &self.settings_error {
+            ui.add_space(6.0);
+            ui.colored_label(super::theme::palette().bad, msg);
+        }
+    }
+
+    /// The folder the downloaded models are in, with the two buttons that change it on the row of its label, and
+    /// the models that were downloaded into it, newest first.
+    fn show_models_folder(&mut self, ui: &mut egui::Ui, form: &Option<FormModel>) {
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
             if let Some(field) = form.as_ref().and_then(|f| f.field("models_dir")) {
                 let label = ui.label(format!("{}:", field.label));
                 if let Some(help) = &field.help {
                     label.on_hover_text(help);
                 }
             }
-            ui.add(
-                egui::TextEdit::singleline(&mut self.models_dir_input)
-                    .desired_width(ui.available_width()),
-            );
-            ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("Reset to default").clicked() {
+                    let default_dir = self.default_models_dir();
+                    let _ = std::fs::create_dir_all(&default_dir);
+                    self.models_dir = default_dir.clone();
+                    self.models_dir_input = default_dir.display().to_string();
+                    self.models_dir_override = None;
+                    self.rescan_models();
+                    self.save_settings();
+                    self.settings_error = None;
+                }
                 if ui
                     .button("Apply")
                     .on_hover_text("Use this folder from now on and re-scan it for models.")
@@ -149,136 +228,67 @@ impl App {
                         ));
                     }
                 }
-                if ui.button("Reset to default").clicked() {
-                    let default_dir = self.default_models_dir();
-                    let _ = std::fs::create_dir_all(&default_dir);
-                    self.models_dir = default_dir.clone();
-                    self.models_dir_input = default_dir.display().to_string();
-                    self.models_dir_override = None;
-                    self.rescan_models();
-                    self.save_settings();
-                    self.settings_error = None;
-                }
             });
+        });
+        ui.add(
+            egui::TextEdit::singleline(&mut self.models_dir_input)
+                .desired_width(ui.available_width()),
+        );
 
-            let mut downloaded_model_indices: Vec<usize> = self
-                .models
-                .iter()
-                .enumerate()
-                .filter(|(_, m)| !m.path.starts_with(&self.bundled_models_dir))
-                .map(|(i, _)| i)
-                .collect();
-            // Most-recently-downloaded first — a model has no other
-            // notion of "latest", so this uses the file's own mtime.
-            downloaded_model_indices.sort_by_key(|&i| {
-                std::cmp::Reverse(
-                    std::fs::metadata(&self.models[i].path)
-                        .and_then(|m| m.modified())
-                        .ok(),
-                )
-            });
-            if !downloaded_model_indices.is_empty() {
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new("Downloaded models").strong())
-                    .on_hover_text(
-                        "Models fetched via the \"Get\" box, \"Look up online\", or \
-             dropped into the folder above by hand, newest first. Bundled \
-             models aren't listed here — they can't be deleted.",
-                    );
-                let mut to_delete: Option<PendingDelete> = None;
-                egui::ScrollArea::vertical()
-                    .id_salt("downloaded_models_scroll")
-                    .auto_shrink([false, true])
-                    .max_height(list_scroll_height(ui, DELETE_LIST_MAX_ROWS))
-                    .show(ui, |ui| {
-                        for &i in &downloaded_model_indices {
-                            let m = &self.models[i];
-                            ui.horizontal(|ui| {
-                                if ui
-                                    .add(egui::Button::new("🗑").small())
-                                    .on_hover_text("Delete this model from disk")
-                                    .clicked()
-                                {
-                                    to_delete = Some(PendingDelete::Model {
-                                        filename: m.filename.clone(),
-                                        path: m.path.clone(),
-                                    });
-                                }
-                                ui.label(format!(
-                                    "{} ({})",
-                                    m.display,
-                                    hardware::format_bytes(m.size_bytes)
-                                ));
-                            });
-                        }
-                    });
-                if let Some(pending) = to_delete {
-                    self.pending_delete = Some(pending);
-                }
-            }
-        }
-
-        ui.add_space(10.0);
-        let active = self.session.is_active();
-        let server = self.server_name();
-        // an engine with no conversation to show has nothing for the proxy to do
-        if self.reads_traffic() {
-            ui.add_enabled_ui(!active, |ui| {
-                if ui
-                    .checkbox(
-                        &mut self.enable_traffic_proxy,
-                        "Show live conversation traffic",
-                    )
-                    .on_hover_text(format!(
-                        "Adds a small local proxy in front of {server} so a new \"📡 \
-             Live\" button can show chat/completion requests and replies live, \
-             from any client — the built-in chat UI or an external app via the \
-             🔌 API. Off by default: clients then connect straight to \
-             {server}, with no extra hop or overhead. Takes effect the next \
-             time you click Start."
-                    ))
-                    .changed()
-                {
-                    self.save_settings();
-                }
-            });
-            if active {
-                ui.label(
-                    egui::RichText::new(
-                        "(Stop the server to change this — it applies on the next Start.)",
-                    )
-                    .small()
-                    .color(super::theme::palette().muted),
+        let mut downloaded_model_indices: Vec<usize> = self
+            .models
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| !m.path.starts_with(&self.bundled_models_dir))
+            .map(|(i, _)| i)
+            .collect();
+        // Most-recently-downloaded first — a model has no other
+        // notion of "latest", so this uses the file's own mtime.
+        downloaded_model_indices.sort_by_key(|&i| {
+            std::cmp::Reverse(
+                std::fs::metadata(&self.models[i].path)
+                    .and_then(|m| m.modified())
+                    .ok(),
+            )
+        });
+        if !downloaded_model_indices.is_empty() {
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("Downloaded models").strong())
+                .on_hover_text(
+                    "Models fetched via the \"Get\" box, \"Look up online\", or \
+         dropped into the folder above by hand, newest first. Bundled \
+         models aren't listed here — they can't be deleted.",
                 );
+            let mut to_delete: Option<PendingDelete> = None;
+            egui::ScrollArea::vertical()
+                .id_salt("downloaded_models_scroll")
+                .auto_shrink([false, true])
+                .max_height(list_scroll_height(ui, DELETE_LIST_MAX_ROWS))
+                .show(ui, |ui| {
+                    for &i in &downloaded_model_indices {
+                        let m = &self.models[i];
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add(egui::Button::new("🗑").small())
+                                .on_hover_text("Delete this model from disk")
+                                .clicked()
+                            {
+                                to_delete = Some(PendingDelete::Model {
+                                    filename: m.filename.clone(),
+                                    path: m.path.clone(),
+                                });
+                            }
+                            ui.label(format!(
+                                "{} ({})",
+                                m.display,
+                                hardware::format_bytes(m.size_bytes)
+                            ));
+                        });
+                    }
+                });
+            if let Some(pending) = to_delete {
+                self.pending_delete = Some(pending);
             }
-        }
-
-        // the program that goes with the engine, when one does (Open WebUI beside Ollama)
-        self.show_companion_settings(ui);
-
-        ui.add_space(10.0);
-        ui.separator();
-        ui.add_space(6.0);
-
-        let engine_name = self
-            .registry
-            .engine(&self.engine)
-            .map(|e| e.doc.engine.name.clone())
-            .unwrap_or_default();
-        egui::CollapsingHeader::new(format!("Advanced: {engine_name}"))
-            .default_open(false)
-            .show(ui, |ui| {
-                let advanced: Vec<FormField> = form
-                    .as_ref()
-                    .and_then(|f| f.section("advanced"))
-                    .map(|s| s.fields.iter().filter(|f| f.visible).cloned().collect())
-                    .unwrap_or_default();
-                self.show_fields(ui, &advanced, Some(&engine_name));
-            });
-
-        if let Some(msg) = &self.settings_error {
-            ui.add_space(6.0);
-            ui.colored_label(super::theme::palette().bad, msg);
         }
     }
 }
@@ -329,7 +339,6 @@ impl App {
         if let Some(id) = chosen {
             self.switch_engine(&id);
         }
-        ui.add_space(6.0);
     }
 
     /// The models the engine lists, each with the button that removes it (after a question).
@@ -646,7 +655,12 @@ mod tests {
             assert!(size.x >= 400.0 && size.y >= 500.0, "{size:?}");
             // ...and what is in it is there, and in no other window
             let inside = said(&window.shapes);
-            for text in ["App", "Engine:", "Show live conversation traffic", "Close"] {
+            for text in [
+                "Engine:",
+                "Downloaded models folder:",
+                "Show live conversation traffic",
+                "Close",
+            ] {
                 assert!(inside.contains(text), "{text:?} in the window: {inside}");
             }
             let main = said(&out.shapes);
@@ -665,6 +679,96 @@ mod tests {
         let out = frame(&mut app, &ctx, &display);
         assert!(display.0.borrow().windows.is_empty());
         assert!(!out.viewport_output.contains_key(&settings_viewport()));
+    }
+
+    #[test]
+    fn p3_i28_the_models_folder_has_its_buttons_on_the_row_of_its_label_and_the_window_is_on_cards()
+    {
+        let dir = scratch("i28");
+        let mut app = app_in(&dir, "llamacpp");
+        let ctx = egui::Context::default();
+        let display = Display::attach(&ctx);
+        app.toggle_settings();
+        settle(&mut app, &ctx, &display);
+        let label =
+            where_is(&display, "Downloaded models folder:").expect("the label of the folder");
+        let apply = where_is(&display, "Apply").expect("a button that applies it");
+        let reset = where_is(&display, "Reset to default").expect("a button that resets it");
+        // at the end of the label's row, one beside the other: the box is under the three
+        for button in [apply, reset] {
+            assert!(
+                (button.center().y - label.center().y).abs() < 8.0,
+                "{button:?} is not on the row of {label:?}"
+            );
+        }
+        assert!(
+            label.right() < apply.left() && apply.right() < reset.left(),
+            "{label:?} {apply:?} {reset:?}"
+        );
+        // the window has no caption of its own over its first row (it said `App`)
+        {
+            let shown = display.0.borrow();
+            let window = &shown.windows[&settings_viewport()];
+            assert!(
+                !texts(&window.shapes).iter().any(|(text, _)| text == "App"),
+                "the caption is still there"
+            );
+            // and what is in it is on cards, as the main window's are: the one of the engine and the folder and the one of the
+            // Advanced section
+            fn cards(shape: &egui::epaint::Shape, into: &mut Vec<egui::Rect>) {
+                match shape {
+                    egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| cards(s, into)),
+                    egui::epaint::Shape::Rect(r)
+                        if r.fill == super::super::theme::palette_of(true).card
+                            || r.fill == super::super::theme::palette_of(false).card =>
+                    {
+                        into.push(r.rect)
+                    }
+                    _ => {}
+                }
+            }
+            let mut found = Vec::new();
+            for clipped in &window.shapes {
+                cards(&clipped.shape, &mut found);
+            }
+            assert!(found.len() >= 2, "{found:?}");
+            let engine = where_is(&display, "Engine:").expect("the engine row");
+            let advanced = where_is(&display, "Advanced: llama.cpp").expect("the Advanced section");
+            assert!(
+                found.iter().any(|c| c.contains(engine.center()))
+                    && found.iter().any(|c| c.contains(advanced.center()))
+                    && !found
+                        .iter()
+                        .any(|c| c.contains(engine.center()) && c.contains(advanced.center())),
+                "the engine and the Advanced section are not on cards of their own: {found:?}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn p3_i29_a_choice_of_the_settings_is_beside_its_label_and_a_path_is_under_its() {
+        let dir = scratch("i29");
+        let mut app = app_in(&dir, "ollama");
+        let ctx = egui::Context::default();
+        let display = Display::attach(&ctx);
+        app.toggle_settings();
+        settle(&mut app, &ctx, &display);
+        let advanced = where_is(&display, "Advanced: Ollama").expect("the Advanced section");
+        click_in_settings(&mut app, &ctx, &display, advanced.center());
+        settle(&mut app, &ctx, &display);
+        let label =
+            where_is(&display, "When Ollama is already running:").expect("the choice's label");
+        let shown = where_is(&display, "auto").expect("what the choice shows");
+        assert!(
+            (shown.center().y - label.center().y).abs() < 8.0 && shown.left() > label.right(),
+            "{shown:?} is not beside {label:?}"
+        );
+        // a path wants the width of the window, and is under its label
+        let path = where_is(&display, "ollama binary:").expect("the label of the binary");
+        let engine_row = where_is(&display, "Look up Ollama builds").expect("the button under it");
+        assert!(path.top() > label.bottom() && engine_row.top() > path.bottom());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
