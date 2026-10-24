@@ -99,7 +99,7 @@ impl App {
                                 egui::RichText::new(
                                     "No traffic yet — waiting for the first request.",
                                 )
-                                .color(egui::Color32::GRAY),
+                                .color(super::theme::palette().muted),
                             );
                         }
                     });
@@ -140,8 +140,7 @@ impl App {
                             .iter()
                             .filter(|t| selected.as_deref().is_none_or(|s| t.session == s))
                         {
-                            ui.group(|ui| {
-                                ui.set_width(ui.available_width());
+                            super::theme::card(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     ui.label(
                                         egui::RichText::new(format!(
@@ -154,30 +153,33 @@ impl App {
                                     if !turn.done {
                                         ui.label(
                                             egui::RichText::new("● live")
-                                                .color(egui::Color32::from_rgb(46, 139, 50)),
+                                                .color(super::theme::palette().ok),
                                         );
                                     }
                                 });
                                 if let Some(prompt) = &turn.prompt {
                                     ui.label(
                                         egui::RichText::new(format!("↳ {prompt}"))
-                                            .color(egui::Color32::GRAY),
+                                            .color(super::theme::palette().muted),
                                     );
                                 }
                                 for attachment in &turn.attachments {
                                     ui.label(
                                         egui::RichText::new(format!("↳ {attachment}"))
-                                            .color(egui::Color32::GRAY),
+                                            .color(super::theme::palette().muted),
                                     );
                                 }
                                 if !turn.response.is_empty() {
                                     ui.label(&turn.response);
                                 } else if turn.error.is_none() && !turn.done {
-                                    ui.label(egui::RichText::new("…").color(egui::Color32::GRAY));
+                                    ui.label(
+                                        egui::RichText::new("…")
+                                            .color(super::theme::palette().muted),
+                                    );
                                 }
                                 if let Some(err) = &turn.error {
                                     ui.colored_label(
-                                        egui::Color32::from_rgb(192, 57, 43),
+                                        super::theme::palette().bad,
                                         format!("error: {err}"),
                                     );
                                 }

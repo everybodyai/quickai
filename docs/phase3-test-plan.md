@@ -950,6 +950,22 @@ Y71 to Y99d are WP4.20, 2026-10-13: what the computer has to have for a configur
 | Y99c | 4.20.3 | ready | **The venv module is asked of the Python that is going to make the environment and of no other**: found, missing with the package of that Python (`python3.12-venv`), missing with no package when the Python is a pyenv's or uv's, passed unasked when the environment is made, and left unchecked when no Python was found. | `runtime/provision/prerequisites.rs` |
 | Y99d | 4.20.3 | ready | **An environment that is made is not asked for the module that made it**: through the whole run, with the Python beside the launcher lacking `ensurepip`, the look says the environment is made and the Python is not asked. | `runtime/p3/prerequisites.rs` |
 
+### I. The window as a person reads it: theme, title row, the card of the model (WP4.21)
+
+Asked for on 2026-10-23 ("Lets stick to classic, but lets turn things around a bit and make it more user friendly - try to fit appropriately the widgets at the right locations"): the window keeps its shape and the order of its panels, in cards, in one theme made of a palette for each of the two themes; what is about the model is drawn with it, and what is about the server is drawn where it is always in view. The cases of the panels themselves (what Start does, what a field holds) are those of the other groups and of the GUI suites, which were calibrated against this window.
+
+| ID | WP | State | Case | Where |
+|---|---|---|---|---|
+| I01 | 4.21 | ready | Every colour of text the window draws reads on the colour behind it, in both themes (4.5 to 1 at least): text on the card, the page, the band of the title row, a box that is typed in, a button and the log; secondary text; each state of the server; green text; the words of the button that matters. | `app/theme.rs` |
+| I02 | 4.21 | ready | The states of the server have colours of their own in each theme, and stopping is drawn as starting is. | `app/theme.rs` |
+| I03 | 4.21 | ready | What is typed into is the darkest thing of the dark theme (no channel above 16: the GUI suite finds a box by it) and the band of the title row, the log, the page, the cards and the buttons are all lighter; the box of a number differs from the card it is on by more than 12, in both themes (its edges are found by it). | `app/theme.rs` |
+| I10 | 4.21 | ready | The title row says what the server is doing, in a pill that comes before the About, Settings and theme icons, on the Main tab and on the Live tab. | `app/header.rs` |
+| I11 | 4.21 | ready | The speed of the selected model is a chip at the end of the picker's row, in the card of the model, and not an icon in the title row: it says Fast for a model that is a sixteenth of the memory and Slower for one that is most of it, and an engine with no picker (ComfyUI) has none. | `app/header.rs` |
+| I12 | 4.21 | ready | While the server is stopped the one green button is Start, and the four buttons stand in their order: Start, Stop, the chat, API. | `app/header.rs` |
+| I13 | 4.21 | ready | The logo is made from the application's icon in the size it is drawn at, by the mean of the pixels that fall in each of the new ones weighed by how opaque they are: a red pixel with a transparent one beside it is red and half as opaque, not a darker red, so that the edge of the picture has no dark rim. | `app/header.rs` |
+| I14 | 4.21 | ready | A download that failed says so in a red card under the box it was asked for in, with a Dismiss button that takes it away: the log has the same words, and the results of a look-up, which have the whole page, hide the log. | `app/header.rs` |
+| I15 | 4.21 | ready | A look-up of builds that ends has its list brought into view for three frames (the Settings window scrolls, and a list under its fold shows only the sentence that says how many there are, and a list is as tall as its rows a frame after they came); one that is closed does not keep the scroll for when it is opened again. | `app/runtime_manager.rs` |
+
 ### N. llama.cpp must not change
 
 Phase 3 touches the supervisor, the installer, the feed and the proxy that llama.cpp runs through.
@@ -962,7 +978,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 652 / 0 / 15 / 5 (total 672). The test kit has 29 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 661 / 0 / 15 / 5 (total 681). The test kit has 29 tests of its own and the Python fake
 22, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 

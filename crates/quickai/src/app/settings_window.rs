@@ -17,8 +17,9 @@ use crate::hardware;
 /// What the window is called to the window manager: its title bar, and what a taskbar lists.
 pub(super) const SETTINGS_TITLE: &str = "QuickAI Settings";
 
-/// The size the window opens at, and the least it can be made.
-const OPENS_AT: [f32; 2] = [500.0, 620.0];
+/// The size the window opens at, and the least it can be made. It is tall enough for the longest of what it
+/// holds (an engine's Advanced section, open) without scrolling.
+const OPENS_AT: [f32; 2] = [500.0, 700.0];
 const LEAST: [f32; 2] = [400.0, 320.0];
 
 /// Which window the Settings are: the id the display knows it by.
@@ -180,7 +181,7 @@ impl App {
                 ui.add_space(8.0);
                 ui.label(egui::RichText::new("Downloaded models").strong())
                     .on_hover_text(
-                        "Models fetched via the \"Model\" box, \"Look up online\", or \
+                        "Models fetched via the \"Get\" box, \"Look up online\", or \
              dropped into the folder above by hand, newest first. Bundled \
              models aren't listed here — they can't be deleted.",
                     );
@@ -247,7 +248,7 @@ impl App {
                         "(Stop the server to change this — it applies on the next Start.)",
                     )
                     .small()
-                    .color(egui::Color32::GRAY),
+                    .color(super::theme::palette().muted),
                 );
             }
         }
@@ -277,7 +278,7 @@ impl App {
 
         if let Some(msg) = &self.settings_error {
             ui.add_space(6.0);
-            ui.colored_label(egui::Color32::from_rgb(192, 57, 43), msg);
+            ui.colored_label(super::theme::palette().bad, msg);
         }
     }
 }
@@ -319,7 +320,11 @@ impl App {
             } else {
                 "(Wait for what is being fetched to finish to change this.)"
             };
-            ui.label(egui::RichText::new(why).small().color(egui::Color32::GRAY));
+            ui.label(
+                egui::RichText::new(why)
+                    .small()
+                    .color(super::theme::palette().muted),
+            );
         }
         if let Some(id) = chosen {
             self.switch_engine(&id);
@@ -342,7 +347,7 @@ impl App {
             ui.label(
                 egui::RichText::new(format!("{name} has not listed any models yet."))
                     .small()
-                    .color(egui::Color32::GRAY),
+                    .color(super::theme::palette().muted),
             );
         }
         let running = self.endpoint().is_some();

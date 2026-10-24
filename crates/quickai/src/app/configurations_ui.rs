@@ -58,11 +58,7 @@ pub(super) const UNSAVED_MARK: &str = "•";
 /// The colour of what says a configuration has changes that are not saved: amber, a deeper one on the
 /// light theme (the one of the dark theme is hard to read on white).
 pub(super) fn modified_color(dark: bool) -> egui::Color32 {
-    if dark {
-        egui::Color32::from_rgb(230, 160, 40)
-    } else {
-        egui::Color32::from_rgb(168, 104, 0)
-    }
+    super::theme::palette_of(dark).warn
 }
 
 /// What the main window keeps about configurations.
@@ -638,7 +634,7 @@ impl App {
                 ui.label(
                     egui::RichText::new(why)
                         .small()
-                        .color(egui::Color32::from_rgb(192, 57, 43)),
+                        .color(super::theme::palette().bad),
                 );
             }
         });
@@ -1014,7 +1010,7 @@ impl App {
                 ui.label(
                     egui::RichText::new(why)
                         .small()
-                        .color(egui::Color32::from_rgb(192, 57, 43)),
+                        .color(super::theme::palette().bad),
                 );
             }
             ui.add_space(10.0);

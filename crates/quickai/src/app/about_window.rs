@@ -46,6 +46,9 @@ impl App {
                     ),
                 )
             });
+        // what is read scrolls, and the window's title, margins and Close button are 112 px: with less than a window
+        // of 592 to put it in, the text gets what is left (so that Close is in view)
+        let scroll = (ctx.content_rect().height() - 112.0).clamp(160.0, 480.0);
         egui::Window::new("ℹ About QuickAI")
             .open(&mut open)
             .collapsible(false)
@@ -54,8 +57,10 @@ impl App {
             .max_height(600.0)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical()
-                    .max_height(480.0)
+                    .max_height(scroll)
                     .show(ui, |ui| {
+                        // paragraphs, close together: it is text, and the sections have the space between them
+                        ui.spacing_mut().item_spacing.y = 2.0;
                         ui.label(
                             egui::RichText::new(format!("QuickAI v{}", env!("CARGO_PKG_VERSION")))
                                 .strong()
@@ -65,7 +70,7 @@ impl App {
                         "A simple GUI for starting and stopping local GGUF language models via \
                          llama-server (llama.cpp), with GPU acceleration through Vulkan.",
                     );
-                        ui.add_space(10.0);
+                        ui.add_space(6.0);
 
                         ui.label(egui::RichText::new("Usage").strong());
                         ui.label(
@@ -75,13 +80,13 @@ impl App {
                          browser-based chat; \"🔌 API\" shows how to connect an external app \
                          instead. Only one model runs at a time.",
                         );
-                        ui.add_space(10.0);
+                        ui.add_space(6.0);
 
                         ui.label(egui::RichText::new("Disclaimer").strong());
                         ui.label(
                             "Everything runs locally on this machine — your prompts and any files \
                          you feed the model never leave it, except when you explicitly use the \
-                         \"Model\" box or \"Look up online\" (which contact the URL you gave or \
+                         \"Get\" box or \"Look up online\" (which contact the URL you gave or \
                          Hugging Face to fetch/search for a file) or ⚙ Settings' \"Look up \
                          llama.cpp builds\" (which contacts GitHub to list/download \
                          llama-server releases). Model output can be inaccurate, \
@@ -103,7 +108,7 @@ impl App {
                                  there and PyTorch from download.pytorch.org, only when you click."
                             ));
                         }
-                        ui.add_space(10.0);
+                        ui.add_space(6.0);
 
                         ui.label(egui::RichText::new("License").strong());
                         ui.label("QuickAI's own source code is licensed under the PolyForm Noncommercial License 1.0.0.");
@@ -135,7 +140,7 @@ impl App {
                              THIRD_PARTY_LICENSES.md next to this app.",
                             )
                             .small()
-                            .color(egui::Color32::GRAY),
+                            .color(super::theme::palette().muted),
                         );
                     });
 

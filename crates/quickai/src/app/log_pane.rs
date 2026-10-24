@@ -2,21 +2,42 @@
 
 use eframe::egui;
 
+use super::theme;
 use super::App;
 
+/// Room inside the log's frame, on each side.
+const INSET: f32 = 8.0;
+
 impl App {
-    /// The rule above the log and the scrolling log itself.
+    /// The scrolling log, in a well that takes the rest of the window.
     pub(super) fn show_log_pane(&mut self, ui: &mut egui::Ui) {
         ui.add_space(8.0);
-        ui.separator();
-        egui::ScrollArea::vertical()
-            .stick_to_bottom(true)
-            .auto_shrink([false, false])
+        let p = theme::palette();
+        let room = ui.available_size();
+        egui::Frame::new()
+            .fill(p.log)
+            .stroke(egui::Stroke::new(1.0, p.line))
+            .corner_radius(egui::CornerRadius::same(8))
+            .inner_margin(egui::Margin::same(INSET as i8))
             .show(ui, |ui| {
-                ui.style_mut().override_font_id = Some(egui::FontId::monospace(11.0));
-                for line in &self.log_lines {
-                    ui.label(line);
-                }
+                // the frame fills what is left of the window (less than a line leaves it its own size)
+                let inside = egui::vec2(2.0 * (INSET + 1.0), 2.0 * (INSET + 1.0));
+                ui.set_min_size((room - inside).max(egui::Vec2::ZERO));
+                egui::ScrollArea::vertical()
+                    .stick_to_bottom(true)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.style_mut().override_font_id = Some(egui::FontId::monospace(12.0));
+                        if self.log_lines.is_empty() {
+                            ui.label(
+                                egui::RichText::new("Messages from the server show up here.")
+                                    .color(p.faint),
+                            );
+                        }
+                        for line in &self.log_lines {
+                            ui.label(line);
+                        }
+                    });
             });
     }
 }

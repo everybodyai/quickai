@@ -189,12 +189,17 @@ impl App {
             .default_size([744.0, 530.0])
             .default_pos(egui::pos2(8.0, 8.0))
             .show(ctx, |ui| {
+                super::theme::compact(ui);
                 let mut line = format!("{} models that run with {engine_name}.", entries.len());
                 if let Some(day) = &verified {
                     line.push_str(&format!(" The list was checked on {day}."));
                 }
                 line.push_str(" Nothing is downloaded until you click a size.");
-                ui.label(egui::RichText::new(line).small().color(egui::Color32::GRAY));
+                ui.label(
+                    egui::RichText::new(line)
+                        .small()
+                        .color(super::theme::palette().muted),
+                );
                 if ram > 0 {
                     ui.label(
                         egui::RichText::new(format!(
@@ -202,14 +207,14 @@ impl App {
                             hardware::format_bytes(ram)
                         ))
                         .small()
-                        .color(egui::Color32::GRAY),
+                        .color(super::theme::palette().muted),
                     );
                 }
                 if let Some(note) = &note {
                     ui.label(
                         egui::RichText::new(note)
                             .small()
-                            .color(egui::Color32::from_rgb(192, 57, 43)),
+                            .color(super::theme::palette().bad),
                     );
                 }
                 ui.add_space(4.0);
@@ -315,7 +320,7 @@ impl App {
                                         "Nothing matches. Try other words, or another size.",
                                     )
                                     .small()
-                                    .color(egui::Color32::GRAY),
+                                    .color(super::theme::palette().muted),
                                 );
                             }
                             // a single type is a list; several are sections
@@ -367,7 +372,7 @@ impl App {
                     .resizable(false)
                     .anchor(egui::Align2::CENTER_BOTTOM, [0.0, -12.0])
                     .show(ctx, |ui| {
-                        ui.colored_label(egui::Color32::from_rgb(212, 160, 23), line);
+                        ui.colored_label(super::theme::palette().warn, line);
                         if let Some(fraction) = fraction {
                             widgets::progress_bar(ui, Some(fraction));
                         }

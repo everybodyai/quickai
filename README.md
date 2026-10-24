@@ -171,16 +171,19 @@ it (`hardware::recommend_ctx_size` — bigger file, or less RAM headroom,
 means a smaller suggestion); it's still a plain editable field afterward,
 this only sets the starting point.
 
-Top-right of the window: a subtle theme toggle (☀/🌙, persisted across
-runs), a speed icon (🐢/🐂/🐎) that estimates how fast the *currently
-selected* model will run on this machine — from its file size relative to
-detected RAM, downgraded a tier if GPU layers is `0`. It's a rough,
-hardware-only estimate (no VRAM detection, no live token/sec measurement),
-not a benchmark — hover it for the exact reasoning — and next to it, **⚙**
-(settings, see below) and **ℹ** (about/usage/license). Most other controls
-(model picker, port, context size, GPU layers, the download fields, the
-main buttons) have their own hover tooltips explaining what they do and,
-for the numeric ones, what values make sense.
+The window reads from top to bottom as the steps of a run: the **configuration** in use, the **model** (the picker and,
+under it, the box that gets another one: a link, a file of this computer or a name to search for, with **Look up online**
+and **Recommended** beside it), the **run options** (port, context size, GPU layers: they are dimmed, with the reason, while
+the server runs), the buttons (**Start** is the green one while the server is stopped, **Open Chat UI** while it
+runs) with the state in words, and under them the log. At the end of the picker's row a speed chip (🐢/🐂/🐎) estimates how
+fast the *currently selected* model will run on this machine — from its file size relative to detected RAM, downgraded a tier
+if GPU layers is `0`. It's a rough, hardware-only estimate (no VRAM detection, no live token/sec measurement), not a
+benchmark — hover it for the exact reasoning.
+
+Top-right of the window: a pill that says what the server is doing (Stopped, Starting, Running or Crashed; it is there on
+the Live tab too), then **ℹ** (about/usage/license), **⚙** (settings, see below) and a subtle theme toggle (☀/🌙, persisted
+across runs). Most other controls (model picker, port, context size, GPU layers, the download fields, the
+main buttons) have their own hover tooltips explaining what they do and, for the numeric ones, what values make sense.
 
 Settings (last-used model, port, context size, GPU layers, plus everything
 in ⚙ below) persist between runs as JSON in the OS config dir
@@ -188,12 +191,12 @@ in ⚙ below) persist between runs as JSON in the OS config dir
 
 ## Settings (⚙)
 
-Click the gear icon next to the speed indicator. The settings open in a **window of their own**, not on top of the main
+Click the gear icon in the top-right corner. The settings open in a **window of their own**, not on top of the main
 one: move it beside the main window or to another screen, make it any size (what is in it scrolls, and **Close** stays
 at its foot), and go on using the main window while it is open. Click the gear again, press **Close** or close the
 window and what you changed is saved; closing the main window closes it too. It has:
 
-- **Downloaded models folder** — where "Model URL / Path", "Import", and
+- **Downloaded models folder** — where the **Get** box, "Import", and
   "Look up online" save files (defaults to `~/.quickai/models`; see
   "Adding more models" below). Change it and click **Apply** to switch and
   re-scan, or **Reset to default**.
@@ -342,7 +345,7 @@ Three ways, from most to least manual:
   `models/` in dev) and click **Refresh** in the GUI. To give it a
   friendly display name/description instead of just its filename, add an
   entry to `KNOWN_MODELS` in `crates/quickai-runtime/src/models.rs`.
-- **Model URL / Path**: paste a direct link to a `.gguf` file, or a local
+- **Get** box: paste a direct link to a `.gguf` file, or a local
   filesystem path to one (Linux or Windows style — `/home/you/model.gguf`,
   `C:\Users\you\model.gguf`, a UNC share, whatever this OS understands),
   into the field and click **Download**/**Import** (the button relabels

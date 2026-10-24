@@ -3,6 +3,7 @@
 use eframe::egui;
 use quickai_core::advice::{advice, Advice};
 
+use super::theme::{self, Tone};
 use super::App;
 use crate::events::ServerState;
 use crate::gpu;
@@ -22,22 +23,25 @@ impl App {
         let server = self.server_name();
         if self.engine_missing() {
             let name = self.engine_name();
-            ui.colored_label(
-                egui::Color32::from_rgb(192, 57, 43),
-                format!(
-                    "{name} is not installed. Open ⚙ Settings → Advanced: {name} and click \
+            ui.add_space(8.0);
+            theme::alert(ui, Tone::Bad, |ui| {
+                ui.label(format!(
+                    "{name} is not installed. Open ⚙ Settings > Advanced: {name} and click \
                      \"Look up {name} builds\" to download one; nothing is downloaded until you do."
-                ),
-            );
+                ));
+            });
         } else if self.missing_binary_warned {
-            ui.colored_label(
-                egui::Color32::from_rgb(192, 57, 43),
-                format!("{server} binary not found at {}", self.binary.display()),
-            );
+            ui.add_space(8.0);
+            theme::alert(ui, Tone::Bad, |ui| {
+                ui.label(format!(
+                    "{server} binary not found at {}",
+                    self.binary.display()
+                ));
+            });
         }
 
         if state == ServerState::Crashed {
-            ui.add_space(6.0);
+            ui.add_space(8.0);
             if self.engine == crate::settings::DEFAULT_ENGINE {
                 self.show_llamacpp_crash_panel(ui, state);
             } else {
@@ -51,10 +55,9 @@ impl App {
     }
 
     /// llama.cpp's panel, word for word as it has always been.
-    fn show_llamacpp_crash_panel(&self, ui: &mut egui::Ui, state: ServerState) {
-        ui.group(|ui| {
-            ui.colored_label(
-                Self::state_color(state),
+    fn show_llamacpp_crash_panel(&self, ui: &mut egui::Ui, _state: ServerState) {
+        theme::alert(ui, Tone::Bad, |ui| {
+            ui.label(
                 "The server exited before it finished starting — see the log below \
                  for the exact reason (a common one: \"unknown model architecture\", \
                  meaning this llama-server build predates support for this model).",
@@ -70,13 +73,13 @@ impl App {
                 ui.label(
                     egui::RichText::new(warning)
                         .small()
-                        .color(egui::Color32::from_rgb(212, 160, 23)),
+                        .color(super::theme::palette().warn),
                 );
             }
             ui.label(
                 egui::RichText::new(
                     "Worth trying a different llama-server build:\n\
-                     1. Open ⚙ Settings → Advanced: llama.cpp.\n\
+                     1. Open ⚙ Settings > Advanced: llama.cpp.\n\
                      2. Click \"Look up llama.cpp builds\" and pick one for your \
                         platform/GPU from the list — it installs and applies \
                         automatically.\n\
@@ -92,7 +95,12 @@ impl App {
     }
 
     /// Another engine's panel: what happened, and the advice its document has for what the log says.
-    pub(super) fn show_crash_panel(&mut self, ui: &mut egui::Ui, state: ServerState, server: &str) {
+    pub(super) fn show_crash_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        _state: ServerState,
+        server: &str,
+    ) {
         let ended_in = if self.run_reached_running {
             "running"
         } else {
@@ -118,11 +126,8 @@ impl App {
             Some(ended_in),
         );
         let mut asked: Option<String> = None;
-        ui.group(|ui| {
-            ui.colored_label(
-                Self::state_color(state),
-                format!("{what} — see the log below for the exact reason."),
-            );
+        theme::alert(ui, Tone::Bad, |ui| {
+            ui.label(format!("{what} — see the log below for the exact reason."));
             for Advice { text, action } in &hints {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(text).small());

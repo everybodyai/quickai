@@ -347,7 +347,7 @@ impl App {
             ui.label(
                 egui::RichText::new(why)
                     .small()
-                    .color(egui::Color32::from_rgb(192, 57, 43)),
+                    .color(super::theme::palette().bad),
             );
         }
         ui.add_space(4.0);
@@ -371,7 +371,7 @@ impl App {
                 ui.label(
                     egui::RichText::new(&bad.why)
                         .small()
-                        .color(egui::Color32::from_rgb(192, 57, 43)),
+                        .color(super::theme::palette().bad),
                 );
             }
         }
@@ -421,7 +421,7 @@ impl App {
                 ui.label(
                     egui::RichText::new("in use")
                         .small()
-                        .color(egui::Color32::from_rgb(46, 139, 50)),
+                        .color(super::theme::palette().ok),
                 );
                 if modified {
                     ui.label(
@@ -441,7 +441,7 @@ impl App {
                             if notes == 1 { "" } else { "s" }
                         ))
                         .small()
-                        .color(egui::Color32::from_rgb(212, 160, 23)),
+                        .color(super::theme::palette().warn),
                     );
                 }
             });
@@ -760,10 +760,7 @@ impl App {
                         });
                 }
                 Err(e) => {
-                    ui.label(
-                        egui::RichText::new(e.to_string())
-                            .color(egui::Color32::from_rgb(192, 57, 43)),
-                    );
+                    ui.label(egui::RichText::new(e.to_string()).color(super::theme::palette().bad));
                 }
             }
             if exists {
@@ -776,7 +773,7 @@ impl App {
                 ui.label(
                     egui::RichText::new(why)
                         .small()
-                        .color(egui::Color32::from_rgb(192, 57, 43)),
+                        .color(super::theme::palette().bad),
                 );
             }
             ui.add_space(8.0);
@@ -920,7 +917,7 @@ impl App {
             });
             if let Some(why) = &dialog.error {
                 ui.add_space(4.0);
-                ui.label(egui::RichText::new(why).color(egui::Color32::from_rgb(192, 57, 43)));
+                ui.label(egui::RichText::new(why).color(super::theme::palette().bad));
             }
             if let Some(loaded) = &dialog.loaded {
                 ui.add_space(6.0);
@@ -1311,10 +1308,10 @@ fn computer_line(os: &str, arch: &str, gpus: &[String], memory_gb: Option<u64>) 
 
 fn level_color(level: Level) -> egui::Color32 {
     match level {
-        Level::Stops => egui::Color32::from_rgb(192, 57, 43),
-        Level::Asks => egui::Color32::from_rgb(212, 160, 23),
-        Level::Warns => egui::Color32::from_rgb(212, 160, 23),
-        Level::Says => egui::Color32::GRAY,
+        Level::Stops => super::theme::palette().bad,
+        Level::Asks => super::theme::palette().warn,
+        Level::Warns => super::theme::palette().warn,
+        Level::Says => super::theme::palette().muted,
     }
 }
 
