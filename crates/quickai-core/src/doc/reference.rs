@@ -476,7 +476,7 @@ pub const GROUPS: &[Group] = &[
     },
     Group {
         heading: "`[api_info]`",
-        intro: "What the 🔌 API panel says to a person who connects an app. Every text is a template over the engine's context (`${public_port}`, `${session.model_display}`).",
+        intro: "What the Connect an app panel says to a person who connects an app. Every text is a template over the engine's context (`${public_port}`, `${session.model_display}`).",
         source: Some("ApiInfo"),
         attributes: &[
             a("base_url", "template", "The address of the OpenAI-compatible API (`http://127.0.0.1:${public_port}/v1`). Required."),

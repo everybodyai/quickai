@@ -26,7 +26,7 @@ impl App {
         api_panel(&self.registry, &selection, &self.form_facts())
     }
 
-    /// The "Connect an app to this model" box, shown while the server runs and 🔌 API is on.
+    /// The "Connect an app to this model" box, shown while the server runs and Connect an app is on.
     pub(super) fn show_api_info_panel(&mut self, ui: &mut egui::Ui, state: ServerState) {
         if !(self.show_api_info && state == ServerState::Running) {
             return;

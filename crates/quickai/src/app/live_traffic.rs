@@ -1,4 +1,4 @@
-//! The 📡 Live tab: the clients that talk to the server down the left, and down the right what the picked one
+//! The Live traffic tab: the clients that talk to the server down the left, and down the right what the picked one
 //! asked and was answered, as it happens.
 
 use std::time::{Duration, Instant};
@@ -20,7 +20,7 @@ const PREVIEW_CHARS: usize = 120;
 
 impl App {
     /// Every distinct client (see `TrafficTurn::session`) that has shown up
-    /// in the 📡 Live Traffic feed so far, in first-seen order.
+    /// in the Live traffic Traffic feed so far, in first-seen order.
     fn session_keys(&self) -> Vec<String> {
         let mut keys: Vec<String> = Vec::new();
         for t in &self.traffic {
@@ -31,7 +31,7 @@ impl App {
         keys
     }
 
-    /// Content of the 📡 Live tab (see the tab strip in `ui()`): a list of the clients down the left (one row each,
+    /// Content of the Live traffic tab (see the tab strip in `ui()`): a list of the clients down the left (one row each,
     /// click to switch, or "All" to see everything mixed together) with the picked client's conversation filling the
     /// rest of the tab on the right: what it asked in a bubble on the right, the answer in one on the left.
     pub(super) fn show_live_traffic_tab(&mut self, ui: &mut egui::Ui) {

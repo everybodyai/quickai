@@ -58,7 +58,7 @@ and whose **Model Manager** lists about 500 models (checkpoints, LoRAs, VAEs, up
 models folder. ComfyUI's own release names it (`manager_requirements.txt`, and a section of its README on how to turn it on), and the person who asked for this option called it highly recommended.
 QuickAI offers it **when a build is installed**, as a box ticked until you untick it (C152).
 
-- **The box.** ⚙ Settings → Advanced → **ComfyUI**, under **Look up ComfyUI builds**: **Install ComfyUI-Manager** with *highly
+- **The box.** Settings → Advanced → **ComfyUI**, under **Look up ComfyUI builds**: **Install ComfyUI-Manager** with *highly
   recommended* beside it, and a hover that says what it is, what it contacts and that a custom node is another person's program. The
   sentence under it says what the install is going to put on the machine, and says ComfyUI-Manager when it is ticked. What is ticked
   when **Use** is clicked is what that install does (the box is of the install you are about to make: it is ticked again each time QuickAI is started);

@@ -35,7 +35,7 @@ pub struct Settings {
     #[serde(default = "default_dark_mode")]
     pub dark_mode: bool,
     /// `None` unless the user explicitly picked a custom downloaded-models
-    /// folder in ⚙ Settings — otherwise `paths::user_models_dir()` is
+    /// folder in Settings — otherwise `paths::user_models_dir()` is
     /// recomputed fresh on every launch, which matters if this file is ever
     /// copied to a different machine/username.
     #[serde(default)]
@@ -49,7 +49,7 @@ pub struct Settings {
     pub extra_args: String,
     /// Off by default: clients connect straight to llama-server with no
     /// extra hop. When on, QuickAI puts a small local proxy in front of
-    /// llama-server (see `proxy.rs`) so the 📡 Live window can show
+    /// llama-server (see `proxy.rs`) so the Live traffic window can show
     /// chat/completion traffic as it happens.
     #[serde(default)]
     pub enable_traffic_proxy: bool,

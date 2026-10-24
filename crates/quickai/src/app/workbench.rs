@@ -250,7 +250,7 @@ impl App {
             if self.models.len() > SHOWN {
                 ui.label(
                     egui::RichText::new(format!(
-                        "... and {} more (⚙ Settings lists them all)",
+                        "... and {} more (Settings lists them all)",
                         self.models.len() - SHOWN
                     ))
                     .small()
@@ -493,7 +493,7 @@ impl App {
 }
 
 /// Shows a folder in the file manager of the system. Best effort: nothing is said when there is none.
-fn open_folder(path: &Path) {
+pub(super) fn open_folder(path: &Path) {
     let _ = std::fs::create_dir_all(path);
     #[cfg(target_os = "windows")]
     let program = "explorer";
@@ -609,7 +609,9 @@ mod tests {
         let ctx = egui::Context::default();
         let texts = |app: &mut App, ctx: &egui::Context| {
             painted(ctx, |ui| {
-                egui::CentralPanel::default().show(ui, |ui| app.show_models_area(ui, false));
+                egui::CentralPanel::default().show(ui, |ui| {
+                    super::super::theme::card(ui, |ui| app.show_workbench(ui, false))
+                });
             })
             .join("\n")
         };
@@ -648,11 +650,23 @@ mod tests {
         );
         assert!(shown.contains("... and 2 more"), "{shown}");
 
-        // llama.cpp's window is still the picker and the box
+        // llama.cpp's window is the list of models on the left and the box on the page
         let mut llama = app_for(&dir, "llamacpp");
-        let shown = texts(&mut llama, &ctx);
+        let raw = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(760.0, 560.0),
+            )),
+            ..Default::default()
+        };
+        let mut shown = String::new();
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(raw(), |ui| llama.show_window(ui));
+            output.textures_delta.clear();
+            shown = format!("{:?}", output.shapes);
+        }
         assert!(
-            shown.contains("Model:") && shown.contains("Look up online"),
+            shown.contains("MODELS") && shown.contains("Get:") && shown.contains("Look up online"),
             "{shown}"
         );
     }
@@ -1249,7 +1263,9 @@ mod tests {
         // nothing is asked of the hub until the button is pressed, however often the window is drawn
         for _ in 0..3 {
             painted(&ctx, |ui| {
-                egui::CentralPanel::default().show(ui, |ui| app.show_models_area(ui, false));
+                egui::CentralPanel::default().show(ui, |ui| {
+                    super::super::theme::card(ui, |ui| app.show_workbench(ui, false))
+                });
             });
         }
         assert!(hub.requests().is_empty());
@@ -1317,7 +1333,9 @@ mod tests {
             let mut texts = Vec::new();
             for _ in 0..3 {
                 texts = painted(&ctx, |ui| {
-                    egui::CentralPanel::default().show(ui, |ui| app.show_models_area(ui, false));
+                    egui::CentralPanel::default().show(ui, |ui| {
+                        super::super::theme::card(ui, |ui| app.show_workbench(ui, false))
+                    });
                 });
             }
             texts.iter().filter(|t| t.as_str() == "Installed").count()
@@ -1494,7 +1512,9 @@ mod tests {
             Some("text_encoders")
         );
         let shown = painted(&ctx, |ui| {
-            egui::CentralPanel::default().show(ui, |ui| app.show_models_area(ui, false));
+            egui::CentralPanel::default().show(ui, |ui| {
+                super::super::theme::card(ui, |ui| app.show_workbench(ui, false))
+            });
         })
         .join("\n");
         assert!(
@@ -1600,7 +1620,9 @@ mod tests {
         let mut texts = Vec::new();
         for _ in 0..3 {
             texts = painted(&ctx, |ui| {
-                egui::CentralPanel::default().show(ui, |ui| app.show_models_area(ui, false));
+                egui::CentralPanel::default().show(ui, |ui| {
+                    super::super::theme::card(ui, |ui| app.show_workbench(ui, false))
+                });
             });
         }
         let all = texts.join("\n");
@@ -1630,7 +1652,9 @@ mod tests {
             let mut texts = Vec::new();
             for _ in 0..3 {
                 texts = painted(&ctx, |ui| {
-                    egui::CentralPanel::default().show(ui, |ui| app.show_models_area(ui, false));
+                    egui::CentralPanel::default().show(ui, |ui| {
+                        super::super::theme::card(ui, |ui| app.show_workbench(ui, false))
+                    });
                 });
             }
             texts.iter().filter(|t| t.as_str() == "Installed").count()

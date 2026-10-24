@@ -1,6 +1,6 @@
 //! An opt-in, best-effort-transparent HTTP reverse proxy that sits in front
 //! of an engine when the user turns on "Show live conversation traffic"
-//! in ⚙ Settings. Off (the default), the engine binds the public port
+//! in Settings. Off (the default), the engine binds the public port
 //! directly and none of this runs — a client talks straight to the engine
 //! with no extra hop.
 //!
@@ -9,7 +9,7 @@
 //!     request/response is forwarded byte-for-byte via `tiny_http`/`ureq`,
 //!     both mature HTTP/1.1 implementations, so keep-alive, chunked
 //!     transfer, and SSE streaming all just work.
-//!   - *Sniffing* those bytes to show something readable in the 📡 Live
+//!   - *Sniffing* those bytes to show something readable in the Live traffic
 //!     window is best-effort only. A parse miss (e.g. a future response
 //!     shape this doesn't recognise) just leaves an entry blank —
 //!     it can never corrupt or block the actual relay.
@@ -365,7 +365,7 @@ where
 /// Wraps the upstream response body: every byte read through here is passed
 /// on unchanged (so the real client always gets exactly what the engine
 /// sent), while also being fed to a best-effort reader that emits
-/// `TrafficEvent`s for the 📡 Live window.
+/// `TrafficEvent`s for the Live traffic window.
 struct SniffingReader<R, F: Fn() + Send + Sync + 'static> {
     inner: R,
     id: u64,

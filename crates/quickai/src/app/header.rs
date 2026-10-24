@@ -1,19 +1,16 @@
-//! The title row of the main window (panel `header`), and what is under it before the page of a tab.
+//! What the old title row of the main window had and the new layout keeps: the Settings toggle, and the logo, which
+//! the About window shows. The layout itself is `shell.rs`.
 
 use eframe::egui;
 
-use super::theme::{self, Role};
-use super::{App, Tab};
+use super::App;
 
-/// The height of the title row's content; the band behind it is a little more.
-const ROW_HEIGHT: f32 = 28.0;
-/// The size the logo is drawn at, and the one it is made at (three times as many pixels, for screens
-/// that have more than one to a point).
-const LOGO_POINTS: f32 = 24.0;
-const LOGO_PIXELS: usize = 72;
+/// The pixels the logo is made at once: three times what it is drawn at in the About window, for screens that have
+/// more than one pixel to a point.
+const LOGO_PIXELS: usize = 144;
 
 impl App {
-    /// What the ⚙ icon does: opens the settings, or closes them. Closing them by the icon is closing them, as
+    /// What the Settings button and menu item do: open the settings, or close them. Closing them so is closing them, as
     /// the window's own close button and their Close button do, so what was changed in them is written then (it
     /// was not: a Python or an architecture typed in Settings was lost to anyone who closed the window with the
     /// icon and then quit).
@@ -25,23 +22,8 @@ impl App {
         }
     }
 
-    /// The top of the window: the title row, and under it the Live tab when that is the one open, or on the
-    /// Main tab the section of the configuration. Returns whether the rest of the Main page follows.
-    pub(super) fn show_page_top(&mut self, ui: &mut egui::Ui) -> bool {
-        self.show_header(ui);
-        if self.active_tab == Tab::Live {
-            self.show_live_traffic_tab(ui);
-            return false;
-        }
-        theme::column(ui, theme::PAGE_WIDTH, |ui| {
-            self.show_configuration_section(ui);
-        });
-        ui.add_space(8.0);
-        true
-    }
-
-    /// The logo, drawn from the application's icon: made once, in the size it is shown at.
-    fn show_logo(&mut self, ui: &mut egui::Ui) {
+    /// The logo, drawn from the application's icon, `points` wide: made once.
+    pub(super) fn show_logo(&mut self, ui: &mut egui::Ui, points: f32) {
         let texture = self.logo.get_or_insert_with(|| {
             let icon = crate::app_icon();
             let pixels = shrink(
@@ -56,100 +38,8 @@ impl App {
                 egui::TextureOptions::LINEAR,
             )
         });
-        ui.add(egui::Image::new(&*texture).fit_to_exact_size(egui::Vec2::splat(LOGO_POINTS)));
+        ui.add(egui::Image::new(&*texture).fit_to_exact_size(egui::Vec2::splat(points)));
     }
-
-    /// The title row: the logo and the heading, the Main/Live tab strip (only with live traffic on), and on the
-    /// right the state of the server and the About, settings and theme icons, on a band across the window.
-    pub(super) fn show_header(&mut self, ui: &mut egui::Ui) {
-        // llama.cpp's settings are described as they always were; another engine's by its own name
-        let settings_hover = if self.engine == crate::settings::DEFAULT_ENGINE {
-            "App and llama.cpp settings — downloaded-models folder, \
-             custom llama-server binary, extra command-line arguments"
-                .to_string()
-        } else {
-            format!(
-                "App and {} settings — the engine, where {} is found and its options",
-                self.engine_name(),
-                self.server_name()
-            )
-        };
-        let state = self.session.state();
-        // the band is drawn behind the row, when the row's height is known
-        let band = ui.painter().add(egui::Shape::Noop);
-        let row = ui.horizontal(|ui| {
-            ui.set_min_height(ROW_HEIGHT);
-            self.show_logo(ui);
-            ui.add_space(2.0);
-            ui.heading("QuickAI");
-
-            if self.traffic_proxy_on() {
-                ui.add_space(12.0);
-                ui.selectable_value(&mut self.active_tab, Tab::Main, "Main");
-                ui.selectable_value(&mut self.active_tab, Tab::Live, "📡 Live")
-                    .on_hover_text(
-                        "Watch chat/completion requests and replies in real time as any \
-                         client talks to this model.",
-                    );
-            } else if self.active_tab != Tab::Main {
-                self.active_tab = Tab::Main;
-            }
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let (theme_icon, theme_hover) = if self.dark_mode {
-                    ("☀", "Switch to light theme")
-                } else {
-                    ("🌙", "Switch to dark theme")
-                };
-                if icon(ui, theme_icon).on_hover_text(theme_hover).clicked() {
-                    self.dark_mode = !self.dark_mode;
-                    theme::apply(ui.ctx(), self.dark_mode);
-                    self.save_settings();
-                }
-                if icon(ui, "⚙").on_hover_text(settings_hover).clicked() {
-                    self.toggle_settings();
-                }
-                if icon(ui, "ℹ")
-                    .on_hover_text("About QuickAI: usage, disclaimer, and license")
-                    .clicked()
-                {
-                    self.show_about = !self.show_about;
-                }
-                ui.add_space(8.0);
-                theme::status_pill(ui, state, state.label()).on_hover_text(
-                    "What the server is doing now. The buttons under the settings start and stop it.",
-                );
-            });
-        });
-
-        let screen = ui.ctx().content_rect();
-        let bottom = row.response.rect.bottom() + 6.0;
-        let p = theme::palette();
-        ui.ctx().layer_painter(ui.layer_id()).set(
-            band,
-            egui::Shape::Vec(vec![
-                egui::epaint::RectShape::filled(
-                    egui::Rect::from_min_max(screen.min, egui::pos2(screen.right(), bottom)),
-                    0,
-                    p.bar,
-                )
-                .into(),
-                egui::Shape::hline(screen.x_range(), bottom, egui::Stroke::new(1.0, p.line)),
-            ]),
-        );
-        ui.add_space(10.0);
-    }
-}
-
-/// An icon of the title row: no frame until the pointer is on it.
-fn icon(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
-    theme::button_sized(
-        ui,
-        Role::Quiet,
-        true,
-        egui::RichText::new(glyph).size(16.0),
-        egui::vec2(30.0, 26.0),
-    )
 }
 
 /// `rgba`, a `width` by `height` picture, made `size` by `size` pixels by taking the mean of the pixels
@@ -194,9 +84,9 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::Path;
 
+    use super::super::{theme, Tab};
     use super::*;
     use crate::config::{build_registry, ConfigDirs};
-    use crate::events::ServerState;
     use crate::settings::Settings;
     use crate::testkit::scratch;
 
@@ -241,17 +131,18 @@ mod tests {
         app.selected = 0;
     }
 
-    /// One frame of the page: the title row and the section of the configuration, and with `whole` the card of the
-    /// model, the run options and the buttons under them, in a window of the width of a first start.
-    fn frame(app: &mut App, ctx: &egui::Context, whole: bool) -> egui::FullOutput {
-        frame_with(app, ctx, whole, Vec::new())
+    /// One frame of the whole window (the menu bar, the toolbar, the list of models, the page, the dock and the status
+    /// bar), in a window of the size the GUI suites use. `_whole` is what the frame of the old title row was asked:
+    /// the window is drawn whole either way.
+    fn frame(app: &mut App, ctx: &egui::Context, _whole: bool) -> egui::FullOutput {
+        frame_with(app, ctx, true, Vec::new())
     }
 
     /// `frame`, with what the pointer and the keyboard did since the one before.
     fn frame_with(
         app: &mut App,
         ctx: &egui::Context,
-        whole: bool,
+        _whole: bool,
         events: Vec<egui::Event>,
     ) -> egui::FullOutput {
         let raw = egui::RawInput {
@@ -262,15 +153,7 @@ mod tests {
             events,
             ..Default::default()
         };
-        let mut output = ctx.run_ui(raw, |ui| {
-            egui::CentralPanel::default().show(ui, |ui| {
-                if app.show_page_top(ui) && whole {
-                    app.show_models_area(ui, false);
-                    app.show_controls(ui);
-                    app.show_run_bar(ui, ServerState::Idle, false);
-                }
-            });
-        });
+        let mut output = ctx.run_ui(raw, |ui| app.show_window(ui));
         output.textures_delta.clear();
         output
     }
@@ -322,6 +205,19 @@ mod tests {
         into
     }
 
+    /// Where the page draws `name` as its heading: the name is in the list on the left too, and the heading is the one
+    /// further right.
+    fn heading_of(found: &BTreeMap<String, egui::Rect>, name: &str) -> egui::Rect {
+        let rect = *found
+            .get(name)
+            .unwrap_or_else(|| panic!("{name}: {:?}", found.keys()));
+        assert!(
+            rect.left() > 170.0,
+            "{name} is drawn only in the list: {rect:?}"
+        );
+        rect
+    }
+
     /// The rectangles of a frame that are filled with this colour.
     fn filled_with(output: &egui::FullOutput, color: egui::Color32) -> Vec<egui::Rect> {
         fn walk(shape: &egui::epaint::Shape, color: egui::Color32, into: &mut Vec<egui::Rect>) {
@@ -339,7 +235,8 @@ mod tests {
     }
 
     #[test]
-    fn p3_i10_the_title_row_says_what_the_server_is_doing_before_its_icons_on_both_tabs() {
+    fn p3_i10_the_status_bar_says_what_the_server_is_doing_at_the_foot_of_the_window_on_both_tabs()
+    {
         let dir = scratch("z10");
         let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
@@ -352,19 +249,24 @@ mod tests {
                     .get(text)
                     .unwrap_or_else(|| panic!("{text} on the {live} tab: {:?}", found.keys()))
             };
-            let (state, about, gear) = (at("Stopped"), at("ℹ"), at("⚙"));
+            let (state, engine) = (at("Stopped"), at("llama.cpp"));
+            // in the status bar: the last row of the window, the state at its left and the engine at its right
             assert!(
-                state.center().y < 40.0,
-                "{live}: {state:?} is not in the title row"
+                state.center().y > 530.0,
+                "{live}: {state:?} is not in the status bar"
             );
-            assert!(state.right() < about.left(), "{live}: {state:?} {about:?}");
-            assert!(about.right() <= gear.left(), "{live}: {about:?} {gear:?}");
+            assert!(state.left() < 40.0, "{live}: {state:?}");
+            assert!(
+                (engine.center().y - state.center().y).abs() < 4.0 && engine.left() > 600.0,
+                "{live}: {engine:?} {state:?}"
+            );
+            // (the menu bar, the first row, is held to its order by A70 of the configurations)
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn p3_i11_the_speed_of_the_model_is_a_chip_in_its_card_and_not_an_icon_in_the_title_row() {
+    fn p3_i11_the_speed_of_the_model_is_a_tag_under_its_name_in_the_page_and_not_in_a_bar() {
         let dir = scratch("z11");
         let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
@@ -380,19 +282,28 @@ mod tests {
                 .find(|(text, _)| text.ends_with(said))
                 .unwrap_or_else(|| panic!("{said}: {:?}", found.keys()))
                 .1;
-            let label = found.get("Model:").expect("the picker's label");
-            // in the card of the model, on the row of the picker and after the picker, not in the title row
+            let display = app.models[0].display.clone();
+            // the name is in the list on the left and is the heading of the page: the heading is the one on the right
+            let heading = found
+                .iter()
+                .filter(|(text, _)| **text == display)
+                .map(|(_, rect)| *rect)
+                .max_by(|a, b| a.left().total_cmp(&b.left()))
+                .unwrap_or_else(|| panic!("{display}: {:?}", found.keys()));
             assert!(
-                chip.center().y > 100.0,
-                "{name}: {chip:?} is not under the title row"
+                heading.left() > 170.0,
+                "{name}: {heading:?} is not in the page"
             );
             assert!(
-                (chip.center().y - label.center().y).abs() < 8.0,
-                "{name}: {chip:?} is not on the row of {label:?}"
+                chip.top() >= heading.bottom() - 1.0 && chip.top() - heading.bottom() < 30.0,
+                "{name}: {chip:?} is not under {heading:?}"
             );
-            assert!(chip.left() > label.right() + 320.0, "{name}: {chip:?}");
+            assert!(
+                chip.left() > 170.0 && chip.bottom() < 500.0,
+                "{name}: {chip:?}"
+            );
         }
-        // an engine with no picker has no model to say it of
+        // an engine with no list of models to start has no model to say it of
         let mut comfy = app_in(&dir, "comfyui");
         let found = rects(&settled(&mut comfy, &ctx, true));
         assert!(
@@ -445,8 +356,9 @@ mod tests {
             "{:?} {start:?}",
             green[0]
         );
-        // and the buttons are in their order, Start before Stop before the chat before the API
-        let order: Vec<f32> = ["Start", "Stop", "Open Chat UI", "🔌 API"]
+        // and the buttons are in their order in the toolbar, Start before Stop before the chat before Connect an app
+        assert!(start.center().y < 70.0, "{start:?} is not in the toolbar");
+        let order: Vec<f32> = ["Start", "Stop", "Open Chat UI", "Connect an app"]
             .iter()
             .map(|text| found.get(*text).unwrap_or_else(|| panic!("{text}")).left())
             .collect();
@@ -508,7 +420,7 @@ mod tests {
         app.recommended_filename = Some("qwen3-vl:8b".to_string());
         app.named.stale = true;
         let found = rects(&settled(&mut app, &ctx, true));
-        let picker = *found.get("Model:").expect("the picker's label");
+        let picker = heading_of(&found, "qwen3-vl:8b");
         let get = *found.get("Get:").expect("the box that gets another model");
         let chips: Vec<egui::Rect> = [
             "vision",
@@ -545,9 +457,9 @@ mod tests {
                 "{text:?} is still there"
             );
         }
-        // the row is the height of its chips: the box under it is not further down than it was under one line of print
+        // the row is the height of its chips: the box under it is the row and the name of its group box further down
         assert!(
-            get.top() - picker.bottom() < 60.0,
+            get.top() - picker.bottom() < 90.0,
             "{get:?} is far below {picker:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -618,12 +530,12 @@ mod tests {
             "{:?}",
             found.keys()
         );
-        // and a model with none has no row for it: the box is where it was under a picker alone
+        // and a model with nothing but its speed to say has a row of one tag: the box is only that row further down
         app.models[0].note = String::new();
         let found = rects(&settled(&mut app, &ctx, true));
-        let (picker, get) = (found["Model:"], found["Get:"]);
+        let (picker, get) = (heading_of(&found, "Bonsai-1.7B-Q1_0.gguf"), found["Get:"]);
         assert!(
-            get.top() - picker.bottom() < 40.0,
+            get.top() - picker.bottom() < 90.0,
             "{get:?} is far below {picker:?} with nothing said of the model"
         );
         let _ = std::fs::remove_dir_all(&dir);

@@ -20,7 +20,7 @@ state_colors = { idle = "gray", starting = "#d4a017", stopping = "#d4a017", runn
 [[screen]]
 id = "main"
 panels = [
-  { panel = "header", tabs = [ { id = "main", label = "Main" }, { id = "live", label = "📡 Live", when = "app.traffic_proxy" } ], actions = ["speed_tier", "theme", "settings", "about"] },
+  { panel = "header", tabs = [ { id = "main", label = "Main" }, { id = "live", label = "Live traffic", when = "app.traffic_proxy" } ], actions = ["speed_tier", "theme", "settings", "about"] },
   { panel = "model_bar" },
   { panel = "acquire" },
   { panel = "adapters", when = "model.components" },        # new: appears only for a model that has components
@@ -33,7 +33,7 @@ panels = [
 
 [[screen]]
 id = "settings"
-title = "⚙ Settings"
+title = "Settings"
 panels = [
   { panel = "engine_selector" },                            # new: chooses which engine document is active
   { panel = "form", section = "app" },

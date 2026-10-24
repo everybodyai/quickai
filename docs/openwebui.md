@@ -16,7 +16,7 @@ downloaded when the person asks, and QuickAI leaves its name and logo as they ar
 
 ## What a person sees
 
-* **⚙ Settings → Chat UI: Open WebUI** (only when Ollama is the engine). The section says what it is and its
+* **Settings → Chat UI: Open WebUI** (only when Ollama is the engine). The section says what it is and its
   licence, and has: *Start Open WebUI with Ollama* (off), *Port* (3000), *Open WebUI's internet access* (offline), the
   usual manager of builds (*Look up Open WebUI builds*, *Installed builds*, *Unfinished installs*, *Cancel*) and,
   under *More*, the Python to install with and extra environment. The section is open when Open WebUI is wanted and

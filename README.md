@@ -25,7 +25,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/quickai-dark.png">
-    <img src="assets/readme/quickai-light.png" width="760" alt="The QuickAI window running the Bonsai 8B model: a green Running pill, the model card, and the Open Chat UI button">
+    <img src="assets/readme/quickai-light.png" width="760" alt="The QuickAI window running the Bonsai 8B model: the menu bar and toolbar, the models in a list on the left, the chosen model with its details and the server options, the log, and the status bar saying Running">
   </picture>
 </p>
 
@@ -66,15 +66,15 @@ on Windows 10 and 11.
 ## Quick start
 
 1. **Start QuickAI.** Bonsai 8B is already selected, or QuickAI's recommendation for your computer is.
-2. **Press Start.** The pill at the top turns green and says *Running*.
-3. **Press Open Chat UI** to chat in your browser, or **API** to connect another app.
+2. **Press Start** in the toolbar. The status bar at the foot of the window turns green and says *Running*.
+3. **Press Open Chat UI** to chat in your browser, or **Connect an app** to use the model from another app.
 
 To get more models, press **Recommended** for the curated list, **Look up online** to search Hugging Face, or
 paste a link or a file path into the **Get** box.
 
 ## Use it from other apps
 
-While a model runs, QuickAI serves an OpenAI-compatible API on your machine (the **API** button shows the
+While a model runs, QuickAI serves an OpenAI-compatible API on your machine (**Connect an app** shows the
 details):
 
 ```bash
@@ -90,9 +90,9 @@ Any client that takes a custom OpenAI base URL works: set it to `http://127.0.0.
 | Engine | For | How you get it |
 | --- | --- | --- |
 | **llama.cpp** | Chat, code, vision, embeddings: any GGUF model | Built in |
-| **Ollama** | The Ollama model library | ⚙ Settings → Engine; downloaded and checksummed on request |
-| **ComfyUI** | Images and video from workflows (Wan 2.2, LTX-Video and more) | ⚙ Settings → Engine; installed from source into its own environment, with ComfyUI-Manager unless you untick it |
-| **Open WebUI** | A full chat page for Ollama | ⚙ Settings → Chat UI; offline by default |
+| **Ollama** | The Ollama model library | Settings → Engine; downloaded and checksummed on request |
+| **ComfyUI** | Images and video from workflows (Wan 2.2, LTX-Video and more) | Settings → Engine; installed from source into its own environment, with ComfyUI-Manager unless you untick it |
+| **Open WebUI** | A full chat page for Ollama | Settings → Chat UI; offline by default |
 
 Every engine QuickAI installs lives under `~/.quickai`, starts on `127.0.0.1` only, and has its own calls home
 switched off. Ollama, for example, runs with `OLLAMA_NO_CLOUD=1`.

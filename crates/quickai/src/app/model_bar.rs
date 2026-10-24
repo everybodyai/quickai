@@ -64,7 +64,7 @@ impl App {
             hardware::SpeedTier::Slow => Some(Tone::Warn),
         };
         (
-            format!("{} {} on this computer", tier.emoji(), tier.label()),
+            format!("{} on this computer", tier.label()),
             tone,
             format!(
                 "Estimated speed for the selected model on this machine: {}. \
@@ -73,22 +73,6 @@ impl App {
                 tier.label()
             ),
         )
-    }
-
-    /// The speed chip at the end of the picker's row, when the row has room for it after the Refresh button, and under the
-    /// picker when it has not (a narrow window: it was drawn over the button). Call it in the row, last.
-    pub(super) fn show_speed_chip_in_row(&self, ui: &mut egui::Ui) -> bool {
-        if self.models.is_empty() {
-            return true;
-        }
-        let (text, tone, hover) = self.speed_chip_parts();
-        if ui.available_width() < theme::chip_width(ui, &text) + 8.0 {
-            return false;
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            theme::chip(ui, &text, tone).on_hover_text(hover);
-        });
-        true
     }
 
     /// The badge that says the picked model is the one this computer is recommended: what it rests on is said when the
@@ -151,70 +135,17 @@ impl App {
         });
     }
 
-    /// The model picker, its Refresh button, and under them what is said of the model.
-    pub(super) fn show_model_bar(&mut self, ui: &mut egui::Ui, active: bool) {
+    /// The chosen model's name and, under it, what is said of it: how fast it will be, the tags, the first sentence of
+    /// its note.
+    pub(super) fn show_model_bar(&mut self, ui: &mut egui::Ui) {
         if self.lists_models() {
-            self.show_named_model_bar(ui, active);
+            self.show_named_model_bar(ui);
             return;
         }
-        let mut chip_fits = true;
-        ui.horizontal(|ui| {
-            ui.label("Model:").on_hover_text(
-                "Which .gguf file llama-server will load on Start. Entries highlighted \
-                 green are bundled with this app and always available; others were \
-                 downloaded or dropped into a models folder by hand.",
-            );
-            let prev_selected = self.selected;
-            egui::ComboBox::from_id_salt("model_combo")
-                .width(320.0)
-                .selected_text(
-                    self.models
-                        .get(self.selected)
-                        .map(|m| m.display.as_str())
-                        .unwrap_or("(no models found)"),
-                )
-                .show_ui(ui, |ui| {
-                    for (i, m) in self.models.iter().enumerate() {
-                        let label =
-                            if self.recommended_filename.as_deref() == Some(m.filename.as_str()) {
-                                format!("{} (recommended)", m.display)
-                            } else {
-                                m.display.clone()
-                            };
-                        if m.bundled {
-                            egui::Frame::NONE
-                                .fill(theme::palette_of(ui.visuals().dark_mode).accent_soft)
-                                .corner_radius(egui::CornerRadius::same(4))
-                                .inner_margin(egui::Margin::symmetric(4, 2))
-                                .show(ui, |ui| {
-                                    ui.selectable_value(&mut self.selected, i, label);
-                                });
-                        } else {
-                            ui.selectable_value(&mut self.selected, i, label);
-                        }
-                    }
-                });
-            // A fresh pick of a different model gets its own
-            // context-size default — bigger models/tighter RAM get
-            // a smaller suggestion. Still just a starting point:
-            // the DragValue below stays freely editable afterward.
-            if self.selected != prev_selected {
-                self.apply_model_defaults();
-            }
-            ui.add_enabled_ui(!active, |ui| {
-                if ui
-                    .button("Refresh")
-                    .on_hover_text(
-                        "Re-scan the models folders for new .gguf files — e.g. one you \
-                         just dropped in by hand — without restarting the app.",
-                    )
-                    .clicked()
-                {
-                    self.rescan_models();
-                }
-            });
-            chip_fits = self.show_speed_chip_in_row(ui);
-        });
+        // the model is chosen in the list on the left; here is its name and what is known of it
+        if let Some(m) = self.models.get(self.selected) {
+            ui.heading(m.display.as_str());
+        }
         if let Some(m) = self.models.get(self.selected) {
             let mut chips = Vec::new();
             if self.recommended_filename.as_deref() == Some(m.filename.as_str()) {
@@ -224,7 +155,7 @@ impl App {
             let (note, mode) = split_mode(&m.note);
             chips.extend(mode);
             let sentence = (!note.is_empty()).then_some(note);
-            self.show_model_facts(ui, chips, sentence, !chip_fits);
+            self.show_model_facts(ui, chips, sentence, true);
         } else {
             ui.colored_label(
                 theme::palette().bad,

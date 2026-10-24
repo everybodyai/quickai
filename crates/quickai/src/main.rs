@@ -42,8 +42,8 @@ fn main() -> eframe::Result {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([760.0, 560.0])
-            .with_min_inner_size([520.0, 380.0])
+            .with_inner_size([980.0, 680.0])
+            .with_min_inner_size([640.0, 440.0])
             .with_title("QuickAI")
             .with_app_id(APP_ID)
             .with_icon(app_icon()),
