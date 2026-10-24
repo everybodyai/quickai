@@ -75,7 +75,17 @@ install it through do their own data collection, independent of anything the app
   changes nothing about how it was started. Every time QuickAI starts ComfyUI it also writes a small folder of
   its own beside the models folder (`~/.quickai/comfyui/extensions/quickai_bridge`) and a file that tells ComfyUI to
   read it: with it, the **Download** button of ComfyUI's page puts a model in the models folder (see
-  [When the app uses the internet](#when-the-app-uses-the-internet)); it has no other effect.
+  [When the app uses the internet](#when-the-app-uses-the-internet)); it has no other effect. A second small folder
+  (`~/.quickai/comfyui/extensions/quickai_manager`) puts a **Manager** button at the top of ComfyUI's page when
+  ComfyUI-Manager is there, and does nothing when it is not.
+- **ComfyUI-Manager, if you leave its box ticked.** When you install a ComfyUI build, ⚙ Settings offers **Install
+  ComfyUI-Manager (highly recommended)**, ticked until you untick it. It is ComfyUI's own add-on (the version its release
+  names, from the Python Package Index, 13 packages and about 30 MB, none of them PyTorch), which installs custom nodes from
+  inside ComfyUI's page, and whose **Model Manager** puts a model of its list in the models folder. A build made with it
+  starts ComfyUI with the Manager's classic interface; a build made without it is started without. Its settings, lists and
+  history are in `~/.quickai/comfyui/user/__manager`. **A custom node it installs is another person's program, which runs on
+  your computer with your rights**; QuickAI does not check it, as it does not check a node you put in ComfyUI's folder
+  yourself. Nothing of ComfyUI-Manager is installed on a build made without the box.
 - **The optional live traffic view.** Off by default. If you turn on "Show live conversation traffic" in
   ⚙ Settings, the app puts a small proxy on your computer (also on `127.0.0.1` only) between your clients and
   `llama-server`, so the **📡 Live** tab can show the chat requests and replies passing through. What it captures
@@ -205,8 +215,17 @@ only when you press a button, or Enter in a box, for one of these:
   one it was tested with has none, and the log says it was not checked). Then **pip**, run by the app inside the
   environment it made, downloads PyTorch from the PyTorch package index (`download.pytorch.org`, whose files come from
   `download-r2.pytorch.org`) and what ComfyUI needs from the Python Package Index (`pypi.org`, and
-  `files.pythonhosted.org` for the files). Those servers see your IP address and the names of the packages, which
+  `files.pythonhosted.org` for the files); with the box for ComfyUI-Manager ticked, its thirteen packages come from the
+  same two. Those servers see your IP address and the names of the packages, which
   are the same for everyone. Nothing is downloaded just because ComfyUI was chosen.
+- **ComfyUI-Manager.** In a build made with it (the box above), **every time ComfyUI starts**, with no one asking, the Manager
+  refreshes its lists: five files from `raw.githubusercontent.com` (its lists of custom nodes and models) and the Comfy
+  Registry's pages of node packs from `api.comfy.org` (measured on 2026-10-24: nothing else was contacted at the start). When you
+  ask its Model Manager for a model it fetches it from the site the model is on: a model of its own list may be on
+  `github.com`, on Hugging Face (`huggingface.co`, `*.cdn.hf.co`) or on another site; when you ask it for a custom node it
+  fetches it from where the node is, and the node's own packages from the Python Package Index. Those sites see your IP
+  address and what you asked for. **The page's network setting does not change this**: it is about what the page may
+  contact, and the Manager's requests are ComfyUI's own. A build made without the box does none of it.
 - **The Download button of ComfyUI's page.** A workflow can name the models it needs, and ComfyUI's page then lists
   the ones you do not have, each with a **Download** button. In a browser that button only asks the browser to save
   the file in its own folder. With ComfyUI started by QuickAI it asks **ComfyUI** to do it, and only when you press

@@ -418,7 +418,30 @@ pub enum Install {
         /// Packages of extra nodes unpacked into the source (a custom node of ComfyUI).
         #[serde(default)]
         nodes: Vec<NodePack>,
+        /// Parts of the install that are the person's to choose (ComfyUI-Manager): a box they tick before they
+        /// install, and the steps that belong to it.
+        #[serde(default)]
+        options: Vec<InstallOption>,
     },
+}
+
+/// A part of an install that the person chooses, and the steps that belong to it (`option` of a pip step).
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct InstallOption {
+    /// Letters, digits and `_`; the pip steps that belong to it name it.
+    pub id: String,
+    /// What the box says (`Install ComfyUI-Manager`).
+    pub label: String,
+    /// A few words beside the label, in the colour of a recommendation (`highly recommended`).
+    pub badge: Option<String>,
+    /// What the pointer on the box is told.
+    pub help: Option<String>,
+    /// Ticked until the person unticks it. An option that is not ticked by default is not installed unless asked for.
+    #[serde(default)]
+    pub default: bool,
+    /// What the launcher of a build made with it passes to the program, before the arguments it is given.
+    #[serde(default)]
+    pub launch_args: Vec<String>,
 }
 
 /// Which Python makes the virtual environment of a `python_app`.
@@ -438,6 +461,8 @@ pub struct PipStep {
     pub label: Option<String>,
     /// Only on a machine where this holds (`has(gpu.vendors, 'amd')`); always when left out.
     pub when: Option<String>,
+    /// Only when the person has chosen this option of the install (`manager`); always when left out.
+    pub option: Option<String>,
     /// Packages, as requirement specifiers (`torch`, `torchvision==0.29.1`).
     #[serde(default)]
     pub packages: Vec<String>,

@@ -12,7 +12,8 @@
 #
 # Models come to its folders three ways: the recommended list (one click, every file checked against a pinned hash),
 # the window's "Look up online" and box (GGUF repositories of the hub, and a link to any file, each file put in the
-# folder of its kind), and the page's own Download button (the bridge above, for what a workflow names).
+# folder of its kind), and the page's own Download button (the bridge above, for what a workflow names); and, in a build
+# made with ComfyUI-Manager (an option of the install, below), its Model Manager, which has a list of about 500.
 #
 # Facts behind it: docs/engine-facts.md (F1 to F23, measured with the release and the PyTorch named
 # below on an AMD RX 6700 XT).
@@ -29,7 +30,7 @@ license = "GPL-3.0"
 bundled = false                 # downloaded on request, never shipped in a package: it is GPL, and a program of its own
 homepage = "https://github.com/Comfy-Org/ComfyUI"
 order = 30
-egress = ["huggingface.co", "*.cdn.hf.co"]     # only when the person presses Download in its page, for a model a workflow names, and not with `page_downloads = "browser"`: the file is fetched by ComfyUI itself (the bridge, below) from the hub and from the download server the hub sends it to (F22). The page itself may contact no other site (--offline)
+egress = ["huggingface.co", "*.cdn.hf.co", "raw.githubusercontent.com", "api.comfy.org", "github.com"]     # huggingface.co and *.cdn.hf.co: only when the person presses Download in its page, for a model a workflow names, and not with `page_downloads = "browser"`: the file is fetched by ComfyUI itself (the bridge, below) from the hub and from the download server the hub sends it to (F22). The page itself may contact no other site (--offline). The other three are ComfyUI-Manager's, an option of the install (F35): its lists, from raw.githubusercontent.com and api.comfy.org, every time ComfyUI starts, and github.com for a model of its list that is kept there; a node or a model it is asked to install may be on any site
 
 [provides]
 apis = ["comfyui.workflow"]
@@ -109,6 +110,28 @@ label = "what ComfyUI needs"
 requirements = "requirements.txt"
 weight = 4
 
+# ComfyUI-Manager is the add-on that installs custom nodes from inside ComfyUI's page, and whose Model Manager lists about 500
+# models and puts the one asked for in the models folder. ComfyUI's own release lists it (`manager_requirements.txt`, one
+# version: the one that release was made with) and starts it with a flag, so it is a step of pip and a word of the launcher, and
+# the window offers it as a box, ticked. It is the classic Manager that is started (`--enable-manager-legacy-ui`): the new one
+# has no Model Manager, and its list of nodes is fetched by the page itself from api.comfy.org, which the page's `--offline`
+# (below) refuses, whereas everything the classic one does is done by the server (F33 to F36). A build made without it is
+# started without the flag: the launcher of the build is what knows what the build has.
+[[acquire.install.options]]
+id = "manager"
+label = "Install ComfyUI-Manager"
+badge = "highly recommended"
+default = true
+help = "ComfyUI-Manager installs custom nodes from inside ComfyUI's page, and its Model Manager lists about 500 models (checkpoints, LoRAs, VAEs, upscalers, ControlNets) and puts the one you choose in the models folder: the way to get models for ComfyUI that this list and Look up online do not have. It is small (13 packages, about 30 MB) and leaves PyTorch alone. Open it from the Manager button at the top of ComfyUI's page. It contacts raw.githubusercontent.com and api.comfy.org whenever ComfyUI starts, to refresh its lists, and the site a node or a model is on when you ask for it; a custom node is another person's program, which runs on this computer."
+launch_args = ["--enable-manager-legacy-ui"]
+
+[[acquire.install.pip]]
+id = "manager"
+label = "ComfyUI-Manager"
+option = "manager"
+requirements = "manager_requirements.txt"
+weight = 1
+
 # GGUF files (the quantized models of the recommended list) are read through this pack of nodes, pinned to one
 # commit: ComfyUI loads only safetensors by itself.
 [[acquire.install.nodes]]
@@ -152,6 +175,7 @@ mkdir = ["${field.models_dir}", "${field.output_dir}", "${data}/comfyui/input", 
 write = [
   { asset = "comfyui/extra_model_paths.yaml", to = "${data}/comfyui/extra_model_paths.yaml" },
   { asset = "comfyui/quickai_bridge", to = "${data}/comfyui/extensions/quickai_bridge" },
+  { asset = "comfyui/quickai_manager", to = "${data}/comfyui/extensions/quickai_manager" },     # a button for ComfyUI-Manager's classic menu, which the page hides; it does nothing for a build that has no Manager (F36)
 ]
 env = [
   { name = "PYTHONUNBUFFERED", value = "1" },                    # its log reaches the window as it is written
@@ -302,7 +326,7 @@ label = "The page's network"
 type = "choice"
 options = ["offline", "online"]
 default = "offline"
-help = "offline: the web page ComfyUI serves may not contact any other site, and the nodes that call paid services are off (--offline). online: it may, as it does when ComfyUI is started by hand."
+help = "offline: the web page ComfyUI serves may not contact any other site, and the nodes that call paid services are off (--offline). online: it may, as it does when ComfyUI is started by hand. ComfyUI-Manager, if it is installed, is ComfyUI's own and not the page: it fetches its lists and what you ask it to install whichever you choose."
 bind.arg_by_value = { offline = ["--offline"] }
 applies = "spawn_only"
 enabled_when = "not session.running"

@@ -136,10 +136,21 @@ pub fn skip_globs(engine: &Engine, facts: &HostFacts) -> Vec<String> {
 
 /// The pip steps of a `python_app` install that apply to this machine, in the document's order: those
 /// with no condition and those whose condition holds. A condition that cannot be evaluated does not
-/// hold: nothing is installed on a guess.
+/// hold: nothing is installed on a guess. The steps that belong to an option of the install are not
+/// among them (`pip_steps_with` has them for the options the person chose).
 pub fn pip_steps<'a>(
     engine: &'a Engine,
     facts: &HostFacts,
+) -> Vec<&'a crate::doc::engine::PipStep> {
+    pip_steps_with(engine, facts, &[])
+}
+
+/// The pip steps of the install for this machine and for the options the person chose (their ids): the steps
+/// of `pip_steps`, and the steps that belong to a chosen option, in the document's order.
+pub fn pip_steps_with<'a>(
+    engine: &'a Engine,
+    facts: &HostFacts,
+    chosen: &[&str],
 ) -> Vec<&'a crate::doc::engine::PipStep> {
     let (Some(acquire), Some(compiled)) = (engine.doc.acquire.as_ref(), engine.acquire.as_ref())
     else {
@@ -152,7 +163,89 @@ pub fn pip_steps<'a>(
     pip.iter()
         .zip(compiled.pip_when.iter().chain(std::iter::repeat(&None)))
         .filter(|(step, when)| step.when.is_none() || holds(when, &context))
+        .filter(|(step, _)| {
+            step.option
+                .as_deref()
+                .is_none_or(|option| chosen.contains(&option))
+        })
         .map(|(step, _)| step)
+        .collect()
+}
+
+/// The parts of the install that the person chooses, in the document's order: what the window offers as boxes.
+/// An option none of whose steps apply to this machine is not offered.
+pub fn install_options<'a>(
+    engine: &'a Engine,
+    facts: &HostFacts,
+) -> Vec<&'a crate::doc::engine::InstallOption> {
+    let Some(crate::doc::engine::Install::PythonApp { options, .. }) = engine
+        .doc
+        .acquire
+        .as_ref()
+        .and_then(|acquire| acquire.install.as_ref())
+    else {
+        return Vec::new();
+    };
+    let everything: Vec<&str> = options.iter().map(|o| o.id.as_str()).collect();
+    let steps = pip_steps_with(engine, facts, &everything);
+    options
+        .iter()
+        .filter(|option| {
+            steps
+                .iter()
+                .any(|step| step.option.as_deref() == Some(option.id.as_str()))
+        })
+        .collect()
+}
+
+/// The ids of the options the document has ticked until the person says otherwise.
+pub fn default_options(engine: &Engine, facts: &HostFacts) -> Vec<String> {
+    install_options(engine, facts)
+        .into_iter()
+        .filter(|option| option.default)
+        .map(|option| option.id.clone())
+        .collect()
+}
+
+/// What the launcher of a build made with the options `chosen` passes to the program before its own arguments,
+/// in the document's order.
+pub fn launch_args(engine: &Engine, chosen: &[&str]) -> Vec<String> {
+    let Some(crate::doc::engine::Install::PythonApp { options, .. }) = engine
+        .doc
+        .acquire
+        .as_ref()
+        .and_then(|acquire| acquire.install.as_ref())
+    else {
+        return Vec::new();
+    };
+    options
+        .iter()
+        .filter(|option| chosen.contains(&option.id.as_str()))
+        .flat_map(|option| option.launch_args.iter().cloned())
+        .collect()
+}
+
+/// Which options an install had, from the ids of the steps it was going to do (`pip:manager`): an option is
+/// one when a step that belongs to it is among them. For the install that stopped to be gone on with the same
+/// choice that it was begun with.
+pub fn options_of_steps(engine: &Engine, step_ids: &[String]) -> Vec<String> {
+    let Some(crate::doc::engine::Install::PythonApp { pip, options, .. }) = engine
+        .doc
+        .acquire
+        .as_ref()
+        .and_then(|acquire| acquire.install.as_ref())
+    else {
+        return Vec::new();
+    };
+    options
+        .iter()
+        .filter(|option| {
+            pip.iter().any(|step| {
+                step.option.as_deref() == Some(option.id.as_str())
+                    && step_ids.iter().any(|id| *id == format!("pip:{}", step.id))
+            })
+        })
+        .map(|option| option.id.clone())
         .collect()
 }
 
@@ -189,12 +282,17 @@ fn holds(when: &Option<crate::expr::Expr>, context: &Value) -> bool {
 /// `Installs a Python environment with PyTorch for AMD GPUs (ROCm 7.2), what ComfyUI needs and
 /// ComfyUI-GGUF; it needs 30 GiB free.` `None` for an engine that unpacks an archive.
 pub fn install_summary(engine: &Engine, facts: &HostFacts) -> Option<String> {
+    install_summary_with(engine, facts, &[])
+}
+
+/// `install_summary` for the options the person chose: what they ticked is in the sentence.
+pub fn install_summary_with(engine: &Engine, facts: &HostFacts, chosen: &[&str]) -> Option<String> {
     let Some(crate::doc::engine::Install::PythonApp { space, .. }) =
         engine.doc.acquire.as_ref()?.install.as_ref()
     else {
         return None;
     };
-    let mut parts: Vec<String> = pip_steps(engine, facts)
+    let mut parts: Vec<String> = pip_steps_with(engine, facts, chosen)
         .into_iter()
         .map(|step| step.label.clone().unwrap_or_else(|| step.id.clone()))
         .collect();

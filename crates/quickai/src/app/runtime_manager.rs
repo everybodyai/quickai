@@ -48,6 +48,9 @@ pub struct RuntimeManager {
     /// The overlays (extra archives, such as a GPU vendor's libraries) the person ticked in the
     /// list; cleared whenever a fresh look-up starts.
     pub overlays: Vec<String>,
+    /// The parts of the install the person ticked, with the engine they were ticked for (ComfyUI-Manager): none
+    /// until they touch a box, and then the document's own choice is not asked again.
+    pub options: Option<(String, Vec<String>)>,
     /// What is on the disk, as the last scan read it.
     pub disk: DiskView,
     /// A build, or an install that stopped, being deleted.
@@ -301,8 +304,39 @@ impl App {
         self.registry.engine(&self.engine)
     }
 
+    /// The parts of the install that are ticked: what the person chose for this engine, else what its document ticks.
+    pub(super) fn chosen_options(&self) -> Vec<String> {
+        let Some(engine) = self.runtime_engine() else {
+            return Vec::new();
+        };
+        match &self.runtime.options {
+            Some((id, chosen)) if *id == engine.id => chosen.clone(),
+            _ => acquire::default_options(engine, &self.host_facts),
+        }
+    }
+
+    /// The parts of the install that stopped as `label` that it was begun with, as its steps say (`None` when the window
+    /// does not know of such an install).
+    fn options_it_began_with(&self, label: &str) -> Option<Vec<String>> {
+        let engine = self.runtime_engine()?;
+        let stopped = self
+            .runtime
+            .disk
+            .unfinished
+            .iter()
+            .find(|u| u.label == label)?;
+        Some(acquire::options_of_steps(engine, &stopped.steps))
+    }
+
     pub(super) fn install_spec(&self) -> Option<InstallSpec> {
-        let spec = InstallSpec::from_engine(self.runtime_engine()?, &self.host_facts)?;
+        self.install_spec_with(&self.chosen_options())
+    }
+
+    /// The install with these parts of it, and the Python the person chose.
+    fn install_spec_with(&self, chosen: &[String]) -> Option<InstallSpec> {
+        let chosen: Vec<&str> = chosen.iter().map(String::as_str).collect();
+        let spec =
+            InstallSpec::from_engine_with(self.runtime_engine()?, &self.host_facts, &chosen)?;
         // the Python the person chose for an install that makes an environment
         let python = self
             .values
@@ -529,7 +563,11 @@ impl App {
 
     /// Goes on with the install of `label` that stopped: the steps that are left.
     fn continue_install(&mut self, label: &str, ctx: &egui::Context) {
-        let Some(spec) = self.install_spec() else {
+        // with the parts it was begun with, whatever the boxes say now: another plan is not gone on with
+        let chosen = self
+            .options_it_began_with(label)
+            .unwrap_or_else(|| self.chosen_options());
+        let Some(spec) = self.install_spec_with(&chosen) else {
             return;
         };
         // from the document when it can say where the source is, and otherwise from what the install that
@@ -639,6 +677,65 @@ impl App {
         self.missing_binary_warned = false;
         self.settings_error = None;
         self.save_settings();
+    }
+
+    /// The parts of the install the document offers as boxes (ComfyUI-Manager), each with its words: ticked as the
+    /// document ticks it until the person says otherwise. They are changed only while no install runs: what
+    /// is ticked is what the install that is begun does.
+    fn show_install_options(&mut self, ui: &mut egui::Ui) {
+        let Some(engine) = self.runtime_engine() else {
+            return;
+        };
+        let engine_id = engine.id.clone();
+        let offered: Vec<(String, String, Option<String>, Option<String>)> =
+            acquire::install_options(engine, &self.host_facts)
+                .into_iter()
+                .map(|o| {
+                    (
+                        o.id.clone(),
+                        o.label.clone(),
+                        o.badge.clone(),
+                        o.help.clone(),
+                    )
+                })
+                .collect();
+        if offered.is_empty() {
+            return;
+        }
+        let idle = self.runtime.install.is_none();
+        let mut chosen = self.chosen_options();
+        let mut changed = false;
+        ui.add_space(4.0);
+        for (id, label, badge, help) in &offered {
+            let mut on = chosen.contains(id);
+            let mut flipped = false;
+            ui.horizontal_wrapped(|ui| {
+                let tick = ui.add_enabled(idle, egui::Checkbox::new(&mut on, label.as_str()));
+                let tick = match help {
+                    Some(help) => tick.on_hover_text(help),
+                    None => tick,
+                };
+                if let Some(badge) = badge {
+                    let chip = super::theme::chip(ui, badge, Some(super::theme::Tone::Good));
+                    if let Some(help) = help {
+                        chip.on_hover_text(help);
+                    }
+                }
+                if tick.changed() {
+                    flipped = true;
+                }
+            });
+            if flipped {
+                changed = true;
+                chosen.retain(|o| o != id);
+                if on {
+                    chosen.push(id.clone());
+                }
+            }
+        }
+        if changed {
+            self.runtime.options = Some((engine_id, chosen));
+        }
     }
 
     /// The widget `runtime_manager` for the field `field` (the binary override).
@@ -873,9 +970,12 @@ impl App {
             }
         });
 
+        self.show_install_options(ui);
+        let ticked = self.chosen_options();
+        let ticked: Vec<&str> = ticked.iter().map(String::as_str).collect();
         if let Some(summary) = self
             .runtime_engine()
-            .and_then(|e| acquire::install_summary(e, &self.host_facts))
+            .and_then(|e| acquire::install_summary_with(e, &self.host_facts, &ticked))
         {
             ui.add_space(2.0);
             ui.label(
@@ -1294,7 +1394,7 @@ backends = [ { match = "gpu", label = "GPU" } ]
 
     // ---- what the window does with the disk and with an install that stopped ------------------------------------------
 
-    use crate::prims::install::{Journal, StepRecord};
+    use crate::prims::install::{InstallKind, Journal, StepRecord};
     use crate::settings::Settings;
     use crate::testkit::{scratch, wait_until};
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -1359,6 +1459,263 @@ backends = [ { match = "gpu", label = "GPU" } ]
 
     /// An install of ComfyUI that stopped, in the folder an application on `dir` keeps its builds in: three
     /// of its seven steps are done, and its directory holds something.
+    /// One frame of `show` with these events: where each text of it was painted.
+    fn frame_with_events(
+        ctx: &egui::Context,
+        events: Vec<egui::Event>,
+        show: impl FnMut(&mut egui::Ui),
+    ) -> Vec<(String, egui::Rect)> {
+        fn walk(shape: &egui::epaint::Shape, into: &mut Vec<(String, egui::Rect)>) {
+            match shape {
+                egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, into)),
+                egui::epaint::Shape::Text(t) => into.push((
+                    t.galley.text().to_string(),
+                    t.galley.rect.translate(t.pos.to_vec2()),
+                )),
+                _ => {}
+            }
+        }
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(760.0, 900.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        // in a panel, as the window draws it: the root of a frame is not a place a click is heard
+        let mut show = show;
+        let mut output = ctx.run_ui(raw, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| show(ui));
+        });
+        output.textures_delta.clear();
+        let mut found = Vec::new();
+        for clipped in &output.shapes {
+            walk(&clipped.shape, &mut found);
+        }
+        found
+    }
+
+    /// The person clicks `at` in what `show` draws: the pointer goes there, presses and lets go, a frame each, and a frame
+    /// after, which is the one that shows what the click did.
+    fn click_in(
+        ctx: &egui::Context,
+        at: egui::Pos2,
+        mut show: impl FnMut(&mut egui::Ui),
+    ) -> Vec<(String, egui::Rect)> {
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut last = Vec::new();
+        for events in [
+            vec![egui::Event::PointerMoved(at)],
+            vec![button(true)],
+            vec![button(false)],
+            Vec::new(),
+        ] {
+            last = frame_with_events(ctx, events, &mut show);
+        }
+        last
+    }
+
+    /// The manager drawn once what it says of the disk is there ("Looking at what is installed..." goes when the scan is
+    /// read, and the rest of the page moves up), so that where a thing is is where it stays.
+    fn settled_manager(
+        app: &mut App,
+        ctx: &egui::Context,
+        field: &FormField,
+    ) -> Vec<(String, egui::Rect)> {
+        wait_until(Duration::from_secs(10), "the disk to be read", || {
+            frame_with_events(ctx, Vec::new(), |ui| app.show_runtime_manager(ui, field));
+            app.runtime.disk.known
+        });
+        frame_with_events(ctx, Vec::new(), |ui| app.show_runtime_manager(ui, field))
+    }
+
+    fn where_is(frame: &[(String, egui::Rect)], text: &str) -> Option<egui::Rect> {
+        frame.iter().find(|(t, _)| t == text).map(|(_, r)| *r)
+    }
+
+    /// What the install the window would begin now is made of: the ids of its pip steps and what its launcher passes.
+    fn made_of(app: &App) -> (Vec<String>, Vec<String>) {
+        let spec = app.install_spec().expect("an install spec");
+        let InstallKind::PythonApp(plan) = spec.kind else {
+            panic!("a python_app install")
+        };
+        (
+            plan.pip.iter().map(|p| p.id.clone()).collect(),
+            plan.launch_args,
+        )
+    }
+
+    #[test]
+    fn p3_f99_the_install_options_are_boxes_ticked_as_the_document_ticks_them_and_what_is_ticked_is_what_the_install_is_made_of(
+    ) {
+        let dir = scratch("f99");
+        let mut app = app_for(&dir, "comfyui");
+        let field = manager_field(&app);
+        let ctx = egui::Context::default();
+
+        // the box says what it is for and that it is recommended, and it is ticked: the install the window begins has the
+        // Manager's step, after what ComfyUI needs, and its launcher passes the word of the classic interface
+        let drawn = settled_manager(&mut app, &ctx, &field);
+        let texts: Vec<String> = drawn.iter().map(|(t, _)| t.clone()).collect();
+        assert!(said(&texts, "Install ComfyUI-Manager"), "{texts:#?}");
+        assert!(said(&texts, "highly recommended"), "{texts:#?}");
+        assert!(
+            texts.iter().any(|t| t.contains("ComfyUI-Manager")
+                && t.contains("it needs 30GiB free")
+                && t.starts_with("Installs a Python environment with")),
+            "the sentence under the button says what is ticked: {texts:#?}"
+        );
+        assert_eq!(app.chosen_options(), ["manager"]);
+        let (pip, words) = made_of(&app);
+        assert_eq!(pip.last().map(String::as_str), Some("manager"), "{pip:?}");
+        assert_eq!(words, ["--enable-manager-legacy-ui"]);
+
+        // a click on the box unticks it: the install is what it was before the option, and the sentence says so
+        let label = where_is(&drawn, "Install ComfyUI-Manager").expect("the box is drawn");
+        let drawn = click_in(&ctx, label.center(), |ui| {
+            app.show_runtime_manager(ui, &field)
+        });
+        assert!(
+            app.chosen_options().is_empty(),
+            "{:?}",
+            app.chosen_options()
+        );
+        let (pip, words) = made_of(&app);
+        assert!(!pip.iter().any(|id| id == "manager") && words.is_empty());
+        let texts: Vec<String> = drawn.iter().map(|(t, _)| t.clone()).collect();
+        assert!(
+            texts
+                .iter()
+                .any(|t| t.starts_with("Installs a Python environment") && !t.contains("Manager")),
+            "{texts:#?}"
+        );
+        assert!(
+            said(&texts, "Install ComfyUI-Manager"),
+            "the box is still there to be ticked"
+        );
+
+        // and a click again ticks it
+        let label = where_is(&drawn, "Install ComfyUI-Manager").unwrap();
+        click_in(&ctx, label.center(), |ui| {
+            app.show_runtime_manager(ui, &field)
+        });
+        assert_eq!(app.chosen_options(), ["manager"]);
+
+        // while an install runs the boxes are not changed: what is ticked is what that install does
+        let release = std::sync::Arc::new(AtomicBool::new(false));
+        let held = release.clone();
+        app.runtime.install = Some(Job::spawn(
+            "v1".to_string(),
+            "Installing",
+            || {},
+            move |send| {
+                while !held.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                send(crate::jobs::JobEvent::Done(PathBuf::new()));
+            },
+        ));
+        let drawn = settled_manager(&mut app, &ctx, &field);
+        let label = where_is(&drawn, "Install ComfyUI-Manager").unwrap();
+        click_in(&ctx, label.center(), |ui| {
+            app.show_runtime_manager(ui, &field)
+        });
+        assert_eq!(
+            app.chosen_options(),
+            ["manager"],
+            "an install that is going is not changed"
+        );
+        release.store(true, Ordering::SeqCst);
+
+        // an engine whose document has no option has no box
+        let mut other = app_for(&scratch("f99b"), "llamacpp");
+        let field = manager_field(&other);
+        let drawn = painted(&ctx, |ui| other.show_runtime_manager(ui, &field));
+        assert!(
+            !said(&drawn, "highly recommended") && !said(&drawn, "Install ComfyUI-Manager"),
+            "{drawn:#?}"
+        );
+        assert!(other.chosen_options().is_empty());
+    }
+
+    #[test]
+    fn p3_f99a_an_install_that_stopped_is_gone_on_with_the_parts_it_was_begun_with_and_not_the_boxes(
+    ) {
+        let dir = scratch("f99a");
+        let mut app = app_for(&dir, "comfyui");
+        let stopped = |label: &str, steps: &[&str]| Unfinished {
+            label: label.into(),
+            dir: dir.join(format!("{label}.partial")),
+            size_bytes: GB,
+            done: 3,
+            total: steps.len(),
+            next: Some("PyTorch".into()),
+            steps: steps.iter().map(|s| s.to_string()).collect(),
+            touched: None,
+            source: None,
+        };
+        app.runtime.disk.unfinished = vec![
+            stopped(
+                "with",
+                &[
+                    "source",
+                    "venv",
+                    "pip:torch_cpu",
+                    "pip:requirements",
+                    "pip:manager",
+                    "check",
+                ],
+            ),
+            stopped(
+                "without",
+                &[
+                    "source",
+                    "venv",
+                    "pip:torch_cpu",
+                    "pip:requirements",
+                    "check",
+                ],
+            ),
+        ];
+        // the box is ticked (as the document ticks it): the one begun without the Manager is gone on with without it
+        assert_eq!(app.chosen_options(), ["manager"]);
+        assert_eq!(
+            app.options_it_began_with("with"),
+            Some(vec!["manager".to_string()])
+        );
+        assert_eq!(app.options_it_began_with("without"), Some(Vec::new()));
+        // the box unticked: the one begun with the Manager is gone on with it
+        app.runtime.options = Some(("comfyui".into(), Vec::new()));
+        assert_eq!(
+            app.options_it_began_with("with"),
+            Some(vec!["manager".to_string()])
+        );
+        // an install the window knows nothing of has no record to go by: the boxes are what is asked
+        assert_eq!(app.options_it_began_with("unknown"), None);
+        // and what the window asks for is what the plan is made of
+        let plan_of = |chosen: &[String]| {
+            let spec = app.install_spec_with(chosen).expect("a spec");
+            let InstallKind::PythonApp(plan) = spec.kind else {
+                panic!()
+            };
+            plan.pip.iter().any(|p| p.id == "manager")
+        };
+        assert!(plan_of(&["manager".to_string()]) && !plan_of(&[]));
+        // what is ticked for one engine is not ticked for another: the choice is kept with the engine it was made for
+        app.runtime.options = Some(("another".into(), Vec::new()));
+        assert_eq!(
+            app.chosen_options(),
+            ["manager"],
+            "the document's own choice"
+        );
+    }
+
     fn stopped_install(dir: &Path) -> PathBuf {
         let stopped = dir.join("data/comfyui/v0.39.0.partial");
         std::fs::create_dir_all(stopped.join("venv")).unwrap();
@@ -1410,6 +1767,7 @@ backends = [ { match = "gpu", label = "GPU" } ]
                 done: 3,
                 total: 7,
                 next: Some("PyTorch".into()),
+                steps: Vec::new(),
                 touched: None,
                 source: None,
             }],

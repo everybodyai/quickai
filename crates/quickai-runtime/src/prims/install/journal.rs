@@ -213,6 +213,9 @@ pub struct Unfinished {
     pub total: usize,
     /// What the next step is.
     pub next: Option<String>,
+    /// The ids of the steps it was going to do (`pip:manager`), which say what it was made with: an install that
+    /// is gone on with is gone on with the options it was begun with.
+    pub steps: Vec<String>,
     /// When it last did something.
     pub touched: Option<SystemTime>,
     /// Where the file the build is made from came from, as the install that stopped recorded it.
@@ -239,6 +242,7 @@ pub fn list_unfinished(root: &Path) -> Vec<Unfinished> {
                 done: journal.done.len(),
                 total: journal.steps.len(),
                 next: journal.next().map(|s| s.label.clone()),
+                steps: journal.steps.iter().map(|s| s.id.clone()).collect(),
                 source: journal.source,
                 label: journal.label,
                 dir,

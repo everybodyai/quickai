@@ -168,6 +168,37 @@ mod tests {
     }
 
     #[test]
+    fn p3_p20_the_managers_button_is_a_folder_of_the_application_with_no_node_and_a_script_that_asks_before_it_adds_a_button(
+    ) {
+        let to = scratch("button").join("extensions").join("quickai_manager");
+        let put = put("comfyui/quickai_manager", &to).unwrap();
+        assert_eq!(put.written, 2, "{put:?}");
+        // a folder of custom nodes with no node, that has a script for the page
+        let init = std::fs::read_to_string(to.join("__init__.py")).unwrap();
+        assert!(
+            init.contains("NODE_CLASS_MAPPINGS = {}") && init.contains("WEB_DIRECTORY = \"./web\""),
+            "{init}"
+        );
+        let script = std::fs::read_to_string(to.join("web/quickai_manager.js")).unwrap();
+        // it asks ComfyUI whether the Manager is there before it adds anything, and the button runs the Manager's own command
+        let asks = script.find("/v2/manager/version").expect("it asks");
+        let adds = script.find("registerExtension").expect("it adds a button");
+        assert!(asks < adds, "the question comes before the button");
+        assert!(
+            script.contains("Comfy.Manager.Menu.ToggleVisibility")
+                && script.contains("actionBarButtons"),
+            "{script}"
+        );
+        // it contacts nothing but the ComfyUI that serves it
+        assert!(
+            !script.contains("http://") && !script.contains("https://"),
+            "{script}"
+        );
+        // the bridge, which has nothing to do with it, is another folder
+        assert!(has("comfyui/quickai_bridge") && !to.join("fetch.py").exists());
+    }
+
+    #[test]
     fn p3_p16_a_file_that_differs_is_written_again_and_one_that_is_not_the_applications_is_not_touched(
     ) {
         let to = scratch("differs").join("quickai_bridge");

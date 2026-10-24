@@ -3,10 +3,10 @@
 ComfyUI makes pictures and video from workflows that a person builds in its own web page. QuickAI manages it as a third
 engine, the way it manages Ollama: it installs it, starts and stops it, attaches to one that is running, keeps its
 models, says what its API is and what went wrong. The engine is a document ([`comfyui.toml`](examples/engines/comfyui.toml)),
-and what the document cannot say is a primitive (`install.python_app@1`, below). The facts it rests on are F1 to F31 of
-[engine-facts.md](engine-facts.md) (written without a leading zero, as the other engines' are); the decisions are C78 to C86
+and what the document cannot say is a primitive (`install.python_app@1`, below). The facts it rests on are F1 to F36 of
+[engine-facts.md](engine-facts.md) (written without a leading zero, as the other engines' are); the decisions are C78 to C86 and C152 to C155
 of [implementation-plan.md](implementation-plan.md); the tests are groups F, P and Q of [phase3-test-plan.md](phase3-test-plan.md)
-(F01 to F91, P01 to P19, Q01 to Q15).
+(F01 to F99a, P01 to P21, Q01 to Q15).
 
 ComfyUI is GPL-3.0 and a program of its own. It is **not part of any package**: it is downloaded when the person asks.
 
@@ -19,7 +19,7 @@ ComfyUI is GPL-3.0 and a program of its own. It is **not part of any package**: 
 | Models | one file, or a file and its projector | files of several kinds, each kept in the folder ComfyUI looks for that kind in (`diffusion_models/`, `text_encoders/`, `vae/`, `loras/`) |
 | The window | a picker and a model box | the list of what is installed, **Recommended**, **Look up online**, a box for a link or a file and the folder it goes in, Refresh, Open folder, and **Open ComfyUI** once it runs |
 | API | `/v1`, Ollama's | `POST /prompt`, `GET /history/<id>`, `GET /view`, `/ws`, `GET /system_stats` (`comfyui.workflow`) |
-| Its page | none, or the server's own | a web page of its own, which QuickAI gives a **Download** that installs into the models folder ([below](#the-pages-download-button)) |
+| Its page | none, or the server's own | a web page of its own, which QuickAI gives a **Download** that installs into the models folder ([below](#the-pages-download-button)) and, with ComfyUI-Manager, a **Manager** button ([below](#comfyui-manager)) |
 | Its files | below `~/.quickai/<engine>` (Ollama's in a home and a temporary folder of its own there too; llama.cpp writes nothing else) | below `~/.quickai/comfyui`, and **in a home and a temporary folder of its own there** (`home/`, `cache/tmp/`): the compiler cache of ROCm, PyTorch's and the driver's caches and the kernels it compiles would otherwise go to the person's `~/.cache` and the system's temporary folder (F28), and the Python variables of the person's shell are put away (C92: every engine is isolated, completely) |
 
 ## Installing it
@@ -35,20 +35,67 @@ installs it. The install is one primitive, `install.python_app@1`, and everythin
 | source | the release's source archive, checked against its pin, unpacked as `app/` | F21, F22 |
 | nodes | the pack of GGUF nodes (`ComfyUI-GGUF`, one commit, pinned by the digest of its archive) unpacked into `app/custom_nodes/` | F21, F22 |
 | venv | `<python> -m venv venv/` | F21 |
-| pip | one PyTorch for this machine's graphics card (ROCm 7.2 for AMD on Linux, CUDA 13 for NVIDIA, the processor's otherwise), then what ComfyUI and the pack need; always `--only-binary=:all:`, so no package runs a build script on the machine, and the temporary files are inside the staging directory (a machine's `/tmp` can be memory: this one's is) | F05, F21 |
-| launcher | `comfyui`, a script that runs `app/main.py` with `venv/`'s Python | F21 |
+| pip | one PyTorch for this machine's graphics card (ROCm 7.2 for AMD on Linux, CUDA 13 for NVIDIA, the processor's otherwise), then what ComfyUI needs, then, **when its box is ticked, ComfyUI-Manager** (ComfyUI's own `manager_requirements.txt`: 13 packages, 27 MB), then what the pack needs; always `--only-binary=:all:`, so no package runs a build script on the machine, and the temporary files are inside the staging directory (a machine's `/tmp` can be memory: this one's is) | F05, F21, F33 |
+| launcher | `comfyui`, a script that runs `app/main.py` with `venv/`'s Python, **and with the Manager's word (`--enable-manager-legacy-ui`) when the build has the Manager** | F21, F34 |
 | check | the launcher with `--quick-test-for-ci --cpu`, which loads every node and exits | F21, F26 |
 | rename | `<tag>.partial` → `<tag>`, so a build is there whole or not at all | F21 |
 
 It takes **about twenty minutes and 17 GB**: on the machine this was developed on, 19 min 51 s from the click to the
 rename, 17,364,523,756 bytes in 65,609 files, nearly all of it PyTorch (the wheel alone is 6.2 GB, fetched at about
 7 MB/s). The document asks for 30 GiB free before it starts, which holds the environment and the wheel while it is unpacked.
+The Manager adds seconds and 78 MB to that (F33).
 
-The window says where it is while it works. Under the bar: `Step 4 of 7 · PyTorch for AMD GPUs (ROCm 7.2) · downloading
+The window says where it is while it works. Under the bar: `Step 4 of 8 · PyTorch for AMD GPUs (ROCm 7.2) · downloading
 torch-2.14.1+rocm7.2-cp314-cp314-manylinux_2_28_x86_64.whl: 117.5 MB of 5.8 GB, 7.0 MB/s, about 13 min 49 s left`; while
 pip unpacks, which takes minutes in which it prints nothing, how long it has been; and after 45 seconds of silence
 that pip is still running. The log holds pip's own words. **Cancel** stops pip, or the check, and everything
 they started within seconds and throws the work away.
+
+## ComfyUI-Manager
+
+[ComfyUI-Manager](https://github.com/Comfy-Org/ComfyUI-Manager) is the add-on that installs custom nodes from inside ComfyUI's page,
+and whose **Model Manager** lists about 500 models (checkpoints, LoRAs, VAEs, upscalers, ControlNets) and puts the one you choose in the
+models folder. ComfyUI's own release names it (`manager_requirements.txt`, and a section of its README on how to turn it on), and the person who asked for this option called it highly recommended.
+QuickAI offers it **when a build is installed**, as a box ticked until you untick it (C152).
+
+- **The box.** ⚙ Settings → Advanced → **ComfyUI**, under **Look up ComfyUI builds**: **Install ComfyUI-Manager** with *highly
+  recommended* beside it, and a hover that says what it is, what it contacts and that a custom node is another person's program. The
+  sentence under it says what the install is going to put on the machine, and says ComfyUI-Manager when it is ticked. What is ticked
+  when **Use** is clicked is what that install does (the box is of the install you are about to make: it is ticked again each time QuickAI is started);
+  it cannot be changed while an install runs. **Continue**, on an install
+  that stopped, goes on with the choice that install was begun with and not with the box (what was done is believed only if it was done
+  for the same plan: F98, F99a). It is the window's box: the headless runner (`quickai-run`) installs ComfyUI without it, as it did.
+- **What the install does.** One more step of pip after what ComfyUI needs (`pip install -r manager_requirements.txt` of the release,
+  wheels only, from the package index: the version that release was made with), and the build's launcher passes
+  `--enable-manager-legacy-ui` before the arguments it is given. A build is **started with what it was made with**: the one made without
+  the Manager is started without the flag, and a ComfyUI that is already running was not started by QuickAI and is not changed.
+- **Why the classic Manager (C153).** ComfyUI has two (F34). The new one has no Model Manager, and the list of its Nodes Manager is asked of
+  `api.comfy.org` **by the page**, which **The page's network** (`--offline`, the default) forbids, so it would show grey placeholders
+  for ever; the classic one has the Model Manager, and everything it does is done by ComfyUI itself, so the page's setting does not
+  touch it. Neither choice changes what the setting is for: the page contacts no other site.
+- **The button (C154).** The classic Manager puts its button in the page's old menu, which the page does not show by default, so QuickAI
+  writes one more small folder beside the bridge at every start (`~/.quickai/comfyui/extensions/quickai_manager`: no node, one script) that
+  puts a **Manager** button at the top of the page, beside **Run**, when ComfyUI answers that the Manager is there. It opens the Manager's
+  own menu: **Custom Nodes Manager**, **Install Missing Custom Nodes**, **Model Manager**, **Install via Git URL**, Snapshot Manager... With no
+  Manager the script adds nothing and says nothing.
+- **Models (the person's recommendation, 2026-10-24).** The Model Manager is the way to get a model for ComfyUI that **Recommended** and **Look up
+  online** do not know of: it fetches the file from where its list says it is (GitHub, Hugging Face, others) into the folder of its kind below the
+  models folder ComfyUI was given (`vae_approx/taef1_decoder.pth`, F36), which is the models folder of this window, so **Refresh** and
+  the loaders find it. QuickAI's own ways stay as they are.
+- **Where its files are.** Its settings, lists, snapshots and history are in `~/.quickai/comfyui/user/__manager` (ComfyUI is told `--user-directory`),
+  nothing beside the build, and the build can be deleted without losing them.
+- **What it contacts (C155).** At every start, with no one asking: `raw.githubusercontent.com` (its five lists) and `api.comfy.org` (the
+  Registry's pages of node packs); and, when you ask it for something, the site that thing is on (`github.com`, `huggingface.co`, `pypi.org` for a node's
+  packages...). The page's network setting does not change this: it is about the page, and these are ComfyUI's own requests. The hosts are declared
+  in the document (`egress`), held to a recording by X08, and named in [PRIVACY.md](../PRIVACY.md) (F35). **A custom node it installs is another person's
+  program, which runs on this computer**; QuickAI checks nothing of it.
+- **What it says that means nothing.** `[ERROR] [ComfyUI-Manager] PyTorch is not installed` at every start (it wants `torchaudio` too; installing it would
+  take PyTorch back to 2.11: F33) and a warning about `matrix-nio`; neither stops anything. It never installs `torch`, `torchvision`, `torchsde` or
+  `torchaudio` for a node. Its buttons **Update ComfyUI** and **Switch ComfyUI** have nothing to update in a build, which is the source of a release
+  and not a clone: another release is installed from this window.
+- **How it was held.** The document and its plan (F93, F94), the launcher (F95), the install (F96 to F98), the window's box and the choice of an install that
+  stopped (F99, F99a), the folder of the button (P20), and, by hand, the real page in Chromium with the real Manager: the button, the Model Manager putting a
+  model in the folder, the hosts contacted, with and without the Manager (P21, F33 to F36).
 
 ## What the computer has to have
 
@@ -87,7 +134,7 @@ directory by hand to go on (on 2026-10-08 one did: see *If the window stops answ
   install asked for again, does the steps that are left and none that are done (the log says which were: `Already done by the install that stopped: ...`; `Going on with the install that
   stopped (3 of 7 steps are done)`), and **always** the check, since it is the check that says the whole works. A step
   whose files are gone is not done, and nor is any after it. If the plan is not the same (another Python, other
-  packages, a newer application) the work is not believed and the install begins again, saying so. The directory is
+  packages, a newer application, the Manager ticked or not) the work is not believed and the install begins again, saying so; the window's **Continue** asks for the choice the install was begun with (the record lists its steps, which say it). The directory is
   taken up under any name; the room it asks for is what is still to be written.
 - **A record that cannot be written** (a full disk) is said, stops the install and costs nothing: what was done stays where it
   was, and the next install goes on from it.
@@ -184,7 +231,7 @@ twice and the run took 453 s (fact F27). The model's preferred size is 1280×704
 
 ## Getting models
 
-There are three ways to get a model from the window, as there are in llama.cpp's, and a fourth from the page ([below](#the-pages-download-button)).
+There are three ways to get a model from the window, as there are in llama.cpp's, a fourth from the page ([below](#the-pages-download-button)) and, in a build made with ComfyUI-Manager, a fifth: its **Model Manager** ([above](#comfyui-manager)).
 They differ in what they know: **Recommended** knows a model and every file it needs; **Look up online** finds files on
 the hub and puts each where it belongs; the box takes a file the person already has an address for. Whichever it was, a
 file is kept in the folder of the models folder that ComfyUI looks for that kind in, and a workflow names it by its file
@@ -319,11 +366,13 @@ link; what it has beside it is a place for a host program, which ComfyUI Desktop
 
 ## Not done
 
+- **ComfyUI-Manager is not added to a build that is installed already.** The box is of the install: a build made without it stays without it (and is started without the flag) until another release is installed with it ticked. Adding it to a build in place (one pip step in its environment and a new launcher) is possible and was not asked for.
+- The Manager's **new** interface is not offered: it has no Model Manager and, with the page offline, no list of nodes (F34). A person who has set the page online and wants it can start ComfyUI with `--enable-manager` by hand.
 - A pickled file (`.ckpt`, `.pt`, `.pth`) and one from another site (Civitai) is left to the browser: the bridge fetches only what
   it can check. A token for a hub that wants a login is not used.
 - The window of the application shows nothing of a fetch the page asked for (the page does): a list that shows it, from the `.part` files, is possible.
 - A download the window starts (a result, the box) does not go on from where it stopped; the page's Download does.
-- **A real ComfyUI in the GUI suite.** The GUI suite (`quickai_base/test`, [the test repository's docs/18_comfyui.md](../../test/docs/18_comfyui.md): 170 cases in nine suites and thirteen in four older ones) drives the window against fakes (a stand-in `main.py` that refuses what the real one refuses and hosts the bridge, a stand-in Python, a GitHub, a Hugging Face, the same over TLS); a real ComfyUI is installed by hand, as the lines above say.
+- **A real ComfyUI in the GUI suite.** The GUI suite (`quickai_base/test`, [the test repository's docs/18_comfyui.md](../../test/docs/18_comfyui.md): 175 cases in nine suites and thirteen in four older ones) drives the window against fakes (a stand-in `main.py` that refuses what the real one refuses and hosts the bridge, a stand-in Python, a GitHub, a Hugging Face, the same over TLS); a real ComfyUI is installed by hand, as the lines above say.
 - The installer was run on Linux only, with the AMD (ROCm) PyTorch; the CUDA, CPU and macOS steps follow from the same
   document and are tested by their conditions (F05), not by a machine.
 - A model that needs more than ComfyUI's default nodes and the pack of GGUF nodes is not in the list, and its nodes are not

@@ -136,8 +136,19 @@ impl Default for InstallSpec {
 
 impl InstallSpec {
     /// From the engine's `[acquire]` section; `None` when it cannot install (no `install`, no
-    /// `root`, no executable named).
+    /// `root`, no executable named). The install of what nobody chose to add: the options of the document
+    /// (ComfyUI-Manager) are the window's to offer, and `from_engine_with` has them.
     pub fn from_engine(engine: &Engine, facts: &HostFacts) -> Option<InstallSpec> {
+        InstallSpec::from_engine_with(engine, facts, &[])
+    }
+
+    /// `from_engine` for an install with the options the person chose (their ids in the document's
+    /// `[[acquire.install.options]]`): their steps are done and their words are in the launcher.
+    pub fn from_engine_with(
+        engine: &Engine,
+        facts: &HostFacts,
+        chosen: &[&str],
+    ) -> Option<InstallSpec> {
         let acquire = engine.doc.acquire.as_ref()?;
         let root = PathBuf::from(quickai_core::acquire::root_dir(engine, facts)?);
         match acquire.install.as_ref()? {
@@ -186,7 +197,8 @@ impl InstallSpec {
                     },
                     versions: python.versions.clone(),
                     python: None,
-                    pip: quickai_core::acquire::pip_steps(engine, facts)
+                    launch_args: quickai_core::acquire::launch_args(engine, chosen),
+                    pip: quickai_core::acquire::pip_steps_with(engine, facts, chosen)
                         .into_iter()
                         .map(|step| PipPlan {
                             id: step.id.clone(),

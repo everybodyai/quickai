@@ -91,7 +91,7 @@ Any client that takes a custom OpenAI base URL works: set it to `http://127.0.0.
 | --- | --- | --- |
 | **llama.cpp** | Chat, code, vision, embeddings: any GGUF model | Built in |
 | **Ollama** | The Ollama model library | ⚙ Settings → Engine; downloaded and checksummed on request |
-| **ComfyUI** | Images and video from workflows (Wan 2.2, LTX-Video and more) | ⚙ Settings → Engine; installed from source into its own environment |
+| **ComfyUI** | Images and video from workflows (Wan 2.2, LTX-Video and more) | ⚙ Settings → Engine; installed from source into its own environment, with ComfyUI-Manager unless you untick it |
 | **Open WebUI** | A full chat page for Ollama | ⚙ Settings → Chat UI; offline by default |
 
 Every engine QuickAI installs lives under `~/.quickai`, starts on `127.0.0.1` only, and has its own calls home
@@ -116,6 +116,9 @@ It listens on the loopback only; reach it through an SSH tunnel. See [docs/headl
   developer ever sees them.
 - No telemetry, analytics, crash reporting, accounts or automatic update checks.
 - The internet is used only when you search for or download a model or an engine, and the app says so.
+- If you install ComfyUI with its Manager (the box is ticked by default), the Manager fetches its lists of nodes and
+  models from GitHub and the Comfy Registry whenever ComfyUI starts. A custom node it installs is another person's
+  program.
 - What QuickAI keeps (settings, configurations, downloaded models) stays in your own folders.
 
 The full policy is [PRIVACY.md](PRIVACY.md).

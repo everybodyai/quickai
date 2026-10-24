@@ -67,6 +67,9 @@ pub struct PythonApp {
     pub python: Option<PathBuf>,
     pub pip: Vec<PipPlan>,
     pub nodes: Vec<NodePlan>,
+    /// What the launcher passes to the program before the arguments it is given: the words of the options the
+    /// person chose (`--enable-manager-legacy-ui`), so that a build is started with what it was made with.
+    pub launch_args: Vec<String>,
     /// The free room an install needs, in bytes.
     pub space: Option<u64>,
 }
@@ -964,8 +967,15 @@ fn launcher_text(
     name: &str,
     runs: &Runs,
     entry: Option<&EntryPoint>,
+    args: &[String],
     windows: bool,
 ) -> (String, String) {
+    // the words of the options, which go in front of what the launcher is given (validated as plain words)
+    let words = |separator: &str| -> String {
+        args.iter()
+            .map(|word| format!("{word}{separator}"))
+            .collect::<String>()
+    };
     // the program of a wheel is run by the environment's Python, told what to call (see `resolve_entry_point`)
     let program = |program: &str| -> String {
         let entry =
@@ -979,12 +989,14 @@ fn launcher_text(
     if windows {
         let run = match runs {
             Runs::Script(entry) => format!(
-                "\"%~dp0venv\\Scripts\\python.exe\" \"%~dp0app\\{}\" %*",
-                entry.replace('/', "\\")
+                "\"%~dp0venv\\Scripts\\python.exe\" \"%~dp0app\\{}\" {}%*",
+                entry.replace('/', "\\"),
+                words(" ")
             ),
             Runs::Program(name) => format!(
-                "\"%~dp0venv\\Scripts\\python.exe\" -c \"{}\" %*",
-                program(name)
+                "\"%~dp0venv\\Scripts\\python.exe\" -c \"{}\" {}%*",
+                program(name),
+                words(" ")
             ),
         };
         (
@@ -996,12 +1008,16 @@ fn launcher_text(
     } else {
         let run = match runs {
             Runs::Script(entry) => {
-                format!("exec \"$here/venv/bin/python\" \"$here/app/{entry}\" \"$@\"")
+                format!(
+                    "exec \"$here/venv/bin/python\" \"$here/app/{entry}\" {}\"$@\"",
+                    words(" ")
+                )
             }
             Runs::Program(name) => {
                 format!(
-                    "exec \"$here/venv/bin/python\" -c \"{}\" \"$@\"",
-                    program(name)
+                    "exec \"$here/venv/bin/python\" -c \"{}\" {}\"$@\"",
+                    program(name),
+                    words(" ")
                 )
             }
         };
@@ -1024,8 +1040,9 @@ fn write_launcher(
     name: &str,
     runs: &Runs,
     entry: Option<&EntryPoint>,
+    args: &[String],
 ) -> Result<PathBuf, String> {
-    let (file, text) = launcher_text(name, runs, entry, cfg!(windows));
+    let (file, text) = launcher_text(name, runs, entry, args, cfg!(windows));
     let path = staging.join(file);
     std::fs::write(&path, text).map_err(|e| format!("could not write {}: {e}", path.display()))?;
     #[cfg(unix)]
@@ -1099,6 +1116,10 @@ fn plan_fingerprint(app: &PythonApp, request: &InstallRequest, python: &Interpre
             pack.into,
             pack.requirements.as_deref().unwrap_or("")
         ));
+    }
+    // the launcher a build gets is part of what it is
+    if !app.launch_args.is_empty() {
+        parts.push(format!("launch|{}", app.launch_args.join(" ")));
     }
     journal::fingerprint(&parts)
 }
@@ -1454,7 +1475,13 @@ fn work(ctx: Ctx, steps: &mut Steps, leftovers: &mut Leftovers) -> Result<(), St
         Runs::Program(program) => Some(resolve_entry_point(&inside, program)?),
         Runs::Script(_) => None,
     };
-    let launcher = write_launcher(staging, launcher_name, &app.runs, entry.as_ref())?;
+    let launcher = write_launcher(
+        staging,
+        launcher_name,
+        &app.runs,
+        entry.as_ref(),
+        &app.launch_args,
+    )?;
     if let Some(smoke) = &spec.smoke {
         send(JobEvent::Status("Checking that it runs".to_string()));
         send(JobEvent::Detail(format!(
@@ -1686,7 +1713,8 @@ mod tests {
             attr: "app".into(),
         };
         // a script of the source, as ComfyUI's has always been, on a system with a shell
-        let (file, text) = launcher_text("comfyui", &Runs::Script("main.py".into()), None, false);
+        let (file, text) =
+            launcher_text("comfyui", &Runs::Script("main.py".into()), None, &[], false);
         assert_eq!(file, "comfyui");
         assert!(text.starts_with("#!/bin/sh\n"), "{text}");
         assert!(
@@ -1696,7 +1724,7 @@ mod tests {
         // the program of a wheel is run by the environment's Python and told what to call: a script of the
         // environment holds the path of the folder it was made in, and the build is moved when it is whole
         let program = Runs::Program("open-webui".into());
-        let (file, text) = launcher_text("open-webui", &program, Some(&app), false);
+        let (file, text) = launcher_text("open-webui", &program, Some(&app), &[], false);
         assert_eq!(file, "open-webui");
         // the suites' stand-in for a finished build writes this very file (`resources/owui_world.py` of the test
         // repository holds its text to it, `resources/test_fake_pypi.py`): they change together or not at all
@@ -1727,7 +1755,13 @@ mod tests {
             module: "pkg.cli".into(),
             attr: "tools.main".into(),
         };
-        let (_, text) = launcher_text("tool", &Runs::Program("tool".into()), Some(&dotted), false);
+        let (_, text) = launcher_text(
+            "tool",
+            &Runs::Program("tool".into()),
+            Some(&dotted),
+            &[],
+            false,
+        );
         assert!(
             text.contains(
                 "from pkg.cli import tools; sys.argv[0] = 'tool'; sys.exit(tools.main())"
@@ -1735,14 +1769,19 @@ mod tests {
             "{text}"
         );
         // and the same on Windows, where a launcher is a batch file
-        let (file, text) =
-            launcher_text("comfyui", &Runs::Script("nodes/main.py".into()), None, true);
+        let (file, text) = launcher_text(
+            "comfyui",
+            &Runs::Script("nodes/main.py".into()),
+            None,
+            &[],
+            true,
+        );
         assert_eq!(file, "comfyui.cmd");
         assert!(
             text.contains("\"%~dp0venv\\Scripts\\python.exe\" \"%~dp0app\\nodes\\main.py\" %*"),
             "{text}"
         );
-        let (file, text) = launcher_text("open-webui", &program, Some(&app), true);
+        let (file, text) = launcher_text("open-webui", &program, Some(&app), &[], true);
         assert_eq!(file, "open-webui.cmd");
         assert!(
             text.contains(
@@ -1753,6 +1792,37 @@ mod tests {
                 && text.contains("set PYTHONNOUSERSITE=1\r\n"),
             "{text:?}"
         );
+    }
+
+    #[test]
+    fn p3_f95_the_launcher_of_a_build_made_with_an_option_passes_its_words_before_the_ones_it_is_given(
+    ) {
+        let words = vec!["--enable-manager-legacy-ui".to_string()];
+        let script = Runs::Script("main.py".into());
+        // a system with a shell: the words are in front of what the launcher is given, and without them the text is what it was
+        let (_, with) = launcher_text("comfyui", &script, None, &words, false);
+        assert!(
+            with.contains(
+                r#"exec "$here/venv/bin/python" "$here/app/main.py" --enable-manager-legacy-ui "$@""#
+            ),
+            "{with}"
+        );
+        let (_, without) = launcher_text("comfyui", &script, None, &[], false);
+        assert_eq!(
+            with.replace("--enable-manager-legacy-ui ", ""),
+            without,
+            "the words are the only difference"
+        );
+        // Windows, a batch file
+        let (_, with) = launcher_text("comfyui", &script, None, &words, true);
+        assert!(
+            with.contains("\"%~dp0app\\main.py\" --enable-manager-legacy-ui %*\r\n"),
+            "{with:?}"
+        );
+        // and two words, in the order the options say
+        let two = vec!["--a".to_string(), "--b=1".to_string()];
+        let (_, text) = launcher_text("comfyui", &script, None, &two, false);
+        assert!(text.contains(r#"main.py" --a --b=1 "$@""#), "{text}");
     }
 
     #[test]
@@ -1998,6 +2068,7 @@ mod tests {
                     requirements: None,
                 },
             ],
+            launch_args: Vec::new(),
             space: None,
         };
         let request = InstallRequest::bare("https://x/v1.tar.gz", "v1");

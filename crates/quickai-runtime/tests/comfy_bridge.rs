@@ -142,3 +142,29 @@ fn p3_p19_the_real_page_installs_a_model_goes_on_after_a_kill_and_leaves_the_res
     let status = command.status().expect("python could not be started");
     assert!(status.success(), "the real page did not do what it should");
 }
+
+/// Row P21, by hand: the page of a real ComfyUI in a real browser, with ComfyUI-Manager
+/// (`tests/comfy_bridge/real_manager.py`, whose header says what it holds to). It needs a build of ComfyUI that QuickAI
+/// installed (`QUICKAI_P21_BUILD`; it is not changed), a Python that has Playwright and its Chromium
+/// (`QUICKAI_P21_PYTHON`, else the Python of the other tests), the internet (the Manager's lists from GitHub and the Comfy
+/// Registry, a model of 4.7 MB from GitHub) and 150 MB of room for its work folder (`QUICKAI_P21_WORK`, for a machine whose
+/// temporary folder is memory).
+#[test]
+#[ignore = "manual: needs a ComfyUI build (QUICKAI_P21_BUILD), Python with playwright and Chromium, and the internet"]
+fn p3_p21_the_real_page_has_the_managers_button_and_its_model_manager_puts_a_model_in_the_models_folder(
+) {
+    let build = std::env::var("QUICKAI_P21_BUILD")
+        .expect("QUICKAI_P21_BUILD=<a build of ComfyUI that QuickAI installed>");
+    let python = std::env::var("QUICKAI_P21_PYTHON").unwrap_or_else(|_| python());
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/comfy_bridge/real_manager.py");
+    let mut command = Command::new(python);
+    command
+        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .arg(script)
+        .arg(build);
+    if let Ok(work) = std::env::var("QUICKAI_P21_WORK") {
+        command.arg(work);
+    }
+    let status = command.status().expect("python could not be started");
+    assert!(status.success(), "the real page did not do what it should");
+}
