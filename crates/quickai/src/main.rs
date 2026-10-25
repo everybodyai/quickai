@@ -21,7 +21,7 @@ use quickai_runtime::{golden, testkit};
 /// taskbar" after launch doesn't stick.
 const APP_ID: &str = "quickai";
 
-/// The application's icon, which every window it opens carries (decoded once).
+/// The application's icon (decoded once): the windows' (`with_app_icon`) and the logo's.
 fn app_icon() -> std::sync::Arc<egui::IconData> {
     static ICON: std::sync::OnceLock<std::sync::Arc<egui::IconData>> = std::sync::OnceLock::new();
     ICON.get_or_init(|| {
@@ -33,6 +33,17 @@ fn app_icon() -> std::sync::Arc<egui::IconData> {
     .clone()
 }
 
+/// `builder` with the application's icon, which every window it opens carries. Not on macOS: there the
+/// Dock shows the app's own icon (`QuickAI.app`, drawn in the shape and glass macOS gives icons), and a
+/// window's icon would replace it with the flat picture.
+fn with_app_icon(builder: egui::ViewportBuilder) -> egui::ViewportBuilder {
+    if cfg!(target_os = "macos") {
+        builder
+    } else {
+        builder.with_icon(app_icon())
+    }
+}
+
 fn main() -> eframe::Result {
     // `quickai config check` and `quickai plan` are headless: they run and exit before any window.
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -41,12 +52,13 @@ fn main() -> eframe::Result {
     }
 
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([980.0, 680.0])
-            .with_min_inner_size([640.0, 440.0])
-            .with_title("QuickAI")
-            .with_app_id(APP_ID)
-            .with_icon(app_icon()),
+        viewport: with_app_icon(
+            egui::ViewportBuilder::default()
+                .with_inner_size([980.0, 680.0])
+                .with_min_inner_size([640.0, 440.0])
+                .with_title("QuickAI")
+                .with_app_id(APP_ID),
+        ),
         ..Default::default()
     };
 

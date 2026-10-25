@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/nihal-kader/quickai/actions/workflows/ci.yml"><img src="https://github.com/nihal-kader/quickai/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-246E37" alt="License: PolyForm Noncommercial 1.0.0"></a>
-  <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows-0E1611" alt="Platforms: Linux and Windows">
+  <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-0E1611" alt="Platforms: Linux, macOS and Windows">
 </p>
 
 <p align="center">
@@ -54,14 +54,17 @@ prompts never leave your computer.
 
 ## Install
 
-> **QuickAI 0.1.0 is being prepared.** Linux (tar.gz and AppImage) and Windows (zip) builds will be on the
-> [Releases](https://github.com/nihal-kader/quickai/releases) page, with packages for the AUR, Homebrew, Snap,
-> Scoop, Chocolatey and the Microsoft Store to follow. To hear when it's out, sign up at
+> **QuickAI 0.1.0 is being prepared.** Linux (tar.gz and AppImage), Windows (zip) and macOS (one disk image for
+> Apple silicon and Intel Macs) builds will be on the [Releases](https://github.com/nihal-kader/quickai/releases)
+> page, with packages for the AUR, Homebrew, Snap, Scoop, Chocolatey and the Microsoft Store to follow. To hear when it's out, sign up at
 > [everybodyai.dev](https://everybodyai.dev/quickai). Until then, [build it from source](#build-from-source).
 
 Each package bundles QuickAI, llama.cpp's `llama-server` and the two Bonsai models, and runs as it is: nothing
 to install first. The Linux packages run on glibc 2.34 and newer (Ubuntu 22.04 and later); the Windows package
-on Windows 10 and 11.
+on Windows 10 and 11; the Mac app on macOS 13.3 (Ventura) and later, with Metal on Apple silicon.
+
+On a Mac, drag QuickAI to Applications. Until the app is notarized by Apple, macOS stops it the first time it is
+opened: choose **Done**, then press **Open Anyway** in **System Settings → Privacy & Security**. It asks only once.
 
 ## Quick start
 
