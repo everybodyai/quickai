@@ -108,13 +108,15 @@ pub struct ConfigDirs {
 }
 
 impl ConfigDirs {
-    /// `<exe dir>/config`, the user's config directory, `QUICKAI_CONFIG_DIR` and `QUICKAI_SAFE`.
+    /// `<exe dir>/config` (in the macOS app, `Contents/Resources/config`), the user's config
+    /// directory, `QUICKAI_CONFIG_DIR` and `QUICKAI_SAFE`.
     pub fn from_environment() -> Self {
         let flag = |name: &str| std::env::var(name).is_ok_and(|v| !v.is_empty() && v != "0");
         ConfigDirs {
-            bundle: std::env::current_exe()
-                .ok()
-                .and_then(|exe| exe.parent().map(|d| d.join("config"))),
+            bundle: std::env::current_exe().ok().and_then(|exe| {
+                exe.parent()
+                    .map(|d| crate::paths::packaging_dir(d).join("config"))
+            }),
             user: directories::ProjectDirs::from("dev", "quickai", "quickai")
                 .map(|d| d.config_dir().to_path_buf()),
             override_dir: std::env::var_os("QUICKAI_CONFIG_DIR")

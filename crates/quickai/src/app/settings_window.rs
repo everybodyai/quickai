@@ -40,12 +40,13 @@ impl App {
         }
         let form = self.form();
         let mut close = false;
-        let builder = egui::ViewportBuilder::default()
-            .with_title(SETTINGS_TITLE)
-            .with_app_id(crate::APP_ID)
-            .with_icon(crate::app_icon())
-            .with_inner_size(OPENS_AT)
-            .with_min_inner_size(LEAST);
+        let builder = crate::with_app_icon(
+            egui::ViewportBuilder::default()
+                .with_title(SETTINGS_TITLE)
+                .with_app_id(crate::APP_ID)
+                .with_inner_size(OPENS_AT)
+                .with_min_inner_size(LEAST),
+        );
         ctx.show_viewport_immediate(id, builder, |ui, class| {
             if class == egui::ViewportClass::EmbeddedWindow {
                 // A context that cannot open a window (a test draws on one with no display) shows it inside
@@ -638,7 +639,11 @@ mod tests {
             let window = &shown.windows[&settings_viewport()];
             assert_eq!(window.builder.title.as_deref(), Some("QuickAI Settings"));
             assert_eq!(window.builder.app_id.as_deref(), Some(crate::APP_ID));
-            assert!(window.builder.icon.is_some(), "the icon of the application");
+            assert_eq!(
+                window.builder.icon.is_some(),
+                !cfg!(target_os = "macos"),
+                "the icon of the application (on macOS the app's own, in the Dock)"
+            );
             assert!(
                 window.builder.decorations != Some(false)
                     && window.builder.resizable != Some(false),
