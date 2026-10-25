@@ -919,13 +919,18 @@ impl App {
                         .and_then(|t| SystemTime::now().duration_since(t).ok())
                         .map(|d| format!(", stopped {} ago", hardware::format_duration(d)))
                         .unwrap_or_default();
-                    let line = ui.label(format!(
-                        "{} ({} of {} steps done, {}{ago})",
-                        u.label,
-                        u.done,
-                        u.total,
-                        hardware::format_bytes(u.size_bytes)
-                    ));
+                    // wrapped in what the buttons leave of the row: unwrapped, a long line made the whole section wider
+                    // than the window, and every sentence under it was cut at the window's edge
+                    let line = ui.add(
+                        egui::Label::new(format!(
+                            "{} ({} of {} steps done, {}{ago})",
+                            u.label,
+                            u.done,
+                            u.total,
+                            hardware::format_bytes(u.size_bytes)
+                        ))
+                        .wrap(),
+                    );
                     if let Some(next) = &u.next {
                         line.on_hover_text(format!("Next: {next}"));
                     }
