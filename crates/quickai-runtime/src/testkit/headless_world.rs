@@ -26,16 +26,22 @@ pub const FILE: &str = "Alpha-4B-Q4_K_M.gguf";
 pub const PROJECTOR: &str = "mmproj-Alpha-4B-F16.gguf";
 
 /// What a release of the fake llama.cpp offers for this machine: the name llama.cpp gives a build of a
-/// backend (`vulkan`, or none for the one that names none).
+/// backend (`vulkan`, or none for the one that names none), with this system's word in it, as the real
+/// releases have (`ubuntu`, `macos`, `win`).
 pub fn asset_name(tag: &str, backend: Option<&str>) -> String {
+    let os = match std::env::consts::OS {
+        "macos" => "macos",
+        "windows" => "win",
+        _ => "ubuntu",
+    };
     let arch = if std::env::consts::ARCH == "aarch64" {
         "arm64"
     } else {
         "x64"
     };
     match backend {
-        Some(b) => format!("llama-{tag}-bin-ubuntu-{b}-{arch}.tar.gz"),
-        None => format!("llama-{tag}-bin-ubuntu-{arch}.tar.gz"),
+        Some(b) => format!("llama-{tag}-bin-{os}-{b}-{arch}.tar.gz"),
+        None => format!("llama-{tag}-bin-{os}-{arch}.tar.gz"),
     }
 }
 

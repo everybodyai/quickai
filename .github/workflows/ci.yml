@@ -37,23 +37,32 @@ jobs:
           set -o pipefail
           cargo test --workspace --no-fail-fast 2>&1 | tee test-output.txt
 
-      # Each failing test as an annotation of the run, with the start of what it printed: annotations are
-      # shown on the run's page and read by the API without the log.
+      # The failing tests as annotations of the run, which the run's page shows and the API reads without the
+      # log: the first names them all, then each gets the start of what it printed (a step keeps ten
+      # annotations of each level, so the details go out as errors, then warnings, then notices).
       - name: Name the tests that failed
         if: failure()
         shell: bash
         run: |
           [ -f test-output.txt ] || exit 0
           awk '
-            function flush() {
-              if (name != "") { gsub(/:/, "%3A", name); printf "::error title=%s::%s\n", name, msg }
-              name = ""
-            }
+            function keep() { if (name != "") { n++; names[n] = name; msgs[n] = msg } name = "" }
             { sub(/\r$/, "") }
-            /^---- .* stdout ----$/ { flush(); name = $2; msg = ""; lines = 0; next }
-            name != "" && (/^failures:$/ || /^---- /) { flush() }
+            /^---- .* stdout ----$/ { keep(); name = $2; msg = ""; lines = 0; next }
+            name != "" && (/^failures:$/ || /^---- /) { keep() }
             name != "" && lines < 15 && $0 != "" { line = $0; gsub(/%/, "%25", line); msg = msg (lines ? "%0A" : "") line; lines++ }
-            END { flush() }
+            END {
+              keep()
+              if (n == 0) exit
+              all = ""
+              for (i = 1; i <= n; i++) all = all (i > 1 ? "%0A" : "") names[i]
+              printf "::error title=%d tests failed::%s\n", n, all
+              for (i = 1; i <= n && i <= 29; i++) {
+                level = i <= 9 ? "error" : (i <= 19 ? "warning" : "notice")
+                t = names[i]; gsub(/:/, "%3A", t)
+                printf "::%s title=%s::%s\n", level, t, msgs[i]
+              }
+            }
           ' test-output.txt
 
       - name: Check the embedded configuration

@@ -1466,6 +1466,31 @@ mod tests {
         into
     }
 
+    /// The texts of a window `width` wide as they are seen: a text clipped to something narrower than the
+    /// window (a box of one line, which scrolls its text inside its own frame) is cut to it. The rest are
+    /// whole, so that a label wider than the window is still found.
+    fn seen_texts(shapes: &[egui::epaint::ClippedShape], width: f32) -> Vec<(String, egui::Rect)> {
+        shapes
+            .iter()
+            .flat_map(|clipped| {
+                let inner = clipped.clip_rect.width() < width - 1.0;
+                texts(std::slice::from_ref(clipped))
+                    .into_iter()
+                    .map(move |(t, r)| {
+                        (
+                            t,
+                            if inner {
+                                r.intersect(clipped.clip_rect)
+                            } else {
+                                r
+                            },
+                        )
+                    })
+            })
+            .filter(|(_, r)| r.is_positive())
+            .collect()
+    }
+
     /// What the configurations window painted in the last frame, if it was drawn.
     fn painted(display: &Display) -> Option<Vec<(String, egui::Rect)>> {
         let shown = display.0.borrow();
@@ -1749,7 +1774,9 @@ mod tests {
                 if path.is_dir() {
                     walk(&path, base, out);
                 } else {
-                    out.push(path.strip_prefix(base).unwrap().display().to_string());
+                    // one separator on every system, so the lists read the same everywhere
+                    let rel = path.strip_prefix(base).unwrap();
+                    out.push(rel.to_string_lossy().replace('\\', "/"));
                 }
             }
         }
@@ -1810,10 +1837,8 @@ mod tests {
                 .any(|t| t == "Made with QuickAI 0.1.0 on Linux x86_64 (AMD GPU, 32 GB)"),
             "{now:?}"
         );
-        assert!(
-            now.iter().any(|t| t.starts_with("This computer: Linux ")),
-            "{now:?}"
-        );
+        let this = format!("This computer: {}", app.this_computer());
+        assert!(now.contains(&this), "{this} in {now:?}");
         assert!(
             now.iter()
                 .any(|t| t.starts_with("Changes ") && t.contains("Context size: default to 16384")),
@@ -2097,7 +2122,7 @@ mod tests {
                 .windows
                 .get(&configurations_viewport())
                 .expect("drawn");
-            for (text, rect) in texts(&window.shapes) {
+            for (text, rect) in seen_texts(&window.shapes, window.size.x) {
                 // a scrolled text may be above or below what is seen; none is wider than the window
                 assert!(
                     rect.min.x >= -1.0 && rect.max.x <= window.size.x + 1.0,
