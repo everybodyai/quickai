@@ -513,10 +513,14 @@ pub(super) fn open_folder(path: &Path) {
 mod tests {
     use super::*;
     use crate::config::{build_registry, ConfigDirs};
+    #[cfg(unix)]
     use crate::events::ServerState;
     use crate::settings::Settings;
+    #[cfg(unix)]
     use crate::testkit::procs::write_script;
-    use crate::testkit::{scratch, wait_until};
+    use crate::testkit::scratch;
+    #[cfg(unix)]
+    use crate::testkit::wait_until;
     use std::path::PathBuf;
     use std::time::Duration;
 
@@ -672,6 +676,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn p3_f62_start_runs_the_engine_with_no_model_and_the_traffic_proxy_stays_out_of_its_way() {
         let dir = scratch("f62");
         let mut app = app_for(&dir, "comfyui");

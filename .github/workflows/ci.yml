@@ -32,7 +32,29 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --workspace
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --workspace --no-fail-fast 2>&1 | tee test-output.txt
+
+      # Each failing test as an annotation of the run, with the start of what it printed: annotations are
+      # shown on the run's page and read by the API without the log.
+      - name: Name the tests that failed
+        if: failure()
+        shell: bash
+        run: |
+          [ -f test-output.txt ] || exit 0
+          awk '
+            function flush() {
+              if (name != "") { gsub(/:/, "%3A", name); printf "::error title=%s::%s\n", name, msg }
+              name = ""
+            }
+            { sub(/\r$/, "") }
+            /^---- .* stdout ----$/ { flush(); name = $2; msg = ""; lines = 0; next }
+            name != "" && (/^failures:$/ || /^---- /) { flush() }
+            name != "" && lines < 15 && $0 != "" { line = $0; gsub(/%/, "%25", line); msg = msg (lines ? "%0A" : "") line; lines++ }
+            END { flush() }
+          ' test-output.txt
 
       - name: Check the embedded configuration
         run: cargo run -p quickai -- config check --strict --embedded
