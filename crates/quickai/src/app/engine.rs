@@ -1910,7 +1910,10 @@ mod tests {
             args[0..2],
             [
                 "--model".to_string(),
-                dir.join("models/tiny-Q4_K_M.gguf").display().to_string()
+                dir.join("models")
+                    .join("tiny-Q4_K_M.gguf")
+                    .display()
+                    .to_string()
             ]
         );
 

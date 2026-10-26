@@ -696,8 +696,28 @@ mod tests {
         std::thread::spawn(move || {
             use std::io::Write;
             let (mut stream, _) = upstream.accept().unwrap();
+            // the whole request is read before the answer, as a server does: a socket closed with
+            // bytes of it unread is reset on Windows, and the reset can beat the answer to the proxy
+            let mut request = Vec::new();
             let mut buf = [0u8; 4096];
-            let _ = stream.read(&mut buf); // don't care about the exact request bytes here
+            loop {
+                let head_end = request.windows(4).position(|w| w == b"\r\n\r\n");
+                if let Some(end) = head_end {
+                    let head = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                    let length = head
+                        .lines()
+                        .find_map(|l| l.strip_prefix("content-length:"))
+                        .and_then(|v| v.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if request.len() >= end + 4 + length {
+                        break;
+                    }
+                }
+                match stream.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => request.extend_from_slice(&buf[..n]),
+                }
+            }
             let body = r#"{"choices":[{"message":{"content":"hi there"}}]}"#;
             let resp = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
