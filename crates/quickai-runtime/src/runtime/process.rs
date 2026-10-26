@@ -226,6 +226,7 @@ pub fn run_captured_until(
 pub struct Daemon {
     child: Child,
     /// It leads a process group of its own (Unix); signals go to the group.
+    #[cfg(unix)]
     group: bool,
     /// Set once the child has been reaped: its id may be reused from then on.
     exited: bool,
@@ -276,6 +277,8 @@ impl Daemon {
         {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(windows_creation_flags());
+            // what a group is on Unix, the job is here: it holds everything the program starts
+            let _ = group;
         }
 
         let child = spawn_retrying(&mut cmd)?;
@@ -283,7 +286,8 @@ impl Daemon {
             #[cfg(windows)]
             job: job::Job::around(&child),
             child,
-            group: cfg!(unix) && group,
+            #[cfg(unix)]
+            group,
             exited: false,
         })
     }

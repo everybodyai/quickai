@@ -693,7 +693,10 @@ mod tests {
     //! answers `/health` where its settings say it is.
 
     use std::collections::BTreeMap;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
+    #[cfg(unix)]
+    use std::path::PathBuf;
+    #[cfg(unix)]
     use std::time::{Duration, Instant};
 
     use quickai_core::value::Value;
@@ -702,7 +705,9 @@ mod tests {
     use crate::config::{build_registry, ConfigDirs};
     use crate::settings::Settings;
     use crate::testkit::fake_ollama::FakeOllama;
+    #[cfg(unix)]
     use crate::testkit::files::FileServer;
+    #[cfg(unix)]
     use crate::testkit::procs::{gone_within, pid_alive, read_pid, write_script};
     use crate::testkit::scratch;
 
@@ -746,6 +751,7 @@ mod tests {
     }
 
     /// The program of the companion: it writes down what it was started with, and then waits.
+    #[cfg(unix)]
     fn launcher(dir: &Path, then: &str) -> PathBuf {
         let record = dir.join("record");
         write_script(
@@ -759,6 +765,7 @@ mod tests {
         )
     }
 
+    #[cfg(unix)]
     fn record(dir: &Path) -> BTreeMap<String, String> {
         wait_for(&dir.join("record"));
         std::fs::read_to_string(dir.join("record"))
@@ -769,6 +776,7 @@ mod tests {
             .collect()
     }
 
+    #[cfg(unix)]
     fn wait_for(path: &Path) {
         crate::testkit::wait_until(
             Duration::from_secs(10),
@@ -778,6 +786,7 @@ mod tests {
     }
 
     /// The page of the companion: answers `/health` on a port of its own.
+    #[cfg(unix)]
     fn page() -> (FileServer, u16) {
         let server = FileServer::start();
         server.add("/health", br#"{"status":true}"#.to_vec());
@@ -787,6 +796,7 @@ mod tests {
 
     /// One frame's worth of what the application does between draws: what the sessions said, the builds, and
     /// the companion.
+    #[cfg(unix)]
     fn frame(app: &mut App, ctx: &egui::Context) {
         let mut said = Vec::new();
         app.session.poll(&mut |line| said.push(line), &mut |_| {});
@@ -798,6 +808,7 @@ mod tests {
         app.poll_named_models(ctx);
     }
 
+    #[cfg(unix)]
     fn until(app: &mut App, ctx: &egui::Context, what: &str, done: impl Fn(&App) -> bool) {
         let deadline = Instant::now() + Duration::from_secs(20);
         while !done(app) {
@@ -812,6 +823,7 @@ mod tests {
     }
 
     /// Starts the engine as the Start button does, with no model: it attaches to the fake daemon.
+    #[cfg(unix)]
     fn start_engine(app: &mut App) {
         let selection = launch::selection_from_values("ollama", None, app.values.map(), false);
         let plan = launch::plan_selection(
@@ -825,6 +837,7 @@ mod tests {
         app.session.start(&plan, "", || {});
     }
 
+    #[cfg(unix)]
     fn painted(ctx: &egui::Context, show: impl FnOnce(&mut egui::Ui)) -> String {
         fn walk(shape: &egui::epaint::Shape, into: &mut Vec<String>) {
             match shape {
@@ -857,6 +870,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn p3_t30_the_companion_is_started_when_the_engine_answers_in_its_own_folder_and_stopped_with_it(
     ) {
         let dir = scratch("t30");
@@ -982,6 +996,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn the_address_the_companion_was_first_started_with_is_remembered_and_said_when_the_engine_is_elsewhere_later(
     ) {
         // A66 of docs/phase3-test-plan.md: Open WebUI keeps the address of Ollama it is given at its first start
@@ -1052,6 +1067,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn p3_t31_when_the_engines_run_ends_the_companion_is_stopped_whatever_ended_it() {
         let dir = scratch("t31");
         let fake = FakeOllama::start();
@@ -1091,6 +1107,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn p3_t32_a_companion_that_stops_by_itself_leaves_the_engines_run_going_and_says_so() {
         let dir = scratch("t32");
         let fake = FakeOllama::start();
@@ -1153,6 +1170,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn p3_t33_it_is_not_started_when_it_is_not_asked_for_and_not_installed_it_is_said_and_the_engine_goes_on(
     ) {
         let (_page, port) = page();
@@ -1230,6 +1248,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn p3_t33b_asked_for_or_installed_while_the_engine_runs_it_is_started_at_once_and_once() {
         let (_page, port) = page();
         let ctx = egui::Context::default();
@@ -1354,6 +1373,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn p3_t38b_its_fields_are_locked_while_it_runs_and_not_while_only_the_engine_does() {
         let (_page, port) = page();
         let dir = scratch("t38b");

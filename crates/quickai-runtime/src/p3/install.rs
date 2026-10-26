@@ -5,17 +5,18 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+#[cfg(unix)]
 use crate::jobs::JobEvent;
-use crate::prims::install::{
-    install_blocking, list_installed, spawn_install, InstallRequest, InstallSpec, Smoke, Source,
-};
+#[cfg(unix)]
+use crate::prims::install::{install_blocking, InstallRequest, Smoke, Source};
+use crate::prims::install::{list_installed, spawn_install, InstallSpec};
 #[cfg(unix)]
 use crate::testkit::archives::{
-    assert_extracted, fixture, ollama_linux_tree, ollama_mac_tree, zst_frame, zst_skippable,
+    assert_extracted, fixture, ollama_linux_tree, ollama_linux_tree as linux_tree, ollama_mac_tree,
+    pseudo, sha256_hex, zst_frame, zst_skippable,
 };
 use crate::testkit::archives::{
-    assert_extracted_content, ollama_linux_tree as linux_tree, ollama_windows_tree, pseudo,
-    sha256_hex, tar_gz, tar_zst, zip, Entry,
+    assert_extracted_content, ollama_windows_tree, tar_gz, tar_zst, zip, Entry,
 };
 use crate::testkit::files::FileServer;
 use crate::testkit::{procs, scratch};
@@ -690,6 +691,7 @@ fn p3_z19b_an_archive_with_no_executable_leaves_nothing_behind() {
 // ---- verified installs -------------------------------------------------------------------------------
 
 /// A spec that checks digests, as the Ollama document asks.
+#[cfg(unix)]
 fn verifying_spec(root: &Path) -> InstallSpec {
     InstallSpec {
         verify: quickai_core::doc::engine::Verify::Digest,
@@ -697,6 +699,7 @@ fn verifying_spec(root: &Path) -> InstallSpec {
     }
 }
 
+#[cfg(unix)]
 fn request(url: &str, host: Option<String>, pin: Option<String>) -> InstallRequest {
     InstallRequest {
         label: "v1".into(),
@@ -712,6 +715,7 @@ fn request(url: &str, host: Option<String>, pin: Option<String>) -> InstallReque
 
 /// What an install did: its outcome, what it said, how far it said it had got, and both in the
 /// order they happened (`progress` stands for a progress report there).
+#[cfg(unix)]
 struct Ran {
     outcome: Result<PathBuf, String>,
     said: Vec<String>,
@@ -720,6 +724,7 @@ struct Ran {
 }
 
 /// Runs an install on this thread, keeping every event it sends.
+#[cfg(unix)]
 fn run(spec: &InstallSpec, request: &InstallRequest) -> Ran {
     let events = std::sync::Mutex::new((Vec::new(), Vec::new(), Vec::new()));
     let outcome = install_blocking(spec, request, &|event| {
@@ -881,6 +886,7 @@ fn p3_z32_with_no_digest_anywhere_the_build_is_installed_and_the_log_says_it_was
 
 // ---- what a machine does not need -------------------------------------------------------------------
 
+#[cfg(unix)]
 fn skip_doc() -> &'static str {
     r#"schema = 1
 kind = "engine"
@@ -968,6 +974,7 @@ fn p3_z33_the_cuda_libraries_are_left_out_on_a_machine_known_not_to_have_an_nvid
 
 // ---- the program must run ---------------------------------------------------------------------------
 
+#[cfg(unix)]
 fn smoking_spec(root: &Path, millis: u64) -> InstallSpec {
     InstallSpec {
         smoke: Some(Smoke {
@@ -978,6 +985,7 @@ fn smoking_spec(root: &Path, millis: u64) -> InstallSpec {
     }
 }
 
+#[cfg(unix)]
 fn tree_with_binary(script: &[u8]) -> Vec<Entry> {
     let mut tree = linux_tree();
     tree[0] = Entry::exe("bin/ollama", script);
@@ -1207,6 +1215,7 @@ fn p3_z38_a_llamacpp_install_killed_midway_leaves_nothing_listed_either() {
 // ---- the real archive (by hand) -------------------------------------------------------------------------
 
 /// The sha256 the document pins for `ollama-linux-amd64.tar.zst` of v0.35.1 (engine-facts.md, O17).
+#[cfg(unix)]
 const REAL_LINUX_PIN: &str = "9fcd79ac4575b2bd31b992eee18b1000c8ad126b451627c8f8cd091714cfbb10";
 
 /// Installs the real 1.44 GB archive the way the application will: through the server, with its

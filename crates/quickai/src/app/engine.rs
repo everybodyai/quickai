@@ -418,6 +418,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    #[cfg(unix)]
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
 
@@ -695,6 +696,7 @@ mod tests {
     /// An application whose Ollama document is patched by the person's own configuration: the
     /// patch is `patch`, and the program the executable the settings name is a script that writes down
     /// that it ran.
+    #[cfg(unix)]
     fn app_with_user_patch(dir: &Path, patch: &str) -> (App, PathBuf) {
         let cfg = dir.join("cfg");
         std::fs::create_dir_all(cfg.join("engines")).unwrap();
@@ -741,6 +743,7 @@ mod tests {
         app
     }
 
+    #[cfg(unix)]
     fn wait_for(path: &Path) {
         let deadline = Instant::now() + Duration::from_secs(10);
         while !path.exists() {
@@ -754,6 +757,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn p3_g07_a_program_of_a_document_of_the_persons_is_asked_about_once_through_the_window() {
         let ctx = egui::Context::default();
 
@@ -1103,6 +1107,7 @@ mod tests {
 
     /// An Ollama window whose releases are looked up at `api` (what a person's patch of the engine
     /// document says), and what the look-up button says when it is pressed.
+    #[cfg(unix)]
     fn lookup_status_against(dir: &Path, api: &str) -> String {
         let patch = format!(
             "[acquire]\nfeed = {{ use = \"github_release\", repo = \"ollama/ollama\", per_page = 10, show = 5, \
@@ -1128,6 +1133,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn p3_r12_a_lookup_that_fails_keeps_the_sentence_it_gave_and_one_that_finds_nothing_says_so() {
         use crate::testkit::fake_github::{FakeGithub, Mode};
         let dir = crate::testkit::scratch("r12");
