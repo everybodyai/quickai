@@ -910,7 +910,9 @@ mod tests {
         // made to keep everything in its own root (the person's rule: engines are isolated completely)
         let own = format!("{}/data/openwebui", dir.display());
         let seen = record(&dir);
-        assert_eq!(seen["cwd"], format!("{own}/data"));
+        // the folder as the shell sees it, through any link on the way (macOS's /var is /private/var)
+        let real = |p: &str| std::fs::canonicalize(p).unwrap();
+        assert_eq!(real(&seen["cwd"]), real(&format!("{own}/data")));
         assert_eq!(
             seen["args"],
             format!("serve --host 127.0.0.1 --port {port}")
@@ -1514,7 +1516,7 @@ mod tests {
         assert_eq!(code, 0, "{err}");
         assert!(out.contains("plan: (no model) on openwebui"), "{out}");
         assert!(
-            out.contains("cwd ") && out.contains("/.quickai/openwebui/data"),
+            out.contains("cwd ") && out.replace('\\', "/").contains("/.quickai/openwebui/data"),
             "{out}"
         );
         assert!(

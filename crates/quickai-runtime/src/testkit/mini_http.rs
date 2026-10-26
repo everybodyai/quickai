@@ -202,6 +202,9 @@ impl Drop for MiniServer {
 }
 
 fn serve(mut stream: TcpStream, handler: &Handler) {
+    // On Windows and macOS a connection takes the listener's non-blocking mode (Linux's does not):
+    // the first read of the head would find nothing yet and drop the client.
+    let _ = stream.set_nonblocking(false);
     let _ = stream.set_nodelay(true);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let Some(request) = read_request(&mut stream) else {

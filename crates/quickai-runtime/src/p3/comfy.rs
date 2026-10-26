@@ -500,11 +500,13 @@ fn p3_f21_a_python_app_is_installed_from_its_source_with_an_environment_and_a_la
         .status()
         .unwrap();
     assert!(status.success());
+    // the launcher finds its folder through any link on the way (macOS's /var is /private/var)
+    let real = std::fs::canonicalize(&root).unwrap();
     assert!(
         lines(&world.log)
             .last()
             .unwrap()
-            .ends_with(&format!("{}/v9/app/main.py --port 1", root.display())),
+            .ends_with(&format!("{}/v9/app/main.py --port 1", real.display())),
         "{:#?}",
         lines(&world.log)
     );

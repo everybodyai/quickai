@@ -618,8 +618,10 @@ mod tests {
         assert!(say(&mut app, "https://example.com/model.gguf")
             .unwrap()
             .contains("pulls by name"));
+        let file = dir.join("model.bin");
+        std::fs::write(&file, b"weights").unwrap();
         assert!(
-            say(&mut app, "/etc/hostname")
+            say(&mut app, &file.display().to_string())
                 .unwrap()
                 .contains("local file"),
             "an existing file is a file, not a name"
