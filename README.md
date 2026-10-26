@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/nihal-kader/quickai/actions/workflows/ci.yml"><img src="https://github.com/nihal-kader/quickai/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/everybodyai/quickai/actions/workflows/ci.yml"><img src="https://github.com/everybodyai/quickai/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-246E37" alt="License: PolyForm Noncommercial 1.0.0"></a>
   <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-0E1611" alt="Platforms: Linux, macOS and Windows">
 </p>
@@ -55,7 +55,7 @@ prompts never leave your computer.
 ## Install
 
 > **QuickAI 0.1.0 is being prepared.** Linux (tar.gz and AppImage), Windows (zip) and macOS (one disk image for
-> Apple silicon and Intel Macs) builds will be on the [Releases](https://github.com/nihal-kader/quickai/releases)
+> Apple silicon and Intel Macs) builds will be on the [Releases](https://github.com/everybodyai/quickai/releases)
 > page, with packages for the AUR, Homebrew, Snap, Scoop, Chocolatey and the Microsoft Store to follow. To hear when it's out, sign up at
 > [everybodyai.dev](https://everybodyai.dev/quickai). Until then, [build it from source](#build-from-source).
 
@@ -129,7 +129,7 @@ The full policy is [PRIVACY.md](PRIVACY.md).
 ## Build from source
 
 ```bash
-git clone https://github.com/nihal-kader/quickai
+git clone https://github.com/everybodyai/quickai
 cd quickai
 cargo run --release -p quickai
 ```

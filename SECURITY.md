@@ -5,7 +5,7 @@
 Please report security problems **privately**. Do not open a public issue.
 
 - Preferred: on GitHub, open the repository's **Security** tab and choose
-  [**Report a vulnerability**](https://github.com/nihal-kader/quickai/security/advisories/new).
+  [**Report a vulnerability**](https://github.com/everybodyai/quickai/security/advisories/new).
 - Or email **hello@everybodyai.dev** with "SECURITY" in the subject.
 
 Say what you found, how to reproduce it, and which version or commit you used. You will get a reply as soon as

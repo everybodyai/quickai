@@ -304,4 +304,4 @@ If this policy changes, the new version is published in this file with a new dat
 ## Contact
 
 QuickAI is made by EverybodyAI (Nihal Abdul Kader). Questions about this policy: write to
-<hello@everybodyai.dev>, or open an issue at <https://github.com/nihal-kader/quickai/issues>.
+<hello@everybodyai.dev>, or open an issue at <https://github.com/everybodyai/quickai/issues>.

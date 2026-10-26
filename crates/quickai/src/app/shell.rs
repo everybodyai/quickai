@@ -12,8 +12,8 @@ use super::{App, Tab};
 use crate::events::ServerState;
 
 /// Where the documentation and the privacy policy are read.
-const DOCS_URL: &str = "https://github.com/nihal-kader/quickai/tree/main/docs";
-const PRIVACY_URL: &str = "https://github.com/nihal-kader/quickai/blob/main/PRIVACY.md";
+const DOCS_URL: &str = "https://github.com/everybodyai/quickai/tree/main/docs";
+const PRIVACY_URL: &str = "https://github.com/everybodyai/quickai/blob/main/PRIVACY.md";
 const WEBSITE_URL: &str = "https://everybodyai.dev/quickai";
 
 /// The height of a row of the list of models: the name, and under it its size and what else is known.
