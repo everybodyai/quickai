@@ -322,13 +322,21 @@ fn p3_l02_path_search_finds_a_program_a_person_could_start_in_the_directories_of
     let mut w = Machine::new("windows");
     let exe = w.file("bin/ollama.exe", false);
     w.var("PATH", w.path("bin").display().to_string());
-    assert_eq!(
-        w.look(&strategies).map(|l| l.path),
-        Some(exe.clone()),
+    // the file, whatever case its name is spelled in: a disk that ignores case (Windows', macOS's)
+    // finds `ollama.EXE` as it is written in PATHEXT
+    let is_exe = |found: Option<PathBuf>| {
+        found.is_some_and(|f| {
+            f.is_file()
+                && f.to_string_lossy()
+                    .eq_ignore_ascii_case(&exe.to_string_lossy())
+        })
+    };
+    assert!(
+        is_exe(w.look(&strategies).map(|l| l.path)),
         "with no PATHEXT the usual default (.COM, .EXE, .BAT, .CMD) applies"
     );
     w.var("PATHEXT", ".COM;.EXE;.BAT");
-    assert_eq!(w.look(&strategies).unwrap().path, exe);
+    assert!(is_exe(w.look(&strategies).map(|l| l.path)));
     w.var("PATHEXT", ".BAT;.CMD");
     assert_eq!(w.look(&strategies), None, ".exe is not in this PATHEXT");
     // a name that already ends in an extension is taken as written
@@ -336,7 +344,7 @@ fn p3_l02_path_search_finds_a_program_a_person_could_start_in_the_directories_of
         r#"  { use = "path_search", name = "ollama.exe" },"#,
     ));
     w.var("PATHEXT", ".BAT;.CMD");
-    assert_eq!(w.look(&named).unwrap().path, exe);
+    assert!(is_exe(w.look(&named).map(|l| l.path)));
 }
 
 #[test]

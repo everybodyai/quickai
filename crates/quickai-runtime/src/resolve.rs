@@ -267,7 +267,11 @@ mod tests {
         assert_eq!(named.model.as_ref().unwrap().display, "b-Q4_K_M.gguf");
         assert_eq!(
             spawn_of(&named).1[1],
-            scratch.join("models/b-Q4_K_M.gguf").display().to_string()
+            scratch
+                .join("models")
+                .join("b-Q4_K_M.gguf")
+                .display()
+                .to_string()
         );
 
         let gone = resolve(

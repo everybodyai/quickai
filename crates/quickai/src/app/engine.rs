@@ -1896,7 +1896,8 @@ mod tests {
 
         let model = app.models[app.selected].clone();
         let projector = dir
-            .join("models/me--tiny-vl-GGUF--mmproj-f16.gguf")
+            .join("models")
+            .join("me--tiny-vl-GGUF--mmproj-f16.gguf")
             .display()
             .to_string();
         let args = args_of(&mut app, &model);

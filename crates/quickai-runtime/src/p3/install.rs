@@ -475,14 +475,21 @@ fn p3_z13_a_hard_link_is_refused() {
 /// zeros (a few kilobytes gzipped), then a last small file.
 fn big_tree() -> Vec<Entry> {
     vec![
-        Entry::exe("bin/ollama", b"#!/bin/sh\necho ollama version is 0.35.1\n"),
+        Entry::exe(
+            &format!("bin/{}", crate::prims::install::binary_file_name("ollama")),
+            b"#!/bin/sh\necho ollama version is 0.35.1\n",
+        ),
         Entry::file("lib/ollama/big.bin", &vec![0u8; 64 * 1024 * 1024]),
         Entry::file("lib/ollama/last.txt", b"the last entry"),
     ]
 }
 
 fn complete(dir: &Path) -> bool {
-    dir.join("lib/ollama/last.txt").is_file() && dir.join("bin/ollama").is_file()
+    dir.join("lib/ollama/last.txt").is_file()
+        && dir
+            .join("bin")
+            .join(crate::prims::install::binary_file_name("ollama"))
+            .is_file()
 }
 
 #[test]
