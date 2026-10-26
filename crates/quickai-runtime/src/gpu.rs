@@ -283,7 +283,9 @@ pub fn mismatch_warning(vendors: &[GpuVendor], backend: &Backend, label: &str) -
 mod tests {
     use super::*;
 
+    // the kernel's names of devices have colons, which a file name on Windows cannot
     /// A tree the way the kernel lays out what a machine has: `sys/bus/pci/devices/<address>/{class,vendor}`.
+    #[cfg(unix)]
     fn pci(root: &std::path::Path, address: &str, class: &str, vendor: &str) {
         let dir = root.join("sys/bus/pci/devices").join(address);
         std::fs::create_dir_all(&dir).unwrap();
@@ -291,6 +293,7 @@ mod tests {
         std::fs::write(dir.join("vendor"), format!("{vendor}\n")).unwrap();
     }
 
+    #[cfg(unix)]
     fn scratch(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("quickai-gpu-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -300,6 +303,7 @@ mod tests {
 
     /// O40: a rented server often has no `lspci` (pciutils is not in a minimal image), and a machine whose
     /// card is not found is given PyTorch for the processor: the kernel's own list says what is there.
+    #[cfg(unix)]
     #[test]
     fn p3_o40_a_card_is_found_in_the_kernels_list_of_devices_when_lspci_is_not_there() {
         let root = scratch("o40");
@@ -318,6 +322,7 @@ mod tests {
 
     /// O41: a container that is given a card has the driver's files and no list of the bus; the driver
     /// says it is NVIDIA's.
+    #[cfg(unix)]
     #[test]
     fn p3_o41_the_drivers_own_files_say_a_card_is_nvidias_when_the_bus_is_not_shown() {
         let by_proc = scratch("o41a");
@@ -341,6 +346,7 @@ mod tests {
 
     /// O42: what the tool and the kernel both say is said once, and a machine the kernel says nothing of is
     /// not said to have no card: nothing found stays "could not tell".
+    #[cfg(unix)]
     #[test]
     fn p3_o42_what_both_say_is_said_once_and_nothing_found_is_nothing() {
         let root = scratch("o42");

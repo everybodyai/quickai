@@ -799,7 +799,9 @@ mod tests {
                 if path.is_dir() {
                     walk(&path, base, out);
                 } else {
-                    out.push(path.strip_prefix(base).unwrap().display().to_string());
+                    // one separator on every system, so the lists read the same everywhere
+                    let rel = path.strip_prefix(base).unwrap();
+                    out.push(rel.to_string_lossy().replace('\\', "/"));
                 }
             }
         }

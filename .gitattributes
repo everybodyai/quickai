@@ -1,0 +1,3 @@
+# Text is checked out with LF on every system: the documents, examples and golden files are read byte for
+# byte (include_str!, the tests), and a Windows checkout would otherwise turn them into CRLF.
+* text=auto eol=lf

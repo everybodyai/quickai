@@ -889,6 +889,8 @@ mod tests {
             );
         }
 
+        // Linux refuses to run a file open for writing (ETXTBSY); macOS runs it
+        #[cfg(target_os = "linux")]
         #[test]
         fn a_program_that_is_busy_for_a_moment_is_started_when_it_is_not() {
             let dir = scratch("daemon");
