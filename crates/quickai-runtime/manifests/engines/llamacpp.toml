@@ -134,6 +134,27 @@ api_key = { value = "none", note = "llama.cpp doesn't require one by default —
 model = { value = "${session.model_display}", note = "Only one model is ever loaded at a time, so most OpenAI-compatible clients work with any value here." }
 example = "openai.chat"
 
+# What the log of a start that failed says, and what to do about it (UI v2): the crash panel shows these in place of
+# its advice about builds when one matches.
+[[diagnostic]]
+when = { log_matches = "(?i)(couldn't bind|address already in use)" }
+hint = "Another program is using port ${field.port}. Pick another port under Change, Custom."
+action = "focus_field:port"
+
+[[diagnostic]]
+when = { log_matches = "(?i)unknown model architecture" }
+hint = "This llama.cpp build is older than the model. Choose a newer build in Settings, Advanced."
+action = "open:settings"
+
+[[diagnostic]]
+when = { log_matches = "(?i)invalid magic characters" }
+hint = "The model's file is not a whole GGUF model (a download that broke off, or another kind of file). Get it again, or choose another model."
+
+[[diagnostic]]
+when = { log_matches = "(?i)(failed to allocate|out of memory|cudamalloc failed)" }
+hint = "The model does not fit in memory. Choose Light under Change, fewer GPU layers, or a smaller model."
+action = "focus_field:ctx_size"
+
 # ---- settings -------------------------------------------------------------------------------------
 # `legacy_key` is the name the value has always had in settings.json. Labels and help are the texts
 # the window has always shown, word for word (a test compares them with the golden file). The window

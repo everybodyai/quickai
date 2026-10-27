@@ -249,7 +249,7 @@ example = "openai.chat"
 
 [[diagnostic]]
 when = { log_matches = 'address already in use' }
-hint = "Another program is using port ${field.port}. Pick another port."
+hint = "Another program is using port ${field.port}. Pick another port under Change, Custom."
 action = "focus_field:port"
 
 [[diagnostic]]

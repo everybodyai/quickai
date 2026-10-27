@@ -6,7 +6,9 @@ still Phase 4's. Where this document and the generated page ([reference/catalog-
 
 ## 1. What a person sees
 
-A **Recommended** button beside **Look up online**, in the window of llama.cpp and in the one of Ollama, opens a window:
+**Models → Recommended** (and *See all recommended models* under the suggestions of **Add a model**, which are the
+list's own models to start with, of the kinds the chat can talk to, in the size that fits this computer), for
+llama.cpp and for Ollama, opens a window:
 
 ```
 Recommended models                                                                        x

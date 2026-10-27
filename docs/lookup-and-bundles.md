@@ -7,7 +7,8 @@ Adapters panel, no LoRA, no modality discovery. Where this document and the gene
 
 ## 1. What a person sees
 
-Both windows (llama.cpp's and Ollama's) have a **Look up online** button and, after it, the same panel:
+Both engines (llama.cpp and Ollama) look up what is typed in the box of **Add a model** (words, for Ollama a name
+without a tag; UI v2, C177), and show the same panel under it; ComfyUI's page has a **Look up online** button:
 
 ```
 Results (23)
@@ -172,7 +173,7 @@ and in `ollama_lookup` for Ollama's side. V15 (and U18 for Ollama) run by hand a
 `cargo test -p quickai p3_v15 -- --ignored`, and `build/test.sh --online` for the window against them; B21 runs the whole chain with a real
 vision bundle (`ggml-org/SmolVLM-256M-Instruct-GGUF`, 365 MB) and a real `llama-server`, whose `/props` must then say it takes pictures.
 
-To try it by hand: `scripts/run.sh --fresh`, **Look up online**; with llama.cpp chosen a vision repository has the two rows.
+To try it by hand: `scripts/run.sh --fresh`, **Add a model** and a word such as `qwen`; with llama.cpp chosen a vision repository has the two rows.
 
 ## 6a. Files that go by themselves, and an engine that is searched by pipeline (WP4.13)
 

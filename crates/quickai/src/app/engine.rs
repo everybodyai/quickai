@@ -221,8 +221,14 @@ impl App {
             self.models_dir_input = self.models_dir.display().to_string();
             self.models = self.scan_models();
         }
-        self.selected = self.remembered_model().unwrap_or(0);
+        // the model chosen last time, else the one recommended for this computer (a first start: the README says so),
+        // else the first
         self.refresh_recommendation();
+        let recommended = self
+            .recommended_filename
+            .as_deref()
+            .and_then(|f| self.models.iter().position(|m| m.filename == f));
+        self.selected = self.remembered_model().or(recommended).unwrap_or(0);
     }
 
     /// The models folder when the person has not chosen one: the engine's own, if its document says
@@ -915,13 +921,16 @@ mod tests {
             app.show_window(ui);
             // what the window draws only in a state the session is not in here
             egui::Area::new(egui::Id::new("in-this-state")).show(ui.ctx(), |ui| {
-                app.show_run_buttons(ui, state, false);
-                app.show_api_info_panel(ui, state);
+                app.show_model_header(ui, state, false);
+                app.show_alone_header(ui, state, false);
                 app.show_diagnostics(ui, state);
             });
             // (the question of a delete is asked in the Settings window, where its button is)
             app.show_settings_window(ui.ctx());
             app.show_catalog_window(ui.ctx());
+            app.show_add_model_window(ui.ctx());
+            app.show_connect_window(ui.ctx());
+            app.show_guide_window(ui.ctx());
         });
         output.textures_delta.clear();
     }
@@ -944,6 +953,10 @@ mod tests {
             ] {
                 app.show_settings = state == ServerState::Idle;
                 app.show_api_info = true;
+                // the windows and panels of UI v2, open in every state
+                app.change_open = true;
+                app.add_model_open = true;
+                app.guide = Some(super::super::guide::Guide::GettingStarted);
                 app.missing_binary_warned = state == ServerState::Starting;
                 app.run_reached_running = state == ServerState::Crashed;
                 app.named.notice = (state == ServerState::Idle).then(|| "a notice".to_string());

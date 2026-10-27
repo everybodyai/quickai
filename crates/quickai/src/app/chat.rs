@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::Receiver;
 use eframe::egui;
 
+use super::icons::{self, Icon};
 use super::theme::{self, Role};
 use super::App;
 use crate::chats::{self, ChatSummary, SavedChat, SavedTurn};
@@ -512,7 +513,9 @@ fn show_spans(ui: &mut egui::Ui, text: &str, size: Option<f32>, strong: bool) {
         job.append(&words, 0.0, format);
     }
     job.wrap.max_width = ui.available_width();
-    ui.add(egui::Label::new(job).selectable(true));
+    // wrapped whatever the layout it is in: a row (an item of a list, a quote) would let it run on out of the bubble
+    // and widen the page
+    ui.add(egui::Label::new(job).selectable(true).wrap());
 }
 
 /// One message: its lines as Markdown has them, and its code blocks in monospace.
@@ -742,6 +745,16 @@ impl App {
                 _ => {}
             }
             self.keep_conversation();
+            // a first reply is the last step of Getting started, remembered once
+            if self.chat.error.is_none()
+                && self.chat.turns.last().is_some_and(|t| !t.from_person)
+                && !self.stored.said_hello()
+            {
+                let mut stored = self.settings_now();
+                stored.set_said_hello();
+                self.write_settings(&stored);
+                self.stored = stored;
+            }
         }
     }
 
@@ -894,22 +907,7 @@ impl App {
     fn show_kept_chats(&mut self, ui: &mut egui::Ui) {
         let mut open: Option<String> = None;
         let mut delete: Option<String> = None;
-        let mut new = false;
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.add_space(6.0);
-            if theme::button_sized(
-                ui,
-                Role::Quiet,
-                !self.chat.replying(),
-                "+ New chat",
-                egui::vec2(0.0, 20.0),
-            )
-            .clicked()
-            {
-                new = true;
-            }
-        });
+        ui.add_space(6.0);
         egui::ScrollArea::vertical()
             .id_salt("kept_chats")
             .auto_shrink([false, false])
@@ -942,9 +940,6 @@ impl App {
                     });
                 }
             });
-        if new {
-            self.chat.new_conversation();
-        }
         if let Some(id) = open {
             self.open_kept_chat(&id);
         }
@@ -953,100 +948,148 @@ impl App {
         }
     }
 
-    fn show_chat_conversation(&mut self, ui: &mut egui::Ui) {
-        let p = theme::palette();
-        let running = self.session.state() == ServerState::Running;
-        let model = self.session.model_name().map(str::to_string);
-        let server = self.server_name();
-        ui.add_space(4.0);
+    /// What is beside the tabs while the chat is open: New chat, and a menu of the rest (Keep chats, Options, Export).
+    /// Drawn in a layout that runs from right to left.
+    pub(super) fn show_chat_actions(&mut self, ui: &mut egui::Ui) {
+        let more = icons::icon_button(ui, Icon::More, egui::vec2(28.0, 24.0), true, false)
+            .on_hover_text("Keep chats, options, export");
         let mut export = false;
-        ui.horizontal(|ui| {
-            ui.add_space(6.0);
-            let said = match (&model, running) {
-                (Some(model), true) => match self.remote_in_use() {
-                    Some(remote) => format!("Chatting with {model} on {}: it runs there.", remote.name),
-                    None => format!("Chatting with {model} on {server}."),
-                },
-                (None, true) => {
-                    format!("{server} runs with no model loaded: choose one, then Load model.")
-                }
-                _ => format!("Start {server} with a model to chat with it here."),
-            };
-            ui.label(theme::muted(said));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.add_space(6.0);
-                if theme::button_sized(
-                    ui,
-                    Role::Quiet,
-                    !self.chat.turns.is_empty(),
-                    if self.chat.keep { "New" } else { "Clear" },
-                    egui::vec2(0.0, 20.0),
-                )
-                .on_hover_text(if self.chat.keep {
-                    "Start a new conversation; this one stays in the list."
-                } else {
-                    "Start a new conversation."
-                })
-                .clicked()
-                {
-                    self.chat.new_conversation();
-                }
-                if theme::button_sized(
-                    ui,
-                    Role::Quiet,
-                    !self.chat.turns.is_empty() && !self.chat.replying(),
-                    "Export...",
-                    egui::vec2(0.0, 20.0),
-                )
-                .on_hover_text("Save this conversation as a Markdown file.")
-                .clicked()
-                {
-                    export = true;
-                }
+        let mut keep = self.chat.keep;
+        let mut keep_changed = false;
+        let mut options = false;
+        egui::Popup::menu(&more)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                ui.set_min_width(200.0);
+                keep_changed = ui
+                    .checkbox(&mut keep, "Keep chats")
+                    .on_hover_text(
+                        "Keep each conversation on this computer (in QuickAI's own folder), listed beside it. Off, \
+                         nothing is kept. Nothing leaves this computer either way.",
+                    )
+                    .changed();
                 let set = !self.chat.instructions.trim().is_empty()
                     || self.chat.temperature.is_some()
                     || self.chat.max_tokens.is_some();
-                let label = if set { "Options •" } else { "Options" };
-                if theme::button_sized(ui, Role::Quiet, true, label, egui::vec2(0.0, 20.0))
+                if ui
+                    .button(if set { "Options... •" } else { "Options..." })
                     .on_hover_text(
                         "Instructions the model reads before every message, how free its answers are, and how long \
                          they may be. Each is left to the model unless set.",
                     )
                     .clicked()
                 {
-                    self.chat.show_instructions = !self.chat.show_instructions;
+                    options = true;
+                    ui.close();
                 }
-                let mut keep = self.chat.keep;
                 if ui
-                    .checkbox(&mut keep, "Keep chats")
-                    .on_hover_text(
-                        "Keep each conversation on this computer (in QuickAI's own folder), listed beside it. Off, \
-                         nothing is kept. Nothing leaves this computer either way.",
+                    .add_enabled(
+                        !self.chat.turns.is_empty() && !self.chat.replying(),
+                        egui::Button::new("Export..."),
                     )
-                    .changed()
+                    .on_hover_text("Save this conversation as a Markdown file.")
+                    .clicked()
                 {
-                    self.set_keep_chats(keep);
+                    export = true;
+                    ui.close();
                 }
             });
-        });
+        if icons::labelled_button(
+            ui,
+            Role::Quiet,
+            !self.chat.turns.is_empty() && !self.chat.replying(),
+            Icon::Plus,
+            "New chat",
+            24.0,
+        )
+        .on_hover_text(if self.chat.keep {
+            "Start a new conversation; this one stays in the list."
+        } else {
+            "Start a new conversation. This one is not kept."
+        })
+        .clicked()
+        {
+            self.chat.new_conversation();
+        }
+        if keep_changed {
+            self.set_keep_chats(keep);
+        }
+        if options {
+            self.chat.show_instructions = !self.chat.show_instructions;
+        }
         if export {
             self.export_chat();
         }
+    }
+
+    fn show_chat_conversation(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette();
+        let running = self.session.state() == ServerState::Running;
+        let model = self.session.model_name().map(str::to_string);
+        let server = self.server_name();
         if self.chat.show_instructions {
+            ui.add_space(6.0);
             self.show_chat_options(ui);
         }
+        // with nothing said yet, what to do is said in the middle of the room the conversation will have
+        let empty = self.chat.turns.is_empty() && self.chat.error.is_none();
+        let empty_words = match (&model, running) {
+            (Some(model), true) => match self.remote_in_use() {
+                Some(remote) => format!("Ask {model} anything. It runs on {}.", remote.name),
+                None => format!("Ask {model} anything."),
+            },
+            (None, true) => {
+                format!("{server} runs with no model loaded: choose one, then Load model.")
+            }
+            _ => match self.models.get(self.selected) {
+                Some(m) => format!("Press Start to chat with {}.", m.display),
+                None => format!("Start {server} with a model to chat with it here."),
+            },
+        };
         let box_height = 64.0;
         let room = (ui.available_height() - box_height).max(40.0);
         let mut regenerate = false;
         let mut edit = false;
         let last_reply = self.chat.turns.iter().rposition(|t| !t.from_person);
         let last_message = self.chat.turns.iter().rposition(|t| t.from_person);
-        egui::ScrollArea::vertical()
-            .id_salt("chat_turns")
-            .max_height(room)
-            .auto_shrink([false, false])
-            .stick_to_bottom(true)
-            .show(ui, |ui| {
+        if empty {
+            let (rect, _) = ui
+                .allocate_exact_size(egui::vec2(ui.available_width(), room), egui::Sense::hover());
+            let centre = rect.center();
+            // the picture only where there is room for it over the words
+            if room > 120.0 {
+                icons::paint(
+                    ui.painter(),
+                    egui::Rect::from_center_size(
+                        centre - egui::vec2(0.0, 22.0),
+                        egui::vec2(34.0, 34.0),
+                    ),
+                    Icon::Chat,
+                    p.faint,
+                );
+            }
+            let galley = ui.painter().layout(
+                empty_words,
+                egui::TextStyle::Body.resolve(ui.style()),
+                p.muted,
+                (rect.width() - 40.0).max(100.0),
+            );
+            ui.painter().galley(
+                egui::pos2(centre.x - galley.size().x / 2.0, centre.y + 6.0),
+                galley,
+                p.muted,
+            );
+        }
+        // (with nothing said, no scroll area: it would keep a least height of its own and push the box out)
+        let turns_area = (!empty).then(|| {
+            egui::ScrollArea::vertical()
+                .id_salt("chat_turns")
+                .max_height(room)
+                .auto_shrink([false, false])
+                .stick_to_bottom(true)
+        });
+        if let Some(area) = turns_area {
+            area.show(ui, |ui| {
                 ui.add_space(4.0);
                 let width = ui.available_width();
                 for (i, turn) in self.chat.turns.iter().enumerate() {
@@ -1057,32 +1100,71 @@ impl App {
                     } else {
                         turn.text.clone()
                     };
-                    let layout = if turn.from_person {
-                        egui::Layout::right_to_left(egui::Align::TOP)
-                    } else {
-                        egui::Layout::left_to_right(egui::Align::TOP)
-                    };
-                    ui.allocate_ui_with_layout(egui::vec2(width, 0.0), layout, |ui| {
-                        ui.add_space(8.0);
-                        egui::Frame::new()
-                            .fill(if turn.from_person {
-                                p.accent_soft
-                            } else {
-                                p.card
-                            })
-                            .stroke(egui::Stroke::new(1.0, p.line))
-                            .corner_radius(egui::CornerRadius::same(6))
-                            .inner_margin(egui::Margin::symmetric(10, 6))
-                            .show(ui, |ui| {
-                                ui.set_max_width(width * 0.78);
-                                show_message(ui, &text);
-                                if !turn.pictures.is_empty() {
-                                    let names: Vec<&str> =
-                                        turn.pictures.iter().map(|p| p.name.as_str()).collect();
-                                    ui.label(theme::muted(format!("With: {}", names.join(", "))));
-                                }
-                            });
+                    let bubble = egui::Frame::new()
+                        .fill(if turn.from_person {
+                            p.accent_soft
+                        } else {
+                            p.card
+                        })
+                        .stroke(egui::Stroke::new(1.0, p.line))
+                        .corner_radius(egui::CornerRadius::same(6))
+                        .inner_margin(egui::Margin::symmetric(10, 6));
+                    let with = (!turn.pictures.is_empty()).then(|| {
+                        let names: Vec<&str> =
+                            turn.pictures.iter().map(|p| p.name.as_str()).collect();
+                        format!("With: {}", names.join(", "))
                     });
+                    if turn.from_person {
+                        // what the person wrote is as they wrote it, at the right, in a bubble as wide as its words
+                        // (measured: a row laid from right to left drew nothing, and a column took the whole width)
+                        let wrap = width * 0.78 - 20.0;
+                        let font = egui::TextStyle::Body.resolve(ui.style());
+                        let mut inner = ui
+                            .painter()
+                            .layout(text.clone(), font.clone(), p.text, wrap)
+                            .size()
+                            .x;
+                        if let Some(with) = &with {
+                            inner = inner.max(
+                                ui.painter()
+                                    .layout(with.clone(), font, p.muted, wrap)
+                                    .size()
+                                    .x,
+                            );
+                        }
+                        let inner = inner.ceil() + 1.0;
+                        ui.horizontal(|ui| {
+                            ui.add_space((width - inner - 20.0 - 10.0).max(0.0));
+                            bubble.show(ui, |ui| {
+                                ui.set_width(inner);
+                                ui.vertical(|ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(text.as_str()).color(p.text),
+                                        )
+                                        .wrap(),
+                                    );
+                                    if let Some(with) = &with {
+                                        ui.label(theme::muted(with.as_str()));
+                                    }
+                                });
+                            });
+                        });
+                    } else {
+                        // the model's is read as Markdown, at the left
+                        ui.horizontal(|ui| {
+                            ui.add_space(8.0);
+                            bubble.show(ui, |ui| {
+                                ui.set_max_width(width * 0.78);
+                                ui.vertical(|ui| {
+                                    show_message(ui, &text);
+                                    if let Some(with) = &with {
+                                        ui.label(theme::muted(with.as_str()));
+                                    }
+                                });
+                            });
+                        });
+                    }
                     let idle = !self.chat.replying();
                     if !turn.from_person && !typing && !turn.text.is_empty() {
                         ui.horizontal(|ui| {
@@ -1118,21 +1200,27 @@ impl App {
                             }
                         });
                     } else if turn.from_person && Some(i) == last_message && idle {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.add_space(8.0);
-                            if theme::button_sized(
-                                ui,
-                                Role::Quiet,
-                                true,
-                                "Edit",
-                                egui::vec2(0.0, 18.0),
-                            )
-                            .on_hover_text("Change this message and send it again.")
-                            .clicked()
-                            {
-                                edit = true;
-                            }
-                        });
+                        // a row of its own height: a row from right to left in what is left of the room is as high
+                        // as all of it
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(width, 20.0),
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                ui.add_space(8.0);
+                                if theme::button_sized(
+                                    ui,
+                                    Role::Quiet,
+                                    true,
+                                    "Edit",
+                                    egui::vec2(0.0, 18.0),
+                                )
+                                .on_hover_text("Change this message and send it again.")
+                                .clicked()
+                                {
+                                    edit = true;
+                                }
+                            },
+                        );
                     }
                     ui.add_space(6.0);
                 }
@@ -1143,6 +1231,7 @@ impl App {
                     });
                 }
             });
+        }
         if regenerate {
             self.regenerate_chat(ui.ctx());
         }
@@ -1178,51 +1267,66 @@ impl App {
             }
         }
         let mut attach = false;
-        ui.horizontal(|ui| {
-            ui.add_space(6.0);
-            let ready = running && model.is_some();
-            // Enter sends and Shift+Enter is a new line: the key is taken before the box sees it, so that it does not
-            // put a line break in the message wherever the cursor is
-            let input_id = egui::Id::new("chat_input");
-            let focused = ui.memory(|m| m.has_focus(input_id));
-            let enter =
-                focused && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
-            let field = ui.add_enabled(
-                ready,
-                egui::TextEdit::multiline(&mut self.chat.input)
-                    .id(input_id)
-                    .desired_rows(2)
-                                        .desired_width(ui.available_width() - 168.0)
-                    .hint_text("Message the model (Enter sends, Shift+Enter is a new line)"),
-            );
-            if theme::button_sized(ui, Role::Normal, ready, "Attach…", egui::vec2(72.0, 28.0))
-                .on_hover_text(
-                    "A picture to send with the message (PNG, JPEG, WebP, GIF) for a model that sees them, or a text \
-                     file to put in it.",
-                )
-                .clicked()
-            {
-                attach = true;
-            }
-            if self.chat.replying() {
-                if theme::button_sized(ui, Role::Normal, true, "Stop", egui::vec2(72.0, 28.0))
-                    .on_hover_text("Stop the reply. What came of it stays.")
-                    .clicked()
-                {
-                    self.chat.stop();
-                    self.poll_chat();
-                }
-            } else {
-                let can_send = ready && !self.chat.input.trim().is_empty();
-                let clicked =
-                    theme::button_sized(ui, Role::Normal, can_send, "Send", egui::vec2(72.0, 28.0))
+        let ready = running && model.is_some();
+        egui::Frame::new()
+            .fill(p.well)
+            .stroke(egui::Stroke::new(1.0, p.outline))
+            .corner_radius(10)
+            .inner_margin(egui::Margin::symmetric(6, 4))
+            .outer_margin(egui::Margin {
+                left: 16,
+                right: 16,
+                top: 6,
+                bottom: 10,
+            })
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    attach = icons::icon_button(ui, Icon::Clip, egui::vec2(30.0, 28.0), ready, false)
+                        .on_hover_text(
+                            "Add a picture (PNG, JPEG, WebP, GIF) for a model that sees them, or a text file to put \
+                             in the message.",
+                        )
                         .clicked();
-                if can_send && (clicked || enter) {
-                    self.send_chat(ui.ctx());
-                    field.request_focus();
-                }
-            }
-        });
+                    // Enter sends and Shift+Enter is a new line: the key is taken before the box sees it, so that it
+                    // does not put a line break in the message wherever the cursor is
+                    let input_id = egui::Id::new("chat_input");
+                    let focused = ui.memory(|m| m.has_focus(input_id));
+                    let enter = focused
+                        && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+                    let hint = match &model {
+                        Some(model) if ready => format!("Message {model}"),
+                        _ => "Start a model to chat with it".to_string(),
+                    };
+                    let field = ui.add_enabled(
+                        ready,
+                        egui::TextEdit::multiline(&mut self.chat.input)
+                            .id(input_id)
+                            .frame(egui::Frame::NONE)
+                            .desired_rows(1)
+                            .desired_width(ui.available_width() - 40.0)
+                            .hint_text(hint),
+                    );
+                    if self.chat.replying() {
+                        if icons::icon_button(ui, Icon::Close, egui::vec2(32.0, 28.0), true, true)
+                            .on_hover_text("Stop the reply. What came of it stays.")
+                            .clicked()
+                        {
+                            self.chat.stop();
+                            self.poll_chat();
+                        }
+                    } else {
+                        let can_send = ready && !self.chat.input.trim().is_empty();
+                        let clicked =
+                            icons::icon_button(ui, Icon::Send, egui::vec2(32.0, 28.0), can_send, can_send)
+                                .on_hover_text("Send (Enter). Shift+Enter starts a new line.")
+                                .clicked();
+                        if can_send && (clicked || enter) {
+                            self.send_chat(ui.ctx());
+                            field.request_focus();
+                        }
+                    }
+                });
+            });
         if attach {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter(

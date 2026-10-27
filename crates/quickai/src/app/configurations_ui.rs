@@ -1505,10 +1505,12 @@ mod tests {
     }
 
     #[test]
-    fn p3_a70_the_menu_bar_the_toolbar_and_the_dock_keep_their_parts_apart_at_every_width_the_window_can_have(
+    fn p3_a70_the_menu_bar_the_head_of_the_page_and_the_tabs_keep_their_parts_apart_at_every_width_the_window_can_have(
     ) {
         let dir = scratch("a70");
         let mut app = app_in(&dir, "llamacpp");
+        model_file_of_another_size(&dir);
+        only_the_model_file(&mut app, &dir);
         let ctx = egui::Context::default();
         // every text the whole window paints, with where (a text that is drawn twice is here twice)
         let painted = |app: &mut App, width: f32| -> Vec<(String, egui::Rect)> {
@@ -1541,6 +1543,7 @@ mod tests {
             }
             into
         };
+        let name = app.models[0].display.clone();
         for live in [false, true] {
             app.enable_traffic_proxy = live;
             // from the least the window can be (main.rs) to a wide screen
@@ -1554,10 +1557,11 @@ mod tests {
                         .map(|(_, r)| *r)
                         .unwrap_or_else(|| panic!("{text} at {width} {live}: {found:?}"))
                 };
-                // the menus, in their order along the first row, inside the window
-                let menus: Vec<egui::Rect> = ["File", "Server", "Models", "View", "Help"]
+                // the menus, in their order along the first row, and the engine's menu after them, whole, with room at
+                // the right end for the theme, the guides and Settings (three buttons of 30 points)
+                let menus: Vec<egui::Rect> = ["File", "Models", "Server", "Help", "llama.cpp"]
                     .iter()
-                    .map(|m| at(m, 0.0, 24.0))
+                    .map(|m| at(m, 0.0, 30.0))
                     .collect();
                 assert!(
                     menus
@@ -1565,26 +1569,34 @@ mod tests {
                         .all(|pair| pair[0].right() < pair[1].left()),
                     "{width} {live}: {menus:?}"
                 );
-                // the toolbar: the buttons in their order, none over another, and Settings whole at the right end
-                let tools: Vec<egui::Rect> = [
-                    "Start",
-                    "Stop",
-                    "Open Chat UI",
-                    "Connect an app",
-                    "Settings",
-                ]
-                .iter()
-                .map(|t| at(t, 24.0, 70.0))
-                .collect();
                 assert!(
-                    tools
-                        .windows(2)
-                        .all(|pair| pair[0].right() < pair[1].left()),
-                    "{width} {live}: {tools:?}"
+                    menus[4].right() <= width - 3.0 * 30.0,
+                    "{width} {live}: {:?}",
+                    menus[4]
                 );
-                assert!(tools[4].right() <= width, "{width} {live}: {:?}", tools[4]);
-                // the dock's tabs, the log first, and the live traffic's only when it is on
-                let log = at("Log", 70.0, 540.0);
+                assert!(
+                    !found.iter().any(|(t, _)| t == "View"),
+                    "{width} {live}: the View menu is gone"
+                );
+                // the head of the page: the model's name, and Start at the right end of its row, apart
+                let heading = found
+                    .iter()
+                    .filter(|(t, r)| *t == name && r.center().y > 30.0 && r.center().y < 120.0)
+                    .map(|(_, r)| *r)
+                    .max_by(|a, b| a.left().total_cmp(&b.left()))
+                    .unwrap_or_else(|| panic!("{name} at {width} {live}: {found:?}"));
+                let start = at("Start", 30.0, 120.0);
+                assert!(
+                    heading.right() < start.left() && start.right() <= width,
+                    "{width} {live}: {heading:?} {start:?}"
+                );
+                // the tabs, the chat first, the log, and the live traffic's only when it is on
+                let chat = at("Chat", 100.0, 540.0);
+                let log = at("Log", 100.0, 540.0);
+                assert!(
+                    chat.right() < log.left() && (chat.center().y - log.center().y).abs() < 4.0,
+                    "{width} {live}: {chat:?} {log:?}"
+                );
                 let tab = found.iter().find(|(t, r)| {
                     t == "Live traffic" && (r.center().y - log.center().y).abs() < 4.0
                 });

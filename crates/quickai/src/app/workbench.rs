@@ -683,7 +683,8 @@ mod tests {
         );
         assert!(shown.contains("... and 2 more"), "{shown}");
 
-        // llama.cpp's window is the list of models on the left and the box on the page
+        // llama.cpp's window is the list of models on the left, under Add a model, and with none yet, the box of Add a
+        // model on the page
         let mut llama = app_for(&dir, "llamacpp");
         let raw = || egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
@@ -699,7 +700,9 @@ mod tests {
             shown = format!("{:?}", output.shapes);
         }
         assert!(
-            shown.contains("MODELS") && shown.contains("Get:") && shown.contains("Look up online"),
+            shown.contains("MODELS")
+                && shown.contains("Add a model")
+                && shown.contains("Search, or paste a link or file path"),
             "{shown}"
         );
     }

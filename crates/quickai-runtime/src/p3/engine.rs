@@ -842,7 +842,8 @@ fn p3_e14_the_documents_diagnostic_rules_match_the_log_and_say_what_to_do() {
             None
         ),
         [Advice {
-            text: "Another program is using port 11434. Pick another port.".into(),
+            text: "Another program is using port 11434. Pick another port under Change, Custom."
+                .into(),
             action: Some("focus_field:port".into())
         }]
     );
@@ -852,7 +853,7 @@ fn p3_e14_the_documents_diagnostic_rules_match_the_log_and_say_what_to_do() {
             Some(9999)
         )[0]
         .text,
-        "Another program is using port 9999. Pick another port.",
+        "Another program is using port 9999. Pick another port under Change, Custom.",
         "the hint is filled in from the settings"
     );
     let memory = said(
@@ -881,15 +882,47 @@ fn p3_e14_the_documents_diagnostic_rules_match_the_log_and_say_what_to_do() {
         said(&["no usable GPUs", "address already in use"], None).len(),
         2
     );
-    // llama.cpp's document has no rules: its crash panel is the window's own
-    let llama = advice(
-        &registry,
-        &Selection::new("llamacpp"),
-        &facts(),
-        &["address already in use".to_string()],
-        Some("starting"),
+    // llama.cpp's document has its own (UI v2): a port in use, a build older than the model, a model too big; a log
+    // that says none of them leaves the crash panel to the window's own words about builds
+    let llama = |lines: &[&str]| {
+        let log: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        advice(
+            &registry,
+            &Selection::new("llamacpp").set("llamacpp.port", 8093u16),
+            &facts(),
+            &log,
+            Some("starting"),
+        )
+    };
+    let port = llama(&[
+        "couldn't bind HTTP server socket, hostname: 127.0.0.1, port: 8093: [Errno 98] Address already in use",
+    ]);
+    assert_eq!(
+        port,
+        [Advice {
+            text: "Another program is using port 8093. Pick another port under Change, Custom."
+                .into(),
+            action: Some("focus_field:port".into())
+        }]
     );
-    assert!(llama.is_empty());
+    let old =
+        llama(&["llama_model_load: error loading model: unknown model architecture: 'qwen35'"]);
+    assert_eq!(old.len(), 1, "{old:?}");
+    assert_eq!(old[0].action.as_deref(), Some("open:settings"));
+    let broken =
+        llama(&["gguf_init_from_reader: invalid magic characters: '????', expected 'GGUF'"]);
+    assert_eq!(broken.len(), 1, "{broken:?}");
+    assert!(
+        broken[0].text.contains("not a whole GGUF model"),
+        "{broken:?}"
+    );
+    let big = llama(&["ggml_backend_cuda_buffer_type_alloc_buffer: allocating 9000 MiB on device 0: cudaMalloc failed: out of memory"]);
+    assert_eq!(big.len(), 1, "{big:?}");
+    assert!(
+        big[0].text.starts_with("The model does not fit in memory."),
+        "{big:?}"
+    );
+    assert!(llama(&["main: server is listening on http://127.0.0.1:8080"]).is_empty());
 }
 
 // ---- the settings file -----------------------------------------------------------------------------
