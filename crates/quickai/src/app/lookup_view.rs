@@ -234,7 +234,7 @@ impl App {
         if self.lookup.entries.is_empty() {
             return;
         }
-        let busy = self.download.is_some() || self.named.pull.is_some();
+        let busy = self.download.is_some() || self.named.pulling();
         let types = self.registry.vocabulary().model_types().to_vec();
         let sizes = self.registry.vocabulary().size_classes().to_vec();
         let bundle_labels: Vec<BundleWords> =

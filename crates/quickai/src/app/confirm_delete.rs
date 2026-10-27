@@ -32,6 +32,53 @@ impl App {
         self.rescan_models();
     }
 
+    /// What deleting the model at `index` of the list would ask, or why it cannot be deleted now: one that came
+    /// with the application is not the person's to delete, and the one the server has loaded is in use.
+    pub(super) fn delete_request(&self, index: usize) -> Result<PendingDelete, String> {
+        let Some(model) = self.models.get(index) else {
+            return Err("There is no such model.".to_string());
+        };
+        let server = self.server_name();
+        let in_use = self
+            .session
+            .model_name()
+            .is_some_and(|loaded| loaded == model.display || self.is_loaded_model(&model.filename));
+        if in_use && self.session.is_active() {
+            return Err(format!(
+                "{} is in use. Stop {server} first, then delete it.",
+                model.display
+            ));
+        }
+        if self.lists_models() {
+            return Ok(PendingDelete::Listed {
+                name: model.filename.clone(),
+            });
+        }
+        if model.bundled || model.path.starts_with(&self.bundled_models_dir) {
+            return Err(format!(
+                "{} comes with QuickAI and is not deleted.",
+                model.display
+            ));
+        }
+        Ok(PendingDelete::Model {
+            filename: model.filename.clone(),
+            path: model.path.clone(),
+        })
+    }
+
+    /// Asks about deleting the model at `index`, in the main window (the question is asked where it was asked
+    /// for); what stops it is said in the log.
+    pub(super) fn ask_to_delete_from_window(&mut self, index: usize) {
+        match self.delete_request(index) {
+            Ok(pending) => {
+                self.delete_of_companion = false;
+                self.pending_delete = Some(pending);
+                self.delete_asked_in_window = true;
+            }
+            Err(why) => self.push_log(why),
+        }
+    }
+
     /// Shows a blocking "are you sure?" modal for `self.pending_delete`, if
     /// any — the confirmation step every delete button (model or installed
     /// llama-server build) goes through before anything actually touches
@@ -100,6 +147,9 @@ impl App {
             cancelled = true;
         }
 
+        if confirmed || cancelled {
+            self.delete_asked_in_window = false;
+        }
         if confirmed {
             match self.pending_delete.take() {
                 Some(PendingDelete::Model { filename, path }) => {

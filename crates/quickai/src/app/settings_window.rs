@@ -84,7 +84,9 @@ impl App {
                     });
             }
             // every delete button of the window asks its question in the window, where it was pressed
-            self.show_confirm_delete_modal(ui.ctx());
+            if !self.delete_asked_in_window {
+                self.show_confirm_delete_modal(ui.ctx());
+            }
         });
         if close {
             self.close_settings();
@@ -104,8 +106,11 @@ impl App {
     pub(super) fn close_settings(&mut self) {
         self.show_settings = false;
         self.raise_settings = false;
-        self.pending_delete = None;
-        self.delete_of_companion = false;
+        // a question asked in the main window is the main window's to answer
+        if !self.delete_asked_in_window {
+            self.pending_delete = None;
+            self.delete_of_companion = false;
+        }
         // what the manager of builds shows of the disk is not looked at while the window is closed: it is read again when it is opened
         self.runtime.disk.stale = true;
         self.as_companion(|app| app.runtime.disk.stale = true);
@@ -169,17 +174,23 @@ impl App {
             .engine(&self.engine)
             .map(|e| e.doc.engine.name.clone())
             .unwrap_or_default();
+        // open when the page asked for it ("Choose a version...")
+        let header =
+            egui::CollapsingHeader::new(format!("Advanced: {engine_name}")).default_open(false);
+        let header = if std::mem::take(&mut self.advanced_section_wanted) {
+            header.open(Some(true))
+        } else {
+            header
+        };
         super::theme::card(ui, |ui| {
-            egui::CollapsingHeader::new(format!("Advanced: {engine_name}"))
-                .default_open(false)
-                .show(ui, |ui| {
-                    let advanced: Vec<FormField> = form
-                        .as_ref()
-                        .and_then(|f| f.section("advanced"))
-                        .map(|s| s.fields.iter().filter(|f| f.visible).cloned().collect())
-                        .unwrap_or_default();
-                    self.show_fields(ui, &advanced, Some(&engine_name));
-                });
+            header.show(ui, |ui| {
+                let advanced: Vec<FormField> = form
+                    .as_ref()
+                    .and_then(|f| f.section("advanced"))
+                    .map(|s| s.fields.iter().filter(|f| f.visible).cloned().collect())
+                    .unwrap_or_default();
+                self.show_fields(ui, &advanced, Some(&engine_name));
+            });
         });
 
         if let Some(msg) = &self.settings_error {
@@ -200,28 +211,27 @@ impl App {
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Reset to default").clicked() {
+                // a download writes into the folder it began in: the folder changes when it is done
+                let idle = self.download.is_none();
+                let busy = "Wait for the download to finish: it is written into the folder in use.";
+                if ui
+                    .add_enabled(idle, egui::Button::new("Reset to default"))
+                    .on_disabled_hover_text(busy)
+                    .clicked()
+                {
                     let default_dir = self.default_models_dir();
                     let _ = std::fs::create_dir_all(&default_dir);
-                    self.models_dir = default_dir.clone();
-                    self.models_dir_input = default_dir.display().to_string();
-                    self.models_dir_override = None;
-                    self.rescan_models();
-                    self.save_settings();
-                    self.settings_error = None;
+                    self.use_models_dir(default_dir, false);
                 }
                 if ui
-                    .button("Apply")
+                    .add_enabled(idle, egui::Button::new("Apply"))
                     .on_hover_text("Use this folder from now on and re-scan it for models.")
+                    .on_disabled_hover_text(busy)
                     .clicked()
                 {
                     let candidate = PathBuf::from(self.models_dir_input.trim());
                     if std::fs::create_dir_all(&candidate).is_ok() {
-                        self.models_dir = candidate.clone();
-                        self.models_dir_override = Some(candidate);
-                        self.rescan_models();
-                        self.save_settings();
-                        self.settings_error = None;
+                        self.use_models_dir(candidate, true);
                     } else {
                         self.settings_error = Some(format!(
                             "Could not create/use {}",
@@ -291,6 +301,26 @@ impl App {
                 self.pending_delete = Some(pending);
             }
         }
+    }
+}
+
+impl App {
+    /// Uses `dir` as the models folder from now on (`chosen`: the person's, else the engine's own): the list is read
+    /// from it, the settings say it, and so does the value the next run is planned from (an engine that is told its
+    /// folder on its command line, as ComfyUI is, was started with the old one until the application started again).
+    pub(super) fn use_models_dir(&mut self, dir: PathBuf, chosen: bool) {
+        self.models_dir = dir.clone();
+        self.models_dir_input = dir.display().to_string();
+        if chosen {
+            self.values.set("models_dir", dir.display().to_string());
+            self.models_dir_override = Some(dir);
+        } else {
+            self.values.clear("models_dir");
+            self.models_dir_override = None;
+        }
+        self.rescan_models();
+        self.save_settings();
+        self.settings_error = None;
     }
 }
 

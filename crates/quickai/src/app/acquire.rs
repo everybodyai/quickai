@@ -4,6 +4,7 @@ use std::path::Path;
 
 use eframe::egui;
 
+use super::workbench::Given;
 use super::App;
 use crate::downloader;
 
@@ -74,17 +75,40 @@ impl App {
                         .on_hover_text(button_hover)
                         .clicked();
                     if !trimmed.is_empty() && (go || submitted) {
-                        if is_url || is_local_file {
+                        // the page of a file of the hub is the address of the file, the page of a repository is its
+                        // name to search for, and what is not a .gguf is said and not fetched: a page saved under the
+                        // name of a model is not one
+                        let given = match super::workbench::read_box_for(&trimmed, &[".gguf"]) {
+                            // an address with no file name at its end (a server that names the file itself) is fetched
+                            // as it always was, and kept as download.gguf; one whose name is not a .gguf is refused
+                            Given::Refused(_) if is_url && !names_a_file(&trimmed) => {
+                                Given::Link(trimmed.clone())
+                            }
+                            other => other,
+                        };
+                        let source = match given {
+                            Given::Link(address) => Some(address),
+                            Given::File(path) => Some(path.display().to_string()),
+                            Given::Words(words) => {
+                                self.start_lookup(ui.ctx(), &words);
+                                None
+                            }
+                            Given::Refused(why) => {
+                                self.catalog.note = Some(why);
+                                None
+                            }
+                            Given::Nothing => None,
+                        };
+                        if let Some(source) = source {
                             self.model_input.clear();
+                            self.catalog.note = None;
                             let ctx_clone = ui.ctx().clone();
                             self.download = Some(downloader::spawn_download(
-                                trimmed,
+                                source,
                                 None,
                                 self.models_dir.clone(),
                                 super::calm_wake(ctx_clone),
                             ));
-                        } else {
-                            self.start_lookup(ui.ctx(), &trimmed);
                         }
                     }
                     ui.add_space(8.0);
@@ -126,9 +150,19 @@ impl App {
 
         if let Some(job) = &self.download {
             ui.add_space(4.0);
-            ui.colored_label(super::theme::palette().warn, job.progress_line());
+            let mut cancel = false;
+            ui.horizontal(|ui| {
+                ui.colored_label(super::theme::palette().warn, job.progress_line());
+                cancel = ui
+                    .small_button("Cancel")
+                    .on_hover_text("Stop the download. What was fetched so far is thrown away.")
+                    .clicked();
+            });
             if let Some(fraction) = job.fraction() {
                 super::widgets::progress_bar(ui, Some(fraction));
+            }
+            if cancel {
+                self.cancel_download();
             }
         } else if let Some(note) = self.catalog.note.clone() {
             // a download that failed says so where it was asked for: the log has the same words, and it is not
@@ -152,5 +186,34 @@ impl App {
         }
 
         self.show_lookup_results(ui);
+    }
+}
+
+/// Whether the last part of the path of `url` (without a query) is a file name with an ending (`x.gguf`, `page.html`).
+fn names_a_file(url: &str) -> bool {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let path = path.split_once("://").map_or(path, |(_, rest)| rest);
+    let last = path
+        .split_once('/')
+        .map_or("", |(_, p)| p)
+        .rsplit('/')
+        .next()
+        .unwrap_or("");
+    last.rsplit_once('.')
+        .is_some_and(|(stem, ending)| !stem.is_empty() && !ending.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::names_a_file;
+
+    #[test]
+    fn an_address_names_a_file_when_its_last_part_has_an_ending() {
+        assert!(names_a_file("https://x.co/a/model.gguf?download=1"));
+        assert!(names_a_file("https://x.co/blob/main/page.html"));
+        assert!(!names_a_file("https://x.co/"));
+        assert!(!names_a_file("https://x.co"));
+        assert!(!names_a_file("https://x.co/files/12345"));
+        assert!(!names_a_file("http://127.0.0.1:8000/?file=x"));
     }
 }

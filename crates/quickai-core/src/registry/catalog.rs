@@ -33,6 +33,8 @@ pub struct CatalogFile {
     pub sha256: Option<String>,
     pub label: Option<String>,
     pub best: bool,
+    /// The name it is kept under, when the list gives one (`store_as`); else its own.
+    pub store_as: Option<String>,
 }
 
 /// What an engine whose models are files does with a model: where the files are and which.
@@ -902,6 +904,19 @@ fn compile_file(
         }
         None => None,
     };
+    // a name to keep it under is a plain file name of the same kind, and nothing that leaves the folder
+    if let Some(name) = file.store_as.as_deref() {
+        let plain = crate::lookup::present::safe_file_name(name) == name;
+        let ending = |n: &str| n.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
+        if !plain || ending(name) != ending(path) {
+            error(
+                at.clone().key("store_as"),
+                format!("`{name}` is not a file name to keep `{path}` under"),
+                Some("a plain file name with the same ending".to_string()),
+            );
+            ok = false;
+        }
+    }
     if file.label.as_deref().is_some_and(|l| l.trim().is_empty()) {
         error(
             at.clone().key("label"),
@@ -916,5 +931,6 @@ fn compile_file(
         sha256,
         label: file.label.as_ref().map(|l| l.trim().to_string()),
         best: file.best,
+        store_as: file.store_as.clone(),
     })
 }

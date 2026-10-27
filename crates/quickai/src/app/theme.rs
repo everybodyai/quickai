@@ -71,9 +71,12 @@ const DARK_PALETTE: Palette = Palette {
     text: Color32::from_rgb(241, 242, 244),
     muted: Color32::from_rgb(164, 168, 175),
     faint: Color32::from_rgb(142, 146, 153),
-    accent: Color32::from_rgb(36, 110, 55),
-    accent_hover: Color32::from_rgb(44, 128, 66),
-    accent_active: Color32::from_rgb(30, 94, 47),
+    // a step brighter than the website's green on dark (#2E8545): the button stands 3 to 1 from the toolbar and 3.6 from
+    // the page, where (36, 110, 55) stood 2.6 and a control wants 3; white on it is 4.55. The GUI suites find the green
+    // within a band that holds both (WP4.26)
+    accent: Color32::from_rgb(46, 134, 69),
+    accent_hover: Color32::from_rgb(41, 122, 63),
+    accent_active: Color32::from_rgb(34, 104, 53),
     on_accent: Color32::from_rgb(255, 255, 255),
     accent_soft: Color32::from_rgb(31, 58, 41),
     accent_text: Color32::from_rgb(124, 210, 142),
@@ -392,6 +395,50 @@ pub(super) fn group<R>(
     })
 }
 
+/// `group`, with a link at the right end of the title row (`link`, when there is one): `clicked` says it was clicked.
+/// The link is small print that does not make the row taller.
+pub(super) fn group_with<R>(
+    ui: &mut egui::Ui,
+    title: &str,
+    link: Option<&str>,
+    clicked: &mut bool,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    card(ui, |ui| {
+        let family = semibold(ui);
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(title)
+                    .size(12.0)
+                    .family(family)
+                    .color(palette().muted),
+            );
+            if let Some(link) = link {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let response = ui
+                        .add(
+                            egui::Label::new(
+                                egui::RichText::new(link)
+                                    .small()
+                                    .color(palette().accent_text),
+                            )
+                            .sense(egui::Sense::click()),
+                        )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text(
+                            "Run the models on a more powerful computer, and use them from here.",
+                        );
+                    if response.clicked() {
+                        *clicked = true;
+                    }
+                });
+            }
+        });
+        ui.add_space(2.0);
+        add(ui)
+    })
+}
+
 /// The frame of a box, for a section that adds to it (the configuration's, when it has changes).
 pub(super) fn card_frame() -> egui::Frame {
     let p = palette();
@@ -575,6 +622,123 @@ pub(super) fn button_sized(
     .inner
 }
 
+/// The padding either side of the name of a choice of a segmented control.
+const SEGMENT_PAD: f32 = 12.0;
+
+/// How wide a segmented control of these names is.
+pub(super) fn segmented_width(ui: &egui::Ui, labels: &[&str]) -> f32 {
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    labels
+        .iter()
+        .map(|label| {
+            ui.painter()
+                .layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE)
+                .size()
+                .x
+                + 2.0 * SEGMENT_PAD
+        })
+        .sum()
+}
+
+/// A row of choices of which one is chosen, as one control: the names side by side in one outline, the chosen one
+/// tinted and in the green of text (never filled with the accent: the one thing filled with it is the button that
+/// matters). Each choice says `hovers[i]` when the pointer is on it. The index of the one clicked, when it is not the
+/// chosen one and the control is enabled.
+pub(super) fn segmented(
+    ui: &mut egui::Ui,
+    labels: &[&str],
+    hovers: &[String],
+    chosen: usize,
+    enabled: bool,
+    height: f32,
+) -> Option<usize> {
+    let p = palette();
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let widths: Vec<f32> = labels
+        .iter()
+        .map(|label| {
+            ui.painter()
+                .layout_no_wrap(label.to_string(), font.clone(), p.text)
+                .size()
+                .x
+                + 2.0 * SEGMENT_PAD
+        })
+        .collect();
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(widths.iter().sum(), height),
+        egui::Sense::hover(),
+    );
+    let mut clicked = None;
+    let mut left = rect.left();
+    for (i, (label, width)) in labels.iter().zip(&widths).enumerate() {
+        let segment =
+            egui::Rect::from_min_size(egui::pos2(left, rect.top()), egui::vec2(*width, height));
+        left += width;
+        let sense = if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        };
+        let mut response = ui.interact(segment, ui.id().with(("segment", i)), sense);
+        if enabled && i != chosen {
+            response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+        }
+        if let Some(hover) = hovers.get(i) {
+            response = response.on_hover_text(hover);
+        }
+        if ui.is_rect_visible(segment) {
+            let is_chosen = i == chosen;
+            let fill = if is_chosen {
+                p.accent_soft
+            } else if enabled && response.hovered() {
+                p.raised_hover
+            } else {
+                p.raised
+            };
+            let corners = CornerRadius {
+                nw: if i == 0 { 4 } else { 0 },
+                sw: if i == 0 { 4 } else { 0 },
+                ne: if i + 1 == labels.len() { 4 } else { 0 },
+                se: if i + 1 == labels.len() { 4 } else { 0 },
+            };
+            ui.painter().rect_filled(segment, corners, fill);
+            if i > 0 {
+                ui.painter().vline(
+                    segment.left(),
+                    segment.y_range(),
+                    Stroke::new(1.0, p.outline),
+                );
+            }
+            let color = match (enabled, is_chosen) {
+                (_, true) => p.accent_text,
+                (true, false) => p.body,
+                (false, false) => p.faint,
+            };
+            let galley = ui
+                .painter()
+                .layout_no_wrap(label.to_string(), font.clone(), color);
+            ui.painter().galley(
+                egui::pos2(
+                    segment.center().x - galley.size().x / 2.0,
+                    segment.center().y - galley.size().y / 2.0,
+                ),
+                galley,
+                color,
+            );
+        }
+        if response.clicked() && enabled && i != chosen {
+            clicked = Some(i);
+        }
+    }
+    ui.painter().rect_stroke(
+        rect,
+        CornerRadius::same(4),
+        Stroke::new(1.0, p.outline),
+        egui::StrokeKind::Inside,
+    );
+    clicked
+}
+
 /// The state of the server as the status bar says it: a dot in the colour of the state (one that pulses while the
 /// state is on its way) and the state in words.
 pub(super) fn state_indicator(ui: &mut egui::Ui, state: ServerState, text: &str) -> egui::Response {
@@ -665,6 +829,21 @@ mod tests {
                 assert!(
                     ratio >= 4.5,
                     "{what} in the {name} theme is {ratio:.2} to 1, and 4.5 is the least that reads"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_button_that_matters_stands_out_from_what_is_round_it_as_a_control_should() {
+        // WCAG asks 3 to 1 of a control against what is next to it: the page and the bars, in both themes
+        for (name, dark) in [("dark", true), ("light", false)] {
+            let p = palette_of(dark);
+            for (what, bg) in [("the page", p.page), ("the toolbar", p.bar)] {
+                let ratio = contrast(p.accent, bg);
+                assert!(
+                    ratio >= 3.0,
+                    "the button that matters on {what} in the {name} theme is {ratio:.2} to 1"
                 );
             }
         }

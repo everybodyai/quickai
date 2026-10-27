@@ -1102,6 +1102,7 @@ pub const CATALOG_GROUPS: &[Group] = &[
             a("sha256", "text", "Its SHA-256, 64 hexadecimal digits: what a download is checked against while it arrives, and a file that hashes to something else is not kept."),
             a("label", "text", "What its button says; default the quantization its name says (`Q4_K_M`), else the name."),
             a("best", "bool", "Whether it is the one the list recommends of the weights (shown in bold); only one may be. Default: the first."),
+            a("store_as", "text", "The name it is kept under in the models folder, when its own is another repository's file of the same name (two such files would overwrite each other): a plain file name with the same ending. Default: its own name."),
         ],
     },
 ];

@@ -1,5 +1,6 @@
-# The Default configuration (docs/configurations.md, section 3): llama.cpp, the model the application chooses on a
-# first run, and every setting at its default. A person can change it and save it (their file in `profiles/` of their
+# The Default configuration (docs/configurations.md, section 3): the engine in use (llama.cpp on a first run; the window
+# reads this one as whichever engine is chosen in the toolbar, WP4.26), the model the application chooses, and every
+# setting at its default. A person can change it and save it (their file in `profiles/` of their
 # configuration directory, with `replace = true`, stands in for this one), and "Reset to factory" removes theirs.
 # It names no model and no build: what runs is what the application would run if nothing had been chosen.
 schema = 1
@@ -9,4 +10,4 @@ name = "Default"
 engine = "llamacpp"
 
 [meta]
-note = "llama.cpp with the model that comes with QuickAI, and every setting as it is when QuickAI is first started."
+note = "The engine in use, with the model QuickAI chooses and every setting as it is when QuickAI is first started."

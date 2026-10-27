@@ -3,6 +3,9 @@
 //! thread-plus-channel shape as `ServerManager`. The UI holds a `Job<T>`; the worker gets a `send`
 //! function.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use crossbeam_channel::Receiver;
 
 use crate::hardware::format_bytes;
@@ -51,7 +54,12 @@ pub struct Job<T> {
     statuses: Vec<String>,
     /// The last thing it said about what it is doing right now (`JobEvent::Detail`).
     detail: Option<String>,
+    /// Set by `cancel`: a worker that was given it (`spawn_cancellable`) stops at its next look.
+    cancel: Arc<AtomicBool>,
 }
+
+/// What a job that was cancelled ends with.
+pub const CANCELLED: &str = "cancelled";
 
 impl<T: Send + 'static> Job<T> {
     /// Runs `work` on a new thread and returns at once. Every event `work` passes to its `send`
@@ -62,13 +70,26 @@ impl<T: Send + 'static> Job<T> {
         wake: impl Fn() + Send + Sync + 'static,
         work: impl FnOnce(&dyn Fn(JobEvent<T>)) + Send + 'static,
     ) -> Self {
+        Self::spawn_cancellable(label, verb, wake, move |send, _| work(send))
+    }
+
+    /// `spawn`, for a worker that looks at the flag `cancel` sets (between the chunks of a download) and ends
+    /// with `CANCELLED` when it is set.
+    pub fn spawn_cancellable(
+        label: String,
+        verb: &'static str,
+        wake: impl Fn() + Send + Sync + 'static,
+        work: impl FnOnce(&dyn Fn(JobEvent<T>), &AtomicBool) + Send + 'static,
+    ) -> Self {
         let (tx, rx) = crossbeam_channel::unbounded();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let flag = cancel.clone();
         std::thread::spawn(move || {
             let send = |event: JobEvent<T>| {
                 let _ = tx.send(event);
                 wake();
             };
-            work(&send);
+            work(&send, &flag);
         });
         Self {
             rx,
@@ -79,6 +100,7 @@ impl<T: Send + 'static> Job<T> {
             fraction_only: None,
             statuses: Vec::new(),
             detail: None,
+            cancel,
         }
     }
 }
@@ -102,6 +124,11 @@ impl<T> Job<T> {
             }
         }
         outcome
+    }
+
+    /// Asks the worker to stop. One that was not made with `spawn_cancellable` does not look.
+    pub fn cancel(&self) {
+        self.cancel.store(true, Ordering::SeqCst);
     }
 
     /// The lines the job has said since the last call, oldest first: for the log pane.

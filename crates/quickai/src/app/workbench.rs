@@ -60,39 +60,53 @@ pub(super) enum Given {
 /// Reads what was given to the box: the address of a file, a file of this computer, a page of the hub
 /// that is a repository (whose name is searched for), or words.
 pub(super) fn read_box(text: &str) -> Given {
-    let text = text.trim();
+    read_box_for(text, MODEL_ENDINGS)
+}
+
+/// `read_box` for an engine that takes files with these endings (llama.cpp: `.gguf`). A path pasted in quotes (as
+/// "Copy as path" of Windows' Explorer gives it) is the path without them.
+pub(super) fn read_box_for(text: &str, endings: &[&str]) -> Given {
+    let text = unquoted(text.trim());
     if text.is_empty() {
         return Given::Nothing;
     }
     if downloader::looks_like_url(text) {
-        return read_link(text);
+        return read_link(text, endings);
     }
     let path = Path::new(text);
     if path.is_file() {
-        return if has_model_ending(text) {
+        return if has_model_ending(text, endings) {
             Given::File(path.to_path_buf())
         } else {
             Given::Refused(format!(
                 "{text} is not a model file this window takes in ({}).",
-                MODEL_ENDINGS.join(", ")
+                endings.join(", ")
             ))
         };
     }
     Given::Words(text.to_string())
 }
 
-fn has_model_ending(name: &str) -> bool {
+/// `text` without the quotes round it, when it has a pair.
+fn unquoted(text: &str) -> &str {
+    ['"', '\'']
+        .iter()
+        .find_map(|q| text.strip_prefix(*q).and_then(|t| t.strip_suffix(*q)))
+        .map_or(text, str::trim)
+}
+
+fn has_model_ending(name: &str, endings: &[&str]) -> bool {
     let lower = name
         .split(['?', '#'])
         .next()
         .unwrap_or(name)
         .to_ascii_lowercase();
-    MODEL_ENDINGS.iter().any(|ending| lower.ends_with(ending))
+    endings.iter().any(|ending| lower.ends_with(ending))
 }
 
 /// A link: the page of a file of the hub is turned into the address of the file, the page of a
 /// repository is a name to search for, and any other address must end in a model file.
-fn read_link(link: &str) -> Given {
+fn read_link(link: &str, endings: &[&str]) -> Given {
     let (host, path) = match link.split_once("://") {
         Some((_, rest)) => rest.split_once('/').unwrap_or((rest, "")),
         None => return Given::Nothing,
@@ -119,10 +133,10 @@ fn read_link(link: &str) -> Given {
                     "https"
                 };
                 let address = format!("{scheme}://{host}/{owner}/{repo}/resolve/{tail}");
-                return if has_model_ending(&address) {
+                return if has_model_ending(&address, endings) {
                     Given::Link(address)
                 } else {
-                    refused_link(link)
+                    refused_link(link, endings)
                 };
             }
             [_, _, "resolve", rest @ ..] if rest.len() >= 2 => {}
@@ -133,17 +147,17 @@ fn read_link(link: &str) -> Given {
             _ => {}
         }
     }
-    if has_model_ending(link) {
+    if has_model_ending(link, endings) {
         Given::Link(link.to_string())
     } else {
-        refused_link(link)
+        refused_link(link, endings)
     }
 }
 
-fn refused_link(link: &str) -> Given {
+fn refused_link(link: &str, endings: &[&str]) -> Given {
     Given::Refused(format!(
         "{link} is not the address of a model file ({}). Give the address of one file, or the name of what you look for.",
-        MODEL_ENDINGS.join(", ")
+        endings.join(", ")
     ))
 }
 
@@ -260,9 +274,19 @@ impl App {
 
             if let Some(job) = &self.download {
                 ui.add_space(4.0);
-                ui.colored_label(super::theme::palette().warn, job.progress_line());
+                let mut cancel = false;
+                ui.horizontal(|ui| {
+                    ui.colored_label(super::theme::palette().warn, job.progress_line());
+                    cancel = ui
+                        .small_button("Cancel")
+                        .on_hover_text("Stop the download. What was fetched so far is thrown away.")
+                        .clicked();
+                });
                 if let Some(fraction) = job.fraction() {
                     super::widgets::progress_bar(ui, Some(fraction));
+                }
+                if cancel {
+                    self.cancel_download();
                 }
             }
             if let Some(note) = &self.bench.note {
@@ -480,6 +504,11 @@ impl App {
     }
 
     /// A fetch ended badly: what it said.
+    /// The download the page asked for was cancelled: nothing is being fetched, and nothing failed.
+    pub(super) fn bench_cancelled(&mut self) {
+        self.bench.fetching = None;
+    }
+
     pub(super) fn bench_failed(&mut self, message: &str) {
         if !self.runs_alone() {
             return;

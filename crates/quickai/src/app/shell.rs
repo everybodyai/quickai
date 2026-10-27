@@ -19,6 +19,9 @@ const WEBSITE_URL: &str = "https://everybodyai.dev/quickai";
 /// The height of a row of the list of models: the name, and under it its size and what else is known.
 const MODEL_ROW: f32 = 42.0;
 
+/// From how many models on the list it has a box that narrows it.
+const FILTER_FROM: usize = 8;
+
 impl App {
     /// Everything of the main window but the windows of its own (Settings, About, the recommended models...).
     pub(super) fn show_window(&mut self, ui: &mut egui::Ui) {
@@ -75,15 +78,22 @@ impl App {
             });
             ui.menu_button("Server", |ui| {
                 let (can_start, loadable) = self.start_possible(active);
+                let switchable = self.can_switch_selected();
+                let label = if loadable {
+                    "Load model"
+                } else if switchable {
+                    "Use this model"
+                } else {
+                    "Start"
+                };
                 if ui
-                    .add_enabled(
-                        can_start,
-                        egui::Button::new(if loadable { "Load model" } else { "Start" }),
-                    )
+                    .add_enabled(can_start || switchable, egui::Button::new(label))
                     .clicked()
                 {
                     if loadable {
                         self.load_selected();
+                    } else if switchable {
+                        self.switch_to_selected();
                     } else {
                         self.start_selected(ui.ctx());
                     }
@@ -105,6 +115,18 @@ impl App {
                     .clicked()
                 {
                     self.show_api_info = true;
+                }
+                ui.separator();
+                self.show_engine_menu(ui);
+                ui.separator();
+                if ui
+                    .button("Remote computers…")
+                    .on_hover_text(
+                        "Run the models on a more powerful computer, and use them from here.",
+                    )
+                    .clicked()
+                {
+                    self.remote.show_window = true;
                 }
             });
             ui.menu_button("Models", |ui| {
@@ -146,6 +168,18 @@ impl App {
                     self.dark_mode = dark;
                     theme::apply(ui.ctx(), dark);
                     self.save_settings();
+                }
+                // (after the theme, which keeps the place it had)
+                let mut on_chat = self.active_tab == Tab::Chat;
+                if ui
+                    .add_enabled(self.can_chat(), egui::Checkbox::new(&mut on_chat, "Chat"))
+                    .on_disabled_hover_text(format!(
+                        "{} has no chat to talk to.",
+                        self.engine_name()
+                    ))
+                    .changed()
+                {
+                    self.active_tab = if on_chat { Tab::Chat } else { Tab::Main };
                 }
             });
             ui.menu_button("Help", |ui| {
@@ -198,6 +232,7 @@ impl App {
                 {
                     self.toggle_settings();
                 }
+                self.show_engine_switch(ui, 28.0);
             });
         });
     }
@@ -207,9 +242,15 @@ impl App {
     fn show_status_bar(&mut self, ui: &mut egui::Ui, state: ServerState) {
         let status = self.run_status_text(state);
         let companion = self.companion_status();
+        // a tunnel to another computer being opened is a start that is on its way
+        let shown = if self.remote_opening() {
+            ServerState::Starting
+        } else {
+            state
+        };
         ui.horizontal(|ui| {
             ui.set_min_height(20.0);
-            theme::state_indicator(ui, state, &status)
+            theme::state_indicator(ui, shown, &status)
                 .on_hover_text("What the server is doing now. Start and Stop are in the toolbar.");
             if let Some((text, companion_state)) = companion {
                 ui.separator();
@@ -230,12 +271,21 @@ impl App {
         ui.horizontal(|ui| {
             ui.add_space(10.0);
             let family = theme::semibold(ui);
-            ui.label(
+                        ui.label(
                 egui::RichText::new("MODELS")
                     .size(11.5)
                     .family(family)
                     .color(p.muted),
             );
+            // how much room they take, all of them
+            if !self.models.is_empty() {
+                ui.label(
+                    egui::RichText::new(size_text(super::model_details::total_bytes(&self.models)))
+                        .size(11.0)
+                        .color(p.faint),
+                )
+                .on_hover_text("The room the models listed take on the disk.");
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(6.0);
                 if theme::button_sized(ui, Role::Quiet, !active, "Refresh", egui::vec2(0.0, 20.0))
@@ -255,25 +305,55 @@ impl App {
             });
         });
         ui.add_space(2.0);
+        // a long list has a box that narrows it, by name
+        let long = self.models.len() > FILTER_FROM;
+        if long {
+            ui.horizontal(|ui| {
+                ui.add_space(8.0);
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.model_filter)
+                        .hint_text("Filter models...")
+                        .desired_width(ui.available_width() - 8.0),
+                );
+            });
+            ui.add_space(4.0);
+        } else {
+            self.model_filter.clear();
+        }
+        let words = self.model_filter.trim().to_lowercase();
         egui::ScrollArea::vertical()
             .id_salt("models_list")
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 if self.models.is_empty() {
-                    ui.add_space(6.0);
-                    ui.horizontal_wrapped(|ui| {
-                        ui.add_space(10.0);
-                        ui.label(theme::muted(if self.lists_models() {
-                            "No models yet. Pull one with the box on the right."
-                        } else {
-                            "No models yet. Get one with Recommended or Look up online, on the right."
-                        }));
-                    });
+                    // in a margin of its own: wrapped in a row, only the first line kept the indent
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin {
+                            left: 10,
+                            right: 8,
+                            top: 6,
+                            bottom: 0,
+                        })
+                        .show(ui, |ui| {
+                            ui.label(theme::muted(if self.lists_models() {
+                                "No models yet. Pull one with the box on the right."
+                            } else {
+                                "No models yet. Get one with Recommended or Look up online, on the right."
+                            }));
+                        });
                     return;
                 }
                 let mut picked = None;
+                let mut asked: Option<(usize, RowAction)> = None;
+                let lists = self.lists_models();
+                let mut shown = 0;
                 for (i, m) in self.models.iter().enumerate() {
+                    let named = format!("{} {}", m.display, m.filename).to_lowercase();
+                    if !words.is_empty() && !words.split_whitespace().all(|w| named.contains(w)) {
+                        continue;
+                    }
+                    shown += 1;
                     let recommended = self.recommended_filename.as_deref() == Some(m.filename.as_str());
                     let mut detail = vec![size_text(m.size_bytes)];
                     if recommended {
@@ -282,9 +362,57 @@ impl App {
                     if m.bundled {
                         detail.push("bundled".to_string());
                     }
-                    if model_row(ui, &m.display, &detail.join(" · "), i == self.selected).clicked() {
+                    let row = model_row(ui, &m.display, &detail.join(" · "), i == self.selected);
+                    if row.clicked() {
                         picked = Some(i);
                     }
+                    // what can be done with a model, where it is: right-click it
+                    row.context_menu(|ui| {
+                        let deletable = self.delete_request(i);
+                        let item = ui
+                            .add_enabled(deletable.is_ok(), egui::Button::new("Delete…"))
+                            .on_disabled_hover_text(deletable.err().unwrap_or_default());
+                        if item.clicked() {
+                            asked = Some((i, RowAction::Delete));
+                            ui.close();
+                        }
+                        if !lists && ui.button("Show in folder").clicked() {
+                            asked = Some((i, RowAction::ShowInFolder));
+                            ui.close();
+                        }
+                                                if ui.button("Copy name").clicked() {
+                            asked = Some((i, RowAction::CopyName));
+                            ui.close();
+                        }
+                        if ui.button("Details…").clicked() {
+                            asked = Some((i, RowAction::Details));
+                            ui.close();
+                        }
+                    });
+                }
+                if shown == 0 {
+                    ui.add_space(6.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add_space(10.0);
+                        ui.label(theme::muted("No model matches."));
+                    });
+                }
+                match asked {
+                    Some((i, RowAction::Delete)) => self.ask_to_delete_from_window(i),
+                    Some((i, RowAction::ShowInFolder)) => {
+                        if let Some(folder) = self.models.get(i).and_then(|m| m.path.parent()) {
+                            super::workbench::open_folder(folder);
+                        }
+                    }
+                                        Some((i, RowAction::Details)) => {
+                        self.details_of = self.models.get(i).map(|m| m.filename.clone());
+                    }
+                    Some((i, RowAction::CopyName)) => {
+                        if let Some(m) = self.models.get(i) {
+                            ui.ctx().copy_text(m.filename.clone());
+                        }
+                    }
+                    None => {}
                 }
                 if let Some(i) = picked.filter(|i| *i != self.selected) {
                     self.selected = i;
@@ -304,6 +432,8 @@ impl App {
             .show(ui, |ui| {
                 theme::column(ui, theme::PAGE_WIDTH, |ui| {
                     self.show_configuration_section(ui);
+                    self.show_engine_setup(ui);
+                    self.show_runs_on(ui);
                     ui.add_space(10.0);
                     if self.runs_alone() {
                         theme::card(ui, |ui| self.show_workbench(ui, active));
@@ -332,17 +462,27 @@ impl App {
         if !live && self.active_tab == Tab::Live {
             self.active_tab = Tab::Main;
         }
+        let chat = self.can_chat();
+        if !chat && self.active_tab == Tab::Chat {
+            self.active_tab = Tab::Main;
+        }
         let on_live = self.active_tab == Tab::Live;
-        // each tab keeps the height it was given: the conversation wants more room than the log
-        egui::Panel::bottom(if on_live { "dock_live" } else { "dock_log" })
+        let on_chat = self.active_tab == Tab::Chat;
+        // each tab keeps the height it was given: a conversation wants more room than the log
+        let (id, height) = match self.active_tab {
+            Tab::Live => ("dock_live", 320.0),
+            Tab::Chat => ("dock_chat", 320.0),
+            Tab::Main => ("dock_log", 160.0),
+        };
+        egui::Panel::bottom(id)
             .resizable(true)
-            .default_size(if on_live { 320.0 } else { 160.0 })
+            .default_size(height)
             .size_range(90.0..=640.0)
             .frame(egui::Frame::new().fill(theme::palette().page))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.add_space(6.0);
-                    if dock_tab(ui, "Log", !on_live).clicked() {
+                    if dock_tab(ui, "Log", !on_live && !on_chat).clicked() {
                         self.active_tab = Tab::Main;
                     }
                     if live
@@ -355,6 +495,23 @@ impl App {
                     {
                         self.active_tab = Tab::Live;
                     }
+                    // (after the others, which keep the places they had). A model that runs and a conversation that was
+                    // never opened: a dot says it is there to be tried
+                    let fresh = self.session.state() == crate::events::ServerState::Running
+                        && self.session.model_name().is_some()
+                        && !self.chat.opened;
+                    if on_chat {
+                        self.chat.opened = true;
+                    }
+                    if chat
+                        && dock_tab_marked(ui, "Chat", on_chat, fresh && !on_chat)
+                            .on_hover_text(
+                                "Talk to the model that runs, right here: nothing to install, nothing kept.",
+                            )
+                            .clicked()
+                    {
+                        self.active_tab = Tab::Chat;
+                    }
                 });
                 let rule = ui.max_rect().x_range();
                 ui.painter().hline(
@@ -362,13 +519,22 @@ impl App {
                     ui.cursor().top(),
                     egui::Stroke::new(1.0, theme::palette().line),
                 );
-                if on_live {
-                    self.show_live_traffic_tab(ui);
-                } else {
-                    self.show_log_pane(ui);
+                match self.active_tab {
+                    Tab::Live => self.show_live_traffic_tab(ui),
+                    Tab::Chat => self.show_chat_tab(ui),
+                    Tab::Main => self.show_log_pane(ui),
                 }
             });
     }
+}
+
+/// What the menu of a model of the list was asked to do.
+#[derive(Clone, Copy)]
+enum RowAction {
+    Delete,
+    ShowInFolder,
+    CopyName,
+    Details,
 }
 
 /// A size in the words a person reads: "1.1 GB", "250 MB".
@@ -423,6 +589,17 @@ fn model_row(ui: &mut egui::Ui, name: &str, detail: &str, chosen: bool) -> egui:
         painter.galley(egui::pos2(left, below), small, p.muted);
     }
     response.on_hover_text(name)
+}
+
+/// A tab of the dock with a dot after its name, when `marked`: something new is there.
+fn dock_tab_marked(ui: &mut egui::Ui, label: &str, open: bool, marked: bool) -> egui::Response {
+    let response = dock_tab(ui, label, open);
+    if marked && ui.is_rect_visible(response.rect) {
+        let centre = egui::pos2(response.rect.right() - 4.0, response.rect.center().y - 5.0);
+        ui.painter()
+            .circle_filled(centre, 3.0, theme::palette().accent_text);
+    }
+    response
 }
 
 /// A tab of the dock: its name, and a line of the accent under the one that is open.

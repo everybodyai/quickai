@@ -313,6 +313,67 @@ pub fn request_for_label(
     (build.label == label).then(|| build.install_request(&[]))
 }
 
+/// The builds one release of files offers this machine, each with the digest the host lists (when the document
+/// says it lists them), the pin of the release the document was tested with (when this is the one) and the
+/// overlays the release has. Empty when no file of the release is for this machine.
+fn release_builds(
+    spec: &LookupSpec,
+    release: &GhRelease,
+    tested: bool,
+    digest: bool,
+    overlay_choices: &[acquire::OverlayChoice],
+) -> Vec<Build> {
+    let names: Vec<&str> = release.assets.iter().map(|a| a.name.as_str()).collect();
+    let picked = acquire::matching_assets(&spec.engine, &names, &spec.facts);
+    let host_digest = |asset: &GhAsset| {
+        digest
+            .then(|| asset.digest.as_deref().map(bare_digest))
+            .flatten()
+    };
+    let pin_of = |name: &str| {
+        tested
+            .then(|| acquire::pin_for(&spec.engine, name))
+            .flatten()
+    };
+    let overlays: Vec<OverlayOffer> = overlay_choices
+        .iter()
+        .filter_map(|choice| {
+            let asset = release
+                .assets
+                .iter()
+                .find(|a| a.name == choice.asset_name)?;
+            Some(OverlayOffer {
+                id: choice.id.clone(),
+                label: choice.label.clone(),
+                asset_name: asset.name.clone(),
+                url: asset.browser_download_url.clone(),
+                size_bytes: asset.size,
+                sha256: host_digest(asset),
+                pin: pin_of(&asset.name),
+            })
+        })
+        .collect();
+    picked
+        .into_iter()
+        .map(|i| {
+            let asset = &release.assets[i];
+            let (sha256, pin) = (host_digest(asset), pin_of(&asset.name));
+            Build {
+                tag: release.tag_name.clone(),
+                asset_name: asset.name.clone(),
+                url: asset.browser_download_url.clone(),
+                size_bytes: asset.size,
+                label: acquire::install_label(&spec.engine, &release.tag_name, &asset.name),
+                conflict: matches!((&sha256, &pin), (Some(a), Some(b)) if a != b),
+                sha256,
+                pin,
+                tested,
+                overlays: overlays.clone(),
+            }
+        })
+        .collect()
+}
+
 fn run(spec: LookupSpec, tx: Sender<BuildLookupEvent>, wake: impl Fn() + Send + Sync + 'static) {
     let send = |e: BuildLookupEvent| {
         let _ = tx.send(e);
@@ -395,66 +456,34 @@ fn run(spec: LookupSpec, tx: Sender<BuildLookupEvent>, wake: impl Fn() + Send + 
             }
             continue;
         }
-        let names: Vec<&str> = release.assets.iter().map(|a| a.name.as_str()).collect();
-        let picked = acquire::matching_assets(&spec.engine, &names, &spec.facts);
-        if picked.is_empty() {
-            continue;
-        }
         let tested = tested_tag == Some(release.tag_name.as_str());
-        let host_digest = |asset: &GhAsset| {
-            digest
-                .then(|| asset.digest.as_deref().map(bare_digest))
-                .flatten()
-        };
-        let pin_of = |name: &str| {
-            tested
-                .then(|| acquire::pin_for(&spec.engine, name))
-                .flatten()
-        };
-        let overlays: Vec<OverlayOffer> = overlay_choices
-            .iter()
-            .filter_map(|choice| {
-                let asset = release
-                    .assets
-                    .iter()
-                    .find(|a| a.name == choice.asset_name)?;
-                Some(OverlayOffer {
-                    id: choice.id.clone(),
-                    label: choice.label.clone(),
-                    asset_name: asset.name.clone(),
-                    url: asset.browser_download_url.clone(),
-                    size_bytes: asset.size,
-                    sha256: host_digest(asset),
-                    pin: pin_of(&asset.name),
-                })
-            })
-            .collect();
-        let builds: Vec<Build> = picked
-            .into_iter()
-            .map(|i| {
-                let asset = &release.assets[i];
-                let (sha256, pin) = (host_digest(asset), pin_of(&asset.name));
-                Build {
-                    tag: release.tag_name.clone(),
-                    asset_name: asset.name.clone(),
-                    url: asset.browser_download_url.clone(),
-                    size_bytes: asset.size,
-                    label: acquire::install_label(&spec.engine, &release.tag_name, &asset.name),
-                    conflict: matches!((&sha256, &pin), (Some(a), Some(b)) if a != b),
-                    sha256,
-                    pin,
-                    tested,
-                    overlays: overlays.clone(),
-                }
-            })
-            .collect();
-        groups.push((tested, builds));
+        let builds = release_builds(&spec, &release, tested, *digest, &overlay_choices);
+        if !builds.is_empty() {
+            groups.push((tested, builds));
+        }
     }
     // The release the document was tested with is offered even when the feed's first page has moved on
-    // from it: its address and its pin are the document's, and nothing is asked of the feed for them.
-    if from_source && !groups.iter().any(|(tested, _)| *tested) {
-        if let Some(build) = tested_tag.and_then(|tag| source_build(&spec, tag, Some(tag))) {
-            groups.push((true, vec![build]));
+    // from it. A build from source needs nothing of the feed for it (its address and its pin are the
+    // document's); a release of files is asked for by its tag, and a feed that does not have it (or does
+    // not answer) leaves the list as it was.
+    if !groups.iter().any(|(tested, _)| *tested) {
+        if let Some(tag) = tested_tag {
+            if from_source {
+                if let Some(build) = source_build(&spec, tag, Some(tag)) {
+                    groups.push((true, vec![build]));
+                }
+            } else {
+                let url = format!("{}/repos/{repo}/releases/tags/{tag}", spec.api_base);
+                if let Ok(release) = get_json::<GhRelease>(&url, spec.token.as_deref()) {
+                    if !release.draft && release.tag_name == tag {
+                        let builds =
+                            release_builds(&spec, &release, true, *digest, &overlay_choices);
+                        if !builds.is_empty() {
+                            groups.push((true, builds));
+                        }
+                    }
+                }
+            }
         }
     }
     // the tested release first, whatever its place in the feed, and the rest as the feed has them
@@ -956,6 +985,9 @@ install = { use = "archive", binary = { name = "demo-server" } }
     /// other real-resource tests do.
     #[test]
     fn the_embedded_llamacpp_document_finds_real_builds() {
+        if !crate::testkit::online_allowed() {
+            return;
+        }
         let registry = crate::config::build_registry(&crate::config::ConfigDirs::default());
         let engine = registry.engine("llamacpp").expect("the embedded engine");
         let machine = crate::launch::MachineFacts::default();

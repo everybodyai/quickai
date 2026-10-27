@@ -412,6 +412,44 @@ fn p3_r10_the_tested_release_is_marked_and_first_with_the_documents_pins_and_a_p
 }
 
 #[test]
+fn p3_r10a_the_tested_release_is_asked_for_by_its_tag_when_the_first_page_has_moved_past_it() {
+    // Ollama ships often: ten releases after the one the document was tested with, the first page of the feed no
+    // longer has it. A page of one release (the candidate, which does not count) stands for that here
+    let fake = FakeGithub::ollama();
+    let doc = full_doc("v0.35.1").replace("per_page = 10", "per_page = 1");
+    let (_, builds, done) = lookup(spec_for(&fake, &doc, "linux", "x86_64"));
+    assert!(done);
+    assert_eq!(asset_names(&builds), ["v0.35.1 ollama-linux-amd64.tar.zst"]);
+    assert!(builds[0].tested);
+    assert_eq!(
+        builds[0].pin.as_deref(),
+        Some("9fcd79ac4575b2bd31b992eee18b1000c8ad126b451627c8f8cd091714cfbb10")
+    );
+    assert!(!builds[0].conflict);
+    assert_eq!(builds[0].overlays.len(), 1, "its ROCm overlay too");
+    let asked: Vec<String> = fake.requests().into_iter().map(|(path, _)| path).collect();
+    assert_eq!(
+        asked,
+        [
+            "/repos/ollama/ollama/releases?per_page=1",
+            "/repos/ollama/ollama/releases/tags/v0.35.1"
+        ]
+    );
+
+    // on the first page, it is not asked for again
+    let fake = FakeGithub::ollama();
+    let _ = lookup(spec_for(&fake, &full_doc("v0.35.1"), "linux", "x86_64"));
+    assert_eq!(fake.requests().len(), 1);
+
+    // a tag the feed does not have adds nothing, and the list is what the page gave
+    let fake = FakeGithub::ollama();
+    let (_, builds, done) = lookup(spec_for(&fake, &full_doc("v9.9.9"), "linux", "x86_64"));
+    assert!(done);
+    assert_eq!(builds.len(), 3);
+    assert!(builds.iter().all(|b| !b.tested && b.pin.is_none()));
+}
+
+#[test]
 fn p3_r11_an_overlay_is_offered_only_where_there_is_one_never_as_a_build_and_is_off_until_chosen() {
     let fake = FakeGithub::ollama();
     let doc = full_doc("v0.35.1");
@@ -529,6 +567,9 @@ fn the_documents_new_keys_are_checked_where_they_are_written() {
 /// "unknown", not "broken".
 #[test]
 fn p3_r08_the_embedded_ollama_document_finds_real_builds() {
+    if !crate::testkit::online_allowed() {
+        return;
+    }
     let registry = crate::config::build_registry(&crate::config::ConfigDirs::default());
     let engine = registry
         .engine("ollama")
