@@ -202,6 +202,7 @@ impl World {
                 runs: Runs::Script("main.py".into()),
                 versions: vec!["3.98".into()],
                 python: Some(self.python.clone()),
+                own: None,
                 pip: vec![
                     pip(
                         "torch",

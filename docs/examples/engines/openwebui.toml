@@ -56,18 +56,35 @@ filter_hint = "e.g. 0.11"
 "open_webui-0.11.4-py3-none-any.whl" = "sha256:e4c2b02607ae984ec8ec08f3f9e02a8de06b1226af0f2df37fe2fab7f9d52523"
 
 # Its own Python environment, in its own build: nothing is installed into a Python the person has, and nothing
-# is shared with ComfyUI's (17 GB of PyTorch for another Python). Open WebUI says 3.11 or 3.12 (`<3.13`), so
-# a machine that has only a newer Python is told so before anything is downloaded. Only wheels: no package
+# is shared with ComfyUI's (17 GB of PyTorch for another Python). Open WebUI says 3.11 or 3.12 (`<3.13`), and
+# its environment is made with QuickAI's own 3.12 (below). Only wheels: no package
 # runs a build script on the person's machine. The wheel pins its own 100 direct dependencies by version.
 [acquire.install]
 use = "python_app"
 binary = { name = "open-webui" }
 console_script = "open-webui"
-python = { versions = ["3.12", "3.11"] }
 verify = "digest"
 smoke = ["${binary}", "--help"]     # the launcher runs the program of the environment: it starts and says what it can do (the packages are imported by the first start, which has its own advice below)
 smoke_timeout = "120s"
 space = "8GiB"                  # measured (W2): 2.95 GB installed, about 1.6 GB downloaded; the room asked for is twice the environment
+
+# QuickAI's own Python (C181): unless the person names one in Settings, the environment is made with a whole Python that
+# QuickAI downloads once into this engine's folder (python/), checked against these sha256s, so that nothing of the
+# computer's own Python is needed or changed (no python3-venv, no headers, no version it does not have). The builds are
+# python-build-standalone's, a release of 2026-10-03 (recorded 2026-10-27 from its SHA256SUMS). A Python the person names
+# must be one of `versions`: Open WebUI says 3.11 or 3.12 (`<3.13`).
+[acquire.install.python]
+versions = ["3.12", "3.11"]
+[acquire.install.python.own]
+version = "3.12.15"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261003"
+[acquire.install.python.own.files]
+x86_64-unknown-linux-gnu = { file = "cpython-3.12.15+20261003-x86_64-unknown-linux-gnu-install_only.tar.gz", sha256 = "f937814031eab4698ca6d07ec606ede1825768f3f3e99af76d9db3900bee03c5" }
+aarch64-unknown-linux-gnu = { file = "cpython-3.12.15+20261003-aarch64-unknown-linux-gnu-install_only.tar.gz", sha256 = "95c01982c9fcb9d95b0acfdb5eb8a6e0099dd11edf062314a474228d93f2b765" }
+x86_64-apple-darwin = { file = "cpython-3.12.15+20261003-x86_64-apple-darwin-install_only.tar.gz", sha256 = "a8fd7a91852f19b6d959793ef41fad048631ccb2a334a9ecdf573255298f7978" }
+aarch64-apple-darwin = { file = "cpython-3.12.15+20261003-aarch64-apple-darwin-install_only.tar.gz", sha256 = "316a463172740e71d8dca1f2730784e325f3f720941137b5d674d5801a632213" }
+x86_64-pc-windows-msvc = { file = "cpython-3.12.15+20261003-x86_64-pc-windows-msvc-install_only.tar.gz", sha256 = "4b6f0beebbb695a0f3ea237b8c3eaa5bd424f47a7bc25b2fbe3a43390c770f08" }
+aarch64-pc-windows-msvc = { file = "cpython-3.12.15+20261003-aarch64-pc-windows-msvc-install_only.tar.gz", sha256 = "2de96a340fecdabe215094345ed3aea1b473e858bd098360f2253299e18f24d2" }
 
 # On Linux PyPI's own PyTorch is the one built for NVIDIA cards, with 3 GB of libraries around it; it is only
 # the part of Open WebUI that reads documents and speech on the processor, and Ollama does the models, so the
@@ -182,7 +199,7 @@ id = "python"
 label = "Python for the install"
 type = "file"
 optional = true
-help = "The Python that makes Open WebUI's environment when it is installed, if you do not want the one QuickAI finds (3.12 or 3.11, in that order: Open WebUI does not run on a newer one yet). It needs the venv module: on Debian and Ubuntu the package python3-venv."
+help = "A Python of this computer to make Open WebUI's environment with, instead of QuickAI's own (a Python 3.12 it downloads once into ~/.quickai/openwebui/python and keeps there). It must be 3.12 or 3.11 (Open WebUI does not run on a newer one yet) and have the venv module: on Debian and Ubuntu the package python3-venv. Leave it empty to use QuickAI's own."
 ui = { section = "advanced", order = 12, hint = "e.g. /usr/bin/python3.12" }
 
 [[field]]

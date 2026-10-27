@@ -112,6 +112,11 @@ Formats, damaged and hostile archives, and a build that is either there complete
 | Z37 | 3.1 | ready | Progress is monotonic, ends at the total the server announced, and unpacking is reported as its own step. | `p3/install.rs` |
 | Z38 | 3.1 | ready | llama.cpp installs go through the same pipeline: every existing installer test passes unchanged, and an install killed mid-way leaves nothing listed (Z16 with the llama.cpp spec). | `p3/install.rs` |
 | Z39 | 3.1 | manual | The real v0.35.1 archive (1.44 GB) installs through the pipeline: its digest is the pin, the CUDA libraries are left out (102 MB), the real binary passes the smoke test, and all 2.2 GB unpack in a reasonable time. | `p3/install.rs` |
+| Z40 | 4.30 | ready | **QuickAI's own Python is downloaded once, checked and kept in the engine's folder** (C181): its file for this computer comes from the address of the document, is checked against the document's sha256 (the log says so), and is unpacked into `python/<file>` of the engine's folder with nothing of the download left beside it; its `bin/python3` (a link inside it) makes the environment, and the next install finds it there and downloads nothing. | `prims/install/python_app.rs` |
+| Z41 | 4.30 | ready | An own Python that is not the file the document pins (its sha256 differs) is not kept: the install says it does not match its checksum, and `python/` is empty. | `prims/install/python_app.rs` |
+| Z42 | 4.30 | ready | A computer the document has no Python for is told that QuickAI has none of its own for it and to choose one in the Python box of Settings, and nothing is written; QuickAI's own kinds of computer (x86-64 and ARM64) all have one. | `prims/install/python_app.rs` |
+| Z43 | 4.30 | ready | A Python the person named is the one that makes the environment, and QuickAI's own is not downloaded. | `prims/install/python_app.rs` |
+| Z44 | 4.30 | ready | Open WebUI and ComfyUI pin the same own Python, from python-build-standalone's releases, for the six kinds of computer QuickAI is built for (Linux, macOS and Windows on x86-64 and ARM64): each file is that version's build for that computer, its sha256 is 64 hex digits, the version is one a named Python may be, and the window says the Python is QuickAI's own. | `quickai-core/tests/p3_companion.rs` |
 
 ### R. The release feed (WP3.2)
 
@@ -1006,7 +1011,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 688 / 0 / 16 / 5 (total 709). The test kit has 29 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 693 / 0 / 16 / 5 (total 714). The test kit has 29 tests of its own and the Python fake
 22, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 

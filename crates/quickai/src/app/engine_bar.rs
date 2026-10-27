@@ -215,7 +215,7 @@ impl App {
             .unwrap_or_default();
         let ticked = self.chosen_options();
         let ticked: Vec<&str> = ticked.iter().map(String::as_str).collect();
-        let summary = acquire::install_summary_with(engine, &self.host_facts, &ticked);
+        let summary = self.install_sentence(engine, &ticked);
         let looking = self.runtime.lookup_rx.is_some() && self.runtime.auto_install.is_some();
         let installing = self.runtime.install.is_some();
         let fallback = (self.engine != crate::settings::DEFAULT_ENGINE)

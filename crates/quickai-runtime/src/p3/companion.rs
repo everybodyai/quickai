@@ -397,6 +397,7 @@ impl World {
                 runs: Runs::Program("open-webui".into()),
                 versions: vec!["3.98".into()],
                 python: Some(self.python.clone()),
+                own: None,
                 pip: vec![
                     PipPlan {
                         id: "torch_cpu".into(),
