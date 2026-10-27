@@ -32,6 +32,8 @@ pub const RUNNER_KEY: &str = "app.runner";
 
 /// The conversations of the Chat tab are kept on this computer (WP4.28); absent, they are not.
 pub const KEEP_CHATS_KEY: &str = "app.keep_chats";
+/// The key under which a first conversation is remembered: the last step of Getting started is done.
+pub const SAID_HELLO_KEY: &str = "app.said_hello";
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Settings {
@@ -322,6 +324,18 @@ impl Settings {
             KEEP_CHATS_KEY,
             keep.then_some(serde_json::Value::Bool(true)),
         );
+    }
+
+    /// Whether a model has answered in the chat once: the last step of Getting started is done.
+    pub fn said_hello(&self) -> bool {
+        self.app_value(SAID_HELLO_KEY)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    }
+
+    /// Records that a model has answered in the chat.
+    pub fn set_said_hello(&mut self) {
+        self.set_app_value(SAID_HELLO_KEY, Some(serde_json::Value::Bool(true)));
     }
 
     fn app_value(&self, key: &str) -> Option<&serde_json::Value> {

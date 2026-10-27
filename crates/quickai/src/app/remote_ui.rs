@@ -316,66 +316,71 @@ impl App {
         if !self.can_run_remote() || self.remote.remotes.is_empty() {
             return;
         }
+        ui.add_space(10.0);
+        theme::card(ui, |ui| self.show_runs_on_row(ui));
+        ui.add_space(10.0);
+    }
+
+    /// The row that chooses where the models run (this computer or one added), with what the connection is doing,
+    /// and under it why it failed.
+    pub(super) fn show_runs_on_row(&mut self, ui: &mut egui::Ui) {
         let locked = self.engine_locked() || self.remote_opening();
         let current = self.remote_label();
         let mut chosen: Option<Option<String>> = None;
         let mut manage = false;
-        ui.add_space(10.0);
-        theme::card(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Runs on:").on_hover_text(
-                    "Where the models run: this computer, or another one you added (reached over SSH). The chat, the \
-                     models and Connect an app work the same either way.",
-                );
-                ui.add_enabled_ui(!locked, |ui| {
-                    egui::ComboBox::from_id_salt("runs_on")
-                        .selected_text(if self.remote_in_use().is_some() {
-                            current.clone()
-                        } else {
-                            "This computer".to_string()
-                        })
-                        .width(200.0)
-                        .show_ui(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Runs on:").on_hover_text(
+                "Where the models run: this computer, or another one you added (reached over SSH). The chat, the \
+                 models and Connect an app work the same either way.",
+            );
+            ui.add_enabled_ui(!locked, |ui| {
+                egui::ComboBox::from_id_salt("runs_on")
+                    .selected_text(if self.remote_in_use().is_some() {
+                        current.clone()
+                    } else {
+                        "This computer".to_string()
+                    })
+                    .width(200.0)
+                    .show_ui(ui, |ui| {
+                        if ui
+                            .selectable_label(self.remote_in_use().is_none(), "This computer")
+                            .clicked()
+                        {
+                            chosen = Some(None);
+                        }
+                        for r in &self.remote.remotes {
+                            let on = self.remote.runner.as_deref() == Some(r.id.as_str());
                             if ui
-                                .selectable_label(self.remote_in_use().is_none(), "This computer")
+                                .selectable_label(on, format!("{} ({})", r.name, r.host))
                                 .clicked()
                             {
-                                chosen = Some(None);
+                                chosen = Some(Some(r.id.clone()));
                             }
-                            for r in &self.remote.remotes {
-                                let on = self.remote.runner.as_deref() == Some(r.id.as_str());
-                                if ui
-                                    .selectable_label(on, format!("{} ({})", r.name, r.host))
-                                    .clicked()
-                                {
-                                    chosen = Some(Some(r.id.clone()));
-                                }
-                            }
-                            ui.separator();
-                            if ui.button("Manage computers...").clicked() {
-                                manage = true;
-                            }
-                        });
-                });
-                if self.remote_opening() {
-                    ui.spinner();
-                    ui.label(theme::muted(format!("Connecting to {current}...")));
-                } else if self.tunnel_port().is_some() {
-                    ui.label(
-                        egui::RichText::new(format!("Connected to {current}"))
-                            .small()
-                            .color(theme::palette().ok),
-                    );
-                } else if self.remote_in_use().is_some() {
-                    ui.label(theme::muted(format!(
-                        "Start connects to {current}; the models run there."
-                    )));
-                }
+                        }
+                        ui.separator();
+                        if ui.button("Manage computers...").clicked() {
+                            manage = true;
+                        }
+                    });
             });
-            if let Some(why) = &self.remote.error {
-                ui.colored_label(theme::palette().bad, why);
+            if self.remote_opening() {
+                ui.spinner();
+                ui.label(theme::muted(format!("Connecting to {current}...")));
+            } else if self.tunnel_port().is_some() {
+                ui.label(
+                    egui::RichText::new(format!("Connected to {current}"))
+                        .small()
+                        .color(theme::palette().ok),
+                );
+            } else if self.remote_in_use().is_some() {
+                ui.label(theme::muted(format!(
+                    "Start connects to {current}; the models run there."
+                )));
             }
         });
+        if let Some(why) = &self.remote.error {
+            ui.colored_label(theme::palette().bad, why);
+        }
         if let Some(id) = chosen {
             self.choose_runner(id);
         }

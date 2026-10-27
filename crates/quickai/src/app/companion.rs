@@ -972,8 +972,18 @@ mod tests {
         let button = app.chat_button().unwrap();
         assert!(button.enabled && button.label == "Open Chat UI");
         assert!(matches!(button.action, ChatAction::Open(ref u) if *u == url));
-        // the window draws the pair: the button in the toolbar, what the page is doing in the status bar
-        let drawn = painted(&ctx, |ui| app.show_window(ui));
+        // the window draws the pair: the button in Connect an app (opened beside the running model), what the page is
+        // doing in the status bar
+        app.show_api_info = true;
+        // (a window is measured, unseen, the first frame it is open)
+        painted(&ctx, |ui| {
+            app.show_window(ui);
+            app.show_connect_window(ui.ctx());
+        });
+        let drawn = painted(&ctx, |ui| {
+            app.show_window(ui);
+            app.show_connect_window(ui.ctx());
+        });
         assert!(
             drawn.contains("Open Chat UI") && drawn.contains(&format!("Open WebUI on port {port}")),
             "{drawn}"

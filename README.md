@@ -25,7 +25,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/quickai-dark.png">
-    <img src="assets/readme/quickai-light.png" width="760" alt="The QuickAI window running the Bonsai 8B model: the menu bar and toolbar, the models in a list on the left, the chosen model with its details and the server options, the log, and the status bar saying Running">
+    <img src="assets/readme/quickai-light.png" width="760" alt="The QuickAI window running the Bonsai 8B model: the menu bar, the models in a list on the left under Add a model, the chosen model with Start beside its name and the line that says how it runs, the chat, and the status bar saying Running">
   </picture>
 </p>
 
@@ -69,32 +69,41 @@ opened: choose **Done**, then press **Open Anyway** in **System Settings → Pri
 ## Quick start
 
 1. **Start QuickAI.** Bonsai 8B is already selected, or QuickAI's recommendation for your computer is.
-2. **Press Start** in the toolbar. The status bar at the foot of the window turns green and says *Running*.
-3. **Chat** in the **Chat** tab at the foot of the window, press **Open Chat UI** to chat in your browser, or
-   **Connect an app** to use the model from another app.
+2. **Press Start** beside the model's name. The status bar at the foot of the window turns green and says *Running*.
+3. **Chat** in the **Chat** tab under the model, or press **Connect an app** to use the model from another app (or
+   to chat in your browser).
 
-To get more models, press **Recommended** for the curated list, **Look up online** to search Hugging Face, or
-paste a link or a file path into the **Get** box. To use another model, choose it in the list and press **Use this
-model**; to delete one, right-click it in the list.
+To get more models, press **Add a model** at the top of the list. With its box empty it suggests models that suit
+this computer; type words to search online, paste a link to download a file, or press the folder to add a `.gguf`
+you already have. **Models → Recommended** has the whole curated list. To use another model, choose it in the list
+and press **Use this model**; its **⋯** menu (or a right-click in the list) has Details, Show in folder and Delete.
 
-To switch engines, click **llama.cpp**, **Ollama** or **ComfyUI** at the right of the toolbar. An engine that is
-not installed yet has an **Install** button at the top of the page; pulling a model starts Ollama by itself.
+The line under the model's name says how it runs. **Change** chooses *Balanced*, *Long chats* or *Light*, or the
+numbers themselves under *Custom*, and where the models run.
+
+To switch engines, use the menu at the top right (it says **llama.cpp**). An engine that is not installed yet has an
+**Install** button on its page; pulling a model starts Ollama by itself. Beside it are the light and dark theme, the
+guides (**?**, with Getting started) and Settings.
 
 ## Chat
 
-The **Chat** tab at the foot of the window talks to the model that runs: nothing to install, no browser. Replies come
-as they are written, with how fast (tokens a second). **Options** sets instructions for the model, how free its answers
-are (temperature) and how long they may be; **Attach…** sends a picture to a model that sees them, or puts a text file
-in the message. A reply can be copied or asked for again, and the last message changed and sent again.
+The **Chat** tab under the model talks to the model that runs: nothing to install, no browser. Replies come as they
+are written, with how fast (tokens a second). The paper clip sends a picture to a model that sees them, or puts a text
+file in the message. A reply can be copied or asked for again, and the last message changed and sent again. The **⋯**
+beside **New chat** has **Options** (instructions for the model, how free its answers are and how long they may be)
+and **Export…**, which saves a conversation as Markdown.
 
-Nothing is kept unless you tick **Keep chats**: then each conversation is a file on this computer, listed beside the
-chat, and **Export…** saves one as Markdown.
+Nothing is kept unless you tick **Keep chats** in that menu: then each conversation is a file on this computer, listed
+beside the chat.
+
+Keyboard: Ctrl+Enter starts or stops the model, Ctrl+K adds a model, Ctrl+L goes to the chat's box and Ctrl+, opens
+Settings.
 
 ## Run models on another computer
 
 A desktop with a big graphics card, or a rented GPU server, can run the models while you use them from here:
-**Server → Remote computers…** (or *Run on another computer…* on the page), add the computer by its SSH address, and
-choose it under **Runs on**. Start connects to it; the models, the chat and **Connect an app** then work as they do on
+**Server → Remote computers…** (or *Run on another computer…* under **Change**), add the computer by its SSH address,
+and choose it under **Change → Runs on**. Start connects to it; the models, the chat and **Connect an app** then work as they do on
 this computer.
 
 QuickAI connects with your own `ssh` (your keys, your agent and `~/.ssh/config` are used as they are) and opens no
@@ -119,8 +128,8 @@ Any client that takes a custom OpenAI base URL works: set it to `http://127.0.0.
 | Engine | For | How you get it |
 | --- | --- | --- |
 | **llama.cpp** | Chat, code, vision, embeddings: any GGUF model | Built in |
-| **Ollama** | The Ollama model library | **Ollama** in the toolbar, then **Install Ollama**; downloaded and checksummed on request |
-| **ComfyUI** | Images and video from workflows (Wan 2.2, LTX-Video and more) | **ComfyUI** in the toolbar, then **Install ComfyUI**; installed from source into its own environment, with ComfyUI-Manager unless you untick it |
+| **Ollama** | The Ollama model library | **Ollama** in the engine menu at the top right, then **Install Ollama**; downloaded and checksummed on request |
+| **ComfyUI** | Images and video from workflows (Wan 2.2, LTX-Video and more) | **ComfyUI** in the engine menu at the top right, then **Install ComfyUI**; installed from source into its own environment, with ComfyUI-Manager unless you untick it |
 | **Open WebUI** | A full chat page for Ollama | Settings → Chat UI; offline by default |
 
 Every engine QuickAI installs lives under `~/.quickai`, starts on `127.0.0.1` only, and has its own calls home

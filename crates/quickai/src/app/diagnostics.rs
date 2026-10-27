@@ -22,6 +22,12 @@ impl App {
         !bundled && !self.binary.is_file()
     }
 
+    /// Whether the page is the one that installs the engine: it is not here, and nothing of it runs (an Ollama the
+    /// person runs themselves, attached to, is there to use whatever is installed).
+    pub(super) fn needs_install(&self) -> bool {
+        self.engine_missing() && !self.session.is_active()
+    }
+
     /// The missing-binary line and the crash panel with its advice.
     pub(super) fn show_diagnostics(&mut self, ui: &mut egui::Ui, state: ServerState) {
         let server = self.server_name();
@@ -40,7 +46,10 @@ impl App {
             ui.add_space(8.0);
             // llama.cpp's own panel is about a start that failed: a server that was running and stopped is said as
             // every engine says it, with its document's advice
-            if self.engine == crate::settings::DEFAULT_ENGINE && !self.run_reached_running {
+            if self.engine == crate::settings::DEFAULT_ENGINE
+                && !self.run_reached_running
+                && self.crash_advice(&server).1.is_empty()
+            {
                 self.show_llamacpp_crash_panel(ui, state);
             } else {
                 self.show_crash_panel(ui, state, &server);
@@ -52,14 +61,12 @@ impl App {
         }
     }
 
-    /// llama.cpp's panel, word for word as it has always been.
-    fn show_llamacpp_crash_panel(&self, ui: &mut egui::Ui, _state: ServerState) {
+    /// llama.cpp's panel for a start that failed when its document has no advice for what the log says: the likeliest
+    /// reason is a build older than the model, and the way to another build.
+    fn show_llamacpp_crash_panel(&mut self, ui: &mut egui::Ui, _state: ServerState) {
+        let mut builds = false;
         theme::alert(ui, Tone::Bad, |ui| {
-            ui.label(
-                "The server exited before it finished starting — see the log below \
-                 for the exact reason (a common one: \"unknown model architecture\", \
-                 meaning this llama-server build predates support for this model).",
-            );
+            ui.label("llama-server stopped before it was ready. The Log tab says why.");
             let path = self.binary.display().to_string();
             let backend = self
                 .registry
@@ -74,31 +81,31 @@ impl App {
                         .color(super::theme::palette().warn),
                 );
             }
-            ui.label(
-                egui::RichText::new(
-                    "Worth trying a different llama-server build:\n\
-                     1. Open Settings > Advanced: llama.cpp.\n\
-                     2. Click \"Look up llama.cpp builds\" and pick one for your \
-                        platform/GPU from the list — it installs and applies \
-                        automatically.\n\
-                     3. Or, if you already have a llama-server build of your own \
-                        (a different backend, a custom compile, etc.), type or browse \
-                        to its path in the \"llama-server binary\" field above and \
-                        click Apply instead.\n\
-                     4. Click Start again.",
-                )
-                .small(),
-            );
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "A common reason is a model newer than this build of llama.cpp (\"unknown model \
+                         architecture\").",
+                    )
+                    .small(),
+                );
+                builds = ui
+                    .small_button("Choose another build...")
+                    .on_hover_text(
+                        "Settings, Advanced: llama.cpp: the builds on offer for this computer, and a box for a \
+                         llama-server of your own.",
+                    )
+                    .clicked();
+            });
         });
+        if builds {
+            self.advanced_section_wanted = true;
+            self.open_settings();
+        }
     }
 
-    /// Another engine's panel: what happened, and the advice its document has for what the log says.
-    pub(super) fn show_crash_panel(
-        &mut self,
-        ui: &mut egui::Ui,
-        _state: ServerState,
-        server: &str,
-    ) {
+    /// What the crash panel says first, and the advice the engine's document has for what the log says.
+    fn crash_advice(&self, server: &str) -> (String, Vec<Advice>) {
         let ended_in = if self.run_reached_running {
             "running"
         } else {
@@ -107,7 +114,7 @@ impl App {
         let what = if self.run_reached_running {
             format!("{server} stopped unexpectedly")
         } else {
-            format!("{server} exited before it finished starting")
+            format!("{server} stopped before it was ready")
         };
         let log: Vec<String> = self.log_lines.iter().cloned().collect();
         let selection = launch::selection_from_values(
@@ -123,9 +130,20 @@ impl App {
             &log,
             Some(ended_in),
         );
+        (what, hints)
+    }
+
+    /// Another engine's panel: what happened, and the advice its document has for what the log says.
+    pub(super) fn show_crash_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        _state: ServerState,
+        server: &str,
+    ) {
+        let (what, hints) = self.crash_advice(server);
         let mut asked: Option<String> = None;
         theme::alert(ui, Tone::Bad, |ui| {
-            ui.label(format!("{what} — see the log below for the exact reason."));
+            ui.label(format!("{what}. The Log tab says why."));
             for Advice { text, action } in &hints {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(text).small());

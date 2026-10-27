@@ -24,6 +24,7 @@ use values::FieldValues;
 
 mod about_window;
 mod acquire;
+mod add_model;
 mod api_info;
 mod catalog_view;
 mod chat;
@@ -36,7 +37,9 @@ mod diagnostics;
 mod engine;
 mod engine_bar;
 mod foreign_program;
+mod guide;
 mod header;
+mod icons;
 mod live_traffic;
 mod log_pane;
 mod lookup_view;
@@ -45,6 +48,7 @@ mod model_details;
 mod named_models;
 mod remote_ui;
 mod run_bar;
+mod run_settings;
 mod runtime_manager;
 mod settings_window;
 mod shell;
@@ -200,10 +204,25 @@ pub struct App {
     remote: remote_ui::RemoteState,
     /// The application's icon as a picture the title row draws; made when the first frame needs it.
     logo: Option<egui::TextureHandle>,
+    /// *Add a model* is open (a window; a first run has it on the page instead).
+    add_model_open: bool,
+    /// The box of *Add a model* is to be given the keyboard on the next frame.
+    focus_add_box: bool,
+    /// The window of the guides is open, on this one.
+    guide: Option<guide::Guide>,
+    /// *Change* is open under the model's name.
+    change_open: bool,
+    /// Custom was chosen among the presets: the fields are shown whatever the context size is.
+    change_custom: bool,
+    /// A run went wrong since the log was last looked at: its tab has a red dot.
+    log_unread: bool,
+    /// The state of the server the last frame, to see a run end in a crash once.
+    seen_state: Option<crate::events::ServerState>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {
+    /// The log (the dock's first tab before the chat was the page's).
     Main,
     Live,
     /// The conversation with the model that runs (`chat.rs`).
@@ -386,7 +405,7 @@ impl App {
             models_dir_override: None,
             models_dir_input: String::new(),
             settings_error: None,
-            active_tab: Tab::Main,
+            active_tab: Tab::Chat,
             traffic: VecDeque::new(),
             selected_session: None,
             gpu_vendors,
@@ -410,6 +429,13 @@ impl App {
             details_of: None,
             remote: remote_ui::RemoteState::default(),
             logo: None,
+            add_model_open: false,
+            focus_add_box: false,
+            guide: None,
+            change_open: false,
+            change_custom: false,
+            log_unread: false,
+            seen_state: None,
         };
         // the other computers the models can run on, and the one they run on
         app.remote.remotes = app.stored.remotes();
@@ -587,8 +613,8 @@ impl App {
             "open:settings" => self.open_settings(),
             other if other.starts_with("open:settings.") => self.open_settings(),
             other if other.starts_with("focus_field:") => {
-                // the field is where its section puts it: Settings for an advanced one, the row of
-                // controls above for a primary one, which is already on screen
+                // the field is where its section puts it: Settings for an advanced one, the Custom numbers of
+                // Change for a primary one, which are opened
                 let id = &other["focus_field:".len()..];
                 let section = self
                     .engine_doc()
@@ -597,6 +623,9 @@ impl App {
                 // the fields of a companion are all in its section of the Settings
                 if self.in_companion || section.as_deref().unwrap_or("advanced") != "primary" {
                     self.open_settings();
+                } else {
+                    self.change_open = true;
+                    self.change_custom = true;
                 }
                 self.push_log(format!("[quickai] Look at the `{id}` setting."));
             }
@@ -843,6 +872,15 @@ impl eframe::App for App {
 
         self.poll_restart(ui.ctx());
 
+        // a run that ends in a crash puts a dot on the log, once
+        let state = self.session.state();
+        if state == crate::events::ServerState::Crashed
+            && self.seen_state != Some(crate::events::ServerState::Crashed)
+        {
+            self.log_unread = true;
+        }
+        self.seen_state = Some(state);
+
         self.show_window(ui);
         if self.delete_asked_in_window {
             self.show_confirm_delete_modal(ui.ctx());
@@ -853,6 +891,9 @@ impl eframe::App for App {
         self.show_catalog_window(ui.ctx());
         self.show_remotes_window(ui.ctx());
         self.show_model_details(ui.ctx());
+        self.show_add_model_window(ui.ctx());
+        self.show_connect_window(ui.ctx());
+        self.show_guide_window(ui.ctx());
         self.show_foreign_program_modal(ui.ctx());
         self.show_configuration_modals(ui.ctx(), false);
         self.show_configurations_window(ui.ctx());

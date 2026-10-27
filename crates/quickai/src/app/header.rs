@@ -84,6 +84,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::Path;
 
+    use super::super::chat::Turn;
     use super::super::{theme, Tab};
     use super::*;
     use crate::config::{build_registry, ConfigDirs};
@@ -131,8 +132,8 @@ mod tests {
         app.selected = 0;
     }
 
-    /// One frame of the whole window (the menu bar, the toolbar, the list of models, the page, the dock and the status
-    /// bar), in a window of the size the GUI suites use. `_whole` is what the frame of the old title row was asked:
+    /// One frame of the whole window (the menu bar, the list of models, the page with its tabs, the status bar and the
+    /// windows over them), in a window of the size the GUI suites use. `_whole` is what the frame of the old title row was asked:
     /// the window is drawn whole either way.
     fn frame(app: &mut App, ctx: &egui::Context, _whole: bool) -> egui::FullOutput {
         frame_with(app, ctx, true, Vec::new())
@@ -153,7 +154,13 @@ mod tests {
             events,
             ..Default::default()
         };
-        let mut output = ctx.run_ui(raw, |ui| app.show_window(ui));
+        let mut output = ctx.run_ui(raw, |ui| {
+            app.show_window(ui);
+            // the windows of the main window (UI v2): Add a model, Connect an app, the guides
+            app.show_add_model_window(ui.ctx());
+            app.show_connect_window(ui.ctx());
+            app.show_guide_window(ui.ctx());
+        });
         output.textures_delta.clear();
         output
     }
@@ -249,16 +256,17 @@ mod tests {
                     .get(text)
                     .unwrap_or_else(|| panic!("{text} on the {live} tab: {:?}", found.keys()))
             };
-            let (state, engine) = (at("Stopped"), at("llama.cpp"));
-            // in the status bar: the last row of the window, the state at its left and the engine at its right
+            let (state, place) = (at("Stopped"), at("This computer"));
+            // in the status bar: the last row of the window, the state at its left and where the models run at its
+            // right (the engine is in the menu bar now)
             assert!(
                 state.center().y > 530.0,
                 "{live}: {state:?} is not in the status bar"
             );
             assert!(state.left() < 40.0, "{live}: {state:?}");
             assert!(
-                (engine.center().y - state.center().y).abs() < 4.0 && engine.left() > 600.0,
-                "{live}: {engine:?} {state:?}"
+                (place.center().y - state.center().y).abs() < 4.0 && place.left() > 600.0,
+                "{live}: {place:?} {state:?}"
             );
             // (the menu bar, the first row, is held to its order by A70 of the configurations)
         }
@@ -356,13 +364,16 @@ mod tests {
             "{:?} {start:?}",
             green[0]
         );
-        // and the buttons are in their order in the toolbar, Start before Stop before the chat before Connect an app
-        assert!(start.center().y < 70.0, "{start:?} is not in the toolbar");
-        let order: Vec<f32> = ["Start", "Stop", "Open Chat UI", "Connect an app"]
-            .iter()
-            .map(|text| found.get(*text).unwrap_or_else(|| panic!("{text}")).left())
-            .collect();
-        assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{order:?}");
+        // and Start is beside the model's name, at the right end of its row; Stop and Connect an app are not there while
+        // nothing runs (UI v2: there is no toolbar)
+        let name = heading_of(&found, &app.models[0].display);
+        assert!(
+            (start.center().y - name.center().y).abs() < 12.0 && start.left() > name.right(),
+            "{start:?} is not beside {name:?}"
+        );
+        for text in ["Stop", "Connect an app"] {
+            assert!(!found.contains_key(text), "{text} while stopped");
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -377,7 +388,7 @@ mod tests {
         };
         assert!(!said(&rects(&settled(&mut app, &ctx, true))));
 
-        // the log has it too, and the results of a look-up, which have the page, hide the log: it is in the card
+        // the log has it too: it is in a card under the box of Add a model (on the page of a first run, as here)
         app.catalog.note =
             Some("Download failed: tango-Q4_K_M.gguf does not match the checksum".into());
         let found = rects(&settled(&mut app, &ctx, true));
@@ -385,7 +396,9 @@ mod tests {
             .iter()
             .find(|(text, _)| text.starts_with("Download failed"))
             .unwrap_or_else(|| panic!("the failure in the window: {:?}", found.keys()));
-        let get = found.get("Get:").expect("the box it was asked for in");
+        let get = found
+            .get("Search, or paste a link or file path")
+            .expect("the box it was asked for in");
         assert!(note.top() > get.bottom(), "{note:?} is not under {get:?}");
 
         // Dismiss takes it away
@@ -414,6 +427,9 @@ mod tests {
     fn p3_i24_what_is_said_of_a_listed_model_is_chips_on_one_row_and_not_lines_of_small_print() {
         let dir = scratch("z24");
         let mut app = app_in(&dir, "ollama");
+        // an Ollama that is installed (a page of its own installs one that is not)
+        std::fs::write(dir.join("ollama"), "").unwrap();
+        app.binary = dir.join("ollama");
         let ctx = egui::Context::default();
         app.models = vec![listed("qwen3-vl:8b", "completion, vision, tools, thinking")];
         app.selected = 0;
@@ -421,7 +437,11 @@ mod tests {
         app.named.stale = true;
         let found = rects(&settled(&mut app, &ctx, true));
         let picker = heading_of(&found, "qwen3-vl:8b");
-        let get = *found.get("Get:").expect("the box that gets another model");
+        let get = *found
+            .iter()
+            .find(|(text, _)| text.contains(" context · "))
+            .unwrap_or_else(|| panic!("the line of how it runs: {:?}", found.keys()))
+            .1;
         let chips: Vec<egui::Rect> = [
             "vision",
             "tools",
@@ -436,7 +456,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{text}: {:?}", found.keys()))
         })
         .collect();
-        // all on one row, under the picker's and over the box that gets another model
+        // all on one row, under the name and over the line that says how it runs
         for chip in &chips {
             assert!(
                 chip.top() > picker.bottom() && chip.bottom() < get.top(),
@@ -457,9 +477,9 @@ mod tests {
                 "{text:?} is still there"
             );
         }
-        // the row is the height of its chips: the box under it is the row and the name of its group box further down
+        // the row is the height of its chips: the line under it is that row further down
         assert!(
-            get.top() - picker.bottom() < 90.0,
+            get.top() - picker.bottom() < 60.0,
             "{get:?} is far below {picker:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -530,12 +550,18 @@ mod tests {
             "{:?}",
             found.keys()
         );
-        // and a model with nothing but its speed to say has a row of one tag: the box is only that row further down
+        // and a model with nothing but its speed to say has a row of one tag: the line of how it runs is only that row
+        // further down
         app.models[0].note = String::new();
         let found = rects(&settled(&mut app, &ctx, true));
-        let (picker, get) = (heading_of(&found, "Bonsai-1.7B-Q1_0.gguf"), found["Get:"]);
+        let picker = heading_of(&found, "Bonsai-1.7B-Q1_0.gguf");
+        let get = *found
+            .iter()
+            .find(|(text, _)| text.contains(" context · "))
+            .unwrap_or_else(|| panic!("the line of how it runs: {:?}", found.keys()))
+            .1;
         assert!(
-            get.top() - picker.bottom() < 90.0,
+            get.top() - picker.bottom() < 60.0,
             "{get:?} is far below {picker:?} with nothing said of the model"
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -581,8 +607,10 @@ mod tests {
     fn p3_i27_a_look_up_that_found_models_says_its_count_once_and_a_model_has_its_sizes_beside_its_name(
     ) {
         let dir = scratch("z27");
-        let mut app = app_in(&dir, "ollama");
+        // (llama.cpp, which is always there: the results are under the box of Add a model, on the page of a first run)
+        let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
+        app.model_input = "qwen".to_string();
         looked_up(
             &mut app,
             "Found 2 models in ollama.com's library. There are more: type some words to narrow the search.",
@@ -631,6 +659,250 @@ mod tests {
             "{:?}",
             found.keys()
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- UI v2 (C175 to C180) ---------------------------------------------------------------------------------
+
+    /// A key pressed with Ctrl (Cmd on a Mac), as one frame of events.
+    fn command_key(key: egui::Key) -> Vec<egui::Event> {
+        vec![egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        }]
+    }
+
+    #[test]
+    fn the_menu_bar_has_four_menus_and_the_view_menu_is_gone() {
+        let dir = scratch("v2-menus");
+        let mut app = app_in(&dir, "llamacpp");
+        let ctx = egui::Context::default();
+        let found = rects(&settled(&mut app, &ctx, true));
+        let menus: Vec<egui::Rect> = ["File", "Models", "Server", "Help"]
+            .iter()
+            .map(|m| {
+                *found
+                    .get(*m)
+                    .unwrap_or_else(|| panic!("{m}: {:?}", found.keys()))
+            })
+            .collect();
+        assert!(menus.iter().all(|r| r.center().y < 30.0), "{menus:?}");
+        assert!(
+            menus.windows(2).all(|p| p[0].right() < p[1].left()),
+            "{menus:?}"
+        );
+        assert!(!found.contains_key("View"));
+        // nor what the View menu and the toolbar had
+        for gone in ["Dark theme", "Settings", "Set up chat UI...", "Refresh"] {
+            assert!(!found.contains_key(gone), "{gone} is still drawn");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_theme_is_changed_at_once_and_kept() {
+        let dir = scratch("v2-theme");
+        let mut app = app_in(&dir, "llamacpp");
+        let ctx = egui::Context::default();
+        let dark = app.dark_mode;
+        app.set_dark_mode(&ctx, !dark);
+        assert_eq!(app.dark_mode, !dark);
+        assert_eq!(theme::is_dark(), !dark);
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved["dark_mode"], !dark, "{saved}");
+        app.set_dark_mode(&ctx, dark);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ctrl_k_adds_a_model_and_ctrl_l_goes_to_the_chat() {
+        let dir = scratch("v2-keys");
+        let mut app = app_in(&dir, "llamacpp");
+        only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
+        let ctx = egui::Context::default();
+        app.active_tab = Tab::Main;
+        settled(&mut app, &ctx, true);
+        frame_with(&mut app, &ctx, true, command_key(egui::Key::K));
+        assert!(app.add_model_open, "Ctrl+K opens Add a model");
+        let found = rects(&settled(&mut app, &ctx, true));
+        assert!(
+            found.contains_key("Add a model") && found.contains_key("SUGGESTED FOR THIS COMPUTER"),
+            "{:?}",
+            found.keys()
+        );
+        app.add_model_open = false;
+        frame_with(&mut app, &ctx, true, command_key(egui::Key::L));
+        assert!(app.active_tab == Tab::Chat, "Ctrl+L opens the chat");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn getting_started_ticks_its_steps_as_they_are_done() {
+        let dir = scratch("v2-steps");
+        let mut app = app_in(&dir, "llamacpp");
+        let done = |app: &App| app.getting_started().map(|(_, d)| d);
+        assert_eq!(
+            done(&app),
+            [true, false, false],
+            "llama.cpp is ready; no model yet"
+        );
+        only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
+        assert_eq!(done(&app), [true, true, false]);
+        app.chat
+            .turns
+            .extend([Turn::said(true, "Hello"), Turn::said(false, "Hi there")]);
+        assert_eq!(done(&app), [true, true, true], "a reply is the last step");
+        // and an engine that is not installed is the first step not done
+        let ollama = app_in(&dir, "ollama");
+        assert!(!done(&ollama)[0]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn what_the_person_wrote_and_the_reply_are_both_drawn_each_on_its_side() {
+        let dir = scratch("v2-chat");
+        let mut app = app_in(&dir, "llamacpp");
+        only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
+        app.active_tab = Tab::Chat;
+        app.chat.turns.extend([
+            Turn::said(true, "Write a haiku about local AI"),
+            Turn::said(false, "Quiet fans hum on"),
+        ]);
+        let ctx = egui::Context::default();
+        let found = rects(&settled(&mut app, &ctx, true));
+        // the person's message was drawn nowhere (a row laid from right to left, with no height): it is at the right
+        let mine = *found
+            .get("Write a haiku about local AI")
+            .unwrap_or_else(|| panic!("the person's message: {:?}", found.keys()));
+        let reply = *found
+            .get("Quiet fans hum on")
+            .unwrap_or_else(|| panic!("the reply: {:?}", found.keys()));
+        assert!(mine.right() > 700.0, "{mine:?} is not at the right");
+        assert!(reply.left() < 300.0, "{reply:?} is not at the left");
+        assert!(mine.bottom() <= reply.top(), "{mine:?} {reply:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_port_in_use_is_said_as_such_for_llamacpp_and_its_button_opens_the_numbers() {
+        let dir = scratch("v2-port");
+        let mut app = app_in(&dir, "llamacpp");
+        only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
+        app.log_lines.push_back(
+            "couldn't bind HTTP server socket, hostname: 127.0.0.1, port: 8080".to_string(),
+        );
+        let ctx = egui::Context::default();
+        let raw = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(760.0, 560.0),
+            )),
+            ..Default::default()
+        };
+        let mut said = String::new();
+        for _ in 0..2 {
+            let mut output = ctx.run_ui(raw(), |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    app.show_diagnostics(ui, crate::events::ServerState::Crashed)
+                });
+            });
+            output.textures_delta.clear();
+            said = format!("{:?}", output.shapes);
+        }
+        assert!(
+            said.contains("Another program is using port 8080")
+                && said.contains("Go to the setting"),
+            "{said}"
+        );
+        assert!(!said.contains("Choose another build"), "{said}");
+        // the button goes to the numbers: Change, Custom
+        app.invoke("focus_field:port");
+        assert!(app.change_open && app.change_custom);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_first_start_chooses_the_model_recommended_for_this_computer_and_then_the_one_chosen() {
+        let dir = scratch("v2-first-pick");
+        // two models before the window is made: a small one first by name, and a bigger one that suits 16 GB better
+        let folder = dir.join("models");
+        std::fs::create_dir_all(&folder).unwrap();
+        for (name, bytes) in [
+            ("A-tiny-Q4_K_M.gguf", GB / 4),
+            ("Z-chat-Q4_K_M.gguf", 2 * GB),
+        ] {
+            std::fs::File::create(folder.join(name))
+                .unwrap()
+                .set_len(bytes)
+                .unwrap();
+        }
+        let app = app_in(&dir, "llamacpp");
+        assert_eq!(
+            app.recommended_filename.as_deref(),
+            Some("Z-chat-Q4_K_M.gguf")
+        );
+        assert_eq!(app.models[app.selected].filename, "Z-chat-Q4_K_M.gguf");
+        // the one chosen last time wins over the recommendation
+        let settings = Settings {
+            last_model_filename: Some("A-tiny-Q4_K_M.gguf".to_string()),
+            models_dir_override: Some(folder.display().to_string()),
+            ..Settings::default()
+        };
+        let app = App::build_in(
+            settings,
+            build_registry(&ConfigDirs::default()),
+            16 * GB,
+            Vec::new(),
+            Some(dir.join("settings.json")),
+            Some(dir.join("data").display().to_string()),
+        );
+        assert_eq!(app.models[app.selected].filename, "A-tiny-Q4_K_M.gguf");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_long_item_of_a_list_in_a_reply_wraps_inside_the_window() {
+        let dir = scratch("v2-wrap");
+        let mut app = app_in(&dir, "llamacpp");
+        only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
+        app.active_tab = Tab::Chat;
+        let long = "word ".repeat(60);
+        app.chat.turns.extend([
+            Turn::said(true, "Three tips, please"),
+            Turn::said(false, format!("1. **First**: {long}\n2. Second\n> {long}")),
+        ]);
+        let ctx = egui::Context::default();
+        let output = settled(&mut app, &ctx, true);
+        // every text the reply painted is inside the window (760 wide), and the long ones are on several lines
+        let mut texts = Vec::new();
+        fn walk(shape: &egui::epaint::Shape, into: &mut Vec<(String, egui::Rect, usize)>) {
+            match shape {
+                egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, into)),
+                egui::epaint::Shape::Text(t) => into.push((
+                    t.galley.text().to_string(),
+                    t.galley.rect.translate(t.pos.to_vec2()),
+                    t.galley.rows.len(),
+                )),
+                _ => {}
+            }
+        }
+        for clipped in &output.shapes {
+            walk(&clipped.shape, &mut texts);
+        }
+        let wordy: Vec<&(String, egui::Rect, usize)> = texts
+            .iter()
+            .filter(|(t, _, _)| t.contains("word word"))
+            .collect();
+        assert_eq!(wordy.len(), 2, "{texts:?}");
+        for (_, rect, rows) in wordy {
+            assert!(rect.right() <= 760.0, "{rect:?} runs out of the window");
+            assert!(*rows > 1, "{rect:?} is one line");
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

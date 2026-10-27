@@ -2,8 +2,11 @@
 
 use eframe::egui;
 
-use super::theme::{self, Tone};
+use super::icons::{self, Icon};
+use super::shell::RowAction;
+use super::theme::{self, Role, Tone};
 use super::App;
+use crate::events::ServerState;
 use crate::hardware;
 
 /// One thing that is said of the picked model, as a chip: its words, the tone it is drawn in and what is said more of
@@ -49,77 +52,287 @@ pub(super) fn first_sentence(note: &str) -> &str {
 }
 
 impl App {
-    /// The chosen model's name as the heading of the page, and at the right end of its row the quiet button that
-    /// deletes it (after a question); why it cannot be deleted now is what the button says when it is greyed.
-    pub(super) fn show_model_heading(&mut self, ui: &mut egui::Ui) {
-        let Some(model) = self.models.get(self.selected) else {
+    /// The head of the page: the chosen model's name, what it is doing, and at the right end of its row what can be
+    /// done with it: Start (or Load model, or Use this model), Connect an app and Stop while it runs, and its menu.
+    /// Under the name, what is known of it as chips.
+    pub(super) fn show_model_header(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: ServerState,
+        active: bool,
+    ) {
+        let Some(model) = self.models.get(self.selected).cloned() else {
             return;
         };
-        let name = model.display.clone();
-        // what came with the application is never the person's to delete: no button, rather than one always greyed
-        let shipped = model.bundled || model.path.starts_with(&self.bundled_models_dir);
-        if shipped {
-            let mut details = false;
-            ui.horizontal(|ui| {
-                ui.heading(name.as_str());
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    details = theme::button_sized(
+        let index = self.selected;
+        let lists = self.lists_models();
+        let server = self.server_name();
+        let loadable = self.can_load_selected();
+        let switchable = self.can_switch_selected();
+        let runs_this = self.runs_model(index);
+        let named_this = self.session.model_name() == Some(model.display.as_str());
+        let loading_this = self.session.loading() == Some(model.display.as_str())
+            || self.session.loading() == Some(model.filename.as_str());
+        let can_start = !self.engine_missing();
+        let can_press_start = (!active && can_start) || loadable || switchable;
+        let can_stop = matches!(state, ServerState::Starting | ServerState::Running);
+        let show_start = !active || loadable || switchable;
+        // green while it is the thing to do: Start, or loading into an engine that has nothing loaded. With a model
+        // running, the one that changes the model is not
+        let first_model = !active || self.session.model_name().is_none();
+        let start_label = if loadable {
+            "Load model"
+        } else if switchable {
+            "Use this model"
+        } else {
+            "Start"
+        };
+        let start_hint = if loadable {
+            format!("Load this model into the running {server} (Ctrl+Enter).")
+        } else if switchable {
+            format!("Start {server} again with this model.")
+        } else {
+            format!("Start {server} with this model (Ctrl+Enter).")
+        };
+        let height = 30.0;
+        let mut pressed = HeaderPress::default();
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let more = icons::icon_button(ui, Icon::More, egui::vec2(30.0, height), true, false)
+                    .on_hover_text("Details, Show in folder, Copy name, Delete");
+                egui::Popup::menu(&more)
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+                    .show(|ui| {
+                        pressed.menu = self.model_menu(ui, index, lists);
+                    });
+                if can_stop {
+                    pressed.stop = theme::button_sized(
                         ui,
-                        theme::Role::Quiet,
+                        Role::Danger,
                         true,
-                        "Details…",
-                        egui::vec2(0.0, 22.0),
+                        "Stop",
+                        egui::vec2(64.0, height),
+                    )
+                    .on_hover_text(format!("Stop the running {server} (Ctrl+Enter)."))
+                    .clicked();
+                }
+                if state == ServerState::Running {
+                    pressed.connect = theme::button_sized(
+                        ui,
+                        Role::Normal,
+                        true,
+                        "Connect an app",
+                        egui::vec2(0.0, height),
                     )
                     .on_hover_text(
-                        "What is known of this model: its file, its size, its quantization.",
+                        "The address to give another app, and a chat in your browser when the engine has one.",
                     )
                     .clicked();
+                }
+                if show_start {
+                    pressed.start = theme::button_sized(
+                        ui,
+                        if can_press_start && first_model {
+                            Role::Primary
+                        } else {
+                            Role::Normal
+                        },
+                        can_press_start,
+                        start_label,
+                        egui::vec2(76.0, height),
+                    )
+                    .on_hover_text(start_hint)
+                    .clicked();
+                }
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(model.display.as_str())
+                                .size(20.0)
+                                .family(theme::semibold(ui))
+                                .color(theme::palette().text),
+                        )
+                        .truncate(),
+                    );
+                    let p = theme::palette();
+                    if runs_this {
+                        state_words(ui, p.ok, "Running");
+                    } else if loading_this {
+                        state_words(ui, p.warn, "Loading...");
+                    } else if state == ServerState::Starting && (named_this || lists) {
+                        state_words(ui, p.warn, "Starting...");
+                    }
                 });
             });
-            if details {
-                self.details_of = Some(model_name_of(&self.models, self.selected));
+        });
+        self.show_header_facts(ui, &model);
+        if pressed.start {
+            if loadable {
+                self.load_selected();
+            } else if switchable {
+                self.switch_to_selected();
+            } else {
+                self.start_selected(ui.ctx());
             }
-            return;
         }
-        let index = self.selected;
-        let deletable = self.delete_request(index);
-        let mut delete = false;
-        let mut details = false;
+        if pressed.stop {
+            // the page goes with what it talks to
+            self.stop_companion();
+            self.session.stop();
+        }
+        if pressed.connect {
+            self.show_api_info = true;
+        }
+        if let Some(action) = pressed.menu {
+            self.do_row_action(ui.ctx(), index, action);
+        }
+    }
+
+    /// The head of the page of an engine that runs on its own (ComfyUI): its name, what it is doing, and Start, its
+    /// page in the browser, Connect an app and Stop.
+    pub(super) fn show_alone_header(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: ServerState,
+        active: bool,
+    ) {
+        let name = self.engine_name();
+        let server = self.server_name();
+        let can_stop = matches!(state, ServerState::Starting | ServerState::Running);
+        let web_ui = self
+            .engine_doc()
+            .and_then(|e| e.doc.provides.web_ui.clone());
+        let height = 30.0;
+        let mut start = false;
+        let mut stop = false;
+        let mut connect = false;
+        let mut open_page = false;
         ui.horizontal(|ui| {
-            ui.heading(name.as_str());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let button = theme::button_sized(
-                    ui,
-                    theme::Role::Quiet,
-                    deletable.is_ok(),
-                    "Delete…",
-                    egui::vec2(0.0, 22.0),
-                );
-                let button = match &deletable {
-                    Ok(_) => button.on_hover_text(
-                        "Delete this model from this computer. It asks first; right-click a model in the \
-                         list for the same.",
-                    ),
-                    Err(why) => button.on_disabled_hover_text(why),
-                };
-                                delete = button.clicked();
-                details = theme::button_sized(
-                    ui,
-                    theme::Role::Quiet,
-                    true,
-                    "Details…",
-                    egui::vec2(0.0, 22.0),
-                )
-                .on_hover_text("What is known of this model: its file, its size, its quantization, what goes with it.")
-                .clicked();
+                if can_stop {
+                    stop = theme::button_sized(
+                        ui,
+                        Role::Danger,
+                        true,
+                        "Stop",
+                        egui::vec2(64.0, height),
+                    )
+                    .on_hover_text(format!("Stop the running {server} (Ctrl+Enter)."))
+                    .clicked();
+                }
+                if state == ServerState::Running {
+                    connect = theme::button_sized(
+                        ui,
+                        Role::Normal,
+                        true,
+                        "Connect an app",
+                        egui::vec2(0.0, height),
+                    )
+                    .on_hover_text(format!(
+                        "Show how to connect an app to the running {server}."
+                    ))
+                    .clicked();
+                    if let Some(web_ui) = &web_ui {
+                        open_page = theme::button_sized(
+                            ui,
+                            Role::Primary,
+                            true,
+                            web_ui.label.as_str(),
+                            egui::vec2(0.0, height),
+                        )
+                        .on_hover_text(format!("Open the running {server} in your browser."))
+                        .clicked();
+                    }
+                }
+                if !active {
+                    start = theme::button_sized(
+                        ui,
+                        Role::Primary,
+                        !self.engine_missing(),
+                        "Start",
+                        egui::vec2(76.0, height),
+                    )
+                    .on_hover_text(format!(
+                        "Launch {server} with the settings below (Ctrl+Enter)."
+                    ))
+                    .clicked();
+                }
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.label(
+                        egui::RichText::new(name.as_str())
+                            .size(20.0)
+                            .family(theme::semibold(ui))
+                            .color(theme::palette().text),
+                    );
+                    let p = theme::palette();
+                    match state {
+                        ServerState::Running => state_words(ui, p.ok, "Running"),
+                        ServerState::Starting => state_words(ui, p.warn, "Starting..."),
+                        _ => {}
+                    }
+                });
             });
         });
-        if delete {
-            self.ask_to_delete_from_window(index);
+        if start {
+            self.start_selected(ui.ctx());
         }
-        if details {
-            self.details_of = self.models.get(index).map(|m| m.filename.clone());
+        if stop {
+            self.stop_companion();
+            self.session.stop();
         }
+        if connect {
+            self.show_api_info = true;
+        }
+        if open_page {
+            if let (Some(web_ui), Some(port)) = (&web_ui, self.session.port()) {
+                let path = if web_ui.path == "/" { "" } else { &web_ui.path };
+                let _ = webbrowser::open(&format!("http://127.0.0.1:{port}{path}"));
+            }
+        }
+    }
+
+    /// What is known of the chosen model, under its name: its size and quantization in words, then chips (how fast it
+    /// will be here, what it can do, that it is the one recommended), then the first sentence of its note.
+    fn show_header_facts(&self, ui: &mut egui::Ui, model: &crate::models::ModelEntry) {
+        let mut lead = vec![super::shell::size_text(model.size_bytes)];
+        if let Some(q) = super::model_details::quantization(&model.filename) {
+            lead.push(q);
+        }
+        let mut chips = Vec::new();
+        let mut sentence = None;
+        if self.lists_models() {
+            // what the engine says the model can do is a chip each; `completion` is what every model that chats
+            // does, and is not worth a chip
+            chips.extend(
+                model
+                    .note
+                    .split(", ")
+                    .filter(|word| !word.is_empty() && *word != "completion")
+                    .map(|word| Fact {
+                        text: word.to_string(),
+                        tone: None,
+                        hover: super::named_models::capability_help(word).to_string(),
+                    }),
+            );
+            if self.named.stale {
+                chips.push(Fact {
+                    text: "from the last run".to_string(),
+                    tone: None,
+                    hover: format!(
+                        "(as {} listed them the last time it ran)",
+                        self.engine_name()
+                    ),
+                });
+            }
+        } else {
+            let (note, mode) = split_mode(&model.note);
+            chips.extend(mode);
+            sentence = (!note.is_empty()).then_some(note);
+        }
+        if self.recommended_filename.as_deref() == Some(model.filename.as_str()) {
+            chips.push(self.recommended_fact());
+        }
+        self.show_model_facts(ui, Some(lead.join(" · ")), chips, sentence, true);
     }
 
     /// How fast the selected model is likely to run here: the words of the chip, its tone and what its hover text says. It is
@@ -173,6 +386,7 @@ impl App {
     pub(super) fn show_model_facts(
         &self,
         ui: &mut egui::Ui,
+        lead: Option<String>,
         chips: Vec<Fact>,
         sentence: Option<&str>,
         with_speed: bool,
@@ -189,6 +403,9 @@ impl App {
             ui.spacing_mut().item_spacing.x = 6.0;
             ui.spacing_mut().interact_size.y = 20.0;
             ui.horizontal_wrapped(|ui| {
+                if let Some(lead) = &lead {
+                    ui.label(theme::muted(lead.as_str()));
+                }
                 if with_speed {
                     let (text, tone, hover) = self.speed_chip_parts();
                     theme::chip(ui, &text, tone).on_hover_text(hover);
@@ -209,54 +426,21 @@ impl App {
             });
         });
     }
-
-    /// The chosen model's name and, under it, what is said of it: how fast it will be, the tags, the first sentence of
-    /// its note.
-    pub(super) fn show_model_bar(&mut self, ui: &mut egui::Ui) {
-        if self.lists_models() {
-            self.show_named_model_bar(ui);
-            return;
-        }
-        // the model is chosen in the list on the left; here is its name and what is known of it
-        self.show_model_heading(ui);
-        if let Some(m) = self.models.get(self.selected) {
-            let mut chips = Vec::new();
-            if self.recommended_filename.as_deref() == Some(m.filename.as_str()) {
-                chips.push(self.recommended_fact());
-            }
-            // how it is started (an embedding server) is a chip, and the rest of the note is cut at its first sentence
-            let (note, mode) = split_mode(&m.note);
-            chips.extend(mode);
-            let sentence = (!note.is_empty()).then_some(note);
-            self.show_model_facts(ui, chips, sentence, true);
-        } else {
-            // a first run, not a fault: what to do next, and where a file put there by hand is read from
-            // a first run: the three steps from here to a conversation
-            let folder =
-                super::runtime_manager::display_root(&self.models_dir, &self.host_facts.home);
-            ui.add_space(2.0);
-            ui.label(egui::RichText::new("Getting started").strong());
-            for step in [
-                format!(
-                    "1. The engine is {}: the switch at the right of the toolbar has the others.",
-                    self.engine_name()
-                ),
-                format!(
-                    "2. No models yet. Get one below: Recommended has a short list that suits this computer, and Look \
-                     up online searches Hugging Face. A .gguf file you put in {folder} is listed too (Refresh)."
-                ),
-                "3. Press Start, then talk to the model in the Chat tab at the foot of the window.".to_string(),
-            ] {
-                ui.label(theme::muted(step));
-            }
-        }
-    }
 }
 
-/// The name of the model at `index`, as `details_of` names it.
-fn model_name_of(models: &[crate::models::ModelEntry], index: usize) -> String {
-    models
-        .get(index)
-        .map(|m| m.filename.clone())
-        .unwrap_or_default()
+/// Pressed in the head of the page this frame.
+#[derive(Default)]
+struct HeaderPress {
+    start: bool,
+    stop: bool,
+    connect: bool,
+    menu: Option<RowAction>,
+}
+
+/// What the model is doing, after its name: a dot and a word in the colour of the state.
+fn state_words(ui: &mut egui::Ui, color: egui::Color32, words: &str) {
+    ui.add_space(6.0);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+    ui.painter().circle_filled(rect.center(), 4.0, color);
+    ui.label(egui::RichText::new(words).color(color));
 }

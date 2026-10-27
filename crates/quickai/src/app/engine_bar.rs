@@ -1,7 +1,7 @@
-//! Choosing the engine and getting it, from the main window: the engines as one segmented control in the toolbar
-//! (a dropdown where the toolbar has no room for it, and the same choice in the Server menu), and, for an engine that
-//! is downloaded on request and is not here yet, a section at the top of the page with one button that installs the
-//! build its document offers first for this machine. Settings keeps the engine's row and its Advanced section, where
+//! Choosing the engine and getting it, from the main window: the engines as a menu at the right of the menu bar,
+//! each saying whether it is ready (and the same choice in the Server menu), and, for an engine that is downloaded on
+//! request and is not here yet, a page with one button that installs the build its document offers first for this
+//! machine. Settings keeps the engine's row and its Advanced section, where
 //! another version or a program of the person's own is chosen.
 
 use std::path::Path;
@@ -14,9 +14,6 @@ use super::theme::{self, Role};
 use super::App;
 use crate::prims::feed::LookupSpec;
 use crate::prims::install;
-
-/// The room kept free between the buttons of the toolbar and the engine's control.
-const TOOLBAR_GAP: f32 = 12.0;
 
 impl App {
     /// The engines a person can choose, `(id, name, summary)`, llama.cpp first: it is the engine of a first run.
@@ -47,57 +44,81 @@ impl App {
         }
     }
 
-    /// The engine's control at the right of the toolbar, drawn in a layout that runs from right to left (beside
-    /// Settings): the engines side by side when there is room, a dropdown when there is less, nothing when there is
-    /// none (the Server menu has them too).
-    pub(super) fn show_engine_switch(&mut self, ui: &mut egui::Ui, height: f32) {
+    /// Whether the engine `id` is ready to run on this computer: it came with the application, or its program is
+    /// where its document finds it. Asked only while the menu of the engines is open.
+    fn engine_ready(&self, id: &str) -> bool {
+        if id == self.engine {
+            return !self.needs_install();
+        }
+        let Some(engine) = self.registry.engine(id) else {
+            return false;
+        };
+        if engine.doc.engine.bundled {
+            return true;
+        }
+        let values = super::values::FieldValues::from_settings(&self.stored, Some(engine));
+        crate::launch::locate_binary_in(
+            &self.registry,
+            id,
+            values.text("bin_override"),
+            self.data_dir_override.as_deref(),
+        )
+        .is_file()
+    }
+
+    /// The engine's menu at the right of the menu bar: its name and a chevron, with no label (it says "Engine" when the
+    /// pointer rests on it). Each engine of the menu says whether it is ready; Manage engines opens Settings.
+    pub(super) fn show_engine_dropdown(&mut self, ui: &mut egui::Ui) {
         let engines = self.engine_choices();
         if engines.len() < 2 {
             return;
         }
-        let names: Vec<&str> = engines.iter().map(|(_, name, _)| name.as_str()).collect();
-        let chosen = engines
-            .iter()
-            .position(|(id, _, _)| *id == self.engine)
-            .unwrap_or(0);
         let lock = self.engine_lock_reason();
-        let room = ui.available_width() - TOOLBAR_GAP;
-        let wide = theme::segmented_width(ui, &names);
-        let label_width = 52.0;
-        let mut picked: Option<usize> = None;
-        if room >= wide + label_width {
-            let hovers: Vec<String> = engines
-                .iter()
-                .map(|(_, name, summary)| match lock {
-                    Some(why) => why.to_string(),
-                    None if summary.is_empty() => format!("Use {name}."),
-                    None => format!("Use {name}: {summary}"),
-                })
-                .collect();
-            picked = theme::segmented(ui, &names, &hovers, chosen, lock.is_none(), height);
-            ui.label(theme::muted("Engine")).on_hover_text(
-                "Which program runs the models. Each engine keeps its own settings and models; one that is \
-                 not on this computer yet is downloaded only when you ask.",
-            );
-        } else if room >= 120.0 {
-            ui.add_enabled_ui(lock.is_none(), |ui| {
-                egui::ComboBox::from_id_salt("toolbar_engine")
-                    .selected_text(names[chosen])
-                    .width(110.0)
-                    .show_ui(ui, |ui| {
-                        for (i, name) in names.iter().enumerate() {
-                            if ui.selectable_label(i == chosen, *name).clicked() && i != chosen {
-                                picked = Some(i);
-                            }
-                        }
-                    })
-                    .response
-                    .on_hover_text(lock.unwrap_or("Which program runs the models."))
-                    .on_disabled_hover_text(lock.unwrap_or_default());
+        let name = self.engine_name();
+        let button = engine_button(ui, &name, lock.is_none());
+        let button = match lock {
+            Some(why) => button.on_hover_text(format!("Engine. {why}")),
+            None => button.on_hover_text(
+                "Engine: the program that runs the models. Each keeps its own models and settings.",
+            ),
+        };
+        let mut picked: Option<String> = None;
+        let mut manage = false;
+        egui::Popup::menu(&button)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+            .width(260.0)
+            .show(|ui| {
+                ui.set_width(260.0);
+                for (id, name, summary) in &engines {
+                    let on = *id == self.engine;
+                    let ready = self.engine_ready(id);
+                    let said = match (on, ready) {
+                        (true, true) => "In use",
+                        (true, false) => "In use · Not installed",
+                        (false, true) => "Ready",
+                        (false, false) => "Not installed",
+                    };
+                    let row = engine_row(ui, name, said, on, ready);
+                    let row = if summary.is_empty() {
+                        row
+                    } else {
+                        row.on_hover_text(summary.as_str())
+                    };
+                    if row.clicked() && !on {
+                        picked = Some(id.clone());
+                    }
+                }
+                ui.separator();
+                if ui.button("Manage engines…").clicked() {
+                    manage = true;
+                }
             });
+        if let Some(id) = picked {
+            self.switch_engine(&id);
         }
-        if let Some(i) = picked {
-            self.switch_engine(&engines[i].0);
+        if manage {
+            self.advanced_section_wanted = true;
+            self.open_settings();
         }
     }
 
@@ -176,10 +197,11 @@ impl App {
         ));
     }
 
-    /// The section that gets an engine that is not here: what will be done, the button that does it, and then what
-    /// it is doing or why it did not.
+    /// The page of an engine that is not here: one sentence of what will be done, the button that does it, the ways
+    /// round it (another version, another computer, the engine that is ready), and then what it is doing or why it did
+    /// not.
     pub(super) fn show_engine_setup(&mut self, ui: &mut egui::Ui) {
-        if !self.engine_missing() {
+        if !self.needs_install() {
             return;
         }
         let Some(engine) = self.engine_doc() else {
@@ -196,94 +218,127 @@ impl App {
         let summary = acquire::install_summary_with(engine, &self.host_facts, &ticked);
         let looking = self.runtime.lookup_rx.is_some() && self.runtime.auto_install.is_some();
         let installing = self.runtime.install.is_some();
-        // while the results of a look-up have the page the section is one row, and the results keep their room
-        let compact = self.lookup.open;
+        let fallback = (self.engine != crate::settings::DEFAULT_ENGINE)
+            .then(|| self.registry.engine(crate::settings::DEFAULT_ENGINE))
+            .flatten()
+            .map(|e| (e.id.clone(), e.doc.engine.name.clone()));
+        let p = theme::palette();
 
-        ui.add_space(10.0);
-        theme::group(ui, &format!("Set up {name}"), |ui| {
-            if !compact {
-                let what = if from_source {
-                    format!("its source from {repo}")
-                } else {
-                    format!("it from {repo}")
-                };
-                ui.label(format!(
-                    "{name} is not installed yet. QuickAI downloads {what}, checks it, and keeps it in {root}: \
-                     nothing else on the computer is changed, and nothing is downloaded until you click Install."
-                ));
-                if let Some(summary) = summary {
-                    ui.label(theme::muted(summary));
-                }
-                ui.add_space(4.0);
+        ui.vertical_centered(|ui| {
+            ui.label(
+                egui::RichText::new(format!("{name} isn't installed yet"))
+                    .size(22.0)
+                    .family(theme::semibold(ui))
+                    .color(p.text),
+            );
+            ui.add_space(4.0);
+            let what = if from_source {
+                format!("QuickAI builds it from its source at {repo}")
+            } else {
+                format!("QuickAI downloads it from {repo}")
+            };
+            ui.label(theme::muted(format!(
+                "{what}, checks it and keeps it in {root}. Nothing else on your computer changes."
+            )))
+            .on_hover_text(
+                "Nothing is downloaded until you click Install. Deleting it again is in Settings.",
+            );
+            if let Some(summary) = summary {
+                ui.label(theme::muted(summary).small());
             }
+            ui.add_space(12.0);
+            let idle = !looking && !installing && self.runtime.delete.is_none();
+            if theme::button_sized(
+                ui,
+                if idle { Role::Primary } else { Role::Normal },
+                idle,
+                format!("Install {name}"),
+                egui::vec2(160.0, 34.0),
+            )
+            .on_hover_text(format!(
+                "Download the {name} build QuickAI was tested with (or the newest, when that one is gone) for this \
+                 computer, check it and install it."
+            ))
+            .clicked()
+            {
+                self.install_engine(ui.ctx());
+            }
+            ui.add_space(6.0);
+            // the ways round it, in one row of quiet buttons under the one that matters
+            let mut links: Vec<(String, String)> = vec![(
+                "Choose a version...".to_string(),
+                format!(
+                    "Settings, Advanced: {name}: every build on offer, the ones installed, and a box for a {name} \
+                     you already have."
+                ),
+            )];
+            if self.can_run_remote() {
+                links.push((
+                    "Run on another computer...".to_string(),
+                    format!(
+                        "Use the {name} of a more powerful computer instead, reached over SSH: nothing is installed \
+                         here."
+                    ),
+                ));
+            }
+            if let Some((_, other)) = &fallback {
+                links.push((
+                    format!("Use {other} instead"),
+                    format!("{other} is ready to use, with no download."),
+                ));
+            }
+            let font = egui::TextStyle::Button.resolve(ui.style());
+            let widths: f32 = links
+                .iter()
+                .map(|(l, _)| {
+                    ui.painter()
+                        .layout_no_wrap(l.clone(), font.clone(), p.muted)
+                        .size()
+                        .x
+                        + 2.0 * ui.spacing().button_padding.x
+                        + ui.spacing().item_spacing.x
+                })
+                .sum();
+            let mut clicked: Option<usize> = None;
             ui.horizontal(|ui| {
-                if compact {
-                    ui.label(format!("{name} is not installed yet."));
+                ui.add_space(((ui.available_width() - widths) / 2.0).max(0.0));
+                for (i, (label, hover)) in links.iter().enumerate() {
+                    if theme::button_sized(ui, Role::Quiet, true, label.as_str(), egui::vec2(0.0, 26.0))
+                        .on_hover_text(hover.as_str())
+                        .clicked()
+                    {
+                        clicked = Some(i);
+                    }
                 }
-                let idle = !looking && !installing && self.runtime.delete.is_none();
-                if theme::button_sized(
-                    ui,
-                    if idle { Role::Primary } else { Role::Normal },
-                    idle,
-                    format!("Install {name}"),
-                    egui::vec2(0.0, 28.0),
-                )
-                .on_hover_text(format!(
-                    "Download the {name} build QuickAI was tested with (or the newest, when that one is gone) \
-                     for this computer, check it and install it."
-                ))
-                .clicked()
-                {
-                    self.install_engine(ui.ctx());
-                }
-                if theme::button_sized(
-                    ui,
-                    Role::Quiet,
-                    true,
-                    "Choose a version...",
-                    egui::vec2(0.0, 28.0),
-                )
-                .on_hover_text(format!(
-                    "Settings, Advanced: {name}: every build on offer, the ones installed, and a box for a \
-                     {name} you already have."
-                ))
-                .clicked()
-                                {
+            });
+            match clicked.map(|i| links[i].0.as_str()) {
+                Some("Choose a version...") => {
                     self.advanced_section_wanted = true;
                     self.open_settings();
                 }
-                if self.can_run_remote()
-                    && theme::button_sized(
-                        ui,
-                        Role::Quiet,
-                        true,
-                        "Run on another computer...",
-                        egui::vec2(0.0, 28.0),
-                    )
-                    .on_hover_text(format!(
-                        "Use the {name} of a more powerful computer instead, reached over SSH: nothing is installed here."
-                    ))
-                    .clicked()
-                {
-                    self.remote.show_window = true;
+                Some("Run on another computer...") => self.remote.show_window = true,
+                Some(_) => {
+                    if let Some((id, _)) = &fallback {
+                        self.switch_engine(id);
+                    }
                 }
-            });
+                None => {}
+            }
             if looking {
+                ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.spinner();
                     ui.label(theme::muted(self.runtime.lookup_status.clone()));
                 });
             }
             if let Some(job) = &self.runtime.install {
-                ui.add_space(2.0);
+                ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    ui.colored_label(theme::palette().warn, job.progress_line());
+                    ui.colored_label(p.warn, job.progress_line());
                     if let Some(cancel) = &self.runtime.cancel {
                         if ui
                             .small_button("Cancel")
-                            .on_hover_text(
-                                "Stop the install. What was fetched so far is thrown away.",
-                            )
+                            .on_hover_text("Stop the install. What was fetched so far is thrown away.")
                             .clicked()
                         {
                             cancel.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -295,10 +350,83 @@ impl App {
                     ui.label(theme::muted(detail));
                 }
             } else if let Some(why) = &self.runtime.setup_failure {
-                ui.colored_label(theme::palette().bad, why);
+                ui.add_space(6.0);
+                ui.colored_label(p.bad, why);
             }
         });
     }
+}
+
+/// The button of the engine's menu: the name of the engine in use and a chevron, on a raised ground.
+fn engine_button(ui: &mut egui::Ui, name: &str, enabled: bool) -> egui::Response {
+    let p = theme::palette();
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let color = if enabled { p.text } else { p.faint };
+    let galley = ui.painter().layout_no_wrap(name.to_string(), font, color);
+    let size = egui::vec2(galley.size().x + 40.0, 26.0);
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(size, sense);
+    if ui.is_rect_visible(rect) {
+        let fill = if response.hovered() && enabled {
+            p.raised_hover
+        } else {
+            p.raised
+        };
+        ui.painter().rect_filled(rect, 6.0, fill);
+        ui.painter().galley(
+            egui::pos2(rect.left() + 11.0, rect.center().y - galley.size().y / 2.0),
+            galley,
+            color,
+        );
+        let chevron = egui::Rect::from_min_size(
+            egui::pos2(rect.right() - 22.0, rect.center().y - 6.0),
+            egui::vec2(12.0, 12.0),
+        );
+        super::icons::paint(ui.painter(), chevron, super::icons::Icon::Chevron, p.muted);
+    }
+    response
+}
+
+/// One engine of the menu: a tick when it is the one in use, its name, and under it whether it is ready.
+fn engine_row(ui: &mut egui::Ui, name: &str, said: &str, on: bool, ready: bool) -> egui::Response {
+    let p = theme::palette();
+    let width = ui.available_width().clamp(240.0, 280.0);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 40.0), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        if on {
+            ui.painter().rect_filled(rect, 5.0, p.raised);
+        } else if response.hovered() {
+            ui.painter().rect_filled(rect, 5.0, p.raised_hover);
+        }
+        if on {
+            super::icons::paint(
+                ui.painter(),
+                egui::Rect::from_min_size(
+                    egui::pos2(rect.left() + 8.0, rect.center().y - 7.0),
+                    egui::vec2(14.0, 14.0),
+                ),
+                super::icons::Icon::Check,
+                p.ok,
+            );
+        }
+        let font = egui::TextStyle::Button.resolve(ui.style());
+        let title = ui.painter().layout_no_wrap(name.to_string(), font, p.text);
+        let small = ui.painter().layout_no_wrap(
+            said.to_string(),
+            egui::TextStyle::Small.resolve(ui.style()),
+            if ready { p.muted } else { p.faint },
+        );
+        let left = rect.left() + 30.0;
+        let top = rect.center().y - (title.size().y + small.size().y + 1.0) / 2.0;
+        let below = top + title.size().y + 1.0;
+        ui.painter().galley(egui::pos2(left, top), title, p.text);
+        ui.painter().galley(egui::pos2(left, below), small, p.muted);
+    }
+    response
 }
 
 #[cfg(test)]
@@ -396,11 +524,19 @@ mod tests {
         painted(app, ctx, width, Vec::new())
     }
 
-    /// Where `text` is in the band of the toolbar.
-    fn in_toolbar(found: &[(String, egui::Rect)], text: &str) -> Option<egui::Rect> {
+    /// Where `text` is in the band of the menu bar.
+    fn in_menu_bar(found: &[(String, egui::Rect)], text: &str) -> Option<egui::Rect> {
         found
             .iter()
-            .find(|(t, r)| t == text && r.center().y > 24.0 && r.center().y < 70.0)
+            .find(|(t, r)| t == text && r.center().y < 30.0)
+            .map(|(_, r)| *r)
+    }
+
+    /// Where `text` is under the menu bar (in the menu of the engines, once it is open).
+    fn under_menu_bar(found: &[(String, egui::Rect)], text: &str) -> Option<egui::Rect> {
+        found
+            .iter()
+            .find(|(t, r)| t == text && r.center().y > 30.0)
             .map(|(_, r)| *r)
     }
 
@@ -422,34 +558,30 @@ mod tests {
     }
 
     #[test]
-    fn the_engines_are_side_by_side_in_the_toolbar_and_a_click_changes_the_engine() {
+    fn the_engine_is_a_menu_at_the_right_of_the_menu_bar_and_a_choice_in_it_changes_the_engine() {
         let dir = scratch("eb-switch");
         let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
         let found = settled(&mut app, &ctx, 980.0);
         let at = |text: &str| {
-            in_toolbar(&found, text)
-                .unwrap_or_else(|| panic!("{text} is not in the toolbar: {found:?}"))
+            in_menu_bar(&found, text)
+                .unwrap_or_else(|| panic!("{text} is not in the menu bar: {found:?}"))
         };
-        let (connect, settings) = (at("Connect an app"), at("Settings"));
-        let engines: Vec<egui::Rect> = ["llama.cpp", "Ollama", "ComfyUI"]
-            .iter()
-            .map(|t| at(t))
-            .collect();
+        // the engine in use, after the menus, with no label beside it
+        let (help, engine) = (at("Help"), at("llama.cpp"));
+        assert!(help.right() < engine.left(), "{help:?} {engine:?}");
         assert!(
-            connect.right() < engines[0].left(),
-            "{connect:?} {engines:?}"
+            !found.iter().any(|(t, _)| t == "Engine"),
+            "the word is the menu's hover now"
         );
-        assert!(
-            engines.windows(2).all(|p| p[0].right() < p[1].left()),
-            "{engines:?}"
-        );
-        assert!(
-            engines[2].right() < settings.left(),
-            "{engines:?} {settings:?}"
-        );
-
-        click(&mut app, &ctx, 980.0, engines[1].center());
+        // its menu has the others, each with whether it is ready; a choice changes the engine
+        click(&mut app, &ctx, 980.0, engine.center());
+        let found = settled(&mut app, &ctx, 980.0);
+        let ollama = under_menu_bar(&found, "Ollama")
+            .unwrap_or_else(|| panic!("the menu of the engines: {found:?}"));
+        assert!(found.iter().any(|(t, _)| t == "Not installed"));
+        assert!(found.iter().any(|(t, _)| t == "In use"));
+        click(&mut app, &ctx, 980.0, ollama.center());
         assert_eq!(app.engine, "ollama");
         let file: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
@@ -459,40 +591,47 @@ mod tests {
             "the choice is saved at once"
         );
 
-        // while something of the engine in use is going on the choice stays as it is
+        // while something of the engine in use is going on the menu does not open
         app.named.queued = Some(super::super::engine::Queued::Pull("qwen3:4b".into()));
         let found = settled(&mut app, &ctx, 980.0);
-        let comfy = in_toolbar(&found, "ComfyUI").expect("the engines are still shown");
-        click(&mut app, &ctx, 980.0, comfy.center());
+        let engine = in_menu_bar(&found, "Ollama").expect("the engine is still shown");
+        click(&mut app, &ctx, 980.0, engine.center());
+        let found = settled(&mut app, &ctx, 980.0);
+        assert!(under_menu_bar(&found, "ComfyUI").is_none(), "{found:?}");
         assert_eq!(app.engine, "ollama");
         app.named.queued = None;
+        click(&mut app, &ctx, 980.0, engine.center());
+        let found = settled(&mut app, &ctx, 980.0);
+        let comfy = under_menu_bar(&found, "ComfyUI").expect("the menu, open again");
         click(&mut app, &ctx, 980.0, comfy.center());
         assert_eq!(app.engine, "comfyui");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn at_every_width_the_engines_control_keeps_clear_of_the_buttons_and_of_settings() {
+    fn at_every_width_the_engines_menu_keeps_clear_of_the_menus_and_of_the_buttons_after_it() {
         for engine in ["llamacpp", "ollama", "comfyui"] {
             let dir = scratch(&format!("eb-widths-{engine}"));
             let mut app = app_in(&dir, engine);
             let ctx = egui::Context::default();
+            let name = app.engine_name();
             for width in [640.0, 680.0, 760.0, 980.0, 1400.0] {
                 let found = settled(&mut app, &ctx, width);
                 let mut row: Vec<(String, egui::Rect)> = found
                     .iter()
-                    .filter(|(_, r)| r.center().y > 24.0 && r.center().y < 70.0)
+                    .filter(|(_, r)| r.center().y < 30.0)
                     .cloned()
                     .collect();
                 row.sort_by(|a, b| a.1.left().total_cmp(&b.1.left()));
                 assert!(
                     row.windows(2).all(|p| p[0].1.right() <= p[1].1.left()),
-                    "{engine} at {width}: texts of the toolbar over one another: {row:?}"
+                    "{engine} at {width}: texts of the menu bar over one another: {row:?}"
                 );
-                let settings = in_toolbar(&found, "Settings").expect("Settings");
+                // and room after it for the theme, the guides and Settings, three buttons of 30 points
+                let menu = in_menu_bar(&found, &name).expect("the engine's menu");
                 assert!(
-                    settings.right() <= width,
-                    "{engine} at {width}: {settings:?}"
+                    menu.right() <= width - 3.0 * 30.0,
+                    "{engine} at {width}: {menu:?}"
                 );
             }
             let _ = std::fs::remove_dir_all(&dir);
@@ -563,7 +702,7 @@ mod tests {
             .find(|(t, _)| t == "Install Ollama")
             .map(|(_, r)| *r)
             .unwrap_or_else(|| panic!("no Install button: {found:?}"));
-        assert!(found.iter().any(|(t, _)| t == "Set up Ollama"));
+        assert!(found.iter().any(|(t, _)| t == "Ollama isn't installed yet"));
 
         // one click: the builds are looked up and the first is installed, with nothing else to choose
         click(&mut app, &ctx, 980.0, button.center());
@@ -587,8 +726,8 @@ mod tests {
         assert_eq!(app.bin_override().as_deref(), Some(app.binary.as_path()));
         let found = settled(&mut app, &ctx, 980.0);
         assert!(
-            !found.iter().any(|(t, _)| t == "Set up Ollama"),
-            "the section is still there once the engine is"
+            !found.iter().any(|(t, _)| t == "Ollama isn't installed yet"),
+            "the page is still there once the engine is"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -794,9 +933,19 @@ mod tests {
     }
 
     fn click_with_modal(app: &mut App, ctx: &egui::Context, at: egui::Pos2) {
+        press_with_modal(app, ctx, at, egui::PointerButton::Primary);
+    }
+
+    /// The person presses `which` button of the pointer at `at` and lets it go, a frame each.
+    fn press_with_modal(
+        app: &mut App,
+        ctx: &egui::Context,
+        at: egui::Pos2,
+        which: egui::PointerButton,
+    ) {
         let button = |pressed| egui::Event::PointerButton {
             pos: at,
-            button: egui::PointerButton::Primary,
+            button: which,
             pressed,
             modifiers: egui::Modifiers::NONE,
         };
@@ -823,17 +972,28 @@ mod tests {
         let alpha = index_of(&app, "alpha-Q4_K_M.gguf");
         assert!(app.delete_request(alpha).is_ok());
 
-        // the button beside the name asks, in this window
+        // the model's menu (a right-click in the list, as the ... beside its name) has Delete…, which asks, in this
+        // window
         app.selected = alpha;
+        let display = app.models[alpha].display.clone();
         let mut found = Vec::new();
         for _ in 0..4 {
+            found = painted_with_modal(&mut app, &ctx, Vec::new());
+        }
+        let row = found
+            .iter()
+            .find(|(t, r)| *t == display && r.left() < 170.0)
+            .map(|(_, r)| *r)
+            .unwrap_or_else(|| panic!("{display} in the list: {found:?}"));
+        press_with_modal(&mut app, &ctx, row.center(), egui::PointerButton::Secondary);
+        for _ in 0..2 {
             found = painted_with_modal(&mut app, &ctx, Vec::new());
         }
         let button = found
             .iter()
             .find(|(t, _)| t == "Delete…")
             .map(|(_, r)| *r)
-            .expect("a Delete… button by the name");
+            .unwrap_or_else(|| panic!("a Delete… in the model's menu: {found:?}"));
         click_with_modal(&mut app, &ctx, button.center());
         assert!(app.pending_delete.is_some() && app.delete_asked_in_window);
         let mut found = Vec::new();
@@ -911,7 +1071,12 @@ mod tests {
         app.selected = beta;
         assert!(app.can_switch_selected());
         let found = settled(&mut app, &ctx, 980.0);
-        assert!(in_toolbar(&found, "Use this model").is_some(), "{found:?}");
+        assert!(
+            found
+                .iter()
+                .any(|(t, r)| t == "Use this model" && r.center().y < 120.0),
+            "the button beside the name: {found:?}"
+        );
         app.switch_to_selected();
         let mut log = Vec::new();
         until("the server to come back with beta", || {
