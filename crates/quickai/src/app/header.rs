@@ -378,6 +378,42 @@ mod tests {
     }
 
     #[test]
+    fn p3_i12b_an_ollama_with_no_models_listed_yet_has_start_over_the_box_that_adds_one() {
+        // Ollama lists its models once it runs: a first run has none, and Start must not be out of reach (UI v2 had only the
+        // box that adds a model there, and no way to start Ollama to see the ones it has)
+        let dir = scratch("z12b");
+        let mut app = app_in(&dir, "ollama");
+        std::fs::write(dir.join("ollama"), "").unwrap();
+        app.binary = dir.join("ollama");
+        app.models.clear();
+        let ctx = egui::Context::default();
+        let found = rects(&settled(&mut app, &ctx, true));
+        let start = *found
+            .get("Start")
+            .unwrap_or_else(|| panic!("a Start button: {:?}", found.keys()));
+        let name = heading_of(&found, "Ollama");
+        assert!(
+            (start.center().y - name.center().y).abs() < 12.0 && start.left() > name.right(),
+            "{start:?} is not beside {name:?}"
+        );
+        let title = found
+            .get("Add your first model")
+            .unwrap_or_else(|| panic!("the box that adds a model: {:?}", found.keys()));
+        assert!(start.bottom() < title.top(), "{start:?} {title:?}");
+        // llama.cpp's first run has no Start: there is nothing to start until a model is added
+        let mut llama = app_in(&dir, "llamacpp");
+        llama.models.clear();
+        let found = rects(&settled(&mut llama, &ctx, true));
+        assert!(
+            found.contains_key("Add your first model"),
+            "{:?}",
+            found.keys()
+        );
+        assert!(!found.contains_key("Start"), "{:?}", found.keys());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn p3_i14_a_download_that_failed_says_so_under_the_box_it_was_asked_for_in_until_it_is_dismissed(
     ) {
         let dir = scratch("z14");
