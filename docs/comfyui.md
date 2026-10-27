@@ -31,7 +31,7 @@ installs it. The install is one primitive, `install.python_app@1`, and everythin
 
 | Step | What | Test |
 |---|---|---|
-| python | the first of 3.13, 3.12, 3.14, 3.11, 3.10 the machine has (the `PATH`, pyenv, uv), or the one named in the **Python** box; nothing is installed to find it | F20 |
+| python | QuickAI's own (C181): CPython 3.12.15 of python-build-standalone (with pip, venv and the headers), downloaded once into `python/` of ComfyUI's root and checked against the SHA-256 the document pins; or the one named in the **Python** box (3.10 or newer). Nothing of the computer's Python is needed or changed | F20 |
 | source | the release's source archive, checked against its pin, unpacked as `app/` | F21, F22 |
 | nodes | the pack of GGUF nodes (`ComfyUI-GGUF`, one commit, pinned by the digest of its archive) unpacked into `app/custom_nodes/` | F21, F22 |
 | venv | `<python> -m venv venv/` | F21 |
