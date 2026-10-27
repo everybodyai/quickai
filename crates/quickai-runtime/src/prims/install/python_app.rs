@@ -406,7 +406,7 @@ fn own_python_for(
     let what = format!("Python {}", own.version);
     let Some(file) = target.and_then(|t| own.files.get(t)) else {
         return Err(format!(
-            "QuickAI has no Python of its own for this computer ({} on {}): choose the Python to use in the Python box of Settings",
+            "QuickAI has no Python of its own for this computer ({} on {}): choose the Python you have in the Python box of Settings",
             std::env::consts::OS,
             std::env::consts::ARCH
         ));

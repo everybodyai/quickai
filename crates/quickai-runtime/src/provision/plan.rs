@@ -206,8 +206,13 @@ fn program(
             "{name} is not on this computer, and which build to install could not be told: {why}"
         ))
     })?;
+    // and, unless a Python is named (`--python`), that its Python is QuickAI's own, downloaded with it (C181)
+    let own = quickai_core::acquire::own_python_sentence(engine)
+        .filter(|_| ctx.options.python.is_none())
+        .map(|s| format!(" {s}"))
+        .unwrap_or_default();
     let summary = quickai_core::acquire::install_summary(engine, ctx.facts)
-        .map(|s| format!(". {s}"))
+        .map(|s| format!(". {s}{own}"))
         .unwrap_or_default();
     let weight = chosen
         .bytes
