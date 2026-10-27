@@ -130,6 +130,7 @@ Against the recorded release list of the real `ollama/ollama` repository (`tests
 | R08 | 3.7 | ready | The embedded ollama document finds real builds. | `p3/feed.rs` |
 | R09 | 3.2 | ready | A rate limited answer is recognised by the helper the real network tests use. | `p3/feed.rs` |
 | R10 | 3.2 | ready | The tested tag (v0.35.1) is flagged and listed first when the feed has it, with the document's pins; a pin that disagrees with the feed's digest flags the build as conflicting. | `p3/feed.rs` |
+| R10a | 3.2 | ready | The tested release is asked for by its tag when the first page of the feed has moved past it (Ollama ships often: ten releases on, the page no longer has it), with its pins and its overlays; a release on the page is not asked for again, and a tag the feed does not have adds nothing. | `p3/feed.rs` |
 | R11 | 3.2 | ready | Overlays (`rocm`) are offered only on the platforms that have one, are never offered as a base build and are off until chosen. | `p3/feed.rs` |
 | R12 | 3.8 | ready | Through the window: a look-up that fails keeps the sentence it gave (the rate limit's, with when it resets, or `Lookup failed: ...`) instead of being overwritten by "No compatible builds found.", which is what a look-up that found nothing says. | `app/engine.rs` |
 
@@ -335,7 +336,9 @@ What the model box does with what was typed (the document's `input_rules`, first
 | M06d | 3.13 | ready | The `[models]` section of `docs/examples/engines/ollama.toml` loads with no diagnostic of any kind and its rules answer as M01 says. | `core/tests/p3_models.rs` |
 | M06e | 4.15 | ready | The `hide` policy of an engine's document comes out of its list call (none when it says none; the patterns as written for Ollama's example), and a pattern that does not compile is an error on its line. | `core/tests/p3_models.rs` |
 | M06f | 4.15 | ready | A name the engine lists twice is one model (the first row), and what the document hides is not listed and not kept in the cache (Ollama v0.40.0's own `llamacpp:<digest>` copy): an engine whose document hides nothing still shows that copy, and a name that only contains the word is a model. Proved against the fake that lists a model the way v0.40.0 does; fails with the fold and the policy switched off. | `quickai/src/p3/models.rs` |
-| M07 | 3.13 | ready | The model box of Ollama refuses what is not a name with the document's sentence and sends nothing, and asks for a running daemon to pull a name. | `app/engine.rs` |
+| M07 | 3.13 | ready | The model box of Ollama refuses what is not a name with the document's sentence and sends nothing; a name with no Ollama installed is refused with the sentence that says to install it. | `app/engine.rs` |
+| M07b | 3.13 | ready | A name pulled while Ollama is stopped starts it with no model (from the box, a row of the results or the recommended list), and the pull is made once it runs; the engine stays as it is meanwhile and no other pull is offered; a removal asked of it stopped starts it too. With no Ollama installed, the sentence says to install it and nothing starts. | `app/engine.rs` |
+| M07c | 3.13 | ready | A start for a pull that does not get there (nothing answers where it attaches) drops the pull and says so under the box, and the engine can be changed again. | `app/engine.rs` |
 | M08 | 3.13 | ready | With Ollama running: the models are listed when it comes up (once), a name typed into the box is pulled with progress and appears, a pull that fails shows the daemon's words, a removal goes by the listed name and refreshes the list, and attaching to a daemon of someone else's is known to the form. | `app/engine.rs` |
 | M09 | 3.8 | ready | Through the window: with the daemon running and nothing loaded, Start loads the model the picker has chosen (one warm-up call with the name the engine lists, kept for ever, no context size), does nothing while the load is under way or once a model is loaded, and a load that fails leaves the daemon running with nothing loaded, says why in the log and lets Start try again. | `app/engine.rs` |
 
@@ -430,7 +433,7 @@ recordings (`crates/quickai-runtime/tests/fixtures/ollama/library/`, `record.sh`
 | U20 | 3.15 | ready | Nothing the look-up offers is something the model box would refuse: every reference of every recorded model is taken by the document's own rules as itself. | `prims/lookup.rs` |
 | U21 | 3.15 | ready | Nothing is asked of the site while the window is drawn and polled; the button asks once, with the words in the box (a tag not counting) or for the site's own list, and leaves the box as it was; a closed list is not asked for again. | `app/engine.rs` |
 | U22 | 3.15 | ready | A look-up that fails keeps its sentence as the last word (never "nothing found"), and one that finds nothing says so; a site that is not there is told and the window goes on. | `app/engine.rs` |
-| U23 | 3.15 | ready | A row is pulled through the rules of the box: with nothing running the box's sentence and nothing sent; with the daemon running a size is pulled as `name:size`, a model with none as its name; the box's text is left to the person; what the rules refuse is not sent. | `app/engine.rs` |
+| U23 | 3.15 | ready | A row is pulled through the rules of the box: with no Ollama to start the box's sentence and nothing sent; with the daemon running a size is pulled as `name:size`, a model with none as its name; the box's text is left to the person; what the rules refuse is not sent. | `app/engine.rs` |
 | U24 | 3.15 | ready | Choosing another engine clears the results and asks nothing; llama.cpp has a look-up of its own (WP4.9). | `app/engine.rs` |
 | U25 | 3.15 | ready | The results draw whatever the look-up said (no description, no class, sixty buttons, a description of two thousand characters, no count, a type nobody has, a bundle, every size filter, only a status, nothing at all). | `app/engine.rs` |
 
@@ -1002,7 +1005,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 684 / 0 / 16 / 5 (total 705). The test kit has 29 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 687 / 0 / 16 / 5 (total 708). The test kit has 29 tests of its own and the Python fake
 22, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 

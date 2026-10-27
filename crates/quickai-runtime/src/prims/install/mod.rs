@@ -586,6 +586,10 @@ pub fn install_blocking(
         }
         extract(*kind, &part, &staging, &spec.skip)?;
         let _ = std::fs::remove_file(&part);
+        // a Cancel pressed while it was unpacking is heard here, not after the build is in place
+        if spec.cancel.load(Ordering::SeqCst) {
+            return Err(CANCELLED.to_string());
+        }
     }
 
     let Some(found) = find_binary(&staging, &spec.binary, spec.search_depth) else {
@@ -608,7 +612,10 @@ pub fn install_blocking(
         run_smoke(&found, smoke, &spec.cancel)?;
     }
 
-    // whole at last: make it the build
+    // whole at last: make it the build, unless it was cancelled meanwhile
+    if spec.cancel.load(Ordering::SeqCst) {
+        return Err(CANCELLED.to_string());
+    }
     let inside = found.strip_prefix(&staging).unwrap_or(&found).to_path_buf();
     if final_dir.exists() {
         // what an install that never finished (before installs were atomic) left behind
@@ -789,7 +796,13 @@ pub(super) fn download(
     cancel: &AtomicBool,
     send: &dyn Fn(JobEvent<PathBuf>),
 ) -> Result<Downloaded, String> {
+    // a host that is not there, or never begins its answer, is a failure with a sentence and not an install that
+    // waits for good
     let resp = ureq::get(url)
+        .config()
+        .timeout_connect(Some(Duration::from_secs(30)))
+        .timeout_recv_response(Some(Duration::from_secs(60)))
+        .build()
         .call()
         .map_err(|e| format!("request failed: {e}"))?;
     let body = resp.into_body();

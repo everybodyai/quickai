@@ -24,6 +24,15 @@ pub const ACTIVE_CONFIGURATION_KEY: &str = "app.configuration";
 /// `values."app.confirmed_engines"`, a list of texts.
 pub const CONFIRMED_ENGINES_KEY: &str = "app.confirmed_engines";
 
+/// The computers the models can run on besides this one (WP4.27).
+pub const REMOTES_KEY: &str = "app.remotes";
+
+/// The one of them the models run on now; absent for this computer.
+pub const RUNNER_KEY: &str = "app.runner";
+
+/// The conversations of the Chat tab are kept on this computer (WP4.28); absent, they are not.
+pub const KEEP_CHATS_KEY: &str = "app.keep_chats";
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub last_model_filename: Option<String>,
@@ -111,8 +120,17 @@ impl Settings {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
+        // whole or not at all: a file cut short by a crash or a full disk is read as no file, and every setting
+        // (the engine, the folders, the programs) went back to its default
         if let Some(json) = self.to_json() {
-            let _ = std::fs::write(path, json);
+            let mut temporary = path.as_os_str().to_os_string();
+            temporary.push(".part");
+            let temporary = std::path::PathBuf::from(temporary);
+            if std::fs::write(&temporary, json).is_ok()
+                && std::fs::rename(&temporary, path).is_err()
+            {
+                let _ = std::fs::remove_file(&temporary);
+            }
         }
     }
 
@@ -259,6 +277,82 @@ impl Settings {
 
     /// The hashes of the engine documents the person has said may start the program they name (see
     /// `quickai_core::guard`).
+    /// The computers the models can run on besides this one (`values."app.remotes"`), as the person described them.
+    /// What does not read as one is left out.
+    pub fn remotes(&self) -> Vec<crate::remote::RemoteSpec> {
+        self.app_value(REMOTES_KEY)
+            .and_then(|v| v.as_array().cloned())
+            .map(|list| {
+                list.into_iter()
+                    .filter_map(|v| serde_json::from_value(v).ok())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Records the remote computers; none takes the key away.
+    pub fn set_remotes(&mut self, remotes: &[crate::remote::RemoteSpec]) {
+        let value = (!remotes.is_empty())
+            .then(|| serde_json::to_value(remotes).ok())
+            .flatten();
+        self.set_app_value(REMOTES_KEY, value);
+    }
+
+    /// The remote computer the models run on (`values."app.runner"`), `None` for this one.
+    pub fn runner(&self) -> Option<String> {
+        self.app_value(RUNNER_KEY)
+            .and_then(|v| v.as_str().map(str::to_string))
+    }
+
+    /// Records where the models run: a remote computer by its id, or this computer (`None`, the key taken away).
+    pub fn set_runner(&mut self, id: Option<&str>) {
+        self.set_app_value(RUNNER_KEY, id.map(serde_json::Value::from));
+    }
+
+    /// Whether the conversations of the Chat tab are kept on this computer.
+    pub fn keep_chats(&self) -> bool {
+        self.app_value(KEEP_CHATS_KEY)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    }
+
+    /// Records it; off takes the key away.
+    pub fn set_keep_chats(&mut self, keep: bool) {
+        self.set_app_value(
+            KEEP_CHATS_KEY,
+            keep.then_some(serde_json::Value::Bool(true)),
+        );
+    }
+
+    fn app_value(&self, key: &str) -> Option<&serde_json::Value> {
+        self.other
+            .get("values")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|values| values.get(key))
+    }
+
+    /// Sets (or, with `None`, takes away) one key of `values`; a `values` left empty goes too.
+    fn set_app_value(&mut self, key: &str, value: Option<serde_json::Value>) {
+        let mut values = match self.other.get("values") {
+            Some(serde_json::Value::Object(existing)) => existing.clone(),
+            _ => serde_json::Map::new(),
+        };
+        match value {
+            Some(value) => {
+                values.insert(key.to_string(), value);
+            }
+            None => {
+                values.remove(key);
+            }
+        }
+        if values.is_empty() {
+            self.other.remove("values");
+        } else {
+            self.other
+                .insert("values".to_string(), serde_json::Value::Object(values));
+        }
+    }
+
     pub fn confirmed_engines(&self) -> Vec<String> {
         self.other
             .get("values")

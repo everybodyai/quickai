@@ -20,7 +20,7 @@ impl App {
                 path: String::new(),
                 size_bytes: 0,
             }),
-            self.values.map(),
+            &self.run_values(),
             self.traffic_proxy_on(),
         );
         api_panel(&self.registry, &selection, &self.form_facts())

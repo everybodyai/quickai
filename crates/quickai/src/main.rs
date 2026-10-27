@@ -9,8 +9,8 @@ mod app;
 // with (`crate::config`, `crate::runtime::Session`, ...), so that what the window does to the computer
 // is plainly the runtime's and the window's own code did not have to change to say so.
 use quickai_runtime::{
-    bundles, cli, config, configuration_cli, configurations, downloader, events, gpu, hardware,
-    jobs, launch, models, paths, prims, runtime, settings, sources,
+    bundles, chats, cli, config, configuration_cli, configurations, downloader, events, gpu,
+    hardware, jobs, launch, models, paths, prims, remote, runtime, settings, sources,
 };
 #[cfg(test)]
 use quickai_runtime::{golden, testkit};

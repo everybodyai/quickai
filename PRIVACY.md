@@ -237,8 +237,20 @@ only when you press a button, or Enter in a box, for one of these:
   the file to your browser. Nothing is fetched just because a workflow was opened, and **The page's network** setting
   does not change this: it is about what the page itself may contact.
 
-Each of these is an ordinary web request (HTTPS, or plain HTTP if you type an `http://` address) from your computer
-straight to that server. The developer of QuickAI is not involved in them and receives nothing.
+- **A remote computer.** When you add a computer of your own under **Remote computers** and press **Test**, or **Start**
+  with it chosen under **Runs on**, QuickAI runs your own `ssh` program to that computer, with your keys and
+  `~/.ssh/config`, and keeps the connection open while the run lasts. The models, the chat and everything an app you
+  connect sends then go to that computer and back, inside the SSH connection; nothing is opened to the network on either
+  side. QuickAI keeps the address, the ports and the name of a key file you give in its settings, and never a password
+  (it cannot ask for one). That computer, and whoever runs it, sees what you send to the models there.
+
+Each of these is an ordinary web request (HTTPS, or plain HTTP if you type an `http://` address), or for a remote
+computer an SSH connection, from your computer straight to that server. The developer of QuickAI is not involved in them
+and receives nothing.
+
+The chat keeps nothing unless you tick **Keep chats**; then each conversation is a file in QuickAI's own data folder on
+this computer (`~/.quickai/chats`), and you can delete it from the list. A picture you attach is sent to the model and
+not kept.
 
 ## Bundled software
 

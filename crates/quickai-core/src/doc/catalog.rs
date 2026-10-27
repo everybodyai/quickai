@@ -99,4 +99,7 @@ pub struct FileDoc {
     /// Whether it is the one the list recommends of the weights (default: the first).
     #[serde(default)]
     pub best: bool,
+    /// The name it is kept under in the models folder, when its own is another repository's file of the same name
+    /// (two such files would overwrite each other). A plain file name with the same ending.
+    pub store_as: Option<String>,
 }

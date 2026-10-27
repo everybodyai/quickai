@@ -26,6 +26,7 @@ mod about_window;
 mod acquire;
 mod api_info;
 mod catalog_view;
+mod chat;
 mod companion;
 mod configurations_ui;
 mod configurations_window;
@@ -33,13 +34,16 @@ mod confirm_delete;
 mod controls;
 mod diagnostics;
 mod engine;
+mod engine_bar;
 mod foreign_program;
 mod header;
 mod live_traffic;
 mod log_pane;
 mod lookup_view;
 mod model_bar;
+mod model_details;
 mod named_models;
+mod remote_ui;
 mod run_bar;
 mod runtime_manager;
 mod settings_window;
@@ -177,6 +181,23 @@ pub struct App {
     /// The person pressed the chat button that sets the companion up: its section is open the next time it
     /// is drawn, whatever it was.
     companion_section_wanted: bool,
+    /// The page's "Choose a version..." was pressed: the engine's Advanced section of Settings is open the next time
+    /// it is drawn, whatever it was.
+    advanced_section_wanted: bool,
+    /// The delete that waits for an answer was asked for in the main window (the list of models, the page): its
+    /// question is asked there, and not in Settings.
+    delete_asked_in_window: bool,
+    /// The person chose another model for the server that runs one that cannot be swapped in place (llama.cpp):
+    /// the server is stopped and started again with it.
+    restart_with_selected: bool,
+    /// The conversation of the Chat tab, with the model that runs.
+    chat: chat::Chat,
+    /// The words the list of models is narrowed to (a box over it, when the list is long).
+    model_filter: String,
+    /// The model whose details are in a window of their own (`model_details.rs`), by its name.
+    details_of: Option<String>,
+    /// The other computers the models can run on, the one they run on, and the tunnel of the run (`remote_ui.rs`).
+    remote: remote_ui::RemoteState,
     /// The application's icon as a picture the title row draws; made when the first frame needs it.
     logo: Option<egui::TextureHandle>,
 }
@@ -185,6 +206,8 @@ pub struct App {
 enum Tab {
     Main,
     Live,
+    /// The conversation with the model that runs (`chat.rs`).
+    Chat,
 }
 
 /// One request/response pair shown in the Live traffic tab. `response` fills
@@ -379,8 +402,20 @@ impl App {
             show_configurations: false,
             raise_configurations: false,
             companion_section_wanted: false,
+            advanced_section_wanted: false,
+            delete_asked_in_window: false,
+            restart_with_selected: false,
+            chat: chat::Chat::default(),
+            model_filter: String::new(),
+            details_of: None,
+            remote: remote_ui::RemoteState::default(),
             logo: None,
         };
+        // the other computers the models can run on, and the one they run on
+        app.remote.remotes = app.stored.remotes();
+        app.remote.runner = app.stored.runner();
+        // and whether the conversations are kept
+        app.chat.keep = app.stored.keep_chats();
         // the executable, the models and the panels' state of the engine in use
         app.load_engine_state();
         // and the configuration in use: the one the settings name, else the Default
@@ -451,13 +486,21 @@ impl App {
     }
 
     fn refresh_recommendation(&mut self) {
-        self.recommended_filename =
-            hardware::recommend(&self.models, self.total_ram_bytes, self.gpu_offload());
+        // what this computer's memory says is nothing to go by for models that run on another one
+        self.recommended_filename = if self.remote_in_use().is_some() {
+            None
+        } else {
+            hardware::recommend(&self.models, self.total_ram_bytes, self.gpu_offload())
+        };
     }
 
     /// The port the engine is on: the field the document marks as the public one, else the engine's
     /// own default.
     fn port(&self) -> u16 {
+        // through a tunnel, the engine is on the tunnel's port here
+        if let Some(port) = self.tunnel_port() {
+            return port;
+        }
         self.values
             .int("port")
             .and_then(|n| u16::try_from(n).ok())
@@ -672,6 +715,22 @@ impl App {
     /// re-scans models_dir (the new file is now sitting there) and selects
     /// it; on failure, logs, and scans all the same: the weights of a bundle
     /// are there when only a file after them failed.
+    /// Stops the download that is going. Its worker throws away what it fetched at its next chunk, and the window
+    /// does not wait for that: a connection that stalled says nothing until it ends.
+    pub(super) fn cancel_download(&mut self) {
+        let Some(mut job) = self.download.take() else {
+            return;
+        };
+        job.cancel();
+        for line in job.take_statuses() {
+            self.push_log(line);
+        }
+        self.push_log(format!("Download of {} cancelled.", job.label));
+        self.download_source = None;
+        self.bench_cancelled();
+        self.rescan_models();
+    }
+
     fn poll_download(&mut self) {
         let Some(mut job) = self.download.take() else {
             return;
@@ -714,11 +773,24 @@ impl App {
                     .iter()
                     .position(|m| m.filename == filename)
                     .or_else(|| {
-                        current.and_then(|f| self.models.iter().position(|m| m.filename == f))
+                        current
+                            .as_ref()
+                            .and_then(|f| self.models.iter().position(|m| m.filename == *f))
                     })
                     .unwrap_or(0);
+                // a model chosen anew gets its own defaults, as a click on it in the list gives them (a context
+                // size made for a small model was kept for a big one)
+                let chosen = self.models.get(self.selected).map(|m| m.filename.clone());
+                if chosen != current {
+                    self.apply_model_defaults();
+                }
                 self.refresh_recommendation();
                 self.save_settings();
+            }
+            Some(Err(msg)) if msg == crate::jobs::CANCELLED => {
+                self.push_log(format!("Download of {} cancelled.", job.label));
+                self.bench_cancelled();
+                self.rescan_models();
             }
             Some(Err(msg)) => {
                 self.push_log(format!("Download failed: {msg}"));
@@ -766,18 +838,30 @@ impl eframe::App for App {
         self.poll_runtime_manager();
         self.poll_companion(ui.ctx());
         self.poll_named_models(ui.ctx());
+        self.poll_chat();
+        self.poll_remote(ui.ctx());
+
+        self.poll_restart(ui.ctx());
 
         self.show_window(ui);
+        if self.delete_asked_in_window {
+            self.show_confirm_delete_modal(ui.ctx());
+        }
 
         self.show_settings_window(ui.ctx());
         self.show_about_window(ui.ctx());
         self.show_catalog_window(ui.ctx());
+        self.show_remotes_window(ui.ctx());
+        self.show_model_details(ui.ctx());
         self.show_foreign_program_modal(ui.ctx());
         self.show_configuration_modals(ui.ctx(), false);
         self.show_configurations_window(ui.ctx());
     }
 
     fn on_exit(&mut self) {
+        // what the window holds is written as it closes: a port typed or a model picked since the last Start was
+        // otherwise lost
+        self.save_settings();
         // the page goes first: it has no use without what it talks to
         self.stop_companion_blocking();
         self.session.stop_blocking();

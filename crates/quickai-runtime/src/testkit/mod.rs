@@ -14,6 +14,7 @@ pub mod fake_github;
 pub mod fake_hub;
 pub mod fake_library;
 pub mod fake_ollama;
+pub mod fake_ssh;
 pub mod files;
 pub mod headless_world;
 pub mod http;
@@ -24,6 +25,20 @@ pub mod recorded;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
+
+/// Whether a test may ask the real internet: in CI (which sets `CI`), or when `QUICKAI_ONLINE_TESTS` is set. A run on
+/// a developer's machine does not, by default: GitHub lets an address ask 60 times an hour without signing in, and the
+/// application's own look-ups on that machine need them.
+pub fn online_allowed() -> bool {
+    let set = |name: &str| std::env::var_os(name).is_some_and(|v| !v.is_empty() && v != "0");
+    let allowed = set("CI") || set("QUICKAI_ONLINE_TESTS");
+    if !allowed {
+        eprintln!(
+            "offline: this test asks the real internet; set QUICKAI_ONLINE_TESTS=1 to run it here"
+        );
+    }
+    allowed
+}
 
 /// `crates/quickai-runtime/tests/fixtures`.
 pub fn fixtures_dir() -> PathBuf {

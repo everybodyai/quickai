@@ -14,6 +14,9 @@ pub struct FileServer {
     files: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
     /// The paths that are given out slowly whatever the request says, in kilobytes a second.
     rates: Arc<Mutex<BTreeMap<String, usize>>>,
+
+    /// The `Range` headers asked with, in order.
+    ranges: Arc<Mutex<Vec<String>>>,
     stop: Arc<AtomicBool>,
 }
 
@@ -46,6 +49,8 @@ impl FileServer {
         let paths = Arc::new(Mutex::new(Vec::new()));
         let files: Arc<Mutex<BTreeMap<String, Vec<u8>>>> = Arc::default();
         let rates: Arc<Mutex<BTreeMap<String, usize>>> = Arc::default();
+
+        let ranges: Arc<Mutex<Vec<String>>> = Arc::default();
         let stop = Arc::new(AtomicBool::new(false));
         let (h, p, f, s, r) = (
             hits.clone(),
@@ -54,6 +59,7 @@ impl FileServer {
             stop.clone(),
             rates.clone(),
         );
+        let g = ranges.clone();
         std::thread::spawn(move || {
             while !s.load(Ordering::Relaxed) {
                 let Ok(Some(request)) = server.recv_timeout(Duration::from_millis(50)) else {
@@ -70,7 +76,41 @@ impl FileServer {
                             tiny_http::Response::from_string("not found").with_status_code(404),
                         );
                     }
-                    Some(data) => {
+                    Some(whole) => {
+                        // `Range: bytes=N-` is answered with the rest of the file (206), as a file server does
+                        let asked = request
+                            .headers()
+                            .iter()
+                            .find(|h| h.field.equiv("Range"))
+                            .map(|h| h.value.to_string());
+                        let from = asked.as_deref().and_then(|v| {
+                            g.lock().unwrap().push(v.to_string());
+                            v.strip_prefix("bytes=")?
+                                .strip_suffix('-')?
+                                .parse::<usize>()
+                                .ok()
+                        });
+                        if let Some(from) = from {
+                            if from >= whole.len() {
+                                let _ = request.respond(
+                                    tiny_http::Response::from_string("").with_status_code(416),
+                                );
+                                continue;
+                            }
+                            let range = tiny_http::Header::from_bytes(
+                                "Content-Range",
+                                format!("bytes {from}-{}/{}", whole.len() - 1, whole.len()),
+                            )
+                            .unwrap();
+                            let _ = request.respond(
+                                tiny_http::Response::from_data(whole[from..].to_vec())
+                                    .with_status_code(206)
+                                    .with_header(range)
+                                    .with_chunked_threshold(usize::MAX),
+                            );
+                            continue;
+                        }
+                        let data = whole;
                         // `?kbps=N` hands the file out at about N kilobytes a second
                         let kbps = query
                             .split('&')
@@ -115,8 +155,14 @@ impl FileServer {
             paths,
             files,
             rates,
+            ranges,
             stop,
         }
+    }
+
+    /// The `Range` headers the server was asked with.
+    pub fn ranges_asked(&self) -> Vec<String> {
+        self.ranges.lock().unwrap().clone()
     }
 
     /// Serves `bytes` at `path` (`/ollama-linux-amd64.tar.zst`).

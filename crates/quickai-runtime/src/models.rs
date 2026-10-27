@@ -279,6 +279,36 @@ fn discover_models_of(models_dir: &Path, exts: &[String], hide: &[String]) -> Ve
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn no_two_files_of_the_recommended_list_are_kept_under_the_same_name() {
+        // a file kept under another's name overwrites it, and its record (a projector) is then the other's
+        use quickai_core::lookup::present::Fetch;
+        let registry = crate::config::build_registry(&crate::config::ConfigDirs::default());
+        for engine in registry.engines() {
+            let mut kept: std::collections::BTreeMap<String, Option<String>> = Default::default();
+            for entry in quickai_core::models::recommended(&registry, engine) {
+                for offer in &entry.offers {
+                    let Fetch::Files(download) = &offer.fetch else {
+                        continue;
+                    };
+                    for piece in &download.files {
+                        let key = match &piece.place {
+                            Some(place) => format!("{place}/{}", piece.store_as),
+                            None => piece.store_as.clone(),
+                        };
+                        if let Some(before) = kept.insert(key.clone(), piece.sha256.clone()) {
+                            assert_eq!(
+                                before, piece.sha256,
+                                "{}: two files are kept as {key} ({})",
+                                engine.id, entry.name
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     use super::*;
     use crate::testkit::scratch;
     use quickai_core::lookup::present::{Download, Piece};

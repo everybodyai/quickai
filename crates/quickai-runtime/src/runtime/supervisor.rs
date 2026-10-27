@@ -50,6 +50,10 @@ const IDENTITY_TIMEOUT: Duration = Duration::from_secs(2);
 /// What an unload may take while the application is closing, whatever the document allows.
 const UNLOAD_WHEN_CLOSING: Duration = Duration::from_secs(2);
 
+/// How often an engine that was given longer than its document's time to answer (`on_timeout = "wait"`) is asked
+/// whether it answers now, at least.
+const LATE_PROBE_MS: u64 = 2_000;
+
 /// What the interface can tell a run.
 pub enum Command {
     /// End the run. `closing` is set while the application is exiting: the stop then waits only
@@ -506,6 +510,7 @@ impl Supervisor {
         // an engine with nothing to ask is as ready as it will get
         let mut ready = probe.is_none();
         let mut waiting = probe.is_some();
+        let mut said_late = false;
         let mut running = false;
         let started = Instant::now();
         let mut next_probe = started;
@@ -540,21 +545,26 @@ impl Supervisor {
             if Instant::now() < next_probe {
                 continue;
             }
-            if started.elapsed() > Duration::from_millis(plan.timeout_ms) {
+            let late = started.elapsed() > Duration::from_millis(plan.timeout_ms);
+            if late && !said_late {
                 self.log("Timed out waiting for server to become healthy.");
                 match plan.on_timeout {
                     OnTimeout::Fail => return Outcome::TimedOut,
-                    // it may still be loading a big model: stop asking, keep watching, and the
-                    // state stays `Starting`, as it always has
-                    OnTimeout::Wait => waiting = false,
+                    // it may still be loading a big model: said once, and it is asked on, less often, so that
+                    // it is Running when it answers (it stayed Starting for good once the time was up)
+                    OnTimeout::Wait => said_late = true,
                 }
-                continue;
             }
             if probe.ready() {
                 waiting = false;
                 ready = true;
             } else {
-                next_probe = Instant::now() + Duration::from_millis(plan.interval_ms);
+                let every = if late {
+                    plan.interval_ms.max(LATE_PROBE_MS)
+                } else {
+                    plan.interval_ms
+                };
+                next_probe = Instant::now() + Duration::from_millis(every);
             }
         }
     }

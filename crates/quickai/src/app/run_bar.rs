@@ -88,7 +88,7 @@ impl App {
         let mut selection = launch::selection_from_values(
             &self.engine,
             model.map(ModelEntry::info),
-            self.values.map(),
+            &self.run_values(),
             self.traffic_proxy_on(),
         );
         if let (Some(model), Some(engine)) = (model, self.engine_doc()) {
@@ -109,7 +109,8 @@ impl App {
         } else {
             self.models.get(self.selected).cloned()
         };
-        if !self.binary.is_file() {
+        let remote = self.remote_in_use().is_some();
+        if !remote && !self.binary.is_file() {
             self.missing_binary_warned = true;
             return;
         }
@@ -118,18 +119,63 @@ impl App {
         self.log_lines.clear();
         self.traffic.clear();
         self.selected_session = None;
+        // on another computer, the tunnel first: the run starts when it is open
+        if remote {
+            self.start_remote(model, ctx);
+            return;
+        }
         let ctx = ctx.clone();
         self.start_run(model.as_ref(), move || ctx.request_repaint());
     }
 
-    /// Whether Start would load the selected model into an engine that is running with none:
-    /// management mode, where the daemon came up to list and pull and the person has now chosen.
+    /// Whether Start would load the selected model into the running engine: one running with none
+    /// (management mode, where the daemon came up to list and pull and the person has now chosen), or one that
+    /// has another loaded, which makes way for it (the daemon unloads it first).
     pub(super) fn can_load_selected(&self) -> bool {
         self.session.state() == ServerState::Running
-            && self.session.model_name().is_none()
             && self.session.loading().is_none()
             && self.lists_models()
-            && self.models.get(self.selected).is_some()
+            && self
+                .models
+                .get(self.selected)
+                .is_some_and(|m| !self.is_loaded_model(&m.filename))
+    }
+
+    /// Whether the green button would start the server again with the selected model: an engine that serves one
+    /// model file for its run (llama.cpp) is running another.
+    pub(super) fn can_switch_selected(&self) -> bool {
+        !self.lists_models()
+            && !self.runs_alone()
+            && !self.restart_with_selected
+            && self.session.state() == ServerState::Running
+            && self
+                .models
+                .get(self.selected)
+                .is_some_and(|m| self.session.model_name() != Some(m.display.as_str()))
+    }
+
+    /// What the green button does for `can_switch_selected`: stops the server, and `poll_restart` starts it again
+    /// with the selected model once it has stopped.
+    pub(super) fn switch_to_selected(&mut self) {
+        self.restart_with_selected = true;
+        self.stop_companion();
+        self.session.stop();
+    }
+
+    /// Each frame: a server stopped to be started with another model is started once it has stopped; one that
+    /// crashed on the way is left as it is.
+    pub(super) fn poll_restart(&mut self, ctx: &egui::Context) {
+        if !self.restart_with_selected {
+            return;
+        }
+        match self.session.state() {
+            ServerState::Idle => {
+                self.restart_with_selected = false;
+                self.start_selected(ctx);
+            }
+            ServerState::Crashed => self.restart_with_selected = false,
+            ServerState::Starting | ServerState::Running | ServerState::Stopping => {}
+        }
     }
 
     /// What Start does for an engine that is running with no model: loads the one the picker has
@@ -145,7 +191,7 @@ impl App {
         let selection = launch::selection_from_values(
             &self.engine,
             Some(model.info()),
-            self.values.map(),
+            &self.run_values(),
             false,
         );
         match self.plan_run(&selection, None) {
@@ -166,6 +212,7 @@ impl App {
     pub(super) fn show_run_buttons(&mut self, ui: &mut egui::Ui, state: ServerState, active: bool) {
         let server = self.server_name();
         let loadable = self.can_load_selected();
+        let switchable = self.can_switch_selected();
         // an engine that lists its own models can start with none: the daemon runs, empty, and the
         // person can pull one
         let missing = self.engine_missing();
@@ -173,6 +220,8 @@ impl App {
         let can_start = (!self.models.is_empty() || self.lists_models() || alone) && !missing;
         let start_hint = if loadable {
             format!("Load the selected model into the running {server}.")
+        } else if switchable {
+            format!("Start {server} again with the selected model.")
         } else if alone {
             format!("Launch {server} with the settings above.")
         } else {
@@ -183,22 +232,33 @@ impl App {
             .and_then(|e| e.doc.provides.web_ui.clone());
         let height = 28.0;
         ui.horizontal(|ui| {
-            let can_press_start = (!active && can_start) || loadable;
+            let can_press_start = (!active && can_start) || loadable || switchable;
+            // green while it is the thing to do: Start, or loading into an engine that has nothing loaded. With a model
+            // running, the chat is the green button, and the one that changes the model is not
+            let first_model = !active || self.session.model_name().is_none();
             let start = theme::button_sized(
                 ui,
-                if can_press_start {
+                if can_press_start && first_model {
                     Role::Primary
                 } else {
                     Role::Normal
                 },
                 can_press_start,
-                "Start",
+                if loadable {
+                    "Load model"
+                } else if switchable {
+                    "Use this model"
+                } else {
+                    "Start"
+                },
                 egui::vec2(72.0, height),
             )
             .on_hover_text(start_hint);
             if start.clicked() {
                 if loadable {
                     self.load_selected();
+                } else if switchable {
+                    self.switch_to_selected();
                 } else {
                     self.start_selected(ui.ctx());
                 }
@@ -293,6 +353,20 @@ impl App {
     /// What the line of the run bar says of the engine: the model and port while it serves one, what a manager
     /// engine or one that runs on its own is doing, or the state's own word.
     pub(super) fn run_status_text(&self, state: ServerState) -> String {
+        if self.remote_opening() {
+            return format!("Connecting to {}...", self.remote_label());
+        }
+        let said = self.local_status_text(state);
+        // a run on another computer says where
+        match self.remote.tunnel.as_ref() {
+            Some(_) if state == ServerState::Running => {
+                format!("{said} on {}", self.remote_label())
+            }
+            _ => said,
+        }
+    }
+
+    fn local_status_text(&self, state: ServerState) -> String {
         match (state, self.session.model_name(), self.session.port()) {
             (ServerState::Running, Some(name), Some(port)) => {
                 format!("Running: {name} (port {port})")

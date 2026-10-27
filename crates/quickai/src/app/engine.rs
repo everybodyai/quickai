@@ -38,8 +38,35 @@ pub struct NamedModels {
     pub pull: Option<(Job<()>, PullHandle)>,
     /// What to say under the box: why an input was refused, what a failed pull said.
     pub notice: Option<String>,
+    /// What was asked of the engine while it was stopped: it was started for it (with no model), and this is
+    /// done once it runs.
+    pub queued: Option<Queued>,
     /// The state the session was in at the last frame, to see the engine come up.
     last_state: Option<ServerState>,
+}
+
+/// What waits for the engine to come up: a pull of a reference, or the removal of a listed model.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Queued {
+    Pull(String),
+    Remove(String),
+}
+
+impl Queued {
+    /// What the window says while the engine comes up for it.
+    pub fn waiting_line(&self, server: &str) -> String {
+        match self {
+            Queued::Pull(reference) => format!("Starting {server} to pull {reference}..."),
+            Queued::Remove(name) => format!("Starting {server} to remove {name}..."),
+        }
+    }
+}
+
+impl NamedModels {
+    /// A pull is going, or one waits for the engine to come up: another is not started meanwhile.
+    pub fn pulling(&self) -> bool {
+        self.pull.is_some() || matches!(self.queued, Some(Queued::Pull(_)))
+    }
 }
 
 impl App {
@@ -106,7 +133,16 @@ impl App {
     /// The request that lists the engine's models, as its document describes it.
     fn list_spec(&self) -> Option<ListSpec> {
         let call = quickai_core::models::list_call(self.engine_doc()?, &self.host_facts)?.ok()?;
-        Some(ListSpec::from_call(&call))
+        let mut spec = ListSpec::from_call(&call);
+        // another computer's models are remembered apart from this one's: a list is of the computer that gave it
+        if let (Some(remote), Some(cache)) = (self.remote_in_use(), spec.cache.as_mut()) {
+            let name = cache
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "catalog-cache".into());
+            *cache = cache.with_file_name(format!("{name}-{}.json", remote.id));
+        }
+        Some(spec)
     }
 
     /// Whether the engine can be changed now: not while something runs or is being fetched with the
@@ -117,6 +153,8 @@ impl App {
             || self.runtime.install.is_some()
             || self.runtime.delete.is_some()
             || self.named.pull.is_some()
+            || self.named.queued.is_some()
+            || self.remote_opening()
             || self.companion_busy()
     }
 
@@ -143,6 +181,23 @@ impl App {
         }
         self.look_for_stopped_installs();
         self.missing_binary_warned = false;
+        // What was asked about the engine that was in use is not asked of this one: a delete answered here was carried
+        // out by the other engine's manager, and a program allowed here started this engine instead.
+        self.pending_delete = None;
+        self.delete_of_companion = false;
+        self.delete_asked_in_window = false;
+        self.restart_with_selected = false;
+        // a conversation is with the model of the engine that was in use
+        self.chat.stop();
+        // (what the person told the model, and that they found the tab, are theirs and not the engine's)
+        self.chat = self.chat.carried_over();
+        self.pending_foreign = None;
+        self.settings_error = None;
+        // nor is its crash this one's: its panel read the other engine's log with this engine's advice
+        if self.session.state() == ServerState::Crashed {
+            self.session = crate::runtime::Session::new();
+            self.run_reached_running = false;
+        }
         // the program that goes with this engine, if one does: its own settings, builds and run
         self.companion = self.build_companion();
         self.as_companion(|app| app.look_for_stopped_installs());
@@ -227,7 +282,7 @@ impl App {
     // ---- the models of an engine that lists them ---------------------------------------------------
 
     /// Shows what the engine said last time, if it said anything: no request is made.
-    fn load_cached_models(&mut self) {
+    pub(super) fn load_cached_models(&mut self) {
         let Some(spec) = self.list_spec() else { return };
         if let Ok(listing) = models_to_show(None, &spec) {
             self.set_listing(listing);
@@ -289,6 +344,8 @@ impl App {
             }
         }
 
+        self.run_queued(state, ctx);
+
         let Some((mut job, handle)) = self.named.pull.take() else {
             return;
         };
@@ -309,6 +366,98 @@ impl App {
             }
             None => self.named.pull = Some((job, handle)),
         }
+    }
+
+    /// What waits for the engine is done once it runs; a start that did not get there (it failed, it was stopped)
+    /// drops it and says why under the box. A start that waits for the person to allow a program keeps it.
+    fn run_queued(&mut self, state: ServerState, ctx: &egui::Context) {
+        let Some(queued) = self.named.queued.take() else {
+            return;
+        };
+        match state {
+            ServerState::Running => match queued {
+                Queued::Pull(reference) => {
+                    self.pull_named(&reference, ctx);
+                }
+                Queued::Remove(name) => self.remove_listed_model(&name, ctx),
+            },
+            ServerState::Starting => self.named.queued = Some(queued),
+            // (waiting for the person to allow a program, or for the tunnel to another computer)
+            ServerState::Idle if self.pending_foreign.is_some() || self.remote_opening() => {
+                self.named.queued = Some(queued)
+            }
+            ServerState::Idle | ServerState::Crashed | ServerState::Stopping => {
+                let server = self.server_name();
+                let what = match &queued {
+                    Queued::Pull(reference) => format!("pull {reference}"),
+                    Queued::Remove(name) => format!("remove {name}"),
+                };
+                let sentence = format!(
+                    "{server} did not start, so nothing was done ({what}). The log says why."
+                );
+                match queued {
+                    Queued::Pull(_) => self.named.notice = Some(sentence),
+                    // (asked for in the main window too, which shows the log and not the Settings' line)
+                    Queued::Remove(_) => {
+                        self.push_log(sentence.clone());
+                        self.settings_error = Some(sentence);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Starts the engine with no model, for what is asked of its daemon (a pull, a removal): `queued` is done once it
+    /// runs. `false`, with the reason under the box, when it cannot be started for it.
+    fn start_for(&mut self, queued: Queued, ctx: &egui::Context) -> bool {
+        let name = self.engine_name();
+        let server = self.server_name();
+        let refuse = |app: &mut App, sentence: String| {
+            match &queued {
+                Queued::Pull(_) => app.named.notice = Some(sentence),
+                Queued::Remove(_) => {
+                    app.push_log(sentence.clone());
+                    app.settings_error = Some(sentence);
+                }
+            }
+            false
+        };
+        let remote = self.remote_in_use().is_some();
+        if !remote && (self.engine_missing() || !self.binary.is_file()) {
+            return refuse(
+                self,
+                format!("Install {name} first: \"Install {name}\", at the top of the page, downloads it."),
+            );
+        }
+        match self.session.state() {
+            ServerState::Starting => {}
+            ServerState::Stopping => {
+                return refuse(
+                    self,
+                    format!("{server} is stopping. Try again once it has stopped."),
+                );
+            }
+            // a running engine has an endpoint and is never asked to start: one without is not waited for
+            ServerState::Running => {
+                return refuse(self, format!("{server} gives no address to ask."));
+            }
+            ServerState::Idle | ServerState::Crashed => {
+                self.save_settings();
+                self.run_reached_running = false;
+                if remote {
+                    self.start_remote(None, ctx);
+                } else {
+                    let ctx = ctx.clone();
+                    self.start_run(None, move || ctx.request_repaint());
+                }
+            }
+        }
+        match &queued {
+            Queued::Pull(_) => self.named.notice = None,
+            Queued::Remove(_) => self.settings_error = None,
+        }
+        self.named.queued = Some(queued);
+        true
     }
 
     /// What was typed into the model box: pulled, or refused with the sentence the document gives.
@@ -335,13 +484,15 @@ impl App {
                 false
             }
             InputAction::Pull { reference } => {
-                let Some(endpoint) = self.endpoint() else {
-                    self.named.notice = Some(format!(
-                        "Start {} first: the running {} pulls the model.",
-                        self.engine_name(),
-                        self.server_name()
-                    ));
+                if self.named.pull.is_some() {
+                    self.named.notice = Some(
+                        "Wait for the pull that is going to finish, or cancel it.".to_string(),
+                    );
                     return false;
+                }
+                // a stopped engine is started for it, with no model, and the pull is made once it runs
+                let Some(endpoint) = self.endpoint() else {
+                    return self.start_for(Queued::Pull(reference), ctx);
                 };
                 let call = self
                     .engine_doc()
@@ -378,12 +529,9 @@ impl App {
                 return;
             }
         };
+        // a stopped engine is started for it, with no model, and the model is removed once it runs
         let Some(endpoint) = self.endpoint() else {
-            self.settings_error = Some(format!(
-                "Start {} to remove a model: the running {} does it.",
-                self.engine_name(),
-                self.server_name()
-            ));
+            self.start_for(Queued::Remove(pending.name), ctx);
             return;
         };
         let call = self
@@ -630,11 +778,128 @@ mod tests {
             say(&mut app, "   ").is_some(),
             "the last notice stays when nothing was typed"
         );
-        // a name is fine, but nothing is running to pull it
+        // a name is fine, but there is no Ollama to start for it: the page has the button that installs one
+        app.binary = PathBuf::from("/nowhere/ollama");
         let said = say(&mut app, "qwen3:4b").unwrap();
-        assert!(said.starts_with("Start Ollama first"), "{said}");
-        assert!(app.named.pull.is_none());
+        assert!(said.starts_with("Install Ollama first"), "{said}");
+        assert!(app.named.pull.is_none() && app.named.queued.is_none());
+        assert_eq!(
+            app.session.state(),
+            ServerState::Idle,
+            "nothing was started"
+        );
         assert!(fake.requests().is_empty(), "nothing was sent");
+    }
+
+    /// An application on Ollama that attaches to the fake on its port, with a program in place (it is never run:
+    /// attaching starts nothing).
+    #[cfg(unix)]
+    fn app_attached_to(dir: &Path, fake: &FakeOllama) -> App {
+        let program = crate::testkit::procs::write_script(dir, "ollama", "exit 0");
+        let mut settings = Settings::default();
+        settings.set_chosen_engine("ollama");
+        with_ollama_values(
+            &mut settings,
+            &[
+                ("port", Value::Int(fake.port() as i64)),
+                ("mode", Value::Str("attach".into())),
+                ("bin_override", Value::Str(program.display().to_string())),
+            ],
+        );
+        app_on(dir, settings)
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn p3_m07b_a_pull_asked_of_a_stopped_ollama_starts_it_with_no_model_and_pulls_once_it_runs() {
+        let dir = crate::testkit::scratch("m07b");
+        let fake = FakeOllama::start();
+        let mut app = app_attached_to(&dir, &fake);
+        let ctx = egui::Context::default();
+        assert_eq!(app.session.state(), ServerState::Idle);
+
+        // the box, with Ollama stopped: it is started for the pull, and nothing is pulled until it runs
+        app.model_input = "qwen3:4b".into();
+        app.submit_model_input(&ctx);
+        assert_eq!(app.named.notice, None, "{:?}", app.named.notice);
+        assert_eq!(app.named.queued, Some(Queued::Pull("qwen3:4b".into())));
+        assert!(
+            app.model_input.is_empty(),
+            "the box is cleared once it is taken"
+        );
+        assert_ne!(
+            app.session.state(),
+            ServerState::Idle,
+            "Ollama was not started"
+        );
+        assert!(
+            app.engine_locked(),
+            "the engine stays as it is while it waits"
+        );
+        assert!(app.named.pulling(), "another pull is not offered meanwhile");
+        until(&mut app, &ctx, "the pull to be made and end", |a| {
+            a.named.queued.is_none()
+                && a.named.pull.is_none()
+                && a.models.iter().any(|m| m.filename == "qwen3:4b")
+        });
+        assert_eq!(app.named.notice, None);
+        assert!(app.session.attached());
+        assert_eq!(
+            app.session.model_name(),
+            None,
+            "it was started with no model"
+        );
+        assert_eq!(
+            fake.requests_to("/api/pull")
+                .iter()
+                .map(|r| r.body.clone())
+                .collect::<Vec<_>>(),
+            [Some(json!({"model": "qwen3:4b"}))]
+        );
+        // the pulled model is the one chosen, and the green button loads it
+        assert_eq!(app.models[app.selected].filename, "qwen3:4b");
+        assert!(app.can_load_selected());
+
+        // a removal asked of it stopped starts it too
+        app.session.stop();
+        until(&mut app, &ctx, "the session to end", |a| {
+            a.session.state() == ServerState::Idle
+        });
+        app.remove_listed_model("qwen3:4b", &ctx);
+        assert_eq!(app.settings_error, None, "{:?}", app.settings_error);
+        until(&mut app, &ctx, "the removal", |a| {
+            a.named.queued.is_none() && a.models.iter().all(|m| m.filename != "qwen3:4b")
+        });
+        assert_eq!(
+            fake.requests_to("/api/delete")
+                .iter()
+                .map(|r| r.body.clone())
+                .collect::<Vec<_>>(),
+            [Some(json!({"model": "qwen3:4b"}))]
+        );
+        app.session.stop_blocking();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn p3_m07c_a_start_for_a_pull_that_does_not_get_there_drops_the_pull_and_says_so() {
+        let dir = crate::testkit::scratch("m07c");
+        let fake = FakeOllama::start();
+        let mut app = app_attached_to(&dir, &fake);
+        // attach only, and nothing answers there any more
+        drop(fake);
+        let ctx = egui::Context::default();
+        assert!(app.pull_named("qwen3:4b", &ctx));
+        until(&mut app, &ctx, "the start to fail", |a| {
+            a.named.queued.is_none()
+        });
+        assert!(app.named.pull.is_none(), "nothing was pulled");
+        let said = app.named.notice.clone().expect("why under the box");
+        assert!(
+            said.contains("did not start") && said.contains("qwen3:4b"),
+            "{said}"
+        );
+        assert!(!app.engine_locked(), "the engine can be changed again");
     }
 
     /// Draws every panel of the main window and the Settings window once, as a frame does.
@@ -868,6 +1133,7 @@ mod tests {
             }
             app.poll_named_models(ctx);
             app.poll_lookup();
+            app.poll_chat();
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -977,6 +1243,137 @@ mod tests {
         });
         assert!(app.models.iter().any(|m| m.filename == "qwen3:4b"));
         assert!(!fake.requests_to("/api/version").is_empty());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_conversation_is_kept_reopened_asked_again_changed_and_deleted_when_chats_are_kept() {
+        let dir = crate::testkit::scratch("chat-keep");
+        let fake = FakeOllama::start();
+        fake.add_model("qwen3:4b", 2_500_000_000);
+        let mut app = app_attached_to(&dir, &fake);
+        let ctx = egui::Context::default();
+        app.start_selected(&ctx);
+        until(&mut app, &ctx, "the list", |a| {
+            a.session.state() == ServerState::Running && !a.models.is_empty()
+        });
+        app.load_selected();
+        until(&mut app, &ctx, "the model", |a| {
+            a.session.model_name().is_some()
+        });
+        let reply = |app: &mut App| until(app, &ctx, "the reply", |a| !a.chat.replying());
+
+        // not kept: nothing is written
+        app.chat.input = "Hello".into();
+        app.send_chat(&ctx);
+        reply(&mut app);
+        assert!(
+            !dir.join("data/chats").exists(),
+            "a chat was kept while chats are not"
+        );
+        let first = app.chat.turns.last().cloned().unwrap();
+        assert!(!first.from_person && first.stats.is_some(), "{first:?}");
+
+        // kept: the conversation that is there is written at once, and each reply after
+        app.set_keep_chats(true);
+        assert_eq!(saved(&dir)["values"]["app.keep_chats"], true);
+        assert_eq!(app.chat.kept.len(), 1);
+        assert_eq!(app.chat.kept[0].title, "Hello");
+        let id = app.chat.saved_id.clone().expect("an id");
+
+        // asked again: the last reply is replaced, and the request is the conversation without it
+        app.regenerate_chat(&ctx);
+        reply(&mut app);
+        assert_eq!(app.chat.turns.len(), 2);
+        let asked = fake.requests_to("/v1/chat/completions");
+        assert_eq!(asked.len(), 2);
+        assert_eq!(
+            asked[1].body.clone().unwrap()["messages"],
+            json!([{"role": "user", "content": "Hello"}])
+        );
+
+        // changed: the last message goes back into the box, and what came of it goes
+        app.edit_last_message();
+        assert_eq!(app.chat.input, "Hello");
+        assert!(app.chat.turns.is_empty());
+        app.chat.input = "Hello again".into();
+        app.send_chat(&ctx);
+        reply(&mut app);
+        assert_eq!(
+            app.chat.kept[0].title, "Hello again",
+            "the same chat, its new first message"
+        );
+        assert_eq!(app.chat.kept.len(), 1);
+
+        // a new one, then the kept one opened again
+        app.chat.new_conversation();
+        assert!(app.chat.turns.is_empty());
+        app.open_kept_chat(&id);
+        assert_eq!(app.chat.turns.len(), 2);
+        assert_eq!(app.chat.turns[0].text, "Hello again");
+
+        // off keeps what was kept; deleting takes it away
+        app.set_keep_chats(false);
+        assert!(dir.join(format!("data/chats/{id}.json")).is_file());
+        app.set_keep_chats(true);
+        app.delete_kept_chat(&id);
+        assert!(app.chat.kept.is_empty());
+        assert!(
+            app.chat.turns.is_empty(),
+            "the chat that was open went with it"
+        );
+        app.session.stop_blocking();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_model_chosen_while_ollama_has_another_loaded_is_loaded_in_its_place() {
+        let dir = crate::testkit::scratch("m-swap");
+        let fake = FakeOllama::start();
+        fake.add_model("bonsai-q1", 248_302_385)
+            .add_model("qwen3:4b", 2_500_000_000);
+        let mut app = app_attached_to(&dir, &fake);
+        let ctx = egui::Context::default();
+        app.start_selected(&ctx);
+        until(&mut app, &ctx, "the list", |a| {
+            a.session.state() == ServerState::Running && a.models.len() == 2
+        });
+        let at =
+            |app: &App, name: &str| app.models.iter().position(|m| m.filename == name).unwrap();
+        app.selected = at(&app, "bonsai-q1:latest");
+        if app.session.model_name().is_none() {
+            app.load_selected();
+        }
+        until(&mut app, &ctx, "bonsai to be loaded", |a| {
+            a.session
+                .model_name()
+                .is_some_and(|m| m.starts_with("bonsai-q1"))
+        });
+        assert!(
+            !app.can_load_selected(),
+            "the model that is loaded is the one chosen"
+        );
+
+        // another is chosen: the green button loads it, and the daemon is told to let the first one go
+        app.selected = at(&app, "qwen3:4b");
+        assert!(app.can_load_selected());
+        app.load_selected();
+        until(&mut app, &ctx, "qwen3 to be loaded", |a| {
+            a.session.model_name() == Some("qwen3:4b")
+        });
+        let generate: Vec<serde_json::Value> = fake
+            .requests_to("/api/generate")
+            .into_iter()
+            .filter_map(|r| r.body)
+            .collect();
+        assert!(
+            generate.iter().any(|b| b["model"]
+                .as_str()
+                .is_some_and(|m| m.starts_with("bonsai-q1"))
+                && b["keep_alive"] == 0),
+            "bonsai was not unloaded first: {generate:?}"
+        );
+        app.session.stop_blocking();
     }
 
     #[test]
@@ -1383,11 +1780,12 @@ mod tests {
         let bare = reference_of(&app, "laya", "latest");
         assert_eq!(bare, Fetch::Reference("laya".into()));
 
-        // nothing is running: the sentence of the box, and nothing sent
+        // nothing is running and there is no Ollama to start for it: the sentence of the box, and nothing sent
         app.model_input = "typed words".into();
+        app.binary = PathBuf::from("/nowhere/ollama");
         app.fetch_offer(&four, &ctx);
         let said = app.named.notice.clone().unwrap();
-        assert!(said.starts_with("Start Ollama first"), "{said}");
+        assert!(said.starts_with("Install Ollama first"), "{said}");
         assert!(app.named.pull.is_none());
         assert!(fake.requests_to("/api/pull").is_empty());
         assert_eq!(

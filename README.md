@@ -70,10 +70,36 @@ opened: choose **Done**, then press **Open Anyway** in **System Settings → Pri
 
 1. **Start QuickAI.** Bonsai 8B is already selected, or QuickAI's recommendation for your computer is.
 2. **Press Start** in the toolbar. The status bar at the foot of the window turns green and says *Running*.
-3. **Press Open Chat UI** to chat in your browser, or **Connect an app** to use the model from another app.
+3. **Chat** in the **Chat** tab at the foot of the window, press **Open Chat UI** to chat in your browser, or
+   **Connect an app** to use the model from another app.
 
 To get more models, press **Recommended** for the curated list, **Look up online** to search Hugging Face, or
-paste a link or a file path into the **Get** box.
+paste a link or a file path into the **Get** box. To use another model, choose it in the list and press **Use this
+model**; to delete one, right-click it in the list.
+
+To switch engines, click **llama.cpp**, **Ollama** or **ComfyUI** at the right of the toolbar. An engine that is
+not installed yet has an **Install** button at the top of the page; pulling a model starts Ollama by itself.
+
+## Chat
+
+The **Chat** tab at the foot of the window talks to the model that runs: nothing to install, no browser. Replies come
+as they are written, with how fast (tokens a second). **Options** sets instructions for the model, how free its answers
+are (temperature) and how long they may be; **Attach…** sends a picture to a model that sees them, or puts a text file
+in the message. A reply can be copied or asked for again, and the last message changed and sent again.
+
+Nothing is kept unless you tick **Keep chats**: then each conversation is a file on this computer, listed beside the
+chat, and **Export…** saves one as Markdown.
+
+## Run models on another computer
+
+A desktop with a big graphics card, or a rented GPU server, can run the models while you use them from here:
+**Server → Remote computers…** (or *Run on another computer…* on the page), add the computer by its SSH address, and
+choose it under **Runs on**. Start connects to it; the models, the chat and **Connect an app** then work as they do on
+this computer.
+
+QuickAI connects with your own `ssh` (your keys, your agent and `~/.ssh/config` are used as they are) and opens no
+port to the network on either side: the engine on that computer listens on its own loopback, and an SSH tunnel brings
+its port here. On that computer, run Ollama (or ComfyUI) as you would there, or `quickai-run up` with a configuration.
 
 ## Use it from other apps
 
@@ -93,8 +119,8 @@ Any client that takes a custom OpenAI base URL works: set it to `http://127.0.0.
 | Engine | For | How you get it |
 | --- | --- | --- |
 | **llama.cpp** | Chat, code, vision, embeddings: any GGUF model | Built in |
-| **Ollama** | The Ollama model library | Settings → Engine; downloaded and checksummed on request |
-| **ComfyUI** | Images and video from workflows (Wan 2.2, LTX-Video and more) | Settings → Engine; installed from source into its own environment, with ComfyUI-Manager unless you untick it |
+| **Ollama** | The Ollama model library | **Ollama** in the toolbar, then **Install Ollama**; downloaded and checksummed on request |
+| **ComfyUI** | Images and video from workflows (Wan 2.2, LTX-Video and more) | **ComfyUI** in the toolbar, then **Install ComfyUI**; installed from source into its own environment, with ComfyUI-Manager unless you untick it |
 | **Open WebUI** | A full chat page for Ollama | Settings → Chat UI; offline by default |
 
 Every engine QuickAI installs lives under `~/.quickai`, starts on `127.0.0.1` only, and has its own calls home

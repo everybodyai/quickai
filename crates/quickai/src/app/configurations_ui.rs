@@ -141,9 +141,19 @@ impl App {
         Host::from_machine(&self.machine)
     }
 
-    /// The configurations the registry has, the Default first.
+    /// The configurations the registry has, the Default first. The Default is the engine in use with every setting at its
+    /// default (when it names no model and no build, as the application's own does): changing the engine in the toolbar
+    /// is not a change of it, and choosing it (or Revert) brings back the defaults of that engine rather than another.
     pub(super) fn configuration_entries(&self) -> Vec<Entry> {
-        entries(&self.registry)
+        let mut all = entries(&self.registry);
+        for entry in all.iter_mut().filter(|e| e.id == DEFAULT_ID) {
+            let generic = entry.configuration.models.is_empty()
+                && entry.configuration.runtime.build.is_none();
+            if generic && self.registry.engine(&self.engine).is_some() {
+                entry.configuration.engine = self.engine.clone();
+            }
+        }
+        all
     }
 
     /// The configuration in use, when the registry still has it.
@@ -379,10 +389,12 @@ impl App {
             self.configs.error = Some(self.engine_locked_sentence());
             return;
         }
-        if id == self.configs.active && !self.configuration_modified() {
+        // the one in use, picked again, changes nothing: going back to what it says is Revert's, which asks first
+        // (picked again with changes, it threw them away without a word)
+        if id == self.configs.active {
             return;
         }
-        if self.configuration_modified() && id != self.configs.active {
+        if self.configuration_modified() {
             self.configs.question = Some(id.to_string());
             return;
         }
@@ -2054,16 +2066,19 @@ mod tests {
             std::fs::read_to_string(dir.join("config/profiles/vision.toml")).unwrap();
         app.request_choose("default");
         app.answer_unsaved(Answer::DontSave);
+        // the Default is the engine in use at its defaults (WP4.26): Ollama stays, and what Vision set goes
         assert_eq!(
             (app.engine.as_str(), app.configs.active.as_str()),
-            ("llamacpp", "default")
+            ("ollama", "default")
         );
+        assert_eq!(app.values.int("ctx_size"), None, "Ollama's own default");
+        assert!(!app.configuration_modified());
         let file = saved(&dir);
         assert!(
             file["values"].get("app.configuration").is_none(),
             "the Default is what a file with no choice means"
         );
-        assert!(file["values"].get("app.engine").is_none());
+        assert_eq!(file["values"]["app.engine"], "ollama");
         assert_eq!(
             std::fs::read_to_string(dir.join("config/profiles/vision.toml")).unwrap(),
             vision_before
@@ -2102,7 +2117,7 @@ mod tests {
             Some("Wait for what is being fetched to finish to change this.")
         );
         assert_eq!(app.configs.active, "default");
-        assert_eq!(app.engine, "llamacpp");
+        assert_eq!(app.engine, "ollama", "the engine the Default was chosen in");
         assert_eq!(saved(&dir), settings_before);
         assert!(app.download.is_some(), "the fetch goes on");
         let _ = std::fs::remove_dir_all(&dir);

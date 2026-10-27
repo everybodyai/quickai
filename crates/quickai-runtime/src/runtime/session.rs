@@ -649,6 +649,46 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn a_server_that_answers_after_its_time_is_up_is_running_when_it_does_if_the_document_says_to_wait(
+    ) {
+        // nothing answers on the port until the time is up, then /health does
+        let port = crate::testkit::free_port();
+        let mut plan = sleep_plan(Some(port), Some("/health"), None);
+        if let Some(ready) = plan.units[0].ready.as_mut() {
+            ready.timeout_ms = 300;
+            ready.on_timeout = quickai_core::doc::engine::OnTimeout::Wait;
+        }
+        let mut session = Session::new();
+        session.start(&plan, "a big model", || {});
+        let deadline = Instant::now() + Duration::from_millis(900);
+        let mut log = Vec::new();
+        while Instant::now() < deadline {
+            session.poll(&mut |line| log.push(line), &mut |_| {});
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(session.state(), ServerState::Starting, "{log:?}");
+        assert!(
+            log.iter().any(|l| l.contains("Timed out waiting")),
+            "{log:?}"
+        );
+        let server = Arc::new(tiny_http::Server::http(("127.0.0.1", port)).unwrap());
+        let worker = server.clone();
+        std::thread::spawn(move || {
+            while let Ok(request) = worker.recv() {
+                let _ = request.respond(tiny_http::Response::empty(200));
+            }
+        });
+        let more = wait_for(&mut session, ServerState::Running, 15);
+        assert!(
+            !more.iter().any(|l| l.contains("Timed out waiting")),
+            "the time being up is said once: {more:?}"
+        );
+        session.stop_blocking();
+        server.unblock();
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn a_plan_with_no_ready_step_is_running_at_once() {
         let mut session = Session::new();
         session.start(&sleep_plan(None, None, None), "m", || {});

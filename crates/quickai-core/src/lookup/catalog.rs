@@ -127,7 +127,10 @@ fn files_offers(run: &FilesRun, ctx: &Context<'_>) -> Option<Vec<Offer>> {
         label: kind.map_or_else(|| "model".to_string(), |(_, l)| l.to_string()),
         url: huggingface::file_url(site, &run.repo, &run.rev, &file.path),
         store_as: match kind {
-            None => safe_file_name(name_of(file)),
+            None => file
+                .store_as
+                .clone()
+                .unwrap_or_else(|| safe_file_name(name_of(file))),
             Some(_) => companion_file_name(&run.repo, name_of(file)),
         },
         name: name_of(file).to_string(),

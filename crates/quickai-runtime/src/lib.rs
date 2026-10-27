@@ -13,6 +13,7 @@
 
 pub mod assets;
 pub mod bundles;
+pub mod chats;
 pub mod cli;
 pub mod config;
 pub mod configuration_cli;
@@ -33,6 +34,7 @@ pub mod paths;
 pub mod prims;
 pub mod provision;
 pub mod proxy;
+pub mod remote;
 pub mod resolve;
 pub mod runtime;
 pub mod settings;

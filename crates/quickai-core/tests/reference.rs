@@ -289,7 +289,7 @@ repo = "acme/Alpha-4B-GGUF"
 rev = "0123456789abcdef0123456789abcdef01234567"
 mode = "embedding"
 place = "checkpoints"
-files = [ { file = "Alpha-4B-Q4_K_M.gguf", size = 2500000000, sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", label = "Q4_K_M", best = true } ]
+files = [ { file = "Alpha-4B-Q4_K_M.gguf", size = 2500000000, sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", label = "Q4_K_M", best = true, store_as = "alpha-org-Alpha-4B-Q4_K_M.gguf" } ]
 
 [model.run.llamacpp.companions]
 mmproj = { file = "mmproj-Alpha-4B-F16.gguf", size = 800000000, sha256 = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }

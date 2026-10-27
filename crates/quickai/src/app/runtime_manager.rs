@@ -59,6 +59,12 @@ pub struct RuntimeManager {
     /// the start), to be said in the log: the person who closed the window in the middle of one is not
     /// to have to look for it.
     pub hint: Option<Receiver<Vec<Unfinished>>>,
+    /// The page's Install button was pressed: the look-up that is going ends in the install of the build it
+    /// offers first for this machine (the one the document was tested with, when the feed has it). The context is the
+    /// window's, which the install wakes.
+    pub auto_install: Option<egui::Context>,
+    /// Why the last install the page asked for did not happen: the look-up's sentence, or the install's.
+    pub setup_failure: Option<String>,
 }
 
 /// What the manager knows of the disk. It is read by a thread of its own and never in a frame: a build of
@@ -397,6 +403,9 @@ impl App {
                         format!("Found {} build(s).", self.runtime.lookup_results.len())
                     };
                 }
+                if let Some(ctx) = self.runtime.auto_install.take() {
+                    self.install_first_build(failed, &ctx);
+                }
             } else {
                 self.runtime.lookup_rx = Some(rx);
             }
@@ -488,6 +497,7 @@ impl App {
                 if let Some(texts) = self.runtime_texts() {
                     self.push_log(texts.install_failed_log(&msg));
                 }
+                self.runtime.setup_failure = Some(msg);
             }
             None => self.runtime.install = Some(job),
         }
@@ -602,6 +612,7 @@ impl App {
             return;
         };
         self.runtime.cancel = Some(spec.cancel.clone());
+        self.runtime.setup_failure = None;
         self.runtime.install = Some(install::spawn_install_build(
             spec,
             request,
@@ -790,6 +801,7 @@ impl App {
                         let label = acquire::label_from_url(&trimmed, &spec.fallback_label);
                         let ctx_clone = ui.ctx().clone();
                         self.runtime.cancel = Some(spec.cancel.clone());
+                        self.runtime.setup_failure = None;
                         self.runtime.install = Some(install::spawn_install(
                             spec,
                             trimmed,
@@ -844,7 +856,10 @@ impl App {
                                 to_select = Some(build.binary_path.clone());
                             }
                             if ui
-                                .add(egui::Button::new("🗑").small())
+                                .add_enabled(
+                                    self.runtime.delete.is_none(),
+                                    egui::Button::new("🗑").small(),
+                                )
                                 .on_hover_text(&texts.delete_build_help)
                                 .clicked()
                             {
@@ -1013,6 +1028,13 @@ impl App {
                         .small()
                         .color(super::theme::palette().muted),
                 );
+            }
+        }
+        // how the last install ended when it failed: said here too, for the log is in the other window
+        if self.runtime.install.is_none() {
+            if let Some(why) = &self.runtime.setup_failure {
+                ui.add_space(4.0);
+                ui.colored_label(super::theme::palette().bad, texts.install_failed_log(why));
             }
         }
         if let Some(deleting) = &self.runtime.delete {
@@ -1189,6 +1211,7 @@ impl App {
                 let request = b.install_request(&chosen);
                 let ctx_clone = ui.ctx().clone();
                 self.runtime.cancel = Some(spec.cancel.clone());
+                self.runtime.setup_failure = None;
                 self.runtime.install = Some(install::spawn_install_build(
                     spec,
                     request,

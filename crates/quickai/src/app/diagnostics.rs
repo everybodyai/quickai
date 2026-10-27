@@ -14,6 +14,10 @@ impl App {
     /// is downloaded on request (not bundled) says so up front. A bundled engine is tried and says
     /// what it could not find when the person starts it, as it always has.
     pub(super) fn engine_missing(&self) -> bool {
+        // one that runs on another computer is that computer's to have
+        if self.remote_in_use().is_some() {
+            return false;
+        }
         let bundled = self.engine_doc().is_some_and(|e| e.doc.engine.bundled);
         !bundled && !self.binary.is_file()
     }
@@ -21,16 +25,8 @@ impl App {
     /// The missing-binary line and the crash panel with its advice.
     pub(super) fn show_diagnostics(&mut self, ui: &mut egui::Ui, state: ServerState) {
         let server = self.server_name();
-        if self.engine_missing() {
-            let name = self.engine_name();
-            ui.add_space(8.0);
-            theme::alert(ui, Tone::Bad, |ui| {
-                ui.label(format!(
-                    "{name} is not installed. Open Settings > Advanced: {name} and click \
-                     \"Look up {name} builds\" to download one; nothing is downloaded until you do."
-                ));
-            });
-        } else if self.missing_binary_warned {
+        // an engine that is not installed has the section that installs it at the top of the page
+        if !self.engine_missing() && self.missing_binary_warned {
             ui.add_space(8.0);
             theme::alert(ui, Tone::Bad, |ui| {
                 ui.label(format!(
@@ -42,7 +38,9 @@ impl App {
 
         if state == ServerState::Crashed {
             ui.add_space(8.0);
-            if self.engine == crate::settings::DEFAULT_ENGINE {
+            // llama.cpp's own panel is about a start that failed: a server that was running and stopped is said as
+            // every engine says it, with its document's advice
+            if self.engine == crate::settings::DEFAULT_ENGINE && !self.run_reached_running {
                 self.show_llamacpp_crash_panel(ui, state);
             } else {
                 self.show_crash_panel(ui, state, &server);

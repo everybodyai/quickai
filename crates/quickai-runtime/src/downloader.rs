@@ -6,12 +6,14 @@
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use quickai_core::lookup::present::{is_place, safe_file_name, Download, Piece};
 use sha2::{Digest, Sha256};
 
 use crate::bundles;
-use crate::jobs::{Job, JobEvent};
+use crate::jobs::{Job, JobEvent, CANCELLED};
 
 /// Whether `input` should be fetched over HTTP rather than treated as a
 /// local filesystem path. Deliberately just a scheme check — everything
@@ -61,9 +63,14 @@ fn safe_filename(url: &str, hint: Option<&str>) -> String {
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
         .collect();
+    // a name of letters the filter does not keep (`模型.gguf`) is its ending alone: it gets a name in front of it
+    // rather than losing the dot, which made a file the list never showed
+    let had_ending = cleaned.starts_with('.') && cleaned.len() > 1;
     let cleaned = cleaned.trim_start_matches('.').to_string();
     if cleaned.is_empty() {
         "download.gguf".to_string()
+    } else if had_ending {
+        format!("download.{cleaned}")
     } else {
         cleaned
     }
@@ -78,8 +85,59 @@ fn stream_to_part(
     total: Option<u64>,
     part_path: &Path,
     send: &dyn Fn(JobEvent<String>),
-) -> Result<(), ()> {
-    stream_to_part_at(reader, 0, total, part_path, send, None).map(|_| ())
+    cancel: &AtomicBool,
+    resume_from: u64,
+) -> Result<u64, ()> {
+    let part = Part {
+        path: part_path,
+        resume_from,
+    };
+    stream_to_part_at(reader, 0, total, part, send, None, cancel)
+}
+
+/// How much of the part an earlier try left that this one can go on from: what is there, unless it is as long as the
+/// file is to be (or longer), when it is not to be trusted and is begun again.
+fn resumable(part_path: &Path, expected: Option<u64>) -> u64 {
+    let have = std::fs::metadata(part_path).map(|m| m.len()).unwrap_or(0);
+    if expected.is_some_and(|size| have >= size) {
+        let _ = std::fs::remove_file(part_path);
+        return 0;
+    }
+    have
+}
+
+/// Whether the answer is the rest of the file from `from` on (206 with the range that was asked for); a server that
+/// sent the whole file (200) is read from the start.
+fn goes_on_from(response: &ureq::http::Response<ureq::Body>, from: u64) -> bool {
+    from > 0
+        && response.status().as_u16() == 206
+        && response
+            .headers()
+            .get("content-range")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.trim().starts_with(&format!("bytes {from}-")))
+}
+
+/// How long a server may take to accept the connection, and then to begin its answer: a host that is not
+/// there, or never answers, is a failure with a sentence, and not a download that waits for good.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+const ANSWER_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// A request for `url` with those limits.
+fn get_with_limits(url: &str) -> ureq::RequestBuilder<ureq::typestate::WithoutBody> {
+    ureq::get(url)
+        .header("User-Agent", concat!("quickai/", env!("CARGO_PKG_VERSION")))
+        .config()
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_recv_response(Some(ANSWER_TIMEOUT))
+        .build()
+}
+
+/// The file a download is written into while it comes, and how much of it an earlier try left (0: none).
+#[derive(Clone, Copy)]
+struct Part<'a> {
+    path: &'a Path,
+    resume_from: u64,
 }
 
 /// The same, for a file that is one of several: progress is counted from `base` bytes (what the
@@ -90,11 +148,45 @@ fn stream_to_part_at(
     reader: &mut impl Read,
     base: u64,
     total: Option<u64>,
-    part_path: &Path,
+    part: Part<'_>,
     send: &dyn Fn(JobEvent<String>),
     mut digest: Option<&mut Sha256>,
+    cancel: &AtomicBool,
 ) -> Result<u64, ()> {
-    let mut file = match std::fs::File::create(part_path) {
+    let Part {
+        path: part_path,
+        resume_from,
+    } = part;
+    // going on from what an earlier try left: its bytes count, and are hashed first
+    if resume_from > 0 {
+        if let Some(digest) = digest.as_deref_mut() {
+            match std::fs::File::open(part_path) {
+                Ok(mut had) => {
+                    let mut buf = vec![0u8; CHUNK];
+                    loop {
+                        match had.read(&mut buf) {
+                            Ok(0) => break,
+                            Ok(n) => digest.update(&buf[..n]),
+                            Err(_) => break,
+                        }
+                    }
+                }
+                Err(e) => {
+                    send(JobEvent::Failed(format!(
+                        "could not read {}: {e}",
+                        part_path.display()
+                    )));
+                    return Err(());
+                }
+            }
+        }
+    }
+    let opened = if resume_from > 0 {
+        std::fs::OpenOptions::new().append(true).open(part_path)
+    } else {
+        std::fs::File::create(part_path)
+    };
+    let mut file = match opened {
         Ok(f) => f,
         Err(e) => {
             send(JobEvent::Failed(format!(
@@ -106,14 +198,23 @@ fn stream_to_part_at(
     };
 
     let mut buf = vec![0u8; CHUNK];
-    let mut downloaded: u64 = 0;
+    let mut downloaded: u64 = resume_from;
     loop {
+        if cancel.load(Ordering::SeqCst) {
+            drop(file);
+            let _ = std::fs::remove_file(part_path);
+            send(JobEvent::Failed(CANCELLED.to_string()));
+            return Err(());
+        }
         let n = match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => n,
             Err(e) => {
-                send(JobEvent::Failed(format!("copy error: {e}")));
-                let _ = std::fs::remove_file(part_path);
+                // what came is kept: the next try goes on from there
+                send(JobEvent::Failed(format!(
+                    "the download stopped ({e}) after {}. Get it again: it goes on from where it stopped.",
+                    crate::hardware::format_bytes(downloaded)
+                )));
                 return Err(());
             }
         };
@@ -150,7 +251,7 @@ pub fn spawn_download(
     let from_url = looks_like_url(&input);
     let verb = if from_url { "Downloading" } else { "Importing" };
 
-    Job::spawn(label, verb, wake, move |send| {
+    Job::spawn_cancellable(label, verb, wake, move |send, cancel| {
         let final_path = models_dir.join(&filename);
         let part_path = models_dir.join(format!("{filename}.part"));
 
@@ -166,18 +267,41 @@ pub fn spawn_download(
         }
 
         if from_url {
-            let resp = match ureq::get(&input).call() {
-                Ok(r) => r,
-                Err(e) => {
-                    send(JobEvent::Failed(format!("request failed: {e}")));
-                    return;
+            // what an earlier try left is gone on from, when the server can give the rest
+            let mut from = resumable(&part_path, None);
+            let resp = loop {
+                let mut request = get_with_limits(&input);
+                if from > 0 {
+                    request = request.header("Range", format!("bytes={from}-"));
+                }
+                match request.call() {
+                    Ok(r) => break r,
+                    // the part is not a beginning of the file the server has now: begun again
+                    Err(ureq::Error::StatusCode(416)) if from > 0 => {
+                        let _ = std::fs::remove_file(&part_path);
+                        from = 0;
+                    }
+                    Err(e) => {
+                        send(JobEvent::Failed(format!("request failed: {e}")));
+                        return;
+                    }
                 }
             };
-
+            let resumed = if goes_on_from(&resp, from) { from } else { 0 };
             let body = resp.into_body();
-            let total = body.content_length();
+            let total = body.content_length().map(|rest| rest + resumed);
             let mut reader = body.into_reader();
-            if stream_to_part(&mut reader, total, &part_path, &send).is_err() {
+            let Ok(written) =
+                stream_to_part(&mut reader, total, &part_path, &send, cancel, resumed)
+            else {
+                return;
+            };
+            if total.is_some_and(|t| written < t) {
+                send(JobEvent::Failed(format!(
+                    "the download stopped after {} of {}. Get it again: it goes on from where it stopped.",
+                    crate::hardware::format_bytes(written),
+                    crate::hardware::format_bytes(total.unwrap_or_default())
+                )));
                 return;
             }
         } else {
@@ -233,7 +357,16 @@ pub fn spawn_download(
                     return;
                 }
             };
-            if stream_to_part(&mut reader, Some(metadata.len()), &part_path, &send).is_err() {
+            if stream_to_part(
+                &mut reader,
+                Some(metadata.len()),
+                &part_path,
+                &send,
+                cancel,
+                0,
+            )
+            .is_err()
+            {
                 return;
             }
         }
@@ -245,6 +378,8 @@ pub fn spawn_download(
             )));
             return;
         }
+        // a file of this name that came with a projector has gone: so has what paired them
+        let _ = bundles::forget(&final_path);
 
         send(JobEvent::Done(filename));
     })
@@ -435,7 +570,7 @@ pub fn spawn_files_with(
         1 => format!("{weights} and 1 more file"),
         n => format!("{weights} and {n} more files"),
     };
-    Job::spawn(label, "Downloading", wake, move |send| {
+    Job::spawn_cancellable(label, "Downloading", wake, move |send, cancel| {
         // the folder each file goes in: the models folder, or a folder of it that the engine keeps
         // that kind of file in
         let folder_of = |piece: &Piece| -> Result<PathBuf, String> {
@@ -518,10 +653,14 @@ pub fn spawn_files_with(
                 )));
             }
             let login = with.login_for(&piece.url);
-            let mut request = ureq::get(&piece.url)
-                .header("User-Agent", concat!("quickai/", env!("CARGO_PKG_VERSION")));
+            // what an earlier try left of this file is gone on from, when the server can give the rest
+            let from = resumable(&part_path, piece.size);
+            let mut request = get_with_limits(&piece.url);
             if let Some(token) = login {
                 request = request.header("Authorization", format!("Bearer {token}"));
+            }
+            if from > 0 {
+                request = request.header("Range", format!("bytes={from}-"));
             }
             // a login goes on with a redirect inside the host it was given for (a repository that moved),
             // and not to the host a hub sends a file on to
@@ -532,6 +671,14 @@ pub fn spawn_files_with(
                 .call()
             {
                 Ok(r) => r,
+                Err(ureq::Error::StatusCode(416)) if from > 0 => {
+                    // the part is not a beginning of this file: begun again on the next try
+                    let _ = std::fs::remove_file(&part_path);
+                    send(failed(
+                        "what an earlier try left did not fit the file; get it again".to_string(),
+                    ));
+                    return;
+                }
                 Err(ureq::Error::StatusCode(code)) => {
                     send(failed(
                         explain_status(code, &piece.url, login.is_some())
@@ -545,8 +692,13 @@ pub fn spawn_files_with(
                     return;
                 }
             };
+            let resumed = if goes_on_from(&response, from) {
+                from
+            } else {
+                0
+            };
             let body = response.into_body();
-            let announced = body.content_length();
+            let announced = body.content_length().map(|rest| rest + resumed);
             let mut reader = body.into_reader();
             // the bar is the whole bundle's when every size is known, else this file's alone
             let (base, bar) = match total {
@@ -560,7 +712,10 @@ pub fn spawn_files_with(
                 &mut reader,
                 base,
                 bar,
-                &part_path,
+                Part {
+                    path: &part_path,
+                    resume_from: resumed,
+                },
                 &|event| {
                     send(match event {
                         JobEvent::Failed(m) => failed(m),
@@ -568,9 +723,22 @@ pub fn spawn_files_with(
                     })
                 },
                 digest.as_mut(),
+                cancel,
             ) else {
                 return;
             };
+            // short of the length the server said, or of the size the list knows: the connection dropped, and what
+            // came is kept for the next try (longer, or of another hash, is another file and is not kept below)
+            let expected = announced.or(piece.size);
+            if expected.is_some_and(|a| written < a) {
+                send(failed(format!(
+                    "the download of {} stopped after {} of {}. Get it again: it goes on from where it stopped.",
+                    piece.name,
+                    crate::hardware::format_bytes(written),
+                                        crate::hardware::format_bytes(expected.unwrap_or_default())
+                )));
+                return;
+            }
             if let (Some(size), None) = (piece.size.filter(|_| strict), &piece.sha256) {
                 if written != size {
                     let _ = std::fs::remove_file(&part_path);
@@ -638,6 +806,211 @@ pub fn spawn_files_with(
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    fn whole(len: usize) -> Vec<u8> {
+        (0..len).map(|i| (i % 251) as u8).collect()
+    }
+
+    /// A server of one file whose first answer stops after `after` bytes and hangs up (the head said the whole
+    /// length), as a connection that drops; then each `Range: bytes=N-` is answered with the rest (206). The ranges it
+    /// was asked with are kept.
+    struct DropServer {
+        url: String,
+        ranges: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl DropServer {
+        fn start(bytes: Vec<u8>, after: usize) -> DropServer {
+            use std::io::{BufRead, BufReader, Write};
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let ranges: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+            let asked = ranges.clone();
+            std::thread::spawn(move || {
+                let mut first = true;
+                for stream in listener.incoming().flatten() {
+                    let mut reader = BufReader::new(stream.try_clone().unwrap());
+                    let mut range = None;
+                    loop {
+                        let mut line = String::new();
+                        if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                            break;
+                        }
+                        if let Some(v) = line.to_ascii_lowercase().strip_prefix("range:") {
+                            range = Some(v.trim().to_string());
+                        }
+                    }
+                    let mut out = stream;
+                    let len = bytes.len();
+                    if first {
+                        first = false;
+                        let _ = write!(
+                            out,
+                            "HTTP/1.1 200 OK\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n"
+                        );
+                        let _ = out.write_all(&bytes[..after]);
+                        let _ = out.shutdown(std::net::Shutdown::Both);
+                        continue;
+                    }
+                    let from = range.as_deref().and_then(|r| {
+                        asked.lock().unwrap().push(r.to_string());
+                        r.strip_prefix("bytes=")?
+                            .strip_suffix('-')?
+                            .parse::<usize>()
+                            .ok()
+                    });
+                    match from {
+                        Some(from) if from < len => {
+                            let _ = write!(
+                                out,
+                                "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {from}-{}/{len}\r\nConnection: close\r\n\r\n",
+                                len - from,
+                                len - 1
+                            );
+                            let _ = out.write_all(&bytes[from..]);
+                        }
+                        _ => {
+                            let _ = write!(
+                                out,
+                                "HTTP/1.1 200 OK\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n"
+                            );
+                            let _ = out.write_all(&bytes);
+                        }
+                    }
+                    let _ = out.shutdown(std::net::Shutdown::Write);
+                }
+            });
+            DropServer {
+                url: format!("http://127.0.0.1:{port}/m.gguf"),
+                ranges,
+            }
+        }
+    }
+
+    #[test]
+    fn a_download_that_dropped_goes_on_from_where_it_stopped() {
+        let bytes = whole(1_000_000);
+        let server = DropServer::start(bytes.clone(), 300_000);
+        let dir = crate::testkit::scratch("dl-resume");
+        let mut job = spawn_download(server.url.clone(), None, dir.to_path_buf(), || {});
+        let first = job.wait(Duration::from_secs(20)).expect("it ended");
+        let why = first.expect_err("the connection dropped");
+        assert!(why.contains("goes on from where it stopped"), "{why}");
+        let kept = std::fs::metadata(dir.join("m.gguf.part"))
+            .map(|m| m.len())
+            .unwrap_or(0);
+        assert!(kept > 0 && kept <= 300_000, "what came is kept: {kept}");
+        assert!(!dir.join("m.gguf").exists());
+
+        // again: the rest is asked for, and the file is whole
+        let mut job = spawn_download(server.url.clone(), None, dir.to_path_buf(), || {});
+        assert_eq!(
+            job.wait(Duration::from_secs(20)),
+            Some(Ok("m.gguf".to_string()))
+        );
+        assert_eq!(std::fs::read(dir.join("m.gguf")).unwrap(), bytes);
+        assert_eq!(*server.ranges.lock().unwrap(), [format!("bytes={kept}-")]);
+
+        // a part that cannot be the beginning of the file (longer than it) is begun again
+        let files = crate::testkit::files::FileServer::start();
+        std::fs::write(dir.join("n.gguf.part"), whole(2_000_000)).unwrap();
+        files.add("/n.gguf", whole(500_000));
+        let mut job = spawn_download(files.url("/n.gguf"), None, dir.to_path_buf(), || {});
+        assert_eq!(
+            job.wait(Duration::from_secs(20)),
+            Some(Ok("n.gguf".to_string()))
+        );
+        assert_eq!(std::fs::read(dir.join("n.gguf")).unwrap(), whole(500_000));
+    }
+
+    #[test]
+    fn a_checked_file_that_dropped_goes_on_and_is_still_checked_whole() {
+        use sha2::Digest as _;
+        let bytes = whole(800_000);
+        let hex: String = Sha256::digest(&bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let server = DropServer::start(bytes.clone(), 250_000);
+        let piece = Piece {
+            kind: None,
+            label: "model".into(),
+            url: server.url.clone(),
+            store_as: "q.gguf".into(),
+            name: "q.gguf".into(),
+            size: Some(bytes.len() as u64),
+            sha256: Some(hex),
+            place: None,
+        };
+        let download = Download {
+            files: vec![piece],
+            bundle: None,
+            source: "url".into(),
+            mode: None,
+        };
+        let dir = crate::testkit::scratch("dl-resume-checked");
+        let first = spawn_files(download.clone(), dir.to_path_buf(), || {})
+            .wait(Duration::from_secs(20))
+            .expect("it ended");
+        assert!(first.is_err());
+        assert!(dir.join("q.gguf.part").exists(), "what came is kept");
+        let again = spawn_files(download, dir.to_path_buf(), || {})
+            .wait(Duration::from_secs(20))
+            .expect("it ended");
+        assert_eq!(
+            again,
+            Ok("q.gguf".to_string()),
+            "the hash covers what came before and after"
+        );
+        assert_eq!(std::fs::read(dir.join("q.gguf")).unwrap(), bytes);
+        assert_eq!(server.ranges.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_download_that_is_cancelled_stops_and_leaves_nothing_behind() {
+        let files = crate::testkit::files::FileServer::start();
+        files.add_throttled("/big.gguf", vec![7u8; 4 * 1024 * 1024], 256);
+        let dir = crate::testkit::scratch("dl-cancel");
+        let mut job = spawn_download(files.url("/big.gguf"), None, dir.to_path_buf(), || {});
+        crate::testkit::wait_until(Duration::from_secs(10), "the first bytes", || {
+            let _ = job.poll();
+            job.downloaded > 0
+        });
+        job.cancel();
+        let outcome = job.wait(Duration::from_secs(20)).expect("it ended");
+        assert_eq!(outcome, Err(CANCELLED.to_string()));
+        assert!(
+            !dir.join("big.gguf").exists(),
+            "a cancelled download was kept"
+        );
+        assert!(
+            !dir.join("big.gguf.part").exists(),
+            "its part was left behind"
+        );
+    }
+
+    #[test]
+    fn a_file_is_kept_under_a_safe_name_that_keeps_its_ending() {
+        assert_eq!(
+            safe_filename("https://x.co/a/b/qwen-Q4_K_M.gguf?download=true", None),
+            "qwen-Q4_K_M.gguf"
+        );
+        assert_eq!(
+            safe_filename("https://x.co/../../etc/passwd", None),
+            "passwd"
+        );
+        assert_eq!(safe_filename("C:\\models\\m.gguf", None), "m.gguf");
+        // a name of letters the filter drops keeps its ending, and so is listed
+        assert_eq!(
+            safe_filename("https://x.co/模型.gguf", None),
+            "download.gguf"
+        );
+        assert_eq!(safe_filename("https://x.co/", None), "download.gguf");
+        assert_eq!(
+            safe_filename("https://x.co/a", Some("hint.gguf")),
+            "hint.gguf"
+        );
+    }
 
     /// Real download against Hugging Face's API (small JSON, not an actual
     /// GGUF — this exercises the streaming/rename mechanics, not the

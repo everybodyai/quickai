@@ -29,7 +29,8 @@ impl App {
         let name = self.engine_name();
         match self.models.get(self.selected) {
             Some(m) => {
-                ui.heading(m.display.as_str());
+                let m = m.clone();
+                self.show_model_heading(ui);
                 // what the engine says the model can do is a chip each; `completion` is what every model that
                 // chats does, and is not worth a chip
                 let mut chips: Vec<Fact> = m
@@ -56,9 +57,25 @@ impl App {
             }
             None => {
                 ui.add_space(2.0);
-                ui.label(theme::muted(format!(
-                    "No models yet. Start {name} to list them, or pull one below."
-                )));
+                let sentence = if let Some(remote) = self.remote_in_use() {
+                    format!(
+                        "No models listed yet. Pull one below: QuickAI connects to {} for it, and the model is \
+                         kept there.",
+                        remote.name
+                    )
+                } else if self.engine_missing() {
+                    format!("No models yet. Install {name} above, then pull one below.")
+                } else if self.session.state() == crate::events::ServerState::Running {
+                    "No models yet. Pull one below: type its name, or choose one from Recommended \
+                     or Look up online."
+                        .to_string()
+                } else {
+                    format!(
+                        "No models yet. Pull one below: {name} is started for it, and lists what it \
+                         has once it runs."
+                    )
+                };
+                ui.label(theme::muted(sentence));
             }
         }
     }
@@ -69,13 +86,14 @@ impl App {
         let server = self.server_name();
         let engine_name = self.engine_name();
         let can_look_up = self.can_look_up();
-        let pulling = self.named.pull.is_some();
+        let pulling = self.named.pulling();
         ui.horizontal_wrapped(|ui| {
             ui.add_enabled_ui(!pulling, |ui| {
                 ui.label("Get:").on_hover_text(format!(
                     "A model's name (qwen3:4b), or a Hugging Face reference \
-                     (hf.co/user/repo:Q4_K_M), pulled by the running {server} when you \
-                     press Enter or Pull. Nothing is fetched until you do."
+                     (hf.co/user/repo:Q4_K_M), pulled by {server} when you press Enter or \
+                     Pull ({server} is started for it if it is stopped). Nothing is fetched \
+                     until you do."
                 ));
                 let field = ui.add(
                     egui::TextEdit::singleline(&mut self.model_input)
@@ -86,7 +104,9 @@ impl App {
                 let submitted = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 let go = ui
                     .add_enabled(!trimmed.is_empty(), egui::Button::new("Pull"))
-                    .on_hover_text(format!("Ask the running {server} to pull this model."))
+                    .on_hover_text(format!(
+                        "Ask {server} to pull this model; a stopped {server} is started for it."
+                    ))
                     .clicked();
                 if !trimmed.is_empty() && (go || submitted) {
                     self.submit_model_input(ui.ctx());
@@ -127,6 +147,23 @@ impl App {
                 }
             });
         });
+        if let Some(queued) = &self.named.queued {
+            ui.add_space(4.0);
+            let line = queued.waiting_line(&server);
+            let mut cancel = false;
+            ui.horizontal(|ui| {
+                ui.colored_label(theme::palette().warn, line);
+                cancel = ui
+                    .small_button("Cancel")
+                    .on_hover_text(format!(
+                        "Do not pull it. {server} goes on starting: Stop stops it."
+                    ))
+                    .clicked();
+            });
+            if cancel {
+                self.named.queued = None;
+            }
+        }
         if let Some((job, handle)) = &self.named.pull {
             ui.add_space(4.0);
             ui.horizontal(|ui| {

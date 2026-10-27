@@ -124,6 +124,10 @@ impl App {
             note: None,
             drawn: None,
         };
+        // what was said under the box of the page is not about what this window will pull
+        if self.named.pull.is_none() && self.named.queued.is_none() {
+            self.named.notice = None;
+        }
         self.refresh_catalog_have();
     }
 
@@ -171,7 +175,7 @@ impl App {
         let verified = self.registry.catalog().verified().map(str::to_string);
         let ram = self.total_ram_bytes;
         let listed = self.listed_names();
-        let busy = self.download.is_some() || self.named.pull.is_some();
+        let busy = self.download.is_some() || self.named.pulling();
         let have = self.catalog.have.clone();
         let note = self.catalog.note.clone();
         let entries = std::mem::take(&mut self.catalog.entries);
@@ -362,6 +366,7 @@ impl App {
             self.catalog.open = false;
         }
         // the progress of what is being fetched, where the person is looking
+        let mut cancel = false;
         if self.catalog.open {
             if let Some(job) = &self.download {
                 let line = job.progress_line();
@@ -372,12 +377,47 @@ impl App {
                     .resizable(false)
                     .anchor(egui::Align2::CENTER_BOTTOM, [0.0, -12.0])
                     .show(ctx, |ui| {
-                        ui.colored_label(super::theme::palette().warn, line);
+                        ui.horizontal(|ui| {
+                            ui.colored_label(super::theme::palette().warn, line);
+                            if ui
+                                .small_button("Cancel")
+                                .on_hover_text(
+                                    "Stop the download. What was fetched so far is thrown away.",
+                                )
+                                .clicked()
+                            {
+                                cancel = true;
+                            }
+                        });
                         if let Some(fraction) = fraction {
                             widgets::progress_bar(ui, Some(fraction));
                         }
                     });
             }
+            // a model pulled by the engine: the engine coming up for it, the pull, or why it was not pulled
+            let server = self.server_name();
+            let pulled = match (&self.named.queued, &self.named.pull) {
+                (Some(queued), _) => Some((queued.waiting_line(&server), None, false)),
+                (None, Some((job, _))) => Some((job.progress_line(), job.fraction(), false)),
+                (None, None) => self.named.notice.clone().map(|n| (n, None, true)),
+            };
+            if let Some((line, fraction, failed)) = pulled {
+                egui::Window::new("Pulling")
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_BOTTOM, [0.0, -12.0])
+                    .show(ctx, |ui| {
+                        let p = super::theme::palette();
+                        ui.colored_label(if failed { p.bad } else { p.warn }, line);
+                        if fraction.is_some() {
+                            widgets::progress_bar(ui, fraction);
+                        }
+                    });
+            }
+        }
+        if cancel {
+            self.cancel_download();
         }
         if let Some(fetch) = chosen {
             self.catalog.note = None;

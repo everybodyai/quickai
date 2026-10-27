@@ -73,10 +73,10 @@ pub fn record_path(weights: &Path) -> PathBuf {
 }
 
 /// Writes the record of a download, whole or not at all (a temporary file, then a rename). A download
-/// of the weights alone, started the usual way, has none.
+/// of the weights alone, started the usual way, has none, and takes away the record of the file it replaced.
 pub fn write(weights: &Path, download: &Download) -> std::io::Result<()> {
     if download.bundle.is_none() && download.mode.is_none() {
-        return Ok(());
+        return forget(weights);
     }
     let record = Record {
         version: 1,
@@ -108,6 +108,15 @@ pub fn write(weights: &Path, download: &Download) -> std::io::Result<()> {
     file.write_all(b"\n")?;
     drop(file);
     std::fs::rename(&temporary, &path)
+}
+
+/// Takes away the record beside `weights`: the file it described was replaced by one that has none (another
+/// repository's file of the same name). Left, it put the other file's projector on this one's command line.
+pub fn forget(weights: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(record_path(weights)) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
 }
 
 fn read_record(weights: &Path) -> Option<Record> {
@@ -312,6 +321,29 @@ mod tests {
             source: "huggingface:o/r".into(),
             mode: None,
         }
+    }
+
+    #[test]
+    fn the_weights_alone_of_the_same_name_take_away_the_record_of_the_file_they_replaced() {
+        let dir = scratch("bundle-forget");
+        let weights = dir.join("Llama-3.2-1B-Instruct-Q4_K_M.gguf");
+        std::fs::write(&weights, b"x").unwrap();
+        write(&weights, &vision()).unwrap();
+        assert!(record_path(&weights).is_file());
+        // another repository's file of that name, fetched alone: its projector is not this file's
+        let alone = Download {
+            bundle: None,
+            mode: None,
+            ..vision()
+        };
+        write(&weights, &alone).unwrap();
+        assert!(
+            !record_path(&weights).exists(),
+            "the record of the other file stayed"
+        );
+        // and with nothing to take away, nothing is wrong
+        forget(&weights).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

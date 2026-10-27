@@ -49,6 +49,79 @@ pub(super) fn first_sentence(note: &str) -> &str {
 }
 
 impl App {
+    /// The chosen model's name as the heading of the page, and at the right end of its row the quiet button that
+    /// deletes it (after a question); why it cannot be deleted now is what the button says when it is greyed.
+    pub(super) fn show_model_heading(&mut self, ui: &mut egui::Ui) {
+        let Some(model) = self.models.get(self.selected) else {
+            return;
+        };
+        let name = model.display.clone();
+        // what came with the application is never the person's to delete: no button, rather than one always greyed
+        let shipped = model.bundled || model.path.starts_with(&self.bundled_models_dir);
+        if shipped {
+            let mut details = false;
+            ui.horizontal(|ui| {
+                ui.heading(name.as_str());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    details = theme::button_sized(
+                        ui,
+                        theme::Role::Quiet,
+                        true,
+                        "Details…",
+                        egui::vec2(0.0, 22.0),
+                    )
+                    .on_hover_text(
+                        "What is known of this model: its file, its size, its quantization.",
+                    )
+                    .clicked();
+                });
+            });
+            if details {
+                self.details_of = Some(model_name_of(&self.models, self.selected));
+            }
+            return;
+        }
+        let index = self.selected;
+        let deletable = self.delete_request(index);
+        let mut delete = false;
+        let mut details = false;
+        ui.horizontal(|ui| {
+            ui.heading(name.as_str());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let button = theme::button_sized(
+                    ui,
+                    theme::Role::Quiet,
+                    deletable.is_ok(),
+                    "Delete…",
+                    egui::vec2(0.0, 22.0),
+                );
+                let button = match &deletable {
+                    Ok(_) => button.on_hover_text(
+                        "Delete this model from this computer. It asks first; right-click a model in the \
+                         list for the same.",
+                    ),
+                    Err(why) => button.on_disabled_hover_text(why),
+                };
+                                delete = button.clicked();
+                details = theme::button_sized(
+                    ui,
+                    theme::Role::Quiet,
+                    true,
+                    "Details…",
+                    egui::vec2(0.0, 22.0),
+                )
+                .on_hover_text("What is known of this model: its file, its size, its quantization, what goes with it.")
+                .clicked();
+            });
+        });
+        if delete {
+            self.ask_to_delete_from_window(index);
+        }
+        if details {
+            self.details_of = self.models.get(index).map(|m| m.filename.clone());
+        }
+    }
+
     /// How fast the selected model is likely to run here: the words of the chip, its tone and what its hover text says. It is
     /// said of the model, so it is drawn with the model (it was an icon in the title row).
     fn speed_chip_parts(&self) -> (String, Option<Tone>, String) {
@@ -104,6 +177,8 @@ impl App {
         sentence: Option<&str>,
         with_speed: bool,
     ) {
+        // how fast a model is, is this computer's guess, and says nothing of one that runs on another
+        let with_speed = with_speed && self.remote_in_use().is_none();
         if chips.is_empty() && sentence.is_none() && !with_speed {
             return;
         }
@@ -143,9 +218,7 @@ impl App {
             return;
         }
         // the model is chosen in the list on the left; here is its name and what is known of it
-        if let Some(m) = self.models.get(self.selected) {
-            ui.heading(m.display.as_str());
-        }
+        self.show_model_heading(ui);
         if let Some(m) = self.models.get(self.selected) {
             let mut chips = Vec::new();
             if self.recommended_filename.as_deref() == Some(m.filename.as_str()) {
@@ -157,14 +230,33 @@ impl App {
             let sentence = (!note.is_empty()).then_some(note);
             self.show_model_facts(ui, chips, sentence, true);
         } else {
-            ui.colored_label(
-                theme::palette().bad,
+            // a first run, not a fault: what to do next, and where a file put there by hand is read from
+            // a first run: the three steps from here to a conversation
+            let folder =
+                super::runtime_manager::display_root(&self.models_dir, &self.host_facts.home);
+            ui.add_space(2.0);
+            ui.label(egui::RichText::new("Getting started").strong());
+            for step in [
                 format!(
-                    "No .gguf files found in {} or {}",
-                    self.bundled_models_dir.display(),
-                    self.models_dir.display()
+                    "1. The engine is {}: the switch at the right of the toolbar has the others.",
+                    self.engine_name()
                 ),
-            );
+                format!(
+                    "2. No models yet. Get one below: Recommended has a short list that suits this computer, and Look \
+                     up online searches Hugging Face. A .gguf file you put in {folder} is listed too (Refresh)."
+                ),
+                "3. Press Start, then talk to the model in the Chat tab at the foot of the window.".to_string(),
+            ] {
+                ui.label(theme::muted(step));
+            }
         }
     }
+}
+
+/// The name of the model at `index`, as `details_of` names it.
+fn model_name_of(models: &[crate::models::ModelEntry], index: usize) -> String {
+    models
+        .get(index)
+        .map(|m| m.filename.clone())
+        .unwrap_or_default()
 }

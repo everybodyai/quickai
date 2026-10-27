@@ -946,7 +946,17 @@ pub fn choose(
         }
     }
     quickai_core::profile::notes::sort(&mut report.notes);
-    let base = working_state(registry, settings, installed);
+    let mut base = working_state(registry, settings, installed);
+    // A configuration of another engine starts from that engine's values as the file holds them: what it does not
+    // carry (the folders, the program, the lines of environment) rides along. From the engine in use alone, storing
+    // the state cleared every field of the other engine that the configuration did not set.
+    if configuration.engine != base.engine {
+        for member in family(registry.engine_map(), &configuration.engine) {
+            for (key, value) in settings.engine_values(member) {
+                base.values.entry(key).or_insert(value);
+            }
+        }
+    }
     let build = configuration.runtime.build.as_deref().and_then(|label| {
         installed
             .get(&configuration.engine)?
@@ -1992,6 +2002,85 @@ for = "openwebui"
             capture(&registry, &back, &first_run_values(&registry), None)
                 .configuration
                 .same_run(&vision())
+        );
+    }
+
+    #[test]
+    fn choosing_a_configuration_of_another_engine_keeps_that_engines_folders_and_programs() {
+        let registry = build_registry(&ConfigDirs::default());
+        let llama = registry.engine("llamacpp").unwrap();
+        let ollama = registry.engine("ollama").unwrap();
+        // a llama.cpp with a folder and a program of the person's, and an Ollama with a store of its own and a
+        // context size the Default does not carry; Ollama is the engine in use
+        let mut settings = Settings {
+            models_dir_override: Some("/my/models".into()),
+            llama_bin_override: Some("/my/llama-server".into()),
+            ..Settings::default()
+        };
+        let ollama_values: BTreeMap<String, Value> = [
+            ("ollama.models_dir", Value::Str("/my/ollama-store".into())),
+            ("ollama.bin_override", Value::Str("/my/ollama".into())),
+            ("ollama.ctx_size", Value::Int(8192)),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+        settings.set_engine_values(ollama, &ollama_values).unwrap();
+        settings.set_chosen_engine("ollama");
+        let installed = Installed::default();
+        let here = inventory_with(&[]);
+
+        // back to llama.cpp's Default (what Revert does after the engine was changed): its folder and program stay
+        let default = registry
+            .profile(DEFAULT_ID)
+            .expect("the built-in Default")
+            .configuration
+            .clone();
+        let choice =
+            choose(&registry, &settings, &default, &here, &installed).expect("it can be used");
+        store_state(&registry, &mut settings, &choice.state).unwrap();
+        assert_eq!(
+            settings.chosen_engine(),
+            None,
+            "llama.cpp is the absence of a choice"
+        );
+        assert_eq!(settings.models_dir_override.as_deref(), Some("/my/models"));
+        assert_eq!(
+            settings.llama_bin_override.as_deref(),
+            Some("/my/llama-server")
+        );
+        assert!(settings
+            .engine_values(llama)
+            .contains_key("llamacpp.models_dir"));
+        // and Ollama's values were not touched
+        let kept = settings.engine_values(ollama);
+        assert_eq!(
+            kept["ollama.models_dir"],
+            Value::Str("/my/ollama-store".into())
+        );
+        assert_eq!(kept["ollama.bin_override"], Value::Str("/my/ollama".into()));
+
+        // to an Ollama configuration from llama.cpp: Ollama's store and program ride along, and what the
+        // configuration can carry and does not give returns to its default
+        let choice =
+            choose(&registry, &settings, &vision(), &here, &installed).expect("it can be used");
+        store_state(&registry, &mut settings, &choice.state).unwrap();
+        assert_eq!(settings.chosen_engine().as_deref(), Some("ollama"));
+        let now = settings.engine_values(ollama);
+        assert_eq!(
+            now["ollama.models_dir"],
+            Value::Str("/my/ollama-store".into())
+        );
+        assert_eq!(now["ollama.bin_override"], Value::Str("/my/ollama".into()));
+        assert_eq!(
+            now["ollama.ctx_size"],
+            Value::Int(16384),
+            "the configuration's own"
+        );
+        assert_eq!(settings.models_dir_override.as_deref(), Some("/my/models"));
+        assert_eq!(
+            settings.llama_bin_override.as_deref(),
+            Some("/my/llama-server")
         );
     }
 
