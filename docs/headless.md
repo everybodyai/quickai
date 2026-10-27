@@ -201,12 +201,14 @@ scp dist/quickai-run-0.1.0-linux-x86_64.tar.gz you@server:   # from build/headle
   `http://127.0.0.1:8189`. For bampu, whose ComfyUI provider is a file with a `base_url`, that address (or the tunnel on the default
   port) is all it needs.
 - **The cards.** They are found from the kernel; if that is wrong, `--gpu nvidia`. The line `This computer:` says what was found.
-- **Python.** The installs of ComfyUI and Open WebUI make a Python environment and need Python 3.10 or newer (Open WebUI: 3.11 or 3.12; `--python` names one);
-  llama.cpp and Ollama need none. A Python that is only a shim of a version manager (`pyenv`) for a version it has not selected does not answer, so it is not found: name its real file with `--python`
-  (`~/.pyenv/versions/3.12.3/bin/python3.12`). When none is found the sentence says which versions, what to install, and that flag.
-- **A compiler and the headers of Python (and a driver).** A configuration of ComfyUI that runs the int8 and 4-bit video models says that the
-  computer must have a C compiler and the headers of the Python the environment is made with, because Triton builds a helper in C the first time a kernel
-  of the model is launched (section 12). A minimal Ubuntu server has neither (the headers are the package `python3.12-dev`, the compiler is in
+- **Python: none.** The installs of ComfyUI and Open WebUI make a Python environment with QuickAI's own Python (CPython 3.12, downloaded once into the
+  engine's folder, `python/`, and checked against the SHA-256 the engine's document pins; the plan says so). Nothing of the computer's Python is needed or
+  changed, and llama.cpp and Ollama need none at all. `--python PATH` names a Python of the computer's to use instead (3.10 or newer; Open WebUI: 3.11 or 3.12);
+  then it must have the venv module (`python3.12-venv` on Debian and Ubuntu). A Python that is only a shim of a version manager (`pyenv`) for a version it has not
+  selected does not answer: name its real file (`~/.pyenv/versions/3.12.3/bin/python3.12`).
+- **A compiler (and a driver).** A configuration of ComfyUI that runs the int8 and 4-bit video models says that the computer must have a C compiler and the
+  headers of the Python the environment is made with, because Triton builds a helper in C the first time a kernel of the model is launched (section 12). QuickAI's
+  own Python has its headers; a Python named with `--python` may not (the package `python3.12-dev`). A minimal Ubuntu server has no compiler (it is in
   `build-essential`); `quickai-run` looks before it fetches anything, says what is missing with the exact command, and installs the packages itself with
   `--install-system-packages` (as the administrator, or through `sudo` when that needs no password).
 - **System libraries.** llama.cpp's own build needs a few that a minimal image lacks: `libgomp1` and OpenSSL 3 (`libssl3`), and

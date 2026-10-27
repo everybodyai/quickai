@@ -47,7 +47,7 @@ one first, then the newest four that have a wheel for every platform); one click
 
 | Step | What |
 |---|---|
-| python | the first of 3.12 and 3.11 the machine has (Open WebUI says `<3.13`), or the one named in the **Python** box; none is installed, and a machine with only a newer one is told so before anything is downloaded |
+| python | QuickAI's own (C181): CPython 3.12.15 of python-build-standalone, downloaded once into `python/` of Open WebUI's root and checked against the SHA-256 the document pins; or the one named in the **Python** box, which must be 3.12 or 3.11 (Open WebUI says `<3.13`). Nothing of the computer's Python is needed or changed |
 | wheel | the release's wheel, downloaded, checked against its sha256 (the document's pin for the tested release; the index's own for another, and the log says which), kept until the build is whole |
 | venv | `<python> -m venv venv/`, inside the build: nothing is installed into a Python the person has, and nothing is shared with ComfyUI's |
 | pip | PyTorch for the processor from `download.pytorch.org/whl/cpu` (on Linux only; elsewhere the index's own is that one), then the wheel and what it needs; always `--only-binary=:all:`, `--no-cache-dir`, the temporary files inside the install's folder |
@@ -91,7 +91,7 @@ of its own, and keeps everything in it:
 
 ## Limits
 
-* It needs Python 3.11 or 3.12, which QuickAI finds and never installs. A machine with only 3.13 or newer says so.
+* It runs on Python 3.11 or 3.12: QuickAI downloads its own 3.12 for it (once, about 25 to 67 MB by computer), so a machine with only 3.13 or newer, or none, needs nothing.
 * The packages Open WebUI needs other than the hundred it pins by version are the newest the index offers at the
   time of the install; the wheel's own sha256 is the only pin QuickAI holds. A file of locked versions with their
   hashes would close that (not done).
