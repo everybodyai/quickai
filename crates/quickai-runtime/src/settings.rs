@@ -35,6 +35,9 @@ pub const KEEP_CHATS_KEY: &str = "app.keep_chats";
 /// The key under which a first conversation is remembered: the last step of Getting started is done.
 pub const SAID_HELLO_KEY: &str = "app.said_hello";
 
+/// The tab the window shows under the model (`chat`, `log` or `live`); absent, the chat (UI v2).
+pub const TAB_KEY: &str = "app.tab";
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub last_model_filename: Option<String>,
@@ -323,6 +326,20 @@ impl Settings {
         self.set_app_value(
             KEEP_CHATS_KEY,
             keep.then_some(serde_json::Value::Bool(true)),
+        );
+    }
+
+    /// The tab the window showed under the model when it was last left (`chat`, `log`, `live`), if one was kept.
+    pub fn tab(&self) -> Option<String> {
+        self.app_value(TAB_KEY)
+            .and_then(|v| v.as_str().map(str::to_string))
+    }
+
+    /// Records the tab shown; the chat, the first, takes the key away.
+    pub fn set_tab(&mut self, tab: &str) {
+        self.set_app_value(
+            TAB_KEY,
+            (tab != "chat").then(|| serde_json::Value::from(tab)),
         );
     }
 

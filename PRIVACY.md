@@ -152,7 +152,8 @@ The app never connects to the internet by itself: not at startup, not while it r
 only when you press a button, or Enter in a box, for one of these:
 
 - **Searching for a model.** Words typed into the box of **Add a model** (anything that is neither a link nor the
-  path of an existing file is treated as a search) and Enter, or **Look up online** on ComfyUI's page. The app asks
+  path of an existing file is treated as a search) and Enter, Enter in the empty box (which lists the most downloaded),
+  or **Look up online** on ComfyUI's page. The app asks
   Hugging Face (`huggingface.co`) for popular GGUF models and, for each repository it shows, for its tags and the
   names, sizes and checksums of its files (one request each: a look-up makes about thirty). The words you typed are
   part of the request. With ComfyUI chosen the plain list is made of a few searches instead of one (the most
@@ -196,7 +197,8 @@ only when you press a button, or Enter in a box, for one of these:
   anything.
 - **Looking up Ollama models.** With Ollama chosen, words typed into the box of **Add a model** and Enter ask the
   library at Ollama's website, `ollama.com`, for models that run on your computer: the page of its search for those
-  words. With the box empty nothing is asked of it: the suggestions are the application's own list. The words are part of the request (a `:tag` after a name is
+  words, or, for Enter in the empty box, the models it shows first. The suggestions under an empty box are the
+  application's own list, and ask nothing of anyone. The words are part of the request (a `:tag` after a name is
   left out), and the request identifies itself as `quickai` with its version. The site sets an anonymous cookie on
   its pages to tell visitors apart; the app does not keep it, so the next request carries none. ollama.com sees your
   IP address and handles it under its own [privacy policy](https://ollama.com/privacy). The app reads the page it

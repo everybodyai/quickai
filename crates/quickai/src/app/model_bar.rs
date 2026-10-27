@@ -167,6 +167,7 @@ impl App {
         });
         self.show_header_facts(ui, &model);
         if pressed.start {
+            self.start_pressed_at = Some(std::time::Instant::now());
             if loadable {
                 self.load_selected();
             } else if switchable {
@@ -175,13 +176,17 @@ impl App {
                 self.start_selected(ui.ctx());
             }
         }
-        if pressed.stop {
+        // Stop takes the place of Start: a second click of a double-click on Start (within 0.8 s) is not a Stop
+        let just_started = self
+            .start_pressed_at
+            .is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(800));
+        if pressed.stop && !just_started {
             // the page goes with what it talks to
             self.stop_companion();
             self.session.stop();
         }
         if pressed.connect {
-            self.show_api_info = true;
+            self.show_api_info = !self.show_api_info;
         }
         if let Some(action) = pressed.menu {
             self.do_row_action(ui.ctx(), index, action);
@@ -274,14 +279,18 @@ impl App {
             });
         });
         if start {
+            self.start_pressed_at = Some(std::time::Instant::now());
             self.start_selected(ui.ctx());
         }
-        if stop {
+        let just_started = self
+            .start_pressed_at
+            .is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(800));
+        if stop && !just_started {
             self.stop_companion();
             self.session.stop();
         }
         if connect {
-            self.show_api_info = true;
+            self.show_api_info = !self.show_api_info;
         }
         if open_page {
             if let (Some(web_ui), Some(port)) = (&web_ui, self.session.port()) {

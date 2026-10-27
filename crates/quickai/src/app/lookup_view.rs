@@ -35,6 +35,8 @@ pub struct LookupView {
     pub entries: Vec<Entry>,
     /// The size class that is the only one shown; `None` shows every size.
     pub size: Option<String>,
+    /// The words it looked up (none: the popular models), so that a box emptied of them goes back to its suggestions.
+    pub words: String,
 }
 
 impl LookupView {
@@ -95,6 +97,7 @@ impl App {
         };
         let rules = lookup_rules(&self.registry, engine, lookup);
         let query = query.trim().to_string();
+        let words = query.clone();
         let wake = {
             let ctx = ctx.clone();
             move || ctx.request_repaint()
@@ -132,6 +135,7 @@ impl App {
             failed: false,
             entries: Vec::new(),
             size: self.lookup.size.take(),
+            words,
         };
         // an engine that keeps its files in folders of their own says which results it has already
         if self.runs_alone() {

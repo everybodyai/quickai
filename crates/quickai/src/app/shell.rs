@@ -552,15 +552,16 @@ impl App {
             return;
         }
         if self.models.is_empty() {
-            self.show_first_run_page(ui, active);
+            self.show_first_run_page(ui);
             return;
         }
-        // the head of the page scrolls in at most three fifths of the window (with Change open and a crash said, it is
-        // long), so that the tabs keep the rest, the chat's box with them
+        // the head of the page scrolls in at most three fifths of the window (a crash said is long), so that the tabs keep
+        // the rest, the chat's box with them; with Change open, what is changed is what is looked at, and it has more
         let room = ui.available_height();
+        let share = if self.change_open { 0.85 } else { 0.6 };
         egui::ScrollArea::vertical()
             .id_salt("page_head")
-            .max_height((room * 0.6).max(140.0))
+            .max_height((room * share).max(140.0))
             .auto_shrink([false, true])
             .show(ui, |ui| {
                 egui::Frame::new()
@@ -591,7 +592,7 @@ impl App {
     }
 
     /// The page of a first run (no models yet): the box that adds a model, with the models that suit this computer.
-    fn show_first_run_page(&mut self, ui: &mut egui::Ui, active: bool) {
+    fn show_first_run_page(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical()
             .id_salt("first_run_page")
             .auto_shrink([false, false])
@@ -610,7 +611,7 @@ impl App {
                     });
                     ui.add_space(14.0);
                     self.show_runs_on(ui);
-                    self.show_add_model_body(ui, active);
+                    self.show_add_model_body(ui);
                 });
             });
     }
@@ -622,8 +623,13 @@ impl App {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 theme::column(ui, theme::PAGE_WIDTH, |ui| {
+                    // its files can be got before it is installed (they are kept in a folder of their own): the models
+                    // area stays under the button that installs it
                     if self.needs_install() {
+                        ui.add_space(24.0);
                         self.show_engine_setup(ui);
+                        ui.add_space(24.0);
+                        theme::card(ui, |ui| self.show_workbench(ui, active));
                         return;
                     }
                     self.show_alone_header(ui, state, active);
@@ -642,15 +648,15 @@ impl App {
     /// when it is on. A run that went wrong puts a red dot on the log until it is read.
     fn show_tabs(&mut self, ui: &mut egui::Ui) {
         let live = self.traffic_proxy_on();
-        if !live && self.active_tab == Tab::Live {
-            self.active_tab = Tab::Main;
-        }
         let chat = self.can_chat();
-        if !chat && self.active_tab == Tab::Chat {
-            self.active_tab = Tab::Main;
-        }
-        let on_live = self.active_tab == Tab::Live;
-        let on_chat = self.active_tab == Tab::Chat;
+        // a tab that is not there now shows the log, and stays the one chosen (it is kept in the settings)
+        let shown = match self.active_tab {
+            Tab::Live if !live => Tab::Main,
+            Tab::Chat if !chat => Tab::Main,
+            tab => tab,
+        };
+        let on_live = shown == Tab::Live;
+        let on_chat = shown == Tab::Chat;
         let on_log = !on_live && !on_chat;
         if on_log {
             self.log_unread = false;
@@ -699,7 +705,7 @@ impl App {
             ui.cursor().top(),
             egui::Stroke::new(1.0, theme::palette().line),
         );
-        match self.active_tab {
+        match shown {
             Tab::Live => self.show_live_traffic_tab(ui),
             Tab::Chat => self.show_chat_tab(ui),
             Tab::Main => {
@@ -717,15 +723,14 @@ impl App {
 
     fn show_dock(&mut self, ui: &mut egui::Ui) {
         let live = self.traffic_proxy_on();
-        if !live && self.active_tab == Tab::Live {
-            self.active_tab = Tab::Main;
-        }
-        if self.active_tab == Tab::Chat {
-            self.active_tab = Tab::Main;
-        }
-        let on_live = self.active_tab == Tab::Live;
+        // the workbench has no chat: the log is shown for it, and the tab chosen stays chosen
+        let shown = match self.active_tab {
+            Tab::Live if live => Tab::Live,
+            _ => Tab::Main,
+        };
+        let on_live = shown == Tab::Live;
         // each tab keeps the height it was given
-        let (id, height) = match self.active_tab {
+        let (id, height) = match shown {
             Tab::Live => ("dock_live", 320.0),
             _ => ("dock_log", 160.0),
         };
@@ -756,7 +761,7 @@ impl App {
                     ui.cursor().top(),
                     egui::Stroke::new(1.0, theme::palette().line),
                 );
-                match self.active_tab {
+                match shown {
                     Tab::Live => self.show_live_traffic_tab(ui),
                     _ => self.show_log_pane(ui),
                 }
