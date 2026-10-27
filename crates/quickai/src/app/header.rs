@@ -400,6 +400,11 @@ mod tests {
             .get("Add your first model")
             .unwrap_or_else(|| panic!("the box that adds a model: {:?}", found.keys()));
         assert!(start.bottom() < title.top(), "{start:?} {title:?}");
+        // and its log under the box: the crash panel sends the person to it
+        let log = found
+            .get("Log")
+            .unwrap_or_else(|| panic!("the Log tab: {:?}", found.keys()));
+        assert!(log.top() > title.bottom(), "{log:?} {title:?}");
         // llama.cpp's first run has no Start: there is nothing to start until a model is added
         let mut llama = app_in(&dir, "llamacpp");
         llama.models.clear();
@@ -410,6 +415,7 @@ mod tests {
             found.keys()
         );
         assert!(!found.contains_key("Start"), "{:?}", found.keys());
+        assert!(!found.contains_key("Log"), "{:?}", found.keys());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
