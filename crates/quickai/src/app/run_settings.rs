@@ -189,7 +189,9 @@ impl App {
         let modified = configuration.is_some() && self.configuration_modified();
         let mut toggle = false;
         ui.add_space(4.0);
-        ui.horizontal(|ui| {
+        // wrapped: a configuration with a long name, in a narrow window, would push Done (and the page with it) out of the
+        // window
+        ui.horizontal_wrapped(|ui| {
             let p = theme::palette();
             let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
             icons::paint(ui.painter(), rect, Icon::Sliders, p.faint);
@@ -290,12 +292,26 @@ impl App {
     }
 }
 
-/// One choice of the presets: a round button, its name, and under it what it does.
+/// One choice of the presets: a round button, its name, and under it what it does (on as many lines as the room
+/// needs).
 fn preset_row(ui: &mut egui::Ui, on: bool, title: &str, said: &str) -> egui::Response {
     let p = theme::palette();
     let enabled = ui.is_enabled();
     let width = ui.available_width().min(560.0);
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 40.0), egui::Sense::click());
+    let ink = if enabled { p.text } else { p.faint };
+    let title = ui.painter().layout_no_wrap(
+        title.to_string(),
+        egui::TextStyle::Button.resolve(ui.style()),
+        ink,
+    );
+    let small = ui.painter().layout(
+        said.to_string(),
+        egui::TextStyle::Small.resolve(ui.style()),
+        p.muted,
+        (width - 40.0).max(80.0),
+    );
+    let height = (22.0 + small.size().y + 4.0).max(40.0);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
     if ui.is_rect_visible(rect) {
         if on {
             ui.painter().rect_filled(rect, 6.0, p.accent_soft);
@@ -312,17 +328,6 @@ fn preset_row(ui: &mut egui::Ui, on: bool, title: &str, said: &str) -> egui::Res
         if on {
             ui.painter().circle_filled(centre, 3.5, p.accent_text);
         }
-        let ink = if enabled { p.text } else { p.faint };
-        let title = ui.painter().layout_no_wrap(
-            title.to_string(),
-            egui::TextStyle::Button.resolve(ui.style()),
-            ink,
-        );
-        let small = ui.painter().layout_no_wrap(
-            said.to_string(),
-            egui::TextStyle::Small.resolve(ui.style()),
-            p.muted,
-        );
         let left = rect.left() + 32.0;
         ui.painter()
             .galley(egui::pos2(left, rect.top() + 4.0), title, ink);

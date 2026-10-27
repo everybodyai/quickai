@@ -654,11 +654,16 @@ impl App {
 
     /// The row of the section: what it chooses and what it is told to do is done after it is drawn.
     fn show_section_row(&mut self, ui: &mut egui::Ui, modified: bool, color: egui::Color32) {
-        let (label_width, extras) = row_widths(ui);
+        let (label_width, extras, badge) = row_widths(ui);
+        // in a room too narrow for the least dropdown and all that a change adds (Change at the narrowest window), the
+        // buttons of a change go to a row of their own under it, rather than out of the section
+        let two_rows = ui.available_width() < COMBO_LEAST + extras;
         let mut chosen: Option<String> = None;
         let mut command: Option<Command> = None;
+        let name = self.active_entry().map_or_else(String::new, |e| e.name);
         ui.horizontal(|ui| {
-            let (with_label, width) = section_shape(ui.available_width(), label_width, extras);
+            let kept = if two_rows { badge } else { extras };
+            let (with_label, width) = section_shape(ui.available_width(), label_width, kept);
             if with_label {
                 ui.label("Configuration:").on_hover_text(
                     "The configuration in use: the engine, the model and the settings to run. \
@@ -667,10 +672,16 @@ impl App {
             }
             self.show_configuration_combo(ui, width, modified, &mut chosen, &mut command);
             if modified {
-                let name = self.active_entry().map_or_else(String::new, |e| e.name);
-                self.show_what_a_change_adds(ui, color, &name, &mut command);
+                ui.label(egui::RichText::new(badge_text()).color(color).strong())
+                    .on_hover_ui(|ui| self.show_changes(ui, &name));
+                if !two_rows {
+                    self.show_change_buttons(ui, &mut command);
+                }
             }
         });
+        if modified && two_rows {
+            ui.horizontal(|ui| self.show_change_buttons(ui, &mut command));
+        }
 
         if chosen.is_some() || command.is_some() {
             self.configs.in_window = false;
@@ -839,17 +850,8 @@ impl App {
         }
     }
 
-    /// What a change adds to the row: the badge that says *Modified* (what changed is on its hover) and the
-    /// three things to do about it.
-    fn show_what_a_change_adds(
-        &mut self,
-        ui: &mut egui::Ui,
-        color: egui::Color32,
-        name: &str,
-        command: &mut Option<Command>,
-    ) {
-        ui.label(egui::RichText::new(badge_text()).color(color).strong())
-            .on_hover_ui(|ui| self.show_changes(ui, name));
+    /// The three things to do about a change, after the badge that says *Modified* (what changed is on its hover).
+    fn show_change_buttons(&mut self, ui: &mut egui::Ui, command: &mut Option<Command>) {
         if ui
             .button("Save")
             .on_hover_text("Save what you have set over this configuration.")
@@ -1095,10 +1097,10 @@ fn marked(ui: &egui::Ui, name: &str, modified: bool) -> egui::WidgetText {
     job.into()
 }
 
-/// The width of the label of the section with the space after it, and of what a change adds to the row (the
-/// badge and the three buttons, with the spaces before and between them): measured, so that the room
-/// that is kept for them is the room they take.
-fn row_widths(ui: &egui::Ui) -> (f32, f32) {
+/// The width of the label of the section with the space after it, of what a change adds to the row (the
+/// badge and the three buttons, with the spaces before and between them), and of the badge alone with the space
+/// before it: measured, so that the room that is kept for them is the room they take.
+fn row_widths(ui: &egui::Ui) -> (f32, f32, f32) {
     let space = ui.spacing().item_spacing.x;
     let padding = 2.0 * ui.spacing().button_padding.x;
     let width = |text: String, style: egui::TextStyle| {
@@ -1109,15 +1111,10 @@ fn row_widths(ui: &egui::Ui) -> (f32, f32) {
     };
     let label = width("Configuration:".to_string(), egui::TextStyle::Body) + space;
     let button = |text: &str| width(text.to_string(), egui::TextStyle::Button) + padding;
-    let extras = space
-        + width(badge_text(), egui::TextStyle::Body)
-        + space
-        + button("Save")
-        + space
-        + button("Save as...")
-        + space
-        + button("Revert");
-    (label, extras)
+    let badge = space + width(badge_text(), egui::TextStyle::Body);
+    let extras =
+        badge + space + button("Save") + space + button("Save as...") + space + button("Revert");
+    (label, extras, badge)
 }
 
 /// How wide a question is: as wide as it likes, but never wider than the window it is asked in.
@@ -1610,6 +1607,57 @@ mod tests {
                     state.top() > log.bottom(),
                     "{width} {live}: {state:?} {log:?}"
                 );
+            }
+        }
+        // Change open, with a change made (the widest the section is): nothing of it runs out of the window, at the
+        // narrowest the buttons of the change under the dropdown and the badge (in the window's own type, which is wider
+        // than egui's)
+        super::super::theme::apply(&ctx, true);
+        app.enable_traffic_proxy = false;
+        app.change_open = true;
+        app.change_custom = true;
+        // and the same with a configuration of the person's that has a long name, which the line of how it runs says before
+        // Done (the line was one row, and put Done out of the window)
+        let long = "Qwen3-VL 8B on Ollama with Open WebUI beside it for work!";
+        for configuration in ["default", "long"] {
+            if configuration == "long" {
+                file_in(
+                    &dir,
+                    "profiles/long.toml",
+                    &format!("schema = 1\nkind = \"profile\"\nid = \"long\"\nname = \"{long}\"\nengine = \"llamacpp\"\n"),
+                );
+                app.reload_configurations();
+                app.choose_configuration("long");
+                assert_eq!(app.configs.active, "long", "{:?}", app.configs.error);
+            }
+            app.values.set("port", 9000u16);
+            for width in [640.0, 680.0, 760.0, 1000.0, 1400.0] {
+                let found = painted(&mut app, width);
+                let out: Vec<&(String, egui::Rect)> = found
+                    .iter()
+                    .filter(|(_, r)| r.right() > width + 0.5)
+                    .collect();
+                assert!(
+                    out.is_empty(),
+                    "{configuration} {width}: out of the window: {out:?}"
+                );
+                let at = |text: &str| {
+                    found
+                        .iter()
+                        .find(|(t, _)| t == text)
+                        .map(|(_, r)| *r)
+                        .unwrap_or_else(|| panic!("{text} at {width}: {found:?}"))
+                };
+                let (badge, save, revert) = (at(&badge_text()), at("Save"), at("Revert"));
+                assert!(
+                    badge.right() <= save.left() || badge.bottom() <= save.top(),
+                    "{configuration} {width}: {badge:?} {save:?}"
+                );
+                assert!(
+                    save.right() <= revert.left(),
+                    "{configuration} {width}: {save:?} {revert:?}"
+                );
+                at("Done");
             }
         }
         let _ = std::fs::remove_dir_all(&dir);

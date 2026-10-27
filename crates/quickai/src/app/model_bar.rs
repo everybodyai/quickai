@@ -193,8 +193,8 @@ impl App {
         }
     }
 
-    /// The head of the page of an engine that runs on its own (ComfyUI): its name, what it is doing, and Start, its
-    /// page in the browser, Connect an app and Stop.
+    /// The head of the page of an engine that runs on its own (ComfyUI), or of one that lists its models and has listed
+    /// none yet (Ollama): its name, what it is doing, and Start, its page in the browser, Connect an app and Stop.
     pub(super) fn show_alone_header(
         &mut self,
         ui: &mut egui::Ui,
@@ -257,9 +257,7 @@ impl App {
                         "Start",
                         egui::vec2(76.0, height),
                     )
-                    .on_hover_text(format!(
-                        "Launch {server} with the settings below (Ctrl+Enter)."
-                    ))
+                    .on_hover_text(format!("Start {server} (Ctrl+Enter)."))
                     .clicked();
                 }
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {

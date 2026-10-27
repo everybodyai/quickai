@@ -552,7 +552,7 @@ impl App {
             return;
         }
         if self.models.is_empty() {
-            self.show_first_run_page(ui);
+            self.show_first_run_page(ui, state, active);
             return;
         }
         // the head of the page scrolls in at most three fifths of the window (a crash said is long), so that the tabs keep
@@ -592,12 +592,28 @@ impl App {
     }
 
     /// The page of a first run (no models yet): the box that adds a model, with the models that suit this computer.
-    fn show_first_run_page(&mut self, ui: &mut egui::Ui) {
+    fn show_first_run_page(&mut self, ui: &mut egui::Ui, state: ServerState, active: bool) {
+        // an engine that lists its models (Ollama) has none to show until it runs: its row, with Start, is over the box (one
+        // whose Ollama has models already lists them once started)
+        if self.lists_models() {
+            egui::Frame::new()
+                .inner_margin(egui::Margin {
+                    left: 20,
+                    right: 16,
+                    top: 14,
+                    bottom: 0,
+                })
+                .show(ui, |ui| {
+                    self.show_alone_header(ui, state, active);
+                    self.show_run_line(ui);
+                    self.show_diagnostics(ui, state);
+                });
+        }
         egui::ScrollArea::vertical()
             .id_salt("first_run_page")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                ui.add_space(48.0);
+                ui.add_space(if self.lists_models() { 24.0 } else { 48.0 });
                 theme::column(ui, 640.0, |ui| {
                     ui.vertical_centered(|ui| {
                         ui.label(
