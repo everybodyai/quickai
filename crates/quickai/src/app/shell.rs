@@ -594,8 +594,10 @@ impl App {
     /// The page of a first run (no models yet): the box that adds a model, with the models that suit this computer.
     fn show_first_run_page(&mut self, ui: &mut egui::Ui, state: ServerState, active: bool) {
         // an engine that lists its models (Ollama) has none to show until it runs: its row, with Start, is over the box (one
-        // whose Ollama has models already lists them once started)
-        if self.lists_models() {
+        // whose Ollama has models already lists them once started), and its tabs under it, the log first: what it said when
+        // it stopped before it was ready is there
+        let lists = self.lists_models();
+        if lists {
             egui::Frame::new()
                 .inner_margin(egui::Margin {
                     left: 20,
@@ -609,27 +611,33 @@ impl App {
                     self.show_diagnostics(ui, state);
                 });
         }
-        egui::ScrollArea::vertical()
+        let mut area = egui::ScrollArea::vertical()
             .id_salt("first_run_page")
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                ui.add_space(if self.lists_models() { 24.0 } else { 48.0 });
-                theme::column(ui, 640.0, |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.label(
-                            egui::RichText::new("Add your first model")
-                                .size(22.0)
-                                .family(theme::semibold(ui))
-                                .color(theme::palette().text),
-                        );
-                        ui.add_space(4.0);
-                        ui.label(theme::muted(self.first_run_sentence()));
-                    });
-                    ui.add_space(14.0);
-                    self.show_runs_on(ui);
-                    self.show_add_model_body(ui);
+            .auto_shrink([false, false]);
+        if lists {
+            area = area.max_height((ui.available_height() * 0.62).max(160.0));
+        }
+        area.show(ui, |ui| {
+            ui.add_space(if lists { 24.0 } else { 48.0 });
+            theme::column(ui, 640.0, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.label(
+                        egui::RichText::new("Add your first model")
+                            .size(22.0)
+                            .family(theme::semibold(ui))
+                            .color(theme::palette().text),
+                    );
+                    ui.add_space(4.0);
+                    ui.label(theme::muted(self.first_run_sentence()));
                 });
+                ui.add_space(14.0);
+                self.show_runs_on(ui);
+                self.show_add_model_body(ui);
             });
+        });
+        if lists {
+            self.show_tabs(ui);
+        }
     }
 
     /// The page of an engine that runs on its own (ComfyUI): its settings, the workbench, and what went wrong.
