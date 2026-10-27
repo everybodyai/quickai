@@ -216,11 +216,14 @@ impl App {
         }
     }
 
-    /// What *Change* opens: the presets (or the fields, for an engine with none), where the models run, and the
-    /// configuration in use.
+    /// What *Change* opens: the configuration in use, the presets (or the fields, for an engine with none), and where the
+    /// models run.
     fn show_change_panel(&mut self, ui: &mut egui::Ui) {
         let running = self.session.is_active();
         let presets = self.context_field().is_some() && self.remote_in_use().is_none();
+        // the configuration first: it is what the rest belongs to (and so it is in one place whatever is under it)
+        self.show_configuration_section(ui);
+        ui.add_space(8.0);
         if presets {
             let current = if self.change_custom {
                 Preset::Custom
@@ -284,8 +287,6 @@ impl App {
                 self.show_runs_on_row(ui);
             }
         }
-        ui.add_space(6.0);
-        self.show_configuration_section(ui);
     }
 }
 

@@ -68,7 +68,8 @@ impl Guide {
             ],
             Guide::FindModel => &[
                 "Press Add a model. With the box empty, it suggests models that fit this computer's memory.",
-                "Type words to search online (Hugging Face for llama.cpp, ollama.com for Ollama).",
+                                "Type words to search online (Hugging Face for llama.cpp, ollama.com for Ollama), or press Enter in the \
+                 empty box to see the most popular ones.",
                 "Paste a link to a .gguf file to download it, or press the folder to add a file you already have.",
                 "Smaller files (Q4) are faster and need less memory. Bigger ones (Q8) are a little better.",
                 "Recommended, in the Models menu, has the whole list QuickAI checked, by kind and size.",

@@ -218,6 +218,8 @@ pub struct App {
     log_unread: bool,
     /// The state of the server the last frame, to see a run end in a crash once.
     seen_state: Option<crate::events::ServerState>,
+    /// When Start was last pressed: Stop, which takes its place, does not take the second click of a double-click.
+    start_pressed_at: Option<std::time::Instant>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -436,12 +438,18 @@ impl App {
             change_custom: false,
             log_unread: false,
             seen_state: None,
+            start_pressed_at: None,
         };
         // the other computers the models can run on, and the one they run on
         app.remote.remotes = app.stored.remotes();
         app.remote.runner = app.stored.runner();
-        // and whether the conversations are kept
+        // and whether the conversations are kept, and the tab that was shown under the model
         app.chat.keep = app.stored.keep_chats();
+        app.active_tab = match app.stored.tab().as_deref() {
+            Some("log") => Tab::Main,
+            Some("live") => Tab::Live,
+            _ => Tab::Chat,
+        };
         // the executable, the models and the panels' state of the engine in use
         app.load_engine_state();
         // and the configuration in use: the one the settings name, else the Default
@@ -642,6 +650,11 @@ impl App {
     fn settings_now(&self) -> Settings {
         let mut settings = self.stored.clone();
         settings.dark_mode = self.dark_mode;
+        settings.set_tab(match self.active_tab {
+            Tab::Chat => "chat",
+            Tab::Main => "log",
+            Tab::Live => "live",
+        });
         settings.enable_traffic_proxy = self.enable_traffic_proxy;
         if let Some(engine) = self.registry.engine(&self.engine) {
             let mut values = self.values.clone();
@@ -777,6 +790,12 @@ impl App {
         match outcome {
             Some(Ok(filename)) => {
                 self.push_log(format!("Download complete: {filename}"));
+                // Add a model has done what it was opened for: the page shows the model, picked (UI v2). ComfyUI's
+                // results are on its page, where several files are fetched one after the other: they stay
+                if !self.runs_alone() {
+                    self.add_model_open = false;
+                    self.lookup.open = false;
+                }
                 // where it came from is remembered, in the data directory and not in the models folder
                 if let Some(source) = source {
                     if let Ok(meta) = std::fs::metadata(self.models_dir.join(&filename)) {

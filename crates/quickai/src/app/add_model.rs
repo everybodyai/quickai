@@ -1,7 +1,7 @@
 //! *Add a model* (UI v2, C177): one box for every way a model comes in, where there were five controls (the box, ...,
 //! Search, Look up online, Recommended). Words search online, a link downloads that file, a path (or the folder
 //! beside the box) adds a file of this computer, and for Ollama a name with a tag (`qwen3:4b`) or a Hugging Face
-//! reference is pulled. With the box empty, the models of the recommended list that suit this computer are under it,
+//! reference is pulled; Enter in the empty box lists the models most downloaded online. With the box empty, the models of the recommended list that suit this computer are under it,
 //! each with one button. It is a window opened from the head of the list (and the Models menu, and Ctrl+K), and the
 //! whole page of a first run, where there is nothing else to do.
 
@@ -63,7 +63,6 @@ impl App {
             self.add_model_open = false;
             return;
         }
-        let active = self.session.is_active();
         let mut open = true;
         let width = (ctx.content_rect().width() - 80.0).clamp(420.0, 700.0);
         egui::Window::new("Add a model")
@@ -76,13 +75,17 @@ impl App {
             .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(width - 24.0);
-                self.show_add_model_body(ui, active);
+                self.show_add_model_body(ui);
             });
         self.add_model_open = open;
     }
 
     /// The box, what is being fetched, and under it the results of a search or the suggestions.
-    pub(super) fn show_add_model_body(&mut self, ui: &mut egui::Ui, active: bool) {
+    pub(super) fn show_add_model_body(&mut self, ui: &mut egui::Ui) {
+        // Escape puts the results away (in the window, it closes the window first)
+        if self.lookup.open && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.lookup.open = false;
+        }
         let named = self.lists_models();
         let busy = self.download.is_some() || self.named.pulling();
         let mut submit = false;
@@ -118,8 +121,10 @@ impl App {
                     } else {
                         "Search, or paste a link or file path"
                     };
+                    // greyed while a download or a pull is under way (one at a time; its progress is under the box), and
+                    // free while a model runs: a model is got while another is used
                     let field = ui.add_enabled(
-                        !busy || !named,
+                        !busy,
                         egui::TextEdit::singleline(&mut self.model_input)
                             .id(box_id())
                             .frame(egui::Frame::NONE)
@@ -136,7 +141,7 @@ impl App {
                             ui,
                             Icon::Folder,
                             egui::vec2(32.0, 28.0),
-                            !active && self.download.is_none(),
+                            !busy,
                             false,
                         )
                         .on_hover_text("Add a .gguf file you already have")
@@ -159,9 +164,17 @@ impl App {
             } else {
                 self.submit_file_box(ui.ctx());
             }
+        } else if submit && self.can_look_up() {
+            // Enter in the empty box: the models most downloaded online, to browse
+            self.named.notice = None;
+            self.start_lookup(ui.ctx(), "");
         }
-        // an emptied box goes back to what suits this computer
-        if self.model_input.trim().is_empty() && self.lookup.open && !self.lookup.running() {
+        // a box emptied of the words it looked up goes back to what suits this computer
+        if self.model_input.trim().is_empty()
+            && !self.lookup.words.is_empty()
+            && self.lookup.open
+            && !self.lookup.running()
+        {
             self.lookup.open = false;
         }
         if named {

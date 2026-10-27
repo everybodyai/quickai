@@ -114,7 +114,7 @@ impl App {
         let title = if self.runs_alone() {
             format!("Connect an app to {}", self.engine_name())
         } else {
-            "Connect an app".to_string()
+            "Connect an app to this model".to_string()
         };
         egui::Window::new(title)
             .id(egui::Id::new("connect_an_app"))

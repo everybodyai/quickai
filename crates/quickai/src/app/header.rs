@@ -905,4 +905,27 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn the_tab_shown_under_the_model_is_kept_for_the_next_start() {
+        let dir = scratch("v2-tab");
+        let mut app = app_in(&dir, "llamacpp");
+        assert!(app.active_tab == Tab::Chat, "the chat, on a first start");
+        app.active_tab = Tab::Main;
+        app.save_settings();
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved["values"]["app.tab"], "log", "{saved}");
+        let stored: Settings = serde_json::from_value(saved.clone()).unwrap();
+        assert_eq!(stored.tab().as_deref(), Some("log"));
+        // and the chat again takes the key away
+        app.active_tab = Tab::Chat;
+        app.save_settings();
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                .unwrap();
+        assert!(saved["values"].get("app.tab").is_none(), "{saved}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
