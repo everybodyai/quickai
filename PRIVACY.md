@@ -181,7 +181,8 @@ only when you press a button, or Enter in a box, for one of these:
   index (`files.pythonhosted.org`), checks it against the SHA-256 the index lists (and, for the release QuickAI was tested
   with, the one QuickAI holds), and then pip fetches the packages it needs from the index and PyTorch for the processor from
   `download.pytorch.org` (about 1.6 GB in all). The index and PyTorch's site see your IP address and the names of the
-  packages.
+  packages. Unless you chose a Python in Settings, the first install also downloads QuickAI's own Python (see **QuickAI's
+  own Python** below).
 - **llama.cpp builds.** Settings, **Look up llama.cpp builds** asks GitHub's API (`api.github.com`) for llama.cpp's
   recent releases; the request identifies itself as `quickai`. Installing one of them, or entering a direct
   download link in the `llama-server` box, downloads that archive from GitHub or from the address you gave. GitHub
@@ -212,11 +213,18 @@ only when you press a button, or Enter in a box, for one of these:
   contacted nothing else); those servers see your IP address and the name. A size chosen in the results of the
   look-up above is pulled the same way, as `name:size`. Nothing is pulled, listed or started just because Ollama was
   chosen.
+- **QuickAI's own Python.** Open WebUI and ComfyUI run in a Python environment that QuickAI makes with a Python of its
+  own, so that nothing of your computer's Python is needed or changed. Unless you chose a Python in the engine's Python
+  box in Settings, the first install of each downloads that Python once (CPython 3.12, a build of the
+  python-build-standalone project, 25 to 67 MB) from GitHub (`github.com`, which sends the file from
+  `release-assets.githubusercontent.com`), checks it against the SHA-256 recorded in the app, and keeps it in
+  `~/.quickai/openwebui/python` or `~/.quickai/comfyui/python`. GitHub sees your IP address and the name of the file.
 - **ComfyUI builds.** With ComfyUI chosen, Settings, **Look up ComfyUI builds** asks GitHub's API
   (`api.github.com`) for the releases of `Comfy-Org/ComfyUI`; installing one downloads the source of that release,
   and of the pack of GGUF nodes (`city96/ComfyUI-GGUF`), from GitHub (`github.com`, which sends the archive from
   `codeload.github.com`), and the app checks each against the checksum recorded in the app (a release other than the
-  one it was tested with has none, and the log says it was not checked). Then **pip**, run by the app inside the
+  one it was tested with has none, and the log says it was not checked). Unless you chose a Python in Settings, the first
+  install also downloads QuickAI's own Python (above). Then **pip**, run by the app inside the
   environment it made, downloads PyTorch from the PyTorch package index (`download.pytorch.org`, whose files come from
   `download-r2.pytorch.org`) and what ComfyUI needs from the Python Package Index (`pypi.org`, and
   `files.pythonhosted.org` for the files); with the box for ComfyUI-Manager ticked, its thirteen packages come from the

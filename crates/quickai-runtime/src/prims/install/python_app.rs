@@ -41,6 +41,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
+use quickai_core::doc::engine::OwnPython;
 
 use super::extract::{extract, ArchiveKind};
 use super::journal::{self, Journal, StepRecord};
@@ -65,6 +66,9 @@ pub struct PythonApp {
     /// The Python the person named, which is used whatever its version (but not an older one than
     /// the document lists).
     pub python: Option<PathBuf>,
+    /// QuickAI's own Python (C181), downloaded into the engine's folder: what makes the environment when the person
+    /// named none. Without it, a Python of `versions` that the machine has.
+    pub own: Option<quickai_core::doc::engine::OwnPython>,
     pub pip: Vec<PipPlan>,
     pub nodes: Vec<NodePlan>,
     /// What the launcher passes to the program before the arguments it is given: the words of the options the
@@ -332,6 +336,138 @@ pub fn find_python(
         "no Python {} was found on this machine. Install one (on Debian and Ubuntu: sudo apt install python3.12-venv; on Fedora: sudo dnf install python3.12; on a Mac: brew install python@3.12) or choose the Python you have in the Python box of Settings",
         list_in_words(versions)
     ))
+}
+
+// ---- QuickAI's own Python -------------------------------------------------------------------------------
+
+/// The Python that makes the environment: the one the person named, else QuickAI's own when the document has one (C181),
+/// else one of the machine's.
+fn python_for(
+    spec: &InstallSpec,
+    app: &PythonApp,
+    send: &dyn Fn(JobEvent<PathBuf>),
+) -> Result<Interpreter, String> {
+    match (&app.python, &app.own) {
+        (None, Some(own)) => own_python(spec, own, send),
+        _ => find_python(&app.versions, app.python.as_deref(), &Where::this_machine()),
+    }
+}
+
+/// The kind of computer this is, as python-build-standalone names its builds (`x86_64-unknown-linux-gnu`); `None` for
+/// one it makes none for.
+pub fn own_python_target() -> Option<&'static str> {
+    Some(match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
+        ("linux", "aarch64") => "aarch64-unknown-linux-gnu",
+        ("macos", "x86_64") => "x86_64-apple-darwin",
+        ("macos", "aarch64") => "aarch64-apple-darwin",
+        ("windows", "x86_64") => "x86_64-pc-windows-msvc",
+        ("windows", "aarch64") => "aarch64-pc-windows-msvc",
+        _ => return None,
+    })
+}
+
+/// Where an own Python is kept: `python/<its file, without .tar.gz>` in the engine's folder (a build pinned another
+/// time is another folder, and one engine's Python is never another's).
+pub fn own_python_dir(root: &Path, file: &str) -> PathBuf {
+    root.join("python").join(
+        file.strip_suffix(".tar.gz")
+            .or_else(|| file.strip_suffix(".tar.zst"))
+            .unwrap_or(file),
+    )
+}
+
+/// The program of an own Python kept in `dir`.
+fn own_python_program(dir: &Path) -> PathBuf {
+    if cfg!(windows) {
+        dir.join("python.exe")
+    } else {
+        dir.join("bin").join("python3")
+    }
+}
+
+/// QuickAI's own Python: the one in the engine's folder, or else the file of the document for this computer,
+/// downloaded, checked against its sha256 and unpacked there first. Nothing outside that folder is written, and no
+/// Python of the computer's is looked at.
+fn own_python(
+    spec: &InstallSpec,
+    own: &OwnPython,
+    send: &dyn Fn(JobEvent<PathBuf>),
+) -> Result<Interpreter, String> {
+    own_python_for(spec, own, own_python_target(), send)
+}
+
+fn own_python_for(
+    spec: &InstallSpec,
+    own: &OwnPython,
+    target: Option<&str>,
+    send: &dyn Fn(JobEvent<PathBuf>),
+) -> Result<Interpreter, String> {
+    let what = format!("Python {}", own.version);
+    let Some(file) = target.and_then(|t| own.files.get(t)) else {
+        return Err(format!(
+            "QuickAI has no Python of its own for this computer ({} on {}): choose the Python to use in the Python box of Settings",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ));
+    };
+    let dir = own_python_dir(&spec.root, &file.file);
+    let program = own_python_program(&dir);
+    if !program.is_file() {
+        let kind = ArchiveKind::from_url(&file.file).ok_or_else(|| {
+            format!(
+                "don't know how to extract {} ({})",
+                file.file,
+                ArchiveKind::EXPECTED
+            )
+        })?;
+        let folder = spec.root.join("python");
+        std::fs::create_dir_all(&folder)
+            .map_err(|e| format!("could not create {}: {e}", folder.display()))?;
+        let part = folder.join(format!("{}{PART}", file.file));
+        let unpacked = folder.join(format!("{}.unpacked", file.file));
+        // what an install that was stopped in the middle of this left, and a folder that is there without its program
+        let _ = std::fs::remove_dir_all(&unpacked);
+        let _ = std::fs::remove_dir_all(&dir);
+        let source = Source {
+            // the name has a `+` (`cpython-3.12.15+20261003-...`), which an address says as %2B
+            url: format!(
+                "{}/{}",
+                own.url.trim_end_matches('/'),
+                file.file.replace('+', "%2B")
+            ),
+            pin: Some(file.sha256.clone()),
+            ..Default::default()
+        };
+        let got =
+            fetch_checked(spec, &source, Some(&file.sha256), &what, &part, send).and_then(|()| {
+                std::fs::create_dir_all(&unpacked)
+                    .map_err(|e| format!("could not create {}: {e}", unpacked.display()))?;
+                send(JobEvent::Status(format!("Unpacking {what}")));
+                extract(kind, &part, &unpacked, &[])?;
+                move_top_directory(&unpacked, &dir)
+            });
+        let _ = std::fs::remove_file(&part);
+        if let Err(why) = got {
+            let _ = std::fs::remove_dir_all(&unpacked);
+            let _ = std::fs::remove_dir_all(&dir);
+            return Err(why);
+        }
+        if !program.is_file() {
+            let _ = std::fs::remove_dir_all(&dir);
+            return Err(format!(
+                "the download of {what} does not have the shape of a Python: {} is not in it",
+                program.display()
+            ));
+        }
+    }
+    let version = ask_version(&program, &[])
+        .map_err(|why| format!("QuickAI's own {what} ({}) {why}", program.display()))?;
+    Ok(Interpreter {
+        program,
+        args: Vec::new(),
+        version,
+    })
 }
 
 /// `3.13, 3.12 or 3.11`.
@@ -1540,7 +1676,7 @@ pub(super) fn install(
     let earlier = earlier_install(spec, &request.label);
     let written = earlier.as_deref().map_or(0, super::dir_size);
     check_room_for(spec, app.space.map(|need| need.saturating_sub(written)))?;
-    let python = find_python(&app.versions, app.python.as_deref(), &Where::this_machine())?;
+    let python = python_for(spec, app, send)?;
     send(JobEvent::Status(format!("Using {}", python.describe())));
     check_cancelled(spec)?;
 
@@ -2035,12 +2171,217 @@ mod tests {
         assert_eq!(wheel_of("Collecting torch"), None);
     }
 
+    // ---- QuickAI's own Python (C181) ----
+
+    const TARGET: &str = "x86_64-unknown-linux-gnu";
+
+    /// A Python packed as python-build-standalone packs one: one folder, `python`, with `bin/python3` a link to the
+    /// program (here a script that says it is 3.12 to what it is asked) and the headers.
+    #[cfg(unix)]
+    fn own_python_archive() -> Vec<u8> {
+        use crate::testkit::archives::{tar_gz, Entry};
+        tar_gz(&[
+            Entry::dir("python/"),
+            Entry::dir("python/bin/"),
+            Entry::exe("python/bin/python3.12", b"#!/bin/sh\necho 3 12\n"),
+            Entry::symlink("python/bin/python3", "python3.12"),
+            Entry::file("python/include/python3.12/Python.h", b"/* the headers */\n"),
+        ])
+    }
+
+    fn own_at(base: &str, file: &str, sha256: &str) -> OwnPython {
+        OwnPython {
+            version: "3.12.15".into(),
+            url: format!("{base}/rel"),
+            files: [(
+                TARGET.to_string(),
+                quickai_core::doc::engine::OwnPythonFile {
+                    file: file.into(),
+                    sha256: sha256.into(),
+                },
+            )]
+            .into(),
+        }
+    }
+
+    /// Serves `body` at `/rel/<file, with + as %2B>` and counts every request.
+    #[cfg(unix)]
+    fn serve_own(
+        file: &str,
+        body: Vec<u8>,
+    ) -> (
+        crate::testkit::mini_http::MiniServer,
+        std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) {
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = hits.clone();
+        let route = format!("/rel/{}", file.replace('+', "%2B"));
+        let server =
+            crate::testkit::mini_http::MiniServer::start(None, move |request, response| {
+                counted.fetch_add(1, Ordering::SeqCst);
+                if request.route() == route {
+                    response.send(&body);
+                } else {
+                    response.status(404).send(b"not found");
+                }
+            })
+            .unwrap();
+        (server, hits)
+    }
+
+    fn listing(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .map(|read| {
+                read.flatten()
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort();
+        names
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn p3_z40_quickais_own_python_is_downloaded_once_checked_and_kept_in_the_engines_folder() {
+        let scratch = crate::testkit::scratch("own-python");
+        let dir = scratch.to_path_buf();
+        let file = "cpython-3.12.15+20261003-x86_64-unknown-linux-gnu-install_only.tar.gz";
+        let archive = own_python_archive();
+        let sum = crate::testkit::archives::sha256_hex(&archive);
+        let (server, hits) = serve_own(file, archive);
+        let own = own_at(&format!("http://127.0.0.1:{}", server.port()), file, &sum);
+        let spec = InstallSpec {
+            root: dir.join("comfyui"),
+            ..Default::default()
+        };
+        let said = std::sync::Mutex::new(Vec::new());
+        let send = |event: JobEvent<PathBuf>| {
+            if let JobEvent::Status(text) = event {
+                said.lock().unwrap().push(text);
+            }
+        };
+        let python = own_python_for(&spec, &own, Some(TARGET), &send).unwrap();
+        let kept = dir
+            .join("comfyui")
+            .join("python")
+            .join("cpython-3.12.15+20261003-x86_64-unknown-linux-gnu-install_only");
+        assert_eq!(python.program, kept.join("bin").join("python3"));
+        assert_eq!(python.version, (3, 12));
+        assert!(kept.join("include/python3.12/Python.h").is_file());
+        // the download is checked against the document's sha256, and nothing of the download is left beside it
+        let said = said.lock().unwrap().clone();
+        assert!(
+            said.iter()
+                .any(|line| line.starts_with("Checked Python 3.12.15 against its sha256")),
+            "{said:?}"
+        );
+        assert_eq!(
+            listing(&dir.join("comfyui").join("python")),
+            vec!["cpython-3.12.15+20261003-x86_64-unknown-linux-gnu-install_only"]
+        );
+        // it is downloaded once: the next install finds it there
+        let again = own_python_for(&spec, &own, Some(TARGET), &|_| {}).unwrap();
+        assert_eq!(again, python);
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+        server.shutdown();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn p3_z41_an_own_python_that_is_not_the_file_the_document_pins_is_not_kept() {
+        let scratch = crate::testkit::scratch("own-python-damaged");
+        let dir = scratch.to_path_buf();
+        let file = "cpython-3.12.15+20261003-x86_64-unknown-linux-gnu-install_only.tar.gz";
+        let (server, _) = serve_own(file, own_python_archive());
+        let own = own_at(
+            &format!("http://127.0.0.1:{}", server.port()),
+            file,
+            &"0".repeat(64),
+        );
+        let spec = InstallSpec {
+            root: dir.join("openwebui"),
+            ..Default::default()
+        };
+        let why = own_python_for(&spec, &own, Some(TARGET), &|_| {}).unwrap_err();
+        assert!(why.contains("does not match its checksum"), "{why}");
+        assert!(
+            listing(&dir.join("openwebui").join("python")).is_empty(),
+            "{:?}",
+            listing(&dir.join("openwebui").join("python"))
+        );
+        server.shutdown();
+    }
+
+    #[test]
+    fn p3_z42_a_computer_the_document_has_no_python_for_is_told_to_choose_one() {
+        let scratch = crate::testkit::scratch("own-python-none");
+        let dir = scratch.to_path_buf();
+        let own = own_at("http://127.0.0.1:9", "python.tar.gz", &"0".repeat(64));
+        let spec = InstallSpec {
+            root: dir.join("comfyui"),
+            ..Default::default()
+        };
+        for target in [None, Some("riscv64-unknown-linux-gnu")] {
+            let why = own_python_for(&spec, &own, target, &|_| {}).unwrap_err();
+            assert!(
+                why.contains("no Python of its own for this computer")
+                    && why.contains("Python box of Settings"),
+                "{why}"
+            );
+        }
+        assert!(!dir.join("comfyui").join("python").exists());
+        // and the kinds of computer QuickAI is built for are the ones the shipped documents pin a Python for
+        assert!(
+            own_python_target().is_some()
+                || !cfg!(any(target_arch = "x86_64", target_arch = "aarch64"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn p3_z43_a_python_the_person_named_is_used_and_quickais_own_is_not_downloaded() {
+        let scratch = crate::testkit::scratch("own-python-named");
+        let dir = scratch.to_path_buf();
+        let named = dir.join("python3.12");
+        std::fs::write(&named, "#!/bin/sh\necho 3 12\n").unwrap();
+        let mut permissions = std::fs::metadata(&named).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        std::fs::set_permissions(&named, permissions).unwrap();
+        let file = "cpython-3.12.15+20261003-x86_64-unknown-linux-gnu-install_only.tar.gz";
+        let (server, hits) = serve_own(file, own_python_archive());
+        let app = PythonApp {
+            runs: Runs::Script("main.py".into()),
+            versions: vec!["3.12".into()],
+            python: Some(named.clone()),
+            own: Some(own_at(
+                &format!("http://127.0.0.1:{}", server.port()),
+                file,
+                &"0".repeat(64),
+            )),
+            pip: Vec::new(),
+            nodes: Vec::new(),
+            launch_args: Vec::new(),
+            space: None,
+        };
+        let spec = InstallSpec {
+            root: dir.join("comfyui"),
+            ..Default::default()
+        };
+        let python = python_for(&spec, &app, &|_| {}).unwrap();
+        assert_eq!(python.program, named);
+        assert_eq!(hits.load(Ordering::SeqCst), 0);
+        assert!(!dir.join("comfyui").join("python").exists());
+        server.shutdown();
+    }
+
     #[test]
     fn the_steps_are_listed_in_the_order_they_are_done_with_the_check_last() {
         let app = PythonApp {
             runs: Runs::Script("main.py".into()),
             versions: vec!["3.13".into()],
             python: None,
+            own: None,
             pip: vec![PipPlan {
                 id: "torch".into(),
                 label: "PyTorch".into(),

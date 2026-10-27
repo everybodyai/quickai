@@ -102,10 +102,15 @@ pub(super) struct Looked {
     python: Result<EnvPython, String>,
 }
 
+/// What is said of a module or the headers that QuickAI's own Python has.
+const OWN_PYTHON_HAS_IT: &str = "QuickAI's own Python has it";
+
 /// The Python the engine's environment is made with, as it was asked.
 #[derive(Clone, Debug)]
 struct EnvPython {
-    facts: PythonFacts,
+    /// What the Python said of itself; `None` for QuickAI's own (C181), which is downloaded with the install and has what
+    /// an environment needs (the venv module and the headers).
+    facts: Option<PythonFacts>,
     /// The environment is made already (this is the one beside an installed launcher): what the Python needed to make
     /// it was there.
     made: bool,
@@ -204,7 +209,8 @@ fn environment_python(launcher: &Path) -> PathBuf {
 }
 
 /// The Python the engine's environment is made with: the environment beside the installed launcher, else the
-/// Python the install will use (the one the person named, else the first of the document's versions).
+/// Python the install will use (the one the person named, else QuickAI's own when the document has one, else the first
+/// of the document's versions).
 fn python_of(
     ctx: &Ctx<'_>,
     launcher: Option<&Path>,
@@ -217,7 +223,10 @@ fn python_of(
     if let Some(launcher) = launcher {
         let python = environment_python(launcher);
         return if python.is_file() {
-            host::python_facts(&python, &[]).map(|facts| EnvPython { facts, made: true })
+            host::python_facts(&python, &[]).map(|facts| EnvPython {
+                facts: Some(facts),
+                made: true,
+            })
         } else {
             Err(format!(
                 "there is no Python environment beside {}, so it is not known which Python it uses",
@@ -231,6 +240,13 @@ fn python_of(
     let InstallKind::PythonApp(app) = &spec.kind else {
         return Err("this engine's install does not make a Python environment".to_string());
     };
+    // QuickAI's own Python, when the person names none: nothing of the computer's is used
+    if ctx.options.python.is_none() && app.own.is_some() {
+        return Ok(EnvPython {
+            facts: None,
+            made: false,
+        });
+    }
     // the places a Python is looked for are the computer's: this one's, or the one that is described
     let at = if ctx.options.machine.is_some() {
         install::Where {
@@ -247,7 +263,10 @@ fn python_of(
                 super::report::in_the_words_of_the_command_line(&why)
             )
         })?;
-    host::python_facts(&found.program, &found.args).map(|facts| EnvPython { facts, made: false })
+    host::python_facts(&found.program, &found.args).map(|facts| EnvPython {
+        facts: Some(facts),
+        made: false,
+    })
 }
 
 /// Looks at the computer for each item. A test of the installed environment is not run here: it waits for the
@@ -270,7 +289,13 @@ fn look_at(
                 PrerequisiteCheck::Program { any_of, env } => {
                     let (state, by_variable) = host::check_program(machine, any_of, env.as_deref());
                     let packages = if matches!(state, State::Missing(_)) && !by_variable {
-                        brings(python.as_ref().ok().map(|p| p.facts.version))
+                        brings(
+                            python
+                                .as_ref()
+                                .ok()
+                                .and_then(|p| p.facts.as_ref())
+                                .map(|f| f.version),
+                        )
                     } else {
                         Vec::new()
                     };
@@ -282,22 +307,30 @@ fn look_at(
                         State::Met("the environment is made".to_string()),
                         Vec::new(),
                     ),
-                    Ok(python) => {
-                        let state = host::check_python_module(&python.facts, module);
-                        let packages = if matches!(state, State::Missing(_))
-                            && python.facts.is_the_systems()
-                        {
-                            brings(Some(python.facts.version))
-                        } else {
-                            Vec::new()
-                        };
+                    Ok(EnvPython { facts: None, .. }) => {
+                        (State::Met(OWN_PYTHON_HAS_IT.to_string()), Vec::new())
+                    }
+                    Ok(EnvPython {
+                        facts: Some(facts), ..
+                    }) => {
+                        let state = host::check_python_module(facts, module);
+                        let packages =
+                            if matches!(state, State::Missing(_)) && facts.is_the_systems() {
+                                brings(Some(facts.version))
+                            } else {
+                                Vec::new()
+                            };
                         (state, packages)
                     }
                     Err(why) => (State::Unchecked(why.clone()), Vec::new()),
                 },
                 PrerequisiteCheck::PythonHeader { file } => match python {
-                    Ok(python) => {
-                        let facts = &python.facts;
+                    Ok(EnvPython { facts: None, .. }) => {
+                        (State::Met(OWN_PYTHON_HAS_IT.to_string()), Vec::new())
+                    }
+                    Ok(EnvPython {
+                        facts: Some(facts), ..
+                    }) => {
                         let state = host::check_python_header(facts, file);
                         // the package is for the Python the computer's package manager brings
                         let packages =
@@ -775,7 +808,10 @@ mod tests {
                 &wanted,
                 &machine,
                 Some(PackageManager::Apt),
-                &facts.map(|facts| EnvPython { facts, made }),
+                &facts.map(|facts| EnvPython {
+                    facts: Some(facts),
+                    made,
+                }),
             )
         };
 

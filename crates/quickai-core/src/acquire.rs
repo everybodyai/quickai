@@ -317,6 +317,22 @@ pub fn install_summary_with(engine: &Engine, facts: &HostFacts, chosen: &[&str])
     })
 }
 
+/// What the window says of the Python an install of a `python_app` engine makes its environment with, when the person
+/// named none (C181): `Its Python is QuickAI's own (3.12.15), downloaded once: nothing of this computer's Python is
+/// used.` `None` for an engine whose document has no Python of QuickAI's own.
+pub fn own_python_sentence(engine: &Engine) -> Option<String> {
+    let Some(crate::doc::engine::Install::PythonApp { python, .. }) =
+        engine.doc.acquire.as_ref()?.install.as_ref()
+    else {
+        return None;
+    };
+    let own = python.own.as_ref()?;
+    Some(format!(
+        "Its Python is QuickAI's own ({}), downloaded once: nothing of this computer's Python is used.",
+        own.version
+    ))
+}
+
 /// An overlay this machine has, and the file that is it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OverlayChoice {

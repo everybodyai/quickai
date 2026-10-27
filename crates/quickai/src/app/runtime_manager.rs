@@ -334,6 +334,22 @@ impl App {
         Some(acquire::options_of_steps(engine, &stopped.steps))
     }
 
+    /// What installing the engine puts on this machine, in a sentence or two for the window: the parts ticked, and, when
+    /// the person named no Python, that its Python is QuickAI's own.
+    pub(super) fn install_sentence(&self, engine: &Engine, ticked: &[&str]) -> Option<String> {
+        let summary = acquire::install_summary_with(engine, &self.host_facts, ticked)?;
+        let named = self
+            .values
+            .text("python")
+            .is_some_and(|p| !p.trim().is_empty());
+        Some(
+            match acquire::own_python_sentence(engine).filter(|_| !named) {
+                Some(own) => format!("{summary} {own}"),
+                None => summary,
+            },
+        )
+    }
+
     pub(super) fn install_spec(&self) -> Option<InstallSpec> {
         self.install_spec_with(&self.chosen_options())
     }
@@ -995,7 +1011,7 @@ impl App {
         let ticked: Vec<&str> = ticked.iter().map(String::as_str).collect();
         if let Some(summary) = self
             .runtime_engine()
-            .and_then(|e| acquire::install_summary_with(e, &self.host_facts, &ticked))
+            .and_then(|e| self.install_sentence(e, &ticked))
         {
             ui.add_space(2.0);
             ui.label(

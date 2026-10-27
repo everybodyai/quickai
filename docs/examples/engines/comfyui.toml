@@ -67,11 +67,28 @@ filter_hint = "e.g. v0.39"
 use = "python_app"
 binary = { name = "comfyui" }
 entry = "main.py"
-python = { versions = ["3.13", "3.12", "3.14", "3.11", "3.10"] }     # ComfyUI's README: 3.13 is very well supported, 3.12 and 3.14 work
 verify = "digest"
 smoke = ["${binary}", "--quick-test-for-ci", "--cpu"]        # loads every node and ends: the environment holds what the program imports
 smoke_timeout = "300s"
 space = "30GiB"                 # measured: the environment is 17 GB, and PyTorch's wheel (6 GB) is on the disk as well while it is unpacked
+
+# QuickAI's own Python (C181): unless the person names one in Settings, the environment is made with a whole Python that
+# QuickAI downloads once into this engine's folder (python/), checked against these sha256s, so that nothing of the
+# computer's own Python is needed or changed (no python3-venv, no headers, no version it does not have). The builds are
+# python-build-standalone's, a release of 2026-10-03 (recorded 2026-10-27 from its SHA256SUMS). ComfyUI's README: 3.13
+# is very well supported, 3.12 and 3.14 work; its own is the 3.12 of Open WebUI's, for one Python QuickAI has checked.
+[acquire.install.python]
+versions = ["3.13", "3.12", "3.14", "3.11", "3.10"]
+[acquire.install.python.own]
+version = "3.12.15"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261003"
+[acquire.install.python.own.files]
+x86_64-unknown-linux-gnu = { file = "cpython-3.12.15+20261003-x86_64-unknown-linux-gnu-install_only.tar.gz", sha256 = "f937814031eab4698ca6d07ec606ede1825768f3f3e99af76d9db3900bee03c5" }
+aarch64-unknown-linux-gnu = { file = "cpython-3.12.15+20261003-aarch64-unknown-linux-gnu-install_only.tar.gz", sha256 = "95c01982c9fcb9d95b0acfdb5eb8a6e0099dd11edf062314a474228d93f2b765" }
+x86_64-apple-darwin = { file = "cpython-3.12.15+20261003-x86_64-apple-darwin-install_only.tar.gz", sha256 = "a8fd7a91852f19b6d959793ef41fad048631ccb2a334a9ecdf573255298f7978" }
+aarch64-apple-darwin = { file = "cpython-3.12.15+20261003-aarch64-apple-darwin-install_only.tar.gz", sha256 = "316a463172740e71d8dca1f2730784e325f3f720941137b5d674d5801a632213" }
+x86_64-pc-windows-msvc = { file = "cpython-3.12.15+20261003-x86_64-pc-windows-msvc-install_only.tar.gz", sha256 = "4b6f0beebbb695a0f3ea237b8c3eaa5bd424f47a7bc25b2fbe3a43390c770f08" }
+aarch64-pc-windows-msvc = { file = "cpython-3.12.15+20261003-aarch64-pc-windows-msvc-install_only.tar.gz", sha256 = "2de96a340fecdabe215094345ed3aea1b473e858bd098360f2253299e18f24d2" }
 
 [[acquire.install.pip]]
 id = "torch_amd"
@@ -394,7 +411,7 @@ id = "python"
 label = "Python for the install"
 type = "file"
 optional = true
-help = "The Python that makes ComfyUI's environment when it is installed, if you do not want the one QuickAI finds (3.13, 3.12, 3.14, 3.11 or 3.10, in that order). It needs the venv module: on Debian and Ubuntu the package python3-venv."
+help = "A Python of this computer to make ComfyUI's environment with, instead of QuickAI's own (a Python 3.12 it downloads once into ~/.quickai/comfyui/python and keeps there). It must be 3.10 or newer and have the venv module: on Debian and Ubuntu the package python3-venv. Leave it empty to use QuickAI's own."
 ui = { section = "advanced", order = 12, hint = "e.g. /usr/bin/python3.12" }
 
 [[field]]

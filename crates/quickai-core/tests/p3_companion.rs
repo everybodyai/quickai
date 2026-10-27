@@ -473,6 +473,84 @@ fn p3_t11_the_wheel_of_the_tested_release_is_pinned_and_the_install_asks_for_pyt
 }
 
 #[test]
+fn p3_z44_open_webui_and_comfyui_pin_quickais_own_python_for_every_kind_of_computer_quickai_is_built_for(
+) {
+    // C181: the environments are made with a Python QuickAI downloads and checks, so that the computer's own is neither
+    // needed nor touched; one Python, the same for both engines, so that one was checked
+    use quickai_core::acquire;
+    use quickai_core::doc::engine::Install;
+    let registry = shipped_registry(&[]);
+    let mut seen = Vec::new();
+    for id in ["openwebui", "comfyui"] {
+        let engine = registry.engine(id).unwrap();
+        let Some(Install::PythonApp { python, .. }) = &engine.doc.acquire.as_ref().unwrap().install
+        else {
+            panic!("{id}: a python_app install")
+        };
+        let own = python
+            .own
+            .as_ref()
+            .unwrap_or_else(|| panic!("{id}: no own Python"));
+        assert!(
+            own.url.starts_with(
+                "https://github.com/astral-sh/python-build-standalone/releases/download/"
+            ),
+            "{id}: {}",
+            own.url
+        );
+        let wanted = [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc",
+            "aarch64-pc-windows-msvc",
+        ];
+        assert_eq!(
+            own.files.keys().map(String::as_str).collect::<Vec<_>>(),
+            {
+                let mut sorted = wanted.to_vec();
+                sorted.sort();
+                sorted
+            },
+            "{id}"
+        );
+        for (target, file) in &own.files {
+            // the file is the build of that version for that computer, as the release names it, and its sum is a sha256
+            assert!(
+                file.file.starts_with(&format!("cpython-{}+", own.version))
+                    && file
+                        .file
+                        .ends_with(&format!("-{target}-install_only.tar.gz")),
+                "{id} {target}: {}",
+                file.file
+            );
+            assert_eq!(file.sha256.len(), 64, "{id} {target}");
+            assert!(file
+                .sha256
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        }
+        // a Python the person names must still be one the engine runs on: the own one is among them
+        let short = own.version.rsplit_once('.').unwrap().0;
+        assert!(
+            python.versions.iter().any(|v| v == short),
+            "{id}: {:?}",
+            python.versions
+        );
+        assert_eq!(
+            acquire::own_python_sentence(engine).unwrap(),
+            format!(
+                "Its Python is QuickAI's own ({}), downloaded once: nothing of this computer's Python is used.",
+                own.version
+            )
+        );
+        seen.push(own.clone());
+    }
+    assert_eq!(seen[0], seen[1], "the same Python for both");
+}
+
+#[test]
 fn p3_t12_the_pip_steps_give_linux_the_pytorch_for_the_processor_and_every_machine_the_wheel() {
     use quickai_core::acquire;
     let registry = shipped_registry(&[]);

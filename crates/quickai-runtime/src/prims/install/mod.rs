@@ -197,6 +197,7 @@ impl InstallSpec {
                     },
                     versions: python.versions.clone(),
                     python: None,
+                    own: python.own.as_deref().cloned(),
                     launch_args: quickai_core::acquire::launch_args(engine, chosen),
                     pip: quickai_core::acquire::pip_steps_with(engine, facts, chosen)
                         .into_iter()

@@ -447,9 +447,32 @@ pub struct InstallOption {
 /// Which Python makes the virtual environment of a `python_app`.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct PythonSpec {
-    /// The versions to look for, best first (`3.13`, `3.12`): the first one the machine has is used.
-    /// A person who has another puts its path in the engine's Python field.
+    /// The versions to look for, best first (`3.13`, `3.12`): the first one the machine has is used, when the document
+    /// has no Python of QuickAI's own. A person who has another puts its path in the engine's Python field.
     pub versions: Vec<String>,
+    /// QuickAI's own Python (C181): a whole Python, downloaded once into the engine's folder and checked, that makes the
+    /// environment unless the person named one, so that nothing of the computer's own Python is needed or touched.
+    #[serde(default)]
+    pub own: Option<Box<OwnPython>>,
+}
+
+/// A Python that QuickAI downloads for an engine: a build of python-build-standalone (a relocatable CPython with pip,
+/// venv and its headers), one file for each kind of computer.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct OwnPython {
+    /// Its version, as it is said to the person (`3.12.15`).
+    pub version: String,
+    /// The address the files are under: a file's address is this, `/` and its name.
+    pub url: String,
+    /// The file for each kind of computer, by its target (`x86_64-unknown-linux-gnu`).
+    pub files: std::collections::BTreeMap<String, OwnPythonFile>,
+}
+
+/// The archive of an own Python for one kind of computer, and the sha256 it is checked against.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct OwnPythonFile {
+    pub file: String,
+    pub sha256: String,
 }
 
 /// One `pip install` of the environment of a `python_app`.
