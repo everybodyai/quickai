@@ -143,12 +143,25 @@ impl App {
     ) {
         let (what, hints) = self.crash_advice(server);
         let mut asked: Option<String> = None;
+        let mut use_port: Option<(String, u16)> = None;
         theme::alert(ui, Tone::Bad, |ui| {
             ui.label(format!("{what}. The Log tab says why."));
             for Advice { text, action } in &hints {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(text).small());
                     if let Some(action) = action {
+                        // advice that points at a port has the fix in one click: the next port nothing listens on
+                        if let Some((field, port)) = self.free_port_for(action) {
+                            if ui
+                                .small_button(format!("Use port {port}"))
+                                .on_hover_text(format!(
+                                    "Nothing on this computer listens on port {port}: keep it and start again."
+                                ))
+                                .clicked()
+                            {
+                                use_port = Some((field, port));
+                            }
+                        }
                         if ui.small_button(action_label(action)).clicked() {
                             asked = Some(action.clone());
                         }
@@ -156,10 +169,39 @@ impl App {
                 });
             }
         });
-        if let Some(action) = asked {
+        if let Some((field, port)) = use_port {
+            self.values.set(&field, i64::from(port));
+            self.save_settings();
+            self.push_log(format!("[quickai] Port {port} is free: starting on it."));
+            self.start_selected(ui.ctx());
+        } else if let Some(action) = asked {
             self.invoke(&action);
         }
     }
+
+    /// For advice that sends the person to a port field (`focus_field:port`), that field and the first port above
+    /// the one it holds that nothing on this computer listens on.
+    fn free_port_for(&self, action: &str) -> Option<(String, u16)> {
+        let id = action.strip_prefix("focus_field:")?;
+        let field = self.engine_doc()?.doc.fields.iter().find(|f| f.id == id)?;
+        if field.ty != quickai_core::doc::engine::FieldType::Port {
+            return None;
+        }
+        let now = self
+            .values
+            .int(id)
+            .and_then(|p| u16::try_from(p).ok())
+            .unwrap_or(8080);
+        next_free_port(now).map(|port| (id.to_string(), port))
+    }
+}
+
+/// The first port after `taken`, within a hundred, that can be listened on at 127.0.0.1 now (where the engines
+/// listen). Asked again each time the panel is drawn, which is only while it is shown.
+fn next_free_port(taken: u16) -> Option<u16> {
+    (taken.saturating_add(1)..=taken.saturating_add(100))
+        .filter(|&p| p >= 1024)
+        .find(|&p| std::net::TcpListener::bind(("127.0.0.1", p)).is_ok())
 }
 
 /// What the button of a piece of advice says.
