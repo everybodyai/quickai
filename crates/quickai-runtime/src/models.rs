@@ -15,9 +15,7 @@ pub struct KnownModel {
     pub filename: &'static str,
     pub display: &'static str,
     pub note: &'static str,
-    /// Bundled-by-default models get a subtle highlight in the picker, so
-    /// "pick a lighter one if this machine is slow" has an obvious next
-    /// step even before Model URL/Look up online are touched.
+    /// The model the packages ship: its row of the list says `bundled`.
     pub bundled: bool,
     /// How the engine is started for it, as the id of one of its `[[models.mode]]`, when no record beside
     /// the weights says (the model the packages ship has none).

@@ -157,6 +157,11 @@ impl App {
     /// with the selected model once it has stopped.
     pub(super) fn switch_to_selected(&mut self) {
         self.restart_with_selected = true;
+        self.stop_server();
+    }
+
+    /// Stops the server, and the companion with it: the page goes with what it talks to.
+    pub(super) fn stop_server(&mut self) {
         self.stop_companion();
         self.session.stop();
     }

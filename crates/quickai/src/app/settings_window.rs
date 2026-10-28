@@ -79,21 +79,13 @@ impl App {
                     .response
                     .rect
                     .height();
-                let content = egui::CentralPanel::default()
-                    .frame(super::theme::page_frame())
-                    .show(ui, |ui| {
-                        egui::ScrollArea::vertical()
-                            .id_salt("settings_scroll")
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| self.show_settings_body(ui, &form))
-                            .content_size
-                            .y
-                    })
-                    .inner;
-                super::theme::fit_window_height(
-                    ui.ctx(),
-                    content + super::theme::page_frame_margin() + footer,
+                super::theme::fitted_page(
+                    ui,
+                    "settings_scroll",
+                    super::theme::page_frame(),
+                    footer,
                     LEAST[1],
+                    |ui| self.show_settings_body(ui, &form),
                 );
             }
             // every delete button of the window asks its question in the window, where it was pressed

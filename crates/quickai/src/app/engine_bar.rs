@@ -151,25 +151,13 @@ impl App {
             return;
         }
         let rows = &self.runtime.lookup_results;
-        let offered: Vec<acquire::Offered<'_>> = rows
-            .iter()
-            .map(|r| acquire::Offered {
-                tag: &r.build.tag,
-                asset_name: &r.build.asset_name,
-                tested: r.build.tested,
-                conflict: r.build.conflict,
-                size: r.build.size_bytes,
-            })
-            .collect();
-        let vendors: Vec<String> = self
-            .gpu_vendors
-            .iter()
-            .map(|v| v.label().to_ascii_lowercase())
-            .collect();
-        let vendors: Vec<&str> = vendors.iter().map(String::as_str).collect();
-        let pick = self
-            .engine_doc()
-            .and_then(|engine| acquire::pick_build(engine, &offered, &vendors));
+        let pick = self.engine_doc().and_then(|engine| {
+            quickai_runtime::provision::pick_build(
+                engine,
+                rows.iter().map(|r| &r.build),
+                &self.gpu_vendors,
+            )
+        });
         let (Some(i), Some(spec)) = (pick, self.install_spec()) else {
             self.runtime.setup_failure = Some(format!(
                 "No {} build for this computer was found. Settings has the list, and a box for a program you \

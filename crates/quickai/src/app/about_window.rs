@@ -77,9 +77,10 @@ impl App {
                         ui.label(
                             "Pick a model in the list on the left, optionally adjust the port / context \
                          size / GPU layers (Settings has more, including advanced llama.cpp options), \
-                         then click Start in the toolbar and wait for the status bar to say Running. \
-                         \"Open Chat UI\" opens a browser-based chat; \"Connect an app\" shows how to \
-                         connect an external app instead. Only one model runs at a time.",
+                         then press the green play button beside its name and wait for the status \
+                         bar to say Running. The globe beside it opens a chat in the browser; the plug \
+                         (Connect an app) shows how to connect an external app instead. Only one model \
+                         runs at a time.",
                         );
                         ui.add_space(6.0);
 

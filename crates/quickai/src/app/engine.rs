@@ -950,7 +950,7 @@ mod tests {
             app.show_settings_window(ui.ctx());
             app.show_catalog_window(ui.ctx());
             app.show_add_model_window(ui.ctx());
-            app.show_connect_window(ui.ctx());
+            app.show_connect_popover(ui.ctx());
             app.show_guide_window(ui.ctx());
         });
         output.textures_delta.clear();

@@ -174,8 +174,6 @@ pub struct ApiExample {
     /// Shown only while this holds (`has(model.modalities.input, 'image')`).
     pub when: Option<String>,
     pub curl: String,
-    #[serde(default)]
     pub python: Option<String>,
-    #[serde(default)]
     pub javascript: Option<String>,
 }

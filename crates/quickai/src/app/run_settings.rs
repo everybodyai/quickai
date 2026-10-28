@@ -4,8 +4,9 @@
 //! The line says it in words ("Balanced · 4K context · uses the graphics card"). *Change* opens, under it, the choices
 //! an engine with a context size has as presets (A3): **Balanced** is the context the engine's document recommends
 //! for this model and this computer (Ollama's own, which QuickAI cannot better), **Long chats** four times that (at
-//! least 16K, at most 32K), **Light** 2K (half of Balanced when that is 2K or less); **Custom** is the boxes of the fields as they always were (the port, the
-//! context size, the GPU). Under them, where the models run (once another computer can), and the configuration in use.
+//! least 16K, at most 32K), **Light** 2K (half of Balanced when that is 2K or less); **Custom** is the boxes of the
+//! fields as they always were (the port, the context size, the GPU). Under them, the configuration in use. Where the
+//! models run is the status bar's (C183): the line says it when it is another computer.
 //! A preset sets the context size and nothing else, so what is chosen is read back from it, and the line names a preset
 //! only when the context size is one.
 

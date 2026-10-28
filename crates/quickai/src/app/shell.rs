@@ -11,9 +11,11 @@
 use eframe::egui;
 
 use super::icons::{self, Icon};
-use super::theme;
+use super::theme::{self, Tone};
 use super::{App, Tab};
 use crate::events::ServerState;
+use crate::hardware::SpeedTier;
+use crate::models::ModelEntry;
 
 /// Where the documentation and the privacy policy are read.
 pub(super) const DOCS_URL: &str = "https://github.com/everybodyai/quickai/tree/main/docs";
@@ -84,9 +86,8 @@ impl App {
         });
         if run {
             if matches!(state, ServerState::Starting | ServerState::Running) {
-                self.stop_companion();
-                self.session.stop();
-            } else if self.start_possible(active).0 {
+                self.stop_server();
+            } else if self.start_possible(active) {
                 self.start_selected(ctx);
             }
         }
@@ -213,45 +214,49 @@ impl App {
         self.save_settings();
     }
 
-    /// Whether Start can be pressed now, and whether what it does is load the chosen model into the running engine.
-    pub(super) fn start_possible(&self, active: bool) -> (bool, bool) {
-        let loadable = self.can_load_selected();
+    /// Whether Start can be pressed now (with a model running, it loads the chosen one into the engine).
+    pub(super) fn start_possible(&self, active: bool) -> bool {
         let can_start = (!self.models.is_empty() || self.lists_models() || self.runs_alone())
             && !self.engine_missing();
-        ((!active && can_start) || loadable, loadable)
+        (!active && can_start) || self.can_load_selected()
     }
 
-    /// What the list says of a model under its name, and when the pointer rests on it (option D of the samples in
-    /// `mockups/header/`, C185: the facts left the head of the page for the list). Under the name: its size, how fast
-    /// it should be here (only when it is fast or slower, and not of a computer it runs on elsewhere), recommended,
-    /// bundled, and how it is started when that is not as a chat model. On the pointer: its name, what the engine says
-    /// it can do or the first sentence of its note, and what the speed rests on.
+    /// What the speed of the models of the list is guessed from, worked out once for the list (it builds the engine's
+    /// form): whether the graphics card is used, `None` while they run on another computer, of which nothing is guessed.
+    pub(super) fn speed_basis(&self) -> Option<bool> {
+        self.remote_in_use().is_none().then(|| self.gpu_offload())
+    }
+
+    /// How fast `m` should be on this computer, from `offload` (`speed_basis`); `None` when nothing is guessed.
+    fn row_speed(&self, m: &ModelEntry, offload: Option<bool>) -> Option<SpeedTier> {
+        let offload = offload.filter(|_| m.size_bytes > 0)?;
+        Some(crate::hardware::speed_tier(
+            m.size_bytes,
+            self.total_ram_bytes,
+            offload,
+        ))
+    }
+
+    /// What the list says of a model under its name (option D of the samples in `mockups/header/`, C185: the facts left
+    /// the head of the page for the list): its size, how fast it should be here (only when it is fast or slower),
+    /// recommended, bundled, and how it is started when that is not as a chat model.
     pub(super) fn row_facts(
         &self,
-        m: &crate::models::ModelEntry,
+        m: &ModelEntry,
         lists: bool,
-    ) -> (Vec<(String, Option<egui::Color32>)>, String) {
+        offload: Option<bool>,
+    ) -> Vec<(String, Option<egui::Color32>)> {
         let p = theme::palette();
         let mut detail: Vec<(String, Option<egui::Color32>)> =
             vec![(size_text(m.size_bytes), None)];
-        let mut hover = m.display.clone();
-        if self.remote_in_use().is_none() && m.size_bytes > 0 {
-            let tier =
-                crate::hardware::speed_tier(m.size_bytes, self.total_ram_bytes, self.gpu_offload());
-            let color = match tier {
-                crate::hardware::SpeedTier::Fast => Some(p.accent_text),
-                crate::hardware::SpeedTier::Slow => Some(p.warn),
-                crate::hardware::SpeedTier::Medium => None,
-            };
-            if color.is_some() {
-                detail.push((tier.label().to_lowercase(), color));
+        match self.row_speed(m, offload) {
+            Some(tier @ SpeedTier::Fast) => {
+                detail.push((tier.label().to_lowercase(), Some(p.accent_text)))
             }
-            hover.push_str(&format!(
-                "\n{} on this computer: a rough guess from its size, this computer's memory ({}) and whether the \
-                 graphics card is used, not a measurement.",
-                tier.label(),
-                crate::hardware::format_bytes(self.total_ram_bytes)
-            ));
+            Some(tier @ SpeedTier::Slow) => {
+                detail.push((tier.label().to_lowercase(), Some(p.warn)))
+            }
+            Some(SpeedTier::Medium) | None => {}
         }
         if self.recommended_filename.as_deref() == Some(m.filename.as_str()) {
             detail.push(("recommended".to_string(), Some(p.accent_text)));
@@ -259,32 +264,50 @@ impl App {
         if m.bundled {
             detail.push(("bundled".to_string(), None));
         }
+        if !lists {
+            if let (_, Some(mode)) = split_mode(&m.note) {
+                detail.push((mode.text, mode.tone.map(|t| t.color())));
+            }
+        }
+        detail
+    }
+
+    /// What the list says of a model when the pointer rests on its row: its name, what the engine says it can do or the
+    /// first sentence of its note, and what the speed rests on.
+    pub(super) fn row_hover(&self, m: &ModelEntry, lists: bool, offload: Option<bool>) -> String {
+        let mut hover = m.display.clone();
+        if let Some(tier) = self.row_speed(m, offload) {
+            hover.push_str(&format!(
+                "\n{} on this computer: a rough guess from its size, this computer's memory ({}) and whether the \
+                 graphics card is used, not a measurement.",
+                tier.label(),
+                crate::hardware::format_bytes(self.total_ram_bytes)
+            ));
+        }
         if lists {
             // what the engine says it can do; `completion` is what every model that chats does
-            let can: Vec<&str> = m
+            for word in m
                 .note
                 .split(", ")
                 .filter(|w| !w.is_empty() && *w != "completion")
-                .collect();
-            for word in can {
-                let help = super::named_models::capability_help(word);
+            {
                 hover.push_str(&format!("\n{word}"));
+                let help = super::named_models::capability_help(word);
                 if !help.is_empty() {
                     hover.push_str(&format!(": {help}"));
                 }
             }
         } else {
-            let (note, mode) = super::model_bar::split_mode(&m.note);
-            let first = super::model_bar::first_sentence(note);
+            let (note, mode) = split_mode(&m.note);
+            let first = first_sentence(note);
             if !first.is_empty() {
                 hover.push_str(&format!("\n{first}"));
             }
             if let Some(mode) = mode {
                 hover.push_str(&format!("\n{}", mode.hover));
-                detail.push((mode.text, mode.tone.map(|t| t.color())));
             }
         }
-        (detail, hover)
+        hover
     }
 
     /// Reads the list of models again: the folders, or what the running engine says it has.
@@ -430,6 +453,7 @@ impl App {
                 let mut picked = None;
                 let mut asked: Option<(usize, RowAction)> = None;
                 let lists = self.lists_models();
+                let offload = self.speed_basis();
                 let mut shown = 0;
                 for (i, m) in self.models.iter().enumerate() {
                     let named = format!("{} {}", m.display, m.filename).to_lowercase();
@@ -437,10 +461,14 @@ impl App {
                         continue;
                     }
                     shown += 1;
-                    let (detail, hover) = self.row_facts(m, lists);
+                    let detail = self.row_facts(m, lists, offload);
                     let running = self.runs_model(i);
                     let (row, more) =
-                        model_row(ui, &m.display, &detail, &hover, i == self.selected, running);
+                        model_row(ui, &m.display, &detail, i == self.selected, running);
+                    // what is said of it when the pointer rests on it, made only then
+                    let row = row.on_hover_ui(|ui| {
+                        ui.label(self.row_hover(m, lists, offload));
+                    });
                     if row.clicked() {
                         picked = Some(i);
                     }
@@ -482,12 +510,7 @@ impl App {
 
     /// The items of a model's menu (right-click its row in the list, or the … on the row): Details, Show in folder, Copy
     /// name, Delete. What was chosen comes back; the menu is closed.
-    pub(super) fn model_menu(
-        &self,
-        ui: &mut egui::Ui,
-        index: usize,
-        lists: bool,
-    ) -> Option<RowAction> {
+    fn model_menu(&self, ui: &mut egui::Ui, index: usize, lists: bool) -> Option<RowAction> {
         let mut asked = None;
         if ui.button("Details…").clicked() {
             asked = Some(RowAction::Details);
@@ -520,7 +543,7 @@ impl App {
     }
 
     /// Does what a model's menu was asked to.
-    pub(super) fn do_row_action(&mut self, ctx: &egui::Context, index: usize, action: RowAction) {
+    fn do_row_action(&mut self, ctx: &egui::Context, index: usize, action: RowAction) {
         match action {
             RowAction::Delete => self.ask_to_delete_from_window(index),
             RowAction::ShowInFolder => {
@@ -861,11 +884,53 @@ fn add_model_button(ui: &mut egui::Ui, width: f32, enabled: bool) -> egui::Respo
 
 /// What the menu of a model of the list was asked to do.
 #[derive(Clone, Copy)]
-pub(super) enum RowAction {
+enum RowAction {
     Delete,
     ShowInFolder,
     CopyName,
     Details,
+}
+
+/// How a model is started, when that is not as a chat model: the word of its row, the tone it is said in, and what is
+/// said of it when the pointer rests on the row.
+pub(super) struct ModeWord {
+    pub text: String,
+    pub tone: Option<Tone>,
+    pub hover: String,
+}
+
+/// What the end of a note says of how the model is started (`models::say_modes` puts the sentence there), as a word of
+/// its own, since it is not a part of the note that can be cut and left for the hover. The note without it comes with it.
+pub(super) fn split_mode(note: &str) -> (&str, Option<ModeWord>) {
+    if let Some(at) = note.rfind("Starts as an ") {
+        let sentence = &note[at..];
+        let label = sentence
+            .trim_start_matches("Starts as an ")
+            .trim_end_matches('.');
+        let word = ModeWord {
+            text: label.to_string(),
+            tone: None,
+            hover: sentence.to_string(),
+        };
+        return (note[..at].trim_end(), Some(word));
+    }
+    if let Some(at) = note.rfind("It is meant to start in the mode") {
+        let word = ModeWord {
+            text: "mode this engine lacks".to_string(),
+            tone: Some(Tone::Warn),
+            hover: note[at..].to_string(),
+        };
+        return (note[..at].trim_end(), Some(word));
+    }
+    (note, None)
+}
+
+/// `note` up to and including its first full stop (all of it when it has none).
+pub(super) fn first_sentence(note: &str) -> &str {
+    match note.find(". ") {
+        Some(end) => &note[..=end],
+        None => note,
+    }
 }
 
 /// A size in the words a person reads: "1.1 GB", "250 MB".
@@ -887,7 +952,6 @@ fn model_row(
     ui: &mut egui::Ui,
     name: &str,
     detail: &[(String, Option<egui::Color32>)],
-    hover: &str,
     chosen: bool,
     running: bool,
 ) -> (egui::Response, Option<egui::Response>) {
@@ -968,7 +1032,7 @@ fn model_row(
         }
     }
     (
-        response.on_hover_text(hover),
+        response,
         more.map(|m| m.on_hover_text("Details, Show in folder, Copy name, Delete")),
     )
 }

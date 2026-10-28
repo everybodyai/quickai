@@ -36,6 +36,7 @@ use quickai_core::profile::state::apply;
 use quickai_core::profile::{Need, NeedKind, Token};
 use quickai_core::value::Value;
 
+pub use build::pick_build;
 pub use quickai_core::profile::environment::Secret;
 pub use report::{
     in_the_words_of_the_command_line, EndpointInfo, EnvironmentItem, Event, Failure, FailureKind,
