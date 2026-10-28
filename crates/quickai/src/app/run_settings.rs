@@ -215,7 +215,30 @@ impl App {
         if self.change_open {
             ui.add_space(6.0);
             theme::card(ui, |ui| self.show_change_panel(ui));
+        } else {
+            // a choice that is wrong for the others (ComfyUI's Memory with the GPU off: the two flags cannot be used together)
+            // is said here as well: Change is shut, and nothing else on the page would say it before Start met it as a crash
+            for problem in self.field_problems() {
+                ui.colored_label(super::widgets::problem_color(), problem);
+            }
         }
+    }
+
+    /// What is wrong with the fields of Change (the rules of the engine's document that a value breaks), a line each.
+    pub(super) fn field_problems(&self) -> Vec<String> {
+        let Some(form) = self.form() else {
+            return Vec::new();
+        };
+        let Some(section) = form.section("primary") else {
+            return Vec::new();
+        };
+        section
+            .fields
+            .iter()
+            .filter(|f| f.visible)
+            .flat_map(|f| super::widgets::problem_lines(f.error.as_deref()))
+            .map(str::to_string)
+            .collect()
     }
 
     /// What *Change* opens: the configuration in use, the presets (or the fields, for an engine with none), and where the
