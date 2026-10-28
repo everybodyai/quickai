@@ -65,6 +65,9 @@ pub enum Event {
     },
     /// The programs are being stopped.
     Stopping,
+    /// The ports the run will listen on, and whether another program has one now (said by `check`; docs/remote-runs.md
+    /// section 3.2).
+    Ports { items: Vec<PortUse> },
     /// The end.
     Finished {
         outcome: String,
@@ -73,6 +76,19 @@ pub enum Event {
         #[serde(skip_serializing_if = "Option::is_none")]
         lack: Option<Lack>,
     },
+}
+
+/// A port the run will listen on.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PortUse {
+    pub port: u16,
+    /// Whose port it is (`Ollama`, `Open WebUI`).
+    pub program: String,
+    /// Another program listens on it now.
+    pub taken: bool,
+    /// What answers there says it is, when it answers as the engine does (`Ollama 0.12.3`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub answers_as: Option<String>,
 }
 
 /// What a run lacks that another way can be proposed for (docs/remote-runs.md, section 6): the window that runs a

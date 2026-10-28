@@ -27,6 +27,11 @@ quickai-run: run a QuickAI configuration with no window
   quickai-run down [--no-wait]
       Stop what runs on this computer, in the background or in another terminal, and wait until it has.
 
+  quickai-run free PORT... [--json]
+      Stop the programs that listen on these ports, so that a run can have them: a program of yours is
+      ended; a service (an Ollama installed as one) is stopped by its service manager through sudo when
+      that asks no password, else the command that stops it is said. Exit code 8 when a port stays taken.
+
   quickai-run prepare <configuration> [options]
       The same up to starting: install and fetch what is missing, and start nothing.
 
@@ -96,8 +101,8 @@ It listens on 127.0.0.1 only; to reach it from elsewhere use an SSH tunnel. One 
 `up` and `prepare` while another runs say what runs, and start nothing. Exit codes: 0 done or stopped,
 1 it could not be done, 2 a mistake in the command, 3 the file asks and was not accepted, 4 a program
 stopped by itself, 5 the configuration needs something nobody gave, 6 the computer lacks something the
-configuration needs (or the installed environment failed its test), 7 another run goes on, 130 interrupted
-before it ran.
+configuration needs (or the installed environment failed its test), 7 another run goes on, 8 a port `free`
+was asked for stays taken, 130 interrupted before it ran.
 ";
 
 /// What `up`, `prepare` and `check` have in common.
@@ -138,6 +143,11 @@ pub enum Parsed {
     Down {
         wait: bool,
     },
+    /// `free`: the ports to free, said as JSON or not.
+    Free {
+        ports: Vec<u16>,
+        json: bool,
+    },
 }
 
 /// Reads the command line (without the program's name).
@@ -154,6 +164,7 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
         "init" => return parse_init(&args[1..]),
         "status" => return parse_status(&args[1..]),
         "down" => return parse_down(&args[1..]),
+        "free" => return parse_free(&args[1..]),
         other => return Err(format!("`{other}` is not something this does")),
     };
     let mut invocation = Invocation {
@@ -288,6 +299,30 @@ fn parse_status(args: &[String]) -> Result<Parsed, String> {
     Ok(Parsed::Status { json })
 }
 
+fn parse_free(args: &[String]) -> Result<Parsed, String> {
+    let mut ports = Vec::new();
+    let mut json = false;
+    for arg in args {
+        match arg.as_str() {
+            "--help" | "-h" => return Ok(Parsed::Help),
+            "--json" => json = true,
+            other => ports.push(
+                other
+                    .parse::<u16>()
+                    .ok()
+                    .filter(|p| *p > 0)
+                    .ok_or_else(|| {
+                        format!("`free` takes ports, numbers from 1 to 65535, not `{other}`")
+                    })?,
+            ),
+        }
+    }
+    if ports.is_empty() {
+        return Err("`free` needs the ports to free".into());
+    }
+    Ok(Parsed::Free { ports, json })
+}
+
 fn parse_down(args: &[String]) -> Result<Parsed, String> {
     let mut wait = true;
     for arg in args {
@@ -405,6 +440,15 @@ mod tests {
             Ok(Parsed::Down { wait: false })
         );
         assert!(parse(&words("down now")).unwrap_err().contains("`now`"));
+        assert_eq!(
+            parse(&words("free 11434 8080 --json")),
+            Ok(Parsed::Free {
+                ports: vec![11434, 8080],
+                json: true
+            })
+        );
+        assert!(parse(&words("free")).is_err());
+        assert!(parse(&words("free http")).is_err());
     }
 
     /// Y60: the words that say what belongs to this computer and where the models come from are read, each as

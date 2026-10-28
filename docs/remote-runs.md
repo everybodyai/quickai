@@ -130,8 +130,12 @@ A run of QuickAI's is stopped with `quickai-run down`, and another program of th
 service (an Ollama installed as one) is stopped by QuickAI only through `sudo -n` when that needs no password; otherwise
 the window says the command that stops it (`sudo systemctl stop ollama`) and waits for its port to be free.
 
-The same check is made for a run on this computer, where it replaces what the window does today with a port that is
-taken (*Use port N*, and C171's attach to an Ollama already answering).
+What is built: a run of QuickAI's there is found by `quickai-run status`; another program by `check`, which says the
+ports the run would listen on and whether another program has one now (and what answers there, when it answers as the
+engine does: `Ollama 0.12.3`). Override stops it (`quickai-run down`, or `quickai-run free PORT...` for another
+program), then checks again and runs ours; Stop it stops it and runs nothing. Not yet: the same check for a run on this
+computer, where it would replace what the window does today with a port that is taken (*Use port N*, and C171's
+attach to an Ollama already answering).
 
 ### 3.3 Several runs at once, and the page of each
 

@@ -2789,6 +2789,7 @@ version = "0.2.0"
 dependencies = [
  "libc",
  "quickai-runtime",
+ "serde",
  "serde_json",
  "windows-sys 0.61.2",
 ]

@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::provision::Lack;
+use crate::provision::{Lack, PortUse};
 
 use super::probe::{Computer, System};
 use super::ssh;
@@ -56,6 +56,9 @@ pub enum Remedy {
 pub enum Found {
     /// It can run as it is.
     Fine,
+    /// Other programs, which QuickAI did not start, listen on ports it needs (section 3.2): the person is asked
+    /// whether to stop them.
+    Taken(Vec<PortUse>),
     /// It lacks these, each with another way.
     Issues(Vec<Issue>),
     /// It cannot run there, and there is no other way to propose: why.
@@ -90,6 +93,15 @@ pub fn check(
         .filter_map(|line| serde_json::from_str(line).ok())
         .collect();
     let finished = of_kind(&events, "finished").last().cloned();
+    // the ports it needs that another program has (a run of QuickAI's has been asked about before this)
+    let taken: Vec<PortUse> = of_kind(&events, "ports")
+        .flat_map(|e| e["items"].as_array().into_iter().flatten())
+        .filter_map(|item| serde_json::from_value::<PortUse>(item.clone()).ok())
+        .filter(|p| p.taken)
+        .collect();
+    if !taken.is_empty() {
+        return Ok(Found::Taken(taken));
+    }
     let failed = finished
         .as_ref()
         .is_some_and(|f| f["outcome"].as_str() == Some("failed"));

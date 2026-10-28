@@ -7,6 +7,7 @@
 
 mod args;
 mod background;
+mod free;
 mod render;
 mod signals;
 
@@ -171,6 +172,7 @@ fn main() {
             let dir = run_file::run_dir(&ConfigDirs::from_environment());
             std::process::exit(background::status(&dir, json))
         }
+        Ok(Parsed::Free { ports, json }) => std::process::exit(free::run(&ports, json)),
         Ok(Parsed::Down { wait }) => {
             let dir = run_file::run_dir(&ConfigDirs::from_environment());
             std::process::exit(background::down(&dir, wait))
