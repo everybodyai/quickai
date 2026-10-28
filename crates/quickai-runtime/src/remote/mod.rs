@@ -11,6 +11,14 @@
 //! agent are used as they are. It is never asked a question: a password prompt would have nowhere to go
 //! (`BatchMode`), and a computer's key is taken the first time and checked after (`StrictHostKeyChecking=accept-new`,
 //! as ssh's own first connection does once the person says yes).
+//!
+//! The parts of a run QuickAI starts there itself (WP4.33, docs/remote-runs.md) are modules of their own: `ssh` (a
+//! command run there, a file copied there), `probe` (what the computer is) and `deploy` (the headless program and
+//! what it runs, copied there).
+
+pub mod deploy;
+pub mod probe;
+pub mod ssh;
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
@@ -126,40 +134,23 @@ pub fn ssh_program() -> PathBuf {
 
 /// The arguments of the tunnel from `local_port` here to `remote_port` on `spec`'s loopback.
 pub fn ssh_args(spec: &RemoteSpec, local_port: u16, remote_port: u16) -> Vec<String> {
-    let mut args: Vec<String> = [
-        "-N",
-        "-T",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "ExitOnForwardFailure=yes",
-        "-o",
-        "StrictHostKeyChecking=accept-new",
-        "-o",
-        "ConnectTimeout=15",
-        "-o",
-        "ServerAliveInterval=15",
-        "-o",
-        "ServerAliveCountMax=3",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
+    let mut args: Vec<String> = ["-N", "-T"].iter().map(|s| s.to_string()).collect();
+    args.extend(ssh::NO_QUESTIONS.iter().map(|s| s.to_string()));
+    args.extend(
+        [
+            "-o",
+            "ExitOnForwardFailure=yes",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=3",
+        ]
+        .iter()
+        .map(|s| s.to_string()),
+    );
     args.push("-L".into());
     args.push(format!("127.0.0.1:{local_port}:127.0.0.1:{remote_port}"));
-    if spec.ssh_port != 22 {
-        args.push("-p".into());
-        args.push(spec.ssh_port.to_string());
-    }
-    if let Some(identity) = spec
-        .identity
-        .as_deref()
-        .map(str::trim)
-        .filter(|i| !i.is_empty())
-    {
-        args.push("-i".into());
-        args.push(identity.to_string());
-    }
+    args.extend(ssh::port_and_key(spec, "-p"));
     // the address last, after `--`: nothing in it is read as an option
     args.push("--".into());
     args.push(spec.host.trim().to_string());
@@ -250,7 +241,7 @@ pub fn open_with(
             Err(e) => {
                 flag.store(false, Ordering::SeqCst);
                 let _ = started_tx.send(Err(if e.kind() == std::io::ErrorKind::NotFound {
-                    "No ssh program was found. Install OpenSSH's client (it comes with Windows 10 and later, macOS and most Linux).".to_string()
+                    ssh::NO_SSH.to_string()
                 } else {
                     format!("Could not start ssh: {e}")
                 }));
