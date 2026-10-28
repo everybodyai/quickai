@@ -319,14 +319,17 @@ fn show_steps(ui: &mut egui::Ui, run: &SetupRun, computer: &str) {
                 .map(|total| (step.done, total));
             step_row(ui, mark, &step.text, took.as_deref(), progress);
         }
-        let start = if ready {
-            Mark::Done
-        } else if all_done {
-            Mark::Doing
-        } else {
-            Mark::Pending
-        };
-        step_row(ui, start, "Start", None, None);
+        // the start, when the plan does not say it as a step of its own
+        if !steps.iter().any(|s| s.kind == "start") {
+            let start = if ready {
+                Mark::Done
+            } else if all_done {
+                Mark::Doing
+            } else {
+                Mark::Pending
+            };
+            step_row(ui, start, "Start", None, None);
+        }
     });
 }
 
