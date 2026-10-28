@@ -238,6 +238,8 @@ mod tests {
                 endpoint("page", &format!("http://127.0.0.1:{busy}")),
             ],
             model: None,
+            steps: Vec::new(),
+            computer: None,
         };
         let spec = RemoteSpec::new("Studio", "studio.local");
         assert_eq!(

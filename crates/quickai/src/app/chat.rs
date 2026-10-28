@@ -585,10 +585,36 @@ fn error_words(value: &serde_json::Value) -> Option<String> {
 }
 
 impl App {
-    /// Whether the engine in use can be talked to here: it serves the OpenAI chat API.
+    /// Whether the engine in use can be talked to here: it serves the OpenAI chat API. On a computer QuickAI set up, the
+    /// chat is there until its run says it serves no API.
     pub(super) fn can_chat(&self) -> bool {
+        if self.setup_in_use().is_some() {
+            return self
+                .setup_run()
+                .is_none_or(|r| !r.running() || r.endpoint("api").is_some());
+        }
         self.engine_doc()
             .is_some_and(|e| e.doc.provides.apis.iter().any(|a| a == "openai.chat"))
+    }
+
+    /// The chat talks to a run now: the one here, or the one on the computer QuickAI set up that is shown.
+    fn chat_running(&self) -> bool {
+        if self.setup_in_use().is_some() {
+            return self.setup_run().is_some_and(|r| r.running());
+        }
+        self.session.state() == ServerState::Running
+    }
+
+    /// The model the chat talks to: the one loaded here, or the one the run on the computer shown runs.
+    fn chat_model(&self) -> Option<String> {
+        if self.setup_in_use().is_some() {
+            return self
+                .setup_run()
+                .and_then(|r| r.chat_target())
+                .map(|(_, model)| model)
+                .filter(|m| !m.is_empty());
+        }
+        self.session.model_name().map(str::to_string)
     }
 
     fn data_dir(&self) -> &Path {
@@ -602,10 +628,14 @@ impl App {
             return;
         }
         if self.chat_target().is_none() {
-            self.chat.error = Some(format!(
-                "Start {} with a model to chat with it.",
-                self.server_name()
-            ));
+            self.chat.error = Some(match self.setup_in_use() {
+                Some(spec) => format!(
+                    "Start \"{}\" on {} to chat with it.",
+                    self.selected_configuration_name(),
+                    spec.name
+                ),
+                None => format!("Start {} with a model to chat with it.", self.server_name()),
+            });
             return;
         }
         self.chat.input.clear();
@@ -615,8 +645,12 @@ impl App {
         self.ask_for_reply(ctx);
     }
 
-    /// Where a reply is asked for: the port of the run, and the model that is loaded.
+    /// Where a reply is asked for: the port of the run, and the model that is loaded. With a computer QuickAI set up
+    /// shown, its run's API here, through the tunnel.
     fn chat_target(&self) -> Option<(u16, String)> {
+        if self.setup_in_use().is_some() {
+            return self.setup_run()?.chat_target();
+        }
         let port = self
             .session
             .port()
@@ -805,9 +839,9 @@ impl App {
         let saved = SavedChat {
             title: chats::title_of(&turns),
             id: id.clone(),
-            model: self.session.model_name().unwrap_or_default().to_string(),
+            model: self.chat_model().unwrap_or_default(),
             engine: self.engine_name(),
-            runner: self.remote_in_use().map(|r| r.name.clone()),
+            runner: self.runner_name(),
             instructions: self.chat.instructions.clone(),
             created,
             updated: chats::now(),
@@ -860,9 +894,9 @@ impl App {
         let chat = SavedChat {
             id: String::new(),
             title: chats::title_of(&turns),
-            model: self.session.model_name().unwrap_or_default().to_string(),
+            model: self.chat_model().unwrap_or_default(),
             engine: self.engine_name(),
-            runner: self.remote_in_use().map(|r| r.name.clone()),
+            runner: self.runner_name(),
             instructions: self.chat.instructions.clone(),
             created: 0,
             updated: 0,
@@ -1024,9 +1058,18 @@ impl App {
 
     fn show_chat_conversation(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette();
-        let running = self.session.state() == ServerState::Running;
-        let model = self.session.model_name().map(str::to_string);
+        let running = self.chat_running();
+        let model = self.chat_model();
         let server = self.server_name();
+        let remote_run = self.setup_in_use().map(|spec| {
+            (
+                spec.name.clone(),
+                self.setup_run()
+                    .map(|r| r.configuration.clone())
+                    .filter(|c| !c.is_empty())
+                    .unwrap_or_else(|| self.selected_configuration_name()),
+            )
+        });
         if self.chat.show_instructions {
             ui.add_space(6.0);
             self.show_chat_options(ui);
@@ -1034,6 +1077,19 @@ impl App {
         // with nothing said yet, what to do is said in the middle of the room the conversation will have
         let empty = self.chat.turns.is_empty() && self.chat.error.is_none();
         let empty_words = match (&model, running) {
+            // a run on a computer QuickAI set up
+            _ if remote_run.is_some() => {
+                let (computer, configuration) = remote_run.clone().unwrap_or_default();
+                match (&model, running) {
+                    (Some(model), true) => {
+                        format!("Ask {model} anything. It runs on {computer}.")
+                    }
+                    (None, true) => {
+                        format!("Ask it anything. \"{configuration}\" runs on {computer}.")
+                    }
+                    _ => format!("The chat opens once \"{configuration}\" runs on {computer}."),
+                }
+            }
             (Some(model), true) => match self.remote_in_use() {
                 Some(remote) => format!("Ask {model} anything. It runs on {}.", remote.name),
                 None => format!("Ask {model} anything."),
@@ -1267,7 +1323,8 @@ impl App {
             }
         }
         let mut attach = false;
-        let ready = running && model.is_some();
+        // a run on a computer QuickAI set up may not say its model (llama.cpp serves the one it was started with)
+        let ready = running && (model.is_some() || remote_run.is_some());
         egui::Frame::new()
             .fill(p.well)
             .stroke(egui::Stroke::new(1.0, p.outline))

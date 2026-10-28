@@ -156,7 +156,6 @@ impl App {
             || self.named.queued.is_some()
             || self.remote_opening()
             || self.companion_busy()
-            || self.setup_run().is_some_and(|r| r.running() || r.working())
     }
 
     /// Everything that depends on the engine: its executable, its models and the state of the

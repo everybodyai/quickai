@@ -47,13 +47,15 @@ impl App {
         egui::Panel::bottom("status_bar")
             .frame(theme::bar_frame(egui::Margin::symmetric(10, 3)))
             .show(ui, |ui| self.show_status_bar(ui, state));
-        if self.runs_alone() {
+        // a computer QuickAI sets up, chosen in the status bar: the page of its run (WP4.33)
+        let remote_view = self.setup_in_use().is_some();
+        if self.runs_alone() && !remote_view {
             // while the results of a look-up are on the workbench they have the whole of it: the log is not what is
             // being read then
             if !self.lookup.open {
                 self.show_dock(ui);
             }
-        } else {
+        } else if !self.runs_alone() {
             egui::Panel::left("models")
                 .resizable(true)
                 .default_size(220.0)
@@ -61,7 +63,11 @@ impl App {
                 .frame(theme::bar_frame(egui::Margin::ZERO))
                 .show(ui, |ui| self.show_models_list(ui, active));
         }
-        if self.runs_alone() {
+        if remote_view {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(theme::palette().page))
+                .show(ui, |ui| self.show_remote_page(ui));
+        } else if self.runs_alone() {
             egui::CentralPanel::default()
                 .frame(theme::page_frame())
                 .show(ui, |ui| self.show_workbench_page(ui, state, active));
@@ -84,7 +90,14 @@ impl App {
                 i.consume_key(command, egui::Key::Comma),
             )
         });
-        if run {
+        if run && self.setup_in_use().is_some() {
+            // the run on the computer QuickAI set up that is shown
+            if self.setup_run().is_some_and(|r| r.running() || r.working()) {
+                self.stop_setup_run();
+            } else {
+                self.start_setup_run(ctx, false);
+            }
+        } else if run {
             if matches!(state, ServerState::Starting | ServerState::Running) {
                 self.stop_server();
             } else if self.start_possible(active) {
@@ -322,14 +335,21 @@ impl App {
     // ---- the status bar --------------------------------------------------------------------------------
 
     fn show_status_bar(&mut self, ui: &mut egui::Ui, state: ServerState) {
-        let status = self.run_status_text(state);
-        let companion = self.companion_status();
-        // a tunnel to another computer being opened is a start that is on its way
-        let shown = if self.remote_opening() {
-            ServerState::Starting
-        } else {
-            state
+        let (shown, status) = match self.remote_run_status() {
+            Some(said) => said,
+            None => {
+                // a tunnel to another computer being opened is a start that is on its way
+                let shown = if self.remote_opening() {
+                    ServerState::Starting
+                } else {
+                    state
+                };
+                (shown, self.run_status_text(state))
+            }
         };
+        let companion = self
+            .companion_status()
+            .filter(|_| self.setup_in_use().is_none());
         ui.horizontal(|ui| {
             ui.set_min_height(20.0);
             theme::state_indicator(ui, shown, &status).on_hover_text(
@@ -698,7 +718,7 @@ impl App {
 
     /// The tabs under the model: the chat first, for an engine that has one, then the log, and the live traffic
     /// when it is on. A run that went wrong puts a red dot on the log until it is read.
-    fn show_tabs(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn show_tabs(&mut self, ui: &mut egui::Ui) {
         let live = self.traffic_proxy_on();
         let chat = self.can_chat();
         // a tab that is not there now shows the log, and stays the one chosen (it is kept in the settings)

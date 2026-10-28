@@ -20,7 +20,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::config::ConfigDirs;
-use crate::provision::EndpointInfo;
+use crate::provision::{EndpointInfo, Event};
 
 /// What runs on this computer, as `run.json` says it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -41,6 +41,30 @@ pub struct RunFile {
     pub endpoints: Vec<EndpointInfo>,
     #[serde(default)]
     pub model: Option<String>,
+    /// The steps of its plan, as far as they have gone: what the window shows while it is being prepared.
+    #[serde(default)]
+    pub steps: Vec<RunStep>,
+    /// The computer it runs on, in a few words (`Linux, NVIDIA GeForce RTX 4090`).
+    #[serde(default)]
+    pub computer: Option<String>,
+}
+
+/// A step of a run's plan (install a build, fetch a model, ...), and how far it has gone.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RunStep {
+    pub text: String,
+    /// `pending`, `doing` or `done`.
+    pub state: String,
+    /// Bytes done, and of how many, while it fetches or installs.
+    #[serde(default)]
+    pub done: u64,
+    #[serde(default)]
+    pub total: Option<u64>,
+    /// When it began and ended, in seconds since 1970.
+    #[serde(default)]
+    pub began: Option<u64>,
+    #[serde(default)]
+    pub ended: Option<u64>,
 }
 
 impl RunFile {
@@ -151,6 +175,8 @@ pub fn hold(dir: &Path, configuration: &str, detached: bool) -> Result<Held, Not
             state: "starting".into(),
             endpoints: Vec::new(),
             model: None,
+            steps: Vec::new(),
+            computer: None,
         },
         _lock: lock,
     };
@@ -162,6 +188,72 @@ impl Held {
     /// What `run.json` says.
     pub fn file(&self) -> &RunFile {
         &self.file
+    }
+
+    /// What `event` of the run says of it: its state, the steps of its plan and how far each has gone, and where it
+    /// listens once it is ready.
+    pub fn note(&mut self, event: &Event) {
+        match event {
+            Event::Computer { system, gpus, .. } => {
+                let mut words = vec![system.clone()];
+                words.extend(gpus.iter().cloned());
+                self.file.computer = Some(words.join(", "));
+            }
+            Event::Plan { steps } => {
+                self.file.state = "preparing".into();
+                self.file.steps = steps
+                    .iter()
+                    .map(|s| RunStep {
+                        text: s.text.clone(),
+                        state: "pending".into(),
+                        done: 0,
+                        total: s.bytes,
+                        began: None,
+                        ended: None,
+                    })
+                    .collect();
+            }
+            Event::Step { index, text, .. } => {
+                self.file.state = "preparing".into();
+                // a step the plan did not list (a model pulled by name) is added where it comes
+                while self.file.steps.len() < *index {
+                    self.file.steps.push(RunStep {
+                        text: text.clone(),
+                        state: "pending".into(),
+                        done: 0,
+                        total: None,
+                        began: None,
+                        ended: None,
+                    });
+                }
+                if let Some(step) = step(&mut self.file, *index) {
+                    step.state = "doing".into();
+                    step.began = Some(now());
+                }
+            }
+            Event::Progress {
+                index, done, total, ..
+            } => {
+                if let Some(step) = step(&mut self.file, *index) {
+                    step.done = *done;
+                    step.total = total.or(step.total);
+                }
+            }
+            Event::StepDone { index } => {
+                if let Some(step) = step(&mut self.file, *index) {
+                    step.state = "done".into();
+                    step.ended = Some(now());
+                }
+            }
+            Event::Ready { endpoints, model } => {
+                self.file.state = "ready".into();
+                self.file.endpoints = endpoints.clone();
+                self.file.model = model.clone();
+            }
+            Event::Stopping => self.file.state = "stopping".into(),
+            _ => return,
+        }
+        let _ = self.write();
     }
 
     /// Says the run is in `state`.
@@ -226,6 +318,8 @@ pub fn running(dir: &Path) -> Option<RunFile> {
             state: "starting".into(),
             endpoints: Vec::new(),
             model: None,
+            steps: Vec::new(),
+            computer: None,
         })),
         Err(TryLockError::Error(_)) => None,
     }
@@ -301,6 +395,11 @@ pub fn status(dir: &Path, events: usize) -> Status {
         },
         running,
     }
+}
+
+/// The step `index` of `file` (the provisioner counts them from 1).
+fn step(file: &mut RunFile, index: usize) -> Option<&mut RunStep> {
+    file.steps.get_mut(index.checked_sub(1)?)
 }
 
 fn open_lock(dir: &Path) -> std::io::Result<File> {

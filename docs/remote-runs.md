@@ -133,6 +133,28 @@ the window says the command that stops it (`sudo systemctl stop ollama`) and wai
 The same check is made for a run on this computer, where it replaces what the window does today with a port that is
 taken (*Use port N*, and C171's attach to an Ollama already answering).
 
+### 3.3 Several runs at once, and the page of each
+
+The user picked option A of the samples (`mockups/remote-runs/`), and: "It should also be able to run locally or run
+multiple remotes. The user has option to switch as he chooses the computer - the chat attaches automatically to the
+connected (running cfg) etc".
+
+- **Each computer has a run of its own**, and this computer's goes on beside them: a run here, one on Studio and one on
+  a rented server can all go on at once. Choosing a computer in the status bar changes what the page shows, and stops
+  nothing. Only a computer the window attaches to (C171) shares the window's one session with this computer, and
+  waits for it to be free.
+- **The page of a computer QuickAI sets up** (option A): the configuration's name in the head, with what its run is
+  doing (*Getting ready*, *Running on Studio*, *Stopping…*, *Stopped*), the computer under it (what its run said of
+  it: its system and its cards), and at the right the play button, or while it runs the chat page in a browser,
+  Connect an app and Stop. While it gets ready, its steps: QuickAI on the computer, each step of the configuration's
+  plan with how far it has gone (`run.json` keeps them, `run_file::RunStep`), and the start. Once it runs, the
+  addresses here, each with its copy button, and that it runs there until it is stopped.
+- **The chat attaches to the run that is shown**: its API here, through the tunnel, and the model it runs. Connect an
+  app gives the same address. The status bar says what the run there does, and the menu marks a computer whose run
+  goes on with a green dot.
+- **When the window starts**, each computer QuickAI sets up is asked what runs there, and a run that goes on is found
+  again with its ports brought here.
+
 ## 4. Every release carries the headless program for every system
 
 Each package of the window (the Windows zip, the macOS disk image, the AppImage and the Linux tar.gz) carries a
