@@ -10,16 +10,17 @@ use crate::gpu;
 use crate::launch;
 
 impl App {
-    /// Whether the engine's program cannot be found and there is no use in starting: an engine that
-    /// is downloaded on request (not bundled) says so up front. A bundled engine is tried and says
-    /// what it could not find when the person starts it, as it always has.
+    /// Whether the engine's program cannot be found and there is no use in starting: the page that installs it
+    /// is shown instead. A bundled engine that is not beside the application (a build of QuickAI that came
+    /// without it, a program of the person's own that was moved) is installed the same way when its document
+    /// has builds to download; one with none is tried and says what it could not find.
     pub(super) fn engine_missing(&self) -> bool {
         // one that runs on another computer is that computer's to have
-        if self.remote_in_use().is_some() {
+        if self.remote_in_use().is_some() || self.binary.is_file() {
             return false;
         }
-        let bundled = self.engine_doc().is_some_and(|e| e.doc.engine.bundled);
-        !bundled && !self.binary.is_file()
+        self.engine_doc()
+            .is_none_or(|e| !e.doc.engine.bundled || e.doc.acquire.is_some())
     }
 
     /// Whether the page is the one that installs the engine: it is not here, and nothing of it runs (an Ollama the
