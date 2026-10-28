@@ -59,7 +59,7 @@ Eight documents, one for each category, in `crates/quickai-runtime/manifests/cat
 
 | Page | Models | What is in it |
 |---|---|---|
-| Chat | 28 | Assistants from 230 MB to 14 GB: LFM2.5, Qwen3.5 (0.8B to 9B), Gemma 4 (E2B, E4B, 12B), Granite 4.2, Ministral 3, Llama 3.2 and 3.1, Phi-4-mini, SmolLM3, MiniCPM5, Falcon-H1, Olmo 3, Mistral Small 3.2, and the two 1-bit Bonsai models that ship with QuickAI |
+| Chat | 27 | Assistants from 230 MB to 14 GB: LFM2.5, Qwen3.5 (0.8B to 9B), Gemma 4 (E2B, E4B, 12B), Granite 4.2, Ministral 3, Llama 3.2 and 3.1, Phi-4-mini, SmolLM3, MiniCPM5, Falcon-H1, Olmo 3, Mistral Small 3.2, and Bonsai 2 4B, the ternary model that ships with QuickAI and starts with its thinking off |
 | Reasoning | 10 | Models that think before they answer: LFM2.5 Thinking, Qwen3 4B Thinking, Phi-4-mini Reasoning, Nemotron 3 Nano, Ministral 3 Reasoning, DeepSeek-R1-0528 (Qwen3 8B), Olmo 3 Think, gpt-oss 20B, Magistral Small |
 | Code | 7 | Qwen2.5-Coder (0.5B, 1.5B, 7B, 14B), Seed-Coder 8B, Devstral Small, Qwen3-Coder 30B-A3B (the one large model, for a big computer) |
 | Vision | 9 | SmolVLM2, LFM2.5-VL (450M, 1.6B, 3B), MiniCPM-V 4.6, Qwen3-VL (2B, 4B, 8B) |
@@ -68,7 +68,7 @@ Eight documents, one for each category, in `crates/quickai-runtime/manifests/cat
 | Translation | 4 | Hy-MT2 (1.8B, 7B) and TranslateGemma (4B, 12B; Ollama only) |
 | Embedding | 12 | EmbeddingGemma, BGE (small, M3), Nomic Embed (v1.5, v2 MoE), mxbai-embed-large, LFM2.5 Embedding, Qwen3 Embedding (0.6B, 4B, 8B), all-MiniLM, and a reranker (Qwen3 Reranker 0.6B) |
 
-78 are offered by llama.cpp (as files from Hugging Face) and 50 by Ollama (as a name to pull), 47 by both. By the size of their smallest button, 57 are small, 23 medium
+77 are offered by llama.cpp (as files from Hugging Face) and 50 by Ollama (as a name to pull), 47 by both. By the size of their smallest button, 56 are small, 23 medium
 and 1 large: the list is about small and medium models, as asked, and the large ones are for a later page. The 14 models "Start here" shows are one or two for each need.
 
 **What a model must have to be in it** (checked by tests, J08): a maker, a licence and a note; a commit and a SHA-256 on every file; a projector in the list
@@ -173,7 +173,7 @@ All on 2026-10-07, on this machine (Linux, CPU only, the pinned llama.cpp b11007
   `scripts/catalog.py check` says so again, offline, from what it learned (`build/.cache/catalog`).
 - **The list against the sites, again, by hand** (`p3_j22`): the 78 llama.cpp runs and the 50 Ollama runs (128 for 81 models) still have the commit, the files, the sizes and the hashes the list says. The `video` page (WP4.11, one model, one run for ComfyUI) was read from the hub the same way on 2026-10-08, and its files were fetched by the window's button, hashed again and listed by a ComfyUI started on them.
 - **The list as a document** (`p3_j08` and the rest of group J, `cargo test -p quickai-core --test p3_catalog` and the application's `app/engine.rs`): it loads without a warning, every category has at least three models, every pin is a commit, every model that
-  reads pictures or listens has its projector and the bundle that fetches it, 8 to 16 models are "Start here" with one for each need, no more than a twentieth is large, and the two Bonsai pins are the packaging's (`build/config.env`).
+  reads pictures or listens has its projector and the bundle that fetches it, 8 to 16 models are "Start here" with one for each need, no more than a twentieth is large, and the Bonsai 2 4B pin is the packaging's (`build/config.env`).
 - **The window and what a click does, by the GUI suite** `catalog` (14 cases, [the test repository's docs/17_catalog.md](../../test/docs/17_catalog.md)), against a fake Hugging Face and a fake `llama-server`: opening asks no site anything, the categories and their counts, words, the two rows of a model with a projector, the bundled download as one job and the model alone as the other, a file that is not the one the list was made for refused and not kept, `--embeddings` and `--mmproj` on the command line, a person's documents adding and hiding models, Escape, Ollama's names pulled, a note shown to its end, and every section under the one before it.
 - **Real models, run for real** (the files of the list fetched from the hub, each checked against its hash, started by the pinned `llama-server` the way the application starts it, with `--mmproj` and the mode words, and asked one thing of the right kind; context 4096, no GPU):
 

@@ -841,8 +841,8 @@ mod tests {
 
     // ---- real-model tests, ignored by default ---------------------------------------------------------------
 
-    /// Both real-model integration tests below load the actual Bonsai-8B
-    /// model with full GPU offload; running them concurrently (the default
+    /// Both real-model integration tests below load the actual Bonsai 2 4B
+    /// model (the one the packages ship) with full GPU offload; running them concurrently (the default
     /// with `cargo test`) would make two llama-server processes fight over
     /// the same GPU/VRAM. This forces them to run one at a time regardless
     /// of test-harness parallelism.
@@ -854,13 +854,13 @@ mod tests {
     ) -> Option<(quickai_core::plan::RunPlan, ModelEntry, PathBuf)> {
         let registry = embedded_registry();
         let binary = crate::launch::default_binary(&registry, "llamacpp");
-        let model_path = crate::paths::bundled_models_dir().join("Bonsai-8B-Q1_0.gguf");
+        let model_path = crate::paths::bundled_models_dir().join("Ternary-Bonsai-2-4B-Q2_0.gguf");
         assert!(binary.is_file(), "llama-server not built at {binary:?}");
         assert!(model_path.is_file(), "test model missing at {model_path:?}");
         let model = ModelEntry {
-            filename: "Bonsai-8B-Q1_0.gguf".into(),
+            filename: "Ternary-Bonsai-2-4B-Q2_0.gguf".into(),
             path: model_path,
-            display: "bonsai-8b-test".into(),
+            display: "bonsai-2-4b-test".into(),
             note: String::new(),
             bundled: true,
             size_bytes: 0,
@@ -889,14 +889,14 @@ mod tests {
     }
 
     /// Full start -> healthy -> stop -> idle cycle against the real
-    /// Bonsai-8B model and the real llama-server binary (dev-tree paths),
+    /// Bonsai 2 4B model and the real llama-server binary (dev-tree paths),
     /// matching the manual validation done for the Python prototype.
     ///
     /// Ignored by default: a fresh clone (and CI) has neither the binary nor
     /// the model, since `llama.cpp/` and `models/` are gitignored. Run it with
     /// `cargo test -p quickai -- --ignored` once both are in place.
     #[test]
-    #[ignore = "needs llama.cpp/build/bin/llama-server and models/Bonsai-8B-Q1_0.gguf"]
+    #[ignore = "needs llama.cpp/build/bin/llama-server and models/Ternary-Bonsai-2-4B-Q2_0.gguf"]
     fn start_running_stop_cycle() {
         let _guard = MODEL_TEST_LOCK.lock().unwrap();
         let (plan, model, _) = real_run(8199, false).expect("a plan");
@@ -954,7 +954,7 @@ mod tests {
     ///
     /// Ignored by default, for the same reason as `start_running_stop_cycle`.
     #[test]
-    #[ignore = "needs llama.cpp/build/bin/llama-server and models/Bonsai-8B-Q1_0.gguf"]
+    #[ignore = "needs llama.cpp/build/bin/llama-server and models/Ternary-Bonsai-2-4B-Q2_0.gguf"]
     fn start_stop_with_proxy_frees_the_public_port() {
         let _guard = MODEL_TEST_LOCK.lock().unwrap();
         const PUBLIC_PORT: u16 = 8198;

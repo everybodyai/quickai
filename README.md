@@ -38,8 +38,8 @@ prompts never leave your computer.
 - **Private by default.** The models run on your computer, and the servers QuickAI starts listen on `127.0.0.1`
   only. No telemetry, no accounts, no update checks. It uses the internet only when you click something that
   needs it. [PRIVACY.md](PRIVACY.md) lists every host it can contact, and why.
-- **Works out of the box.** It ships with llama.cpp and two 1-bit Bonsai models (1.1 GB and 0.25 GB), so your
-  first chat needs no download at all.
+- **Works out of the box.** It ships with llama.cpp and Bonsai 2 4B (ternary weights, 1.2 GB), so your first
+  chat needs no download at all.
 - **Runs on ordinary hardware.** GPU acceleration through Vulkan on AMD, NVIDIA and Intel. QuickAI suggests a
   model that fits your memory and estimates how fast it will run before you start it.
 - **80+ recommended models.** A curated list for chat, reasoning, code, vision, document reading (OCR), speech,
@@ -59,7 +59,7 @@ prompts never leave your computer.
 > page, with packages for the AUR, Homebrew, Snap, Scoop, Chocolatey and the Microsoft Store to follow. To hear when it's out, sign up at
 > [everybodyai.dev](https://everybodyai.dev/quickai). Until then, [build it from source](#build-from-source).
 
-Each package bundles QuickAI, llama.cpp's `llama-server` and the two Bonsai models, and runs as it is: nothing
+Each package bundles QuickAI, llama.cpp's `llama-server` and the Bonsai 2 4B model, and runs as it is: nothing
 to install first. The Linux packages run on glibc 2.34 and newer (Ubuntu 22.04 and later); the Windows package
 on Windows 10 and 11; the Mac app on macOS 13.3 (Ventura) and later, with Metal on Apple silicon.
 
@@ -68,7 +68,7 @@ opened: choose **Done**, then press **Open Anyway** in **System Settings → Pri
 
 ## Quick start
 
-1. **Start QuickAI.** Bonsai 8B is already selected, or QuickAI's recommendation for your computer is.
+1. **Start QuickAI.** Bonsai 2 4B is already selected, or QuickAI's recommendation for your computer is.
 2. **Press Start** beside the model's name. The status bar at the foot of the window turns green and says *Running*.
 3. **Chat** in the **Chat** tab under the model, or press **Connect an app** to use the model from another app (or
    to chat in your browser).

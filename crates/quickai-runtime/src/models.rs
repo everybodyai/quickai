@@ -19,39 +19,32 @@ pub struct KnownModel {
     /// "pick a lighter one if this machine is slow" has an obvious next
     /// step even before Model URL/Look up online are touched.
     pub bundled: bool,
+    /// How the engine is started for it, as the id of one of its `[[models.mode]]`, when no record beside
+    /// the weights says (the model the packages ship has none).
+    pub mode: Option<&'static str>,
 }
 
 pub const KNOWN_MODELS: &[KnownModel] = &[
     KnownModel {
-        filename: "Bonsai-8B-Q1_0.gguf",
-        display: "Bonsai 8B (1-bit Q1_0)",
-        note: "1-bit quantized, ~1.1 GB, Apache-2.0. Bundled with this package.",
+        filename: "Ternary-Bonsai-2-4B-Q2_0.gguf",
+        display: "Bonsai 2 4B (ternary Q2_0)",
+        note: "Ternary weights, ~1.2 GB, Apache-2.0, made by Prism ML from Qwen3.5-4B. Bundled with this package.",
         bundled: true,
-    },
-    KnownModel {
-        filename: "Bonsai-1.7B-Q1_0.gguf",
-        display: "Bonsai 1.7B (1-bit Q1_0)",
-        note: "1-bit quantized, ~0.25 GB, Apache-2.0. Bundled with this package — the \
-               lighter pick if the 8B runs slowly on this machine.",
-        bundled: true,
-    },
-    KnownModel {
-        filename: "bonsai-1.7b-q1_0.gguf",
-        display: "Bonsai 1.7B (1-bit Q1_0)",
-        note: "1-bit quantized, ~0.25 GB, Apache-2.0.",
-        bundled: true,
+        mode: Some("direct"),
     },
     KnownModel {
         filename: "qwen3-1.7b-q8_0.gguf",
         display: "Qwen3 1.7B (Q8_0)",
         note: "Instruction-tuned chat model, small and fast.",
         bundled: false,
+        mode: None,
     },
     KnownModel {
         filename: "qwen3-4b-q4_k_m.gguf",
         display: "Qwen3 4B (Q4_K_M)",
         note: "Instruction-tuned chat model, larger and slower than the 1.7B.",
         bundled: false,
+        mode: None,
     },
 ];
 
@@ -248,7 +241,8 @@ fn discover_models_of(models_dir: &Path, exts: &[String], hide: &[String]) -> Ve
             let known = KNOWN_MODELS.iter().find(|m| m.filename == filename);
             let size_bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
             let companions = bundles::companions(&path);
-            let mode = bundles::mode(&path);
+            let mode =
+                bundles::mode(&path).or_else(|| known.and_then(|m| m.mode).map(str::to_string));
             let mut note = known.map(|m| m.note.to_string()).unwrap_or_default();
             for companion in &companions {
                 if !note.is_empty() {
@@ -400,17 +394,20 @@ mod tests {
     fn p3_b16b_both_folders_are_scanned_the_same_way_and_a_known_models_note_stays() {
         let bundled = scratch("b16-bundled");
         let user = scratch("b16-user");
-        touch(&bundled, "Bonsai-1.7B-Q1_0.gguf");
+        touch(&bundled, "Ternary-Bonsai-2-4B-Q2_0.gguf");
         touch(&bundled, "mmproj-bundled.gguf");
         touch(&user, "z.gguf");
         touch(&user, "mmproj-user.gguf");
         let models = discover_all(&bundled, &user, &hide());
-        assert_eq!(names(&models), ["Bonsai-1.7B-Q1_0.gguf", "z.gguf"]);
+        assert_eq!(names(&models), ["Ternary-Bonsai-2-4B-Q2_0.gguf", "z.gguf"]);
         assert!(
             models[0].bundled && models[0].note.contains("Bundled with this package"),
             "{}",
             models[0].note
         );
+        // the model the packages ship starts with its thinking off, with no record beside it to say so
+        assert_eq!(models[0].mode.as_deref(), Some("direct"));
+        assert_eq!(models[1].mode, None);
         // a folder that is not there is no models
         assert!(discover_models(&bundled.join("nope"), &hide()).is_empty());
         // no patterns: what a folder holds is what is listed, as it was before bundles

@@ -1664,7 +1664,7 @@ mod tests {
         assert!(
             said_now
                 .iter()
-                .any(|t| t == "llama.cpp - Bonsai 1.7B (1-bit Q1_0)" || t == "llama.cpp"),
+                .any(|t| t == "llama.cpp - Bonsai 2 4B (ternary Q2_0)" || t == "llama.cpp"),
             "{said_now:?}"
         );
         assert!(

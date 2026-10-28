@@ -40,10 +40,13 @@ cmake --build build -j$(nproc)
 On Debian and Ubuntu the Vulkan build needs `libvulkan-dev glslc glslang-tools spirv-headers vulkan-tools
 ninja-build`. `vulkaninfo --summary` confirms that the GPU is visible to Vulkan.
 
-Put GGUF models in `models/`; `cargo run` lists what is in it. The two models the packages bundle are
-[Bonsai 8B](https://huggingface.co/prism-ml/Bonsai-8B-gguf) (`Bonsai-8B-Q1_0.gguf`, about 1.1 GB) and
-[Bonsai 1.7B](https://huggingface.co/prism-ml/Bonsai-1.7B-gguf) (`Bonsai-1.7B-Q1_0.gguf`, about 0.25 GB), both
-1-bit Q1_0 GGUFs that mainline llama.cpp runs.
+Put GGUF models in `models/`; `cargo run` lists what is in it. The model the packages bundle is
+[Bonsai 2 4B](https://huggingface.co/prism-ml/Ternary-Bonsai-2-4B-gguf) (`Ternary-Bonsai-2-4B-Q2_0.gguf`, about
+1.2 GB), a ternary Q2_0 GGUF. Mainline llama.cpp runs it from release b11889 on (the runtime of #29600; an older
+build loads the file and answers nonsense), and QuickAI starts it with its thinking off.
+
+Without a `llama.cpp/` of your own, the window offers to install llama.cpp: **Install llama.cpp** downloads the
+release the packages ship into `~/.quickai/llama-bin`.
 
 To update llama.cpp later: `git pull` in `llama.cpp/` and run the two `cmake` lines again.
 
@@ -72,7 +75,7 @@ cargo run -p quickai -- config check --strict --embedded
 ```
 
 The tests that need a real `llama-server` and model are `#[ignore]`d, so `cargo test` passes on a fresh clone.
-With `llama.cpp/build/bin/llama-server` built and `models/Bonsai-8B-Q1_0.gguf` in place, run them with
+With `llama.cpp/build/bin/llama-server` built and `models/Ternary-Bonsai-2-4B-Q2_0.gguf` in place, run them with
 `cargo test -p quickai -- --ignored`.
 
 The window is also tested end to end, through its GUI, by a Robot Framework suite of several hundred cases. It
