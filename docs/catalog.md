@@ -8,10 +8,51 @@ still Phase 4's. Where this document and the generated page ([reference/catalog-
 
 **Models → Recommended** (and *See all recommended models* under the suggestions of **Add a model**, which are the
 list's own models to start with, of the kinds the chat can talk to, in the size that fits this computer), for
-llama.cpp and for Ollama, opens a window:
+llama.cpp, Ollama and ComfyUI, opens a window on **what the person wants to do** (work package 4.34; the user picked this
+of four mockups, and said that a person can choose several, and that a choice nothing does may show nothing):
 
 ```
 Recommended models                                                                        x
+What do you want to do?
+ [Chat] [Write code] [Solve problems] [Read pictures] [Read scans] [Translate] [Transcribe] [Search my files]
+Best for this computer (30.6 GB of memory)
+ +- RECOMMENDED ------------+  +- SMALLER, FASTER --------+  +- SMALLEST ----------------+
+ | Qwen3.5 9B               |  | Qwen3.5 4B               |  | LFM2.5 1.2B Instruct      |
+ | (eye) (bulb) (tools) (globe) |  | ...                  |  | (bolt)                    |
+ | The all-rounder, one size up. | The all-rounder to start with. | Tiny and fast: try it first. |
+ | [Download · 6.1 GB] Other sizes | [3.2 GB] Other sizes  |  | v Installed               |
+ +--------------------------+  +--------------------------+  +---------------------------+
+ Also good:  Gemma 4 E4B  Reads text, pictures and audio.                 (eye)(ear)(globe) [5.7 GB] Other sizes
+ All 53 models that do this
+[ Or search all 77 models                                              ] [Browse all 77]
+Nothing is downloaded until you click. The list was checked on 2026-10-07.
+```
+
+- **The tasks are the vocabulary's** (`[[task]]` of `vocab/core.toml`: Chat, Write code, Solve problems, Read pictures, Read scans, Translate,
+  Transcribe, Search my files, Make pictures, Make videos), each a button with a picture; a task no model of the engine does has none (ComfyUI's
+  window has *Make videos* alone). The first is chosen when the window opens. **A person may choose several**: the models shown do every one,
+  and when no model does them all the page says *No model in the list does all of these. Choose fewer.*
+- **A model does a task** when the task's rule holds for it (its type is one of the task's, it reads what the task reads, or it has a feature
+  the task names: Solve problems is the reasoning models and the ones that think) or when the list says so (`tasks`: Qwen3-VL reads scans
+  well, Granite Speech translates speech). The first type of a task is its own: the picks come from the models of that type when there are
+  any, so that Chat shows assistants and not the code models that also chat (`quickai_core::lookup::picks`).
+- **The picks are for this computer**: the largest of the list's models to start with (`start`) that fits with room to spare (half the
+  memory, as everywhere: `fit`), a smaller one about half its size, and the smallest; then the other models to start with that do it, as
+  *Also good*. When nothing fits with room to spare the smallest is shown, and says that it is more than the memory holds well.
+- **One button each**: what the list recommends (`best`), with its projector when it has one, as one download. *Other sizes* are the other
+  files in plain words: *Standard* (4-bit), *Better quality* (5-bit), *High quality* (6- and 8-bit), *Full quality* (16-bit), and
+  *text only* for the weights of a model that reads more with its projector; the file's own words are in the hover.
+- **Less to read**: a line under each name (`tagline`), small pictures for what a model can do (reads pictures, hears audio, thinks, calls
+  tools, many languages, fast; their words on hover); the maker, licence, size and context are on the list.
+- **The whole list is a click away**: *All N models that do this* opens it with only those models (a line says so, with *Show all*);
+  *Browse all* opens it whole; typing in the search box opens it with the words, in the same box, with the keyboard still there. The list
+  has the way back at its top.
+
+**Browse all** is the list as it was before the first page:
+
+```
+Recommended models                                                                        x
+< What do you want to do?
 78 models that run with llama.cpp. The list was checked on 2026-10-07. Nothing is downloaded until you click a size.
 This computer has 31.0 GB of memory: sizes that would not fit are greyed.
 Search: [ a name, a maker, or what you need: image, code, thinking...        ] Size: Any  Small (< 4 GB)  Medium (4-15 GB)  Large (15 GB+)
@@ -91,12 +132,14 @@ name = "Qwen3.5 4B"
 by = "Alibaba (Qwen)"
 type = "chat"                     # an id of the vocabulary's [[model_type]]: chat reasoning code translation vision documents embedding audio
 note = "The all-rounder to start with. ..."
+tagline = "The all-rounder to start with."  # the line under its name on the first page (a warning beyond 80 characters)
 license = "Apache-2.0"
 params = "4.2B"
 context = 262144
 input = ["text", "image"]         # what it reads: ids of the vocabulary's [[modality]]
 features = ["thinking", "tools", "multilingual"]
-start = true                      # shown by "Start here"
+# tasks = ["scans"]               # ids of the vocabulary's [[task]] it does besides the ones the tasks' rules give it
+start = true                      # shown by "Start here", and picked first on the first page
 
 [model.run.llamacpp]              # how an engine gets and runs it, by the engine's id
 repo = "unsloth/Qwen3.5-4B-GGUF"

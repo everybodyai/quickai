@@ -127,6 +127,8 @@ pub struct Browse {
     pub words: String,
     /// The id of the size class whose buttons are shown; `None` shows every size.
     pub size: Option<String>,
+    /// Ids of tasks an entry must do, every one (`Card::tasks`); empty, any entry.
+    pub tasks: Vec<String>,
 }
 
 /// How many entries each choice of `Scope` would show with the words and the size as they are.
@@ -136,6 +138,15 @@ pub struct Counts {
     pub start: usize,
     /// The types that have an entry, in the order their sections are shown, with how many.
     pub types: Vec<(String, usize)>,
+}
+
+/// Whether an entry does every task of `tasks` (an entry no list knows does none).
+pub fn does_all(entry: &Entry, tasks: &[String]) -> bool {
+    tasks.is_empty()
+        || entry
+            .card
+            .as_ref()
+            .is_some_and(|c| tasks.iter().all(|t| c.tasks.contains(t)))
 }
 
 /// What `browse` makes of a list: the sections to draw and the counts for the choices beside them.
@@ -183,6 +194,7 @@ pub fn browse(entries: &[Entry], types: &[TypeDef], what: &Browse) -> Browsed {
     let texts: Vec<String> = entries.iter().map(|e| search_text(e, types)).collect();
     let matches = |i: usize, entry: &Entry| {
         has_words(&texts[i], &what.words)
+            && does_all(entry, &what.tasks)
             && what
                 .size
                 .as_deref()

@@ -1037,6 +1037,14 @@ mod tests {
             texts.iter().any(|t| t.contains("LTX-Video 2B distilled")),
             "{texts:?}"
         );
+        // the one thing it does is the one button of the first page, chosen
+        assert!(texts.iter().any(|t| t == "Make videos"), "{texts:?}");
+        assert_eq!(app.catalog.chosen, ["make-videos"]);
+        // and in the list, the row of the download with what goes with it
+        app.catalog.page = super::super::catalog_view::Page::List;
+        for _ in 0..3 {
+            texts = painted(&ctx, |ui| app.show_catalog_window(ui.ctx()));
+        }
         assert!(
             texts
                 .iter()

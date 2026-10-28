@@ -15,6 +15,36 @@ pub struct TypeDef {
     pub rule: TypeMatch,
 }
 
+/// Something a person can want a model for: Chat, Write code, Read pictures, ...
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TaskDef {
+    pub id: String,
+    pub label: String,
+    pub help: String,
+    /// Where its button stands: lower first, ties in the order of the document.
+    pub order: i64,
+    /// Ids of model types; the first is the task's own.
+    pub types: Vec<String>,
+    /// Ids of modalities the model reads.
+    pub input: Vec<String>,
+    /// Features of a model of the list.
+    pub features: Vec<String>,
+}
+
+impl TaskDef {
+    /// Whether a model of `kind` that reads `input` and has `features` does it by the task's rule.
+    pub fn holds(&self, kind: &str, input: &[String], features: &[String]) -> bool {
+        self.types.iter().any(|t| t == kind)
+            || self.input.iter().any(|i| input.contains(i))
+            || self.features.iter().any(|f| features.contains(f))
+    }
+
+    /// The task's own type, whose models come first among the ones that do it.
+    pub fn home(&self) -> Option<&str> {
+        self.types.first().map(String::as_str)
+    }
+}
+
 /// What makes a model one of a type. Every list is lower case; the rule holds when any list has a hit.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TypeMatch {

@@ -19,6 +19,9 @@ pub struct VocabDoc {
     /// The bands of size a look-up filters by, from the smallest up.
     #[serde(default, rename = "size_class")]
     pub size_classes: Vec<SizeClassDoc>,
+    /// What a person can want a model for, the buttons the recommended list opens with (docs/catalog.md).
+    #[serde(default, rename = "task")]
+    pub tasks: Vec<TaskDoc>,
     /// The sentences of the notes a person is told about a configuration (docs/configurations.md,
     /// section 7). The level of a note is the code's, and a document cannot change it.
     #[serde(default, rename = "finding")]
@@ -83,6 +86,36 @@ pub struct TypeRuleDef {
     /// A kind of companion file found beside the model (`mmproj`).
     #[serde(default)]
     pub companions: Vec<String>,
+}
+
+/// Something a person can want a model for: Chat, Write code, Read pictures, ...
+#[derive(Clone, Debug, Deserialize)]
+pub struct TaskDoc {
+    pub id: String,
+    /// What its button says (default: the id).
+    pub label: Option<String>,
+    pub help: Option<String>,
+    /// Where its button stands among the others: lower first (default: after the ones that say, in the
+    /// order written).
+    pub order: Option<i64>,
+    /// Which models do it; any one hit is enough. A model of the list can also say it does it (`tasks`).
+    #[serde(default, rename = "match")]
+    pub rule: TaskRuleDoc,
+}
+
+/// What a task's `match` may say.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct TaskRuleDoc {
+    /// Ids of `[[model_type]]`. The first is the task's own: its models come first among the ones that
+    /// do it.
+    #[serde(default)]
+    pub types: Vec<String>,
+    /// Ids of `[[modality]]` the model reads (`image`).
+    #[serde(default)]
+    pub input: Vec<String>,
+    /// Features a model of the list has (`thinking`).
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 /// A band of sizes.

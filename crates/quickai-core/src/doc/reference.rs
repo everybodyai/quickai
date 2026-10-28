@@ -920,6 +920,28 @@ pub const VOCAB_GROUPS: &[Group] = &[
         ],
     },
     Group {
+        heading: "`[[task]]`",
+        intro: "Something a person can want a model for, which is a button of the first page of the recommended list (Chat, Write code, Read pictures, ...; docs/catalog.md, section 1). A person chooses one or several, and the page shows the models of the list that do every one. A model does a task when the task's `match` holds for it or when it says so itself (its `tasks`); a task no model of the engine does has no button. The list merges by `id`.",
+        source: Some("TaskDoc"),
+        attributes: &[
+            a("id", "text", "Lower case letters, digits and `.`, `_`, `-` (`pictures`). Required."),
+            a("label", "text", "What its button says (`Read pictures`); default the id."),
+            a("help", "text", "What it means, shown when the pointer rests on the button."),
+            a("order", "whole number", "Where its button stands: lowest first; default after the ones that say, in the order written."),
+            a("match", "table, below", "Which models do it; any one hit is enough."),
+        ],
+    },
+    Group {
+        heading: "`[task.match]`",
+        intro: "What a task's rule looks at. An id that no vocabulary has matches nothing.",
+        source: Some("TaskRuleDoc"),
+        attributes: &[
+            a("types", "list of text", "Ids of `[[model_type]]`. The first is the task's own: the page picks from the models of that type first, so that a person who asks for Chat is shown assistants before the code models that also chat."),
+            a("input", "list of text", "Ids of `[[modality]]` the model reads (`image`)."),
+            a("features", "list of text", "Features a model of the list has (`thinking`)."),
+        ],
+    },
+    Group {
         heading: "`[[finding]]`",
         intro: "The sentence of one note that a person is told about a configuration (docs/configurations.md, section 7): `too_new`, `unknown_engine`, `build_missing` and the rest. The code decides when a note is made and how much it matters (it stops an import, asks a question, warns or only says); a document can reword it and cannot change that. A vocabulary that gives some of the notes gives all of them. The list merges by `id`, so a document of the person's can reword one.",
         source: Some("FindingDef"),
@@ -1014,7 +1036,7 @@ pub fn render_vocab() -> String {
          sorts what it found by, and the sentences of the notes a person is told about a configuration. A vocabulary can name things and describe them; it cannot \
          start a program or reach a host. A document in the user's configuration directory with the same \
          `id` patches the embedded one: tables merge by key and `[[modality]]`, `[[api]]`, `[[model_type]]`, \
-         `[[size_class]]` and `[[finding]]` entries by `id` \
+         `[[size_class]]`, `[[task]]` and `[[finding]]` entries by `id` \
          (docs/architecture.md, section 5.2). A key this version does not know is a warning; \
          `quickai config check --strict` makes warnings fail.\n\n\
          The primitives a document relies on go in `requires` (`requires = { primitives = [\"decode@1\"] }` \
@@ -1068,12 +1090,14 @@ pub const CATALOG_GROUPS: &[Group] = &[
             a("by", "text", "Who made it."),
             a("type", "text", "An id of the vocabulary's `[[model_type]]` (`chat`, `code`, `vision`, ...); default the vocabulary's default type. One no vocabulary defines is an error, with the nearest one suggested."),
             a("note", "text", "What it is good for, in a sentence or two (a warning beyond 600 characters)."),
+            a("tagline", "text", "What it is in a few words, the line under its name on the first page of the list (a warning beyond 80 characters)."),
             a("license", "text", "Its licence, as its makers name it."),
             a("params", "text", "How big it is as its makers say (`4B`, `30B-A3B`)."),
             a("context", "whole number", "The tokens of context it was made for."),
             a("input", "list of text", "What it reads, as ids of the vocabulary's `[[modality]]` (`text`, `image`, `audio`); default `text`."),
             a("features", "list of text", "What else is worth knowing, as short lower case words of 24 characters at most, eight at most (`thinking`, `tools`, `multilingual`). They are searched."),
-            a("start", "bool", "Whether \"Start here\" shows it. Default false."),
+            a("tasks", "list of text", "Ids of the vocabulary's `[[task]]` it does besides the ones the tasks' rules give it (`scans` for a vision model that reads documents well). One no vocabulary defines is an error."),
+            a("start", "bool", "Whether \"Start here\" shows it, and whether the first page of the list picks it before the others. Default false."),
             a("bundled", "bool", "Whether the packages ship it, so that it counts as there when its file is in the folder of the models that come with the application. Default false."),
             a("hidden", "bool", "A person's document sets it to take a shipped model out of the list: it is not checked and takes no name. Default false."),
             a("run", "table of tables, below", "How each engine gets and runs it, `[model.run.<engine id>]`. An engine with no table does not offer the model; a model that no engine offers is a warning. An engine id that does not exist is an error."),

@@ -173,6 +173,10 @@ pub struct Card {
     pub input: Vec<String>,
     /// What else is worth knowing, as short words.
     pub features: Vec<String>,
+    /// What it is in a few words; empty when the list says none.
+    pub tagline: String,
+    /// Ids of the tasks it does (`chat`, `code`): what the list's first page asks a person for.
+    pub tasks: Vec<String>,
     /// It is one of the models "Start here" shows.
     pub start: bool,
     /// The packages ship it.

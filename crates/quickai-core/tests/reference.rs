@@ -227,6 +227,17 @@ below = "4GiB"
 [[size_class]]
 id = "large"
 
+[[task]]
+id = "pictures"
+label = "Read pictures"
+help = "Say what is in a picture."
+order = 40
+
+[task.match]
+types = ["vision"]
+input = ["image"]
+features = ["sees"]
+
 [[finding]]
 id = "too_new"
 text = "Made by a newer QuickAI: it needs {needs}, and this is {this}."
@@ -277,11 +288,13 @@ name = "Alpha 4B"
 by = "Acme"
 type = "chat"
 note = "A small chat model."
+tagline = "Small, and it thinks."
 license = "Apache-2.0"
 params = "4B"
 context = 131072
 input = ["text", "image"]
 features = ["thinking", "tools"]
+tasks = ["reason"]
 start = true
 bundled = false
 hidden = false
