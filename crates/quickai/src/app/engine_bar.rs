@@ -167,19 +167,35 @@ impl App {
         self.runtime.auto_install = Some(ctx.clone());
     }
 
-    /// The look-up the page asked for has ended: the first build it offers that is whole (not changed since it was
-    /// tested) and meant for this machine's graphics is installed, as its "Use" would have it. The feed offers the
-    /// release the document was tested with first, so that is the one when the feed has it.
+    /// The look-up the page asked for has ended: the build the headless program would choose is installed, as its
+    /// "Use" would have it (`acquire::pick_build`: of the release the document was tested with when the feed has it,
+    /// the one for this computer's graphics card, never one changed since it was tested). The first build with no
+    /// warning was taken before, which for llama.cpp was the first name in the alphabet: OpenVINO, for an AMD card.
     pub(super) fn install_first_build(&mut self, failed: bool, ctx: &egui::Context) {
         if failed {
             self.runtime.setup_failure = Some(self.runtime.lookup_status.clone());
             return;
         }
         let rows = &self.runtime.lookup_results;
-        let pick = rows
+        let offered: Vec<acquire::Offered<'_>> = rows
             .iter()
-            .position(|r| !r.build.conflict && r.warning.is_none())
-            .or_else(|| rows.iter().position(|r| !r.build.conflict));
+            .map(|r| acquire::Offered {
+                tag: &r.build.tag,
+                asset_name: &r.build.asset_name,
+                tested: r.build.tested,
+                conflict: r.build.conflict,
+                size: r.build.size_bytes,
+            })
+            .collect();
+        let vendors: Vec<String> = self
+            .gpu_vendors
+            .iter()
+            .map(|v| v.label().to_ascii_lowercase())
+            .collect();
+        let vendors: Vec<&str> = vendors.iter().map(String::as_str).collect();
+        let pick = self
+            .engine_doc()
+            .and_then(|engine| acquire::pick_build(engine, &offered, &vendors));
         let (Some(i), Some(spec)) = (pick, self.install_spec()) else {
             self.runtime.setup_failure = Some(format!(
                 "No {} build for this computer was found. Settings has the list, and a box for a program you \
