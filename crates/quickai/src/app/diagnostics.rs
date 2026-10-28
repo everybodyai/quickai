@@ -200,7 +200,7 @@ impl App {
 
 /// The first port after `taken`, within a hundred, that can be listened on at 127.0.0.1 now (where the engines
 /// listen). Asked again each time the panel is drawn, which is only while it is shown.
-fn next_free_port(taken: u16) -> Option<u16> {
+pub(super) fn next_free_port(taken: u16) -> Option<u16> {
     (taken.saturating_add(1)..=taken.saturating_add(100))
         .filter(|&p| p >= 1024)
         .find(|&p| std::net::TcpListener::bind(("127.0.0.1", p)).is_ok())

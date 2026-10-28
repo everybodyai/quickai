@@ -46,6 +46,7 @@ mod lookup_view;
 mod model_bar;
 mod model_details;
 mod named_models;
+mod port_taken;
 #[cfg(feature = "remote-setup")]
 mod remote_page;
 #[cfg(feature = "remote-setup")]
@@ -93,6 +94,10 @@ pub struct App {
     embedded: Registry,
     /// A program the person has not yet said may run, which Start is waiting on.
     pending_foreign: Option<quickai_core::guard::Foreign>,
+    /// A Start that waits for the person: the port the engine is to listen on here is taken (`port_taken`).
+    port_taken: Option<port_taken::PortTaken>,
+    /// The next Start does not look at the port again: the person answered about it.
+    port_check_skip: bool,
     /// The engine in use: the one the settings name, or llama.cpp when there is no document for it.
     engine: String,
     /// What the window holds for an engine whose models the daemon lists (Ollama).
@@ -381,6 +386,8 @@ impl App {
             session: Session::new(),
             embedded: config::build_registry(&config::ConfigDirs::default()),
             pending_foreign: None,
+            port_taken: None,
+            port_check_skip: false,
             registry,
             engine,
             named: NamedModels::default(),
@@ -925,6 +932,7 @@ impl eframe::App for App {
         self.show_alternatives_dialog(ui.ctx());
         self.show_guide_window(ui.ctx());
         self.show_foreign_program_modal(ui.ctx());
+        self.show_port_taken_dialog(ui.ctx());
         self.show_configuration_modals(ui.ctx(), false);
         self.show_configurations_window(ui.ctx());
     }
