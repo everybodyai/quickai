@@ -4,7 +4,7 @@
 //! line for a script. Nothing here is a string a program has to parse out of another string: every event is
 //! typed, and the ones that are sentences say so.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// One thing the provisioner has to say, in the order it happens.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -134,7 +134,7 @@ pub struct FileInfo {
 }
 
 /// An address a program that runs can be reached at.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EndpointInfo {
     /// `api`, `page`.
     pub role: String,

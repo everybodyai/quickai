@@ -16,6 +16,17 @@ quickai-run: run a QuickAI configuration with no window
       where it is, and stay until it is stopped (Ctrl-C, or SIGTERM from a service manager). The plan is
       printed first: what will be installed and fetched, from where, to where, and how big it is.
 
+  quickai-run up <configuration> --detach [options]
+      The same, in the background: it goes on when the terminal or the SSH connection that started it
+      closes, until `quickai-run down` stops it. The command returns once the run has started.
+
+  quickai-run status [--json]
+      What runs on this computer (the configuration, since when, where it listens), or how the last run
+      ended; `--json` adds the last things a run in the background said.
+
+  quickai-run down [--no-wait]
+      Stop what runs on this computer, in the background or in another terminal, and wait until it has.
+
   quickai-run prepare <configuration> [options]
       The same up to starting: install and fetch what is missing, and start nothing.
 
@@ -81,10 +92,12 @@ Where the models come from, when not where the configuration says:
   --offline            fetch nothing: use what is here, and say what is missing and where each file goes
   --version, --help
 
-It listens on 127.0.0.1 only; to reach it from elsewhere use an SSH tunnel. Exit codes: 0 done or stopped,
+It listens on 127.0.0.1 only; to reach it from elsewhere use an SSH tunnel. One run at a time on a computer:
+`up` and `prepare` while another runs say what runs, and start nothing. Exit codes: 0 done or stopped,
 1 it could not be done, 2 a mistake in the command, 3 the file asks and was not accepted, 4 a program
 stopped by itself, 5 the configuration needs something nobody gave, 6 the computer lacks something the
-configuration needs (or the installed environment failed its test), 130 interrupted before it ran.
+configuration needs (or the installed environment failed its test), 7 another run goes on, 130 interrupted
+before it ran.
 ";
 
 /// What `up`, `prepare` and `check` have in common.
@@ -95,6 +108,10 @@ pub struct Invocation {
     pub json: bool,
     pub quiet: bool,
     pub ready_file: Option<PathBuf>,
+    /// `--detach`: start it in the background and return.
+    pub detach: bool,
+    /// `--detached`: this is the run in the background `--detach` started (it is not said in the help).
+    pub background: bool,
 }
 
 /// `init`: the file to fill in.
@@ -113,6 +130,14 @@ pub enum Parsed {
     Version,
     Run(Box<Invocation>),
     Init(InitInvocation),
+    /// `status`, as JSON or not.
+    Status {
+        json: bool,
+    },
+    /// `down`, waiting until it has stopped or not.
+    Down {
+        wait: bool,
+    },
 }
 
 /// Reads the command line (without the program's name).
@@ -127,6 +152,8 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
         "prepare" => (true, false),
         "check" => (false, true),
         "init" => return parse_init(&args[1..]),
+        "status" => return parse_status(&args[1..]),
+        "down" => return parse_down(&args[1..]),
         other => return Err(format!("`{other}` is not something this does")),
     };
     let mut invocation = Invocation {
@@ -139,6 +166,8 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
         json: false,
         quiet: false,
         ready_file: None,
+        detach: false,
+        background: false,
     };
     let mut it = args[1..].iter();
     while let Some(arg) = it.next() {
@@ -152,6 +181,8 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
             "--accept-review" => invocation.options.accept_review = true,
             "--dry-run" => invocation.options.dry_run = true,
             "--json" => invocation.json = true,
+            "--detach" => invocation.detach = true,
+            "--detached" => invocation.background = true,
             "--quiet" | "-q" => invocation.quiet = true,
             "--build" => {
                 let text = value("--build")?;
@@ -239,7 +270,34 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
             "`{first}` needs a configuration: an id, or the path of a file"
         ));
     }
+    if invocation.detach && first != "up" {
+        return Err(format!("`--detach` is for `up`: `{first}` does not stay"));
+    }
     Ok(Parsed::Run(Box::new(invocation)))
+}
+
+fn parse_status(args: &[String]) -> Result<Parsed, String> {
+    let mut json = false;
+    for arg in args {
+        match arg.as_str() {
+            "--help" | "-h" => return Ok(Parsed::Help),
+            "--json" => json = true,
+            other => return Err(format!("`{other}` is not an option of `status`")),
+        }
+    }
+    Ok(Parsed::Status { json })
+}
+
+fn parse_down(args: &[String]) -> Result<Parsed, String> {
+    let mut wait = true;
+    for arg in args {
+        match arg.as_str() {
+            "--help" | "-h" => return Ok(Parsed::Help),
+            "--no-wait" => wait = false,
+            other => return Err(format!("`{other}` is not an option of `down`")),
+        }
+    }
+    Ok(Parsed::Down { wait })
 }
 
 fn parse_init(args: &[String]) -> Result<Parsed, String> {
@@ -326,6 +384,27 @@ mod tests {
         assert_eq!(parse(&words("--help")), Ok(Parsed::Help));
         assert_eq!(parse(&words("up --help")), Ok(Parsed::Help));
         assert_eq!(parse(&words("--version")), Ok(Parsed::Version));
+    }
+
+    #[test]
+    fn a_run_in_the_background_is_started_asked_after_and_stopped() {
+        let up = run("up vision.toml --detach");
+        assert!(up.detach && !up.background);
+        assert!(run("up vision.toml --detached --json").background);
+        assert!(parse(&words("prepare x --detach"))
+            .unwrap_err()
+            .contains("is for `up`"));
+        assert_eq!(
+            parse(&words("status --json")),
+            Ok(Parsed::Status { json: true })
+        );
+        assert_eq!(parse(&words("status")), Ok(Parsed::Status { json: false }));
+        assert_eq!(parse(&words("down")), Ok(Parsed::Down { wait: true }));
+        assert_eq!(
+            parse(&words("down --no-wait")),
+            Ok(Parsed::Down { wait: false })
+        );
+        assert!(parse(&words("down now")).unwrap_err().contains("`now`"));
     }
 
     /// Y60: the words that say what belongs to this computer and where the models come from are read, each as

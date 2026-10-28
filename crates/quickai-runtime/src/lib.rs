@@ -36,6 +36,7 @@ pub mod provision;
 pub mod proxy;
 pub mod remote;
 pub mod resolve;
+pub mod run_file;
 pub mod runtime;
 pub mod settings;
 pub mod sources;

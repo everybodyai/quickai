@@ -154,7 +154,7 @@ when known), so that another program can read the plan and do the fetching itsel
 | C121 | **It listens on the loopback only**, and reaching it from elsewhere is an SSH tunnel. There is no `--listen`. | The architecture's non-goal (no non-loopback serving) and ComfyUI has no login. |
 | C122 | **A document of the person's that starts a program QuickAI did not install asks once, by hash** (`--allow-program`), as the window's question does. A file from outside that asks is not used without `--accept-review`: free text that reaches a command line, settings that widen access, and a place it says a model can be had from that is not the recommended list's. | The guard (C33) and the review (C104) are the same for both programs; the window never fetches from such a hint by itself either (its look-up is a button). |
 | C123 | **`quickai-run` writes nothing outside the data directory** (`~/.quickai`, or below `HOME`): not `settings.json`, not the configuration directory (`configuration import` is the one command that does, and it is the same code as `quickai`'s; `init` writes the one file the person asked for, where they asked). | A server has no window to own those files, and a person who runs both on one computer must not have them changed by a command. |
-| C124 | **Linux and macOS first.** On Windows `quickai-run` says it is not there yet. | The run is signals and process groups; the Windows branch could not be built or run here, and a program that was never run is not offered. |
+| C124 | **Linux and macOS first.** On Windows `quickai-run` said it was not there yet; since WP4.33.1 (section 13) it runs there too, built and type-checked here and not yet run on Windows. | The run is signals and process groups; the Windows branch could not be built or run here, and a program that was never run is not offered. |
 | C125 | **A configuration says where a model can be had from, and never carries one.** A file model has `from` (a kind of place and a name in it), `path` (the file in that repository), `revision` (a branch, tag or commit), `into` (the folder of the models folder) or `url` (an address, `https://`, no login in it), and `size` and `sha256`; no key takes a path of a computer, a file of more than 256 KiB is not read. `quickai-run` fetches from it (C109 stays for the window: it says the place and fetches on a click). | The user: "it should just carry the information about where to fetch it from and the runtime will autofetch". The Wan 2.2 set the user runs comes from three repositories, one of the files in a folder of its repository: that is what `path` is for. The recommended list's `catalog` remains the way to say a model the list vouches for. |
 | C126 | **What the person says about where a file is wins over the configuration, and is checked.** `--model-source FILE=WHERE` (a path of the file or of a folder that has it, an address, `huggingface:owner/repo`), `[models]` of an environment file, `--models-from DIR` (looked in before anything is fetched: by the name, the folder of its kind, the path in its repository), `--models-dir`. A file that is used where it is is **linked, not copied**, after its size and, when known, its SHA-256 are checked; a file of another size, or other bytes, is refused with a sentence and nothing is put in its place. A name that is no file of the configuration is a mistake that lists the names it has. The place a file from outside names is asked about only when the program is about to fetch from it: not when the person said where the file is. | The user: "the user should have the ability to specify the location". A copy that is already on a server (a mounted disk, a file put there by `scp`) must be usable without 13 GB being fetched again, and without trusting it unchecked. The first version suppressed the question when a folder had a file of the right name, so a file of the wrong size stood for the person's yes (found by writing the rule down, Y33). |
 | C127 | **"Alternate means" are: bring the files by any means, or point at a mirror; the program checks them.** `--offline` fetches nothing and says what is missing, one file at a time, with the place it goes and the address it would have come from; `check --json` has the same for a script. There is no hook that runs a command to fetch. | The user: "or provide alternate means to get it". A command that fetches would be a command the program runs on the word of a file or of a flag; the means a person has (`aria2c`, `rsync`, `scp`, a mounted disk, a mirror) all end with a file in a folder, which is checked. |
@@ -371,7 +371,8 @@ straight after. 15 of the pieces were also broken in the program the Robot suite
 
 ## 10. What it does not do, and what has not been run
 
-- **Windows.** Not in this version (C124).
+- **Windows.** It builds for Windows and the run, the stop and the start in the background are written for it (section 13), but it
+  has not been run on Windows: that is a run on a Windows computer, as A8 is.
 - **A real NVIDIA card.** The install chooses PyTorch for CUDA 13 on a machine where an NVIDIA card is found, from the engine's
   document, and llama.cpp's CUDA build (section 5). That path was written from the document and tested against the fakes; the
   development machine has an AMD card. ComfyUI's install was run on a real one on 2026-10-13 (the L40S of a rented server, section 11);
@@ -606,3 +607,29 @@ configuration: `core/tests/p3_prerequisites.rs`; the whole through `provision::u
 pip with no matching distribution, a Python that cannot be run, an environment that is made).
 
 **Mutations.** 31 pieces of the Rust code were broken on purpose, one at a time (a condition ignored, a flag read the wrong way, the test run after the fetch, the refresh of apt's list made fatal, `sudo` left out of the printed command, the environment not passed to the script...), and a test was seen to fail for each; the one that was not noticed at first was a second guard for the same thing (the person is not asked for what the computer is looked at for), and is now one guard that is tested. 6 of them were also broken in the program the Robot suite runs, and each was seen to fail a case there (TC-RUN-112, -113, -116, -122). Seven more were made for the wait for a lock (Y78c: the option never added, given to the refresh too, printed for a person, run from the printed words, a wrong number of seconds, another manager run with other words than it is printed with, the option before the subcommand), each seen to fail a test, and the first again in the program the Robot suite runs (TC-RUN-113, -123, -126). The list is in the run log of the [implementation plan](implementation-plan.md); the script that made them is not part of the repository.
+
+## 13. A run that lives until it is stopped (WP4.33.2)
+
+For a run another computer asks for over SSH ([remote-runs.md](remote-runs.md), section 3.1), and as useful on a server by hand:
+
+```sh
+quickai-run up wan.toml --detach   # start it in the background; it goes on when the terminal or the connection closes
+quickai-run status [--json]        # what runs (the configuration, since when, where it listens), or how the last run ended
+quickai-run down [--no-wait]       # stop it, in the background or in another terminal, and wait until it has
+```
+
+- **One run at a time** on a computer, for one person: `up` and `prepare` hold the run's folder (`~/.quickai/run`, the data
+  folder's `run`) with a lock the system lets go of when the run ends, however it ends, and a second one says what runs and exits
+  with 7. `check` changes nothing and holds nothing.
+- **What runs is said in `run.json`** beside the lock (the process, the configuration, the version, since when, `starting`,
+  `preparing`, `ready` or `stopping`, and once ready where each thing listens); **how the last run ended** in `last.json`;
+  **what a run in the background said**, one JSON event a line, in `events.jsonl` (and its error stream in `stderr.log`).
+  `status --json` is `quickai_runtime::run_file::Status`: the window reads it over SSH.
+- **`down` writes a `stop` file** the run looks for each second: a stop is the same on Linux, macOS and Windows, where there is no
+  SIGTERM to send to a program of another console. Ctrl-C and SIGTERM still stop a run in a terminal; a hang-up stops it only when
+  it is not in the background.
+- **`--detach`** starts the program again with `--detached --json` and returns once the run has made its plan and gone on (or has
+  ended, with its code and why, or after a minute). On Linux and macOS the run is in a session of its own; on Windows it has no
+  console, a group of its own, and is started out of the job Windows' OpenSSH server closes with a connection (asked again without
+  that when the job does not allow it; the Task Scheduler is the way left if neither holds, to be found out on a Windows server).
+
