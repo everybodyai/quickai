@@ -180,9 +180,14 @@ asks of the packaging repository (`quickai_base`):
 ## 5. Modules
 
 The user: "make things modular as you implment - such that we can switch off or remove a specific module if needed."
-Each part below is a module of its own: a file or folder in the crate it belongs to, a Cargo feature that is on by
-default, and the window draws only what is compiled in. Switching one off is building without its feature; removing one
-is deleting its folder and its feature line. The ones a person sees can also be switched off in the settings.
+Each part below is a module of its own, a file in the crate it belongs to. What is built (WP4.33.9): the parts of a run
+QuickAI sets up are one Cargo feature, `remote-setup`, on by default in `quickai-runtime` (it gates `remote::{probe,
+deploy, run, job, alternatives}`) and in the window (it gates `app/remote_run.rs` and `app/remote_page.rs`, and turns
+the runtime's on). A window built without it (`cargo build -p quickai --no-default-features`) has the computers it
+attaches to only: the form does not offer "QuickAI sets it up", `setup_in_use` is never a computer, and
+`app/remote_run_off.rs` stands in for the two modules with the same names doing nothing. Removing the feature is
+deleting those files and its lines. The transport (`remote::ssh`), the tunnel and `run_file` (which `quickai-run`
+uses for `status` and `down`) are always there. Not built: a switch in the settings.
 
 | Module | Where | What it does |
 |---|---|---|
@@ -243,6 +248,9 @@ Not answered, and done as recommended unless the user says otherwise:
    up" (the default for a new one) or "connect to an engine already running there".
 
 ## 8. Work packages (WP4.33)
+
+Written 2026-10-28, each clippy-clean and committed on the branch `remote-runs`; none has been run yet (the tests come
+when the user asks for them). 4.33.1 to 4.33.9 are written; the GUI suites are not.
 
 | WP | Work | Verified by |
 |---|---|---|

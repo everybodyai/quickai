@@ -46,7 +46,13 @@ mod lookup_view;
 mod model_bar;
 mod model_details;
 mod named_models;
+#[cfg(feature = "remote-setup")]
 mod remote_page;
+#[cfg(feature = "remote-setup")]
+mod remote_run;
+// without runs QuickAI sets up on another computer, what stands in for them: nothing runs there, nothing is drawn
+#[cfg(not(feature = "remote-setup"))]
+#[path = "remote_run_off.rs"]
 mod remote_run;
 mod remote_ui;
 mod run_bar;
