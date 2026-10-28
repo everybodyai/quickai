@@ -4,6 +4,9 @@
 //! that is already running (attach, list, pull, load, remove, chat) is done with it unchanged, and no port is
 //! opened to the network on either side.
 //!
+//! The port here is the same as the engine's there unless the person gives another, so that the address an app is
+//! given (Connect an app) is the same from one run to the next.
+//!
 //! The person's own `ssh` does the connecting, so their `~/.ssh/config` (aliases, users, keys, jump hosts) and their
 //! agent are used as they are. It is never asked a question: a password prompt would have nowhere to go
 //! (`BatchMode`), and a computer's key is taken the first time and checked after (`StrictHostKeyChecking=accept-new`,
@@ -42,6 +45,9 @@ pub struct RemoteSpec {
     /// The port the engine listens on there, on its loopback; `None` is the engine's own (Ollama's 11434, ComfyUI's 8188).
     #[serde(default)]
     pub engine_port: Option<u16>,
+    /// The port of this computer the engine is reached on, through the tunnel; `None` is the same as the engine's there.
+    #[serde(default)]
+    pub local_port: Option<u16>,
     /// A key file to log in with, when it is not one ssh finds by itself.
     #[serde(default)]
     pub identity: Option<String>,
@@ -60,6 +66,7 @@ impl RemoteSpec {
             host: host.trim().to_string(),
             ssh_port: ssh_port(),
             engine_port: None,
+            local_port: None,
             identity: None,
         }
     }
@@ -84,7 +91,7 @@ impl RemoteSpec {
         if host.starts_with('-') || host.chars().any(char::is_whitespace) {
             return Some(format!("\"{host}\" is not an address."));
         }
-        if self.ssh_port == 0 || self.engine_port == Some(0) {
+        if self.ssh_port == 0 || self.engine_port == Some(0) || self.local_port == Some(0) {
             return Some("A port is a number from 1 to 65535.".into());
         }
         None
@@ -198,18 +205,38 @@ impl Drop for Tunnel {
     }
 }
 
-/// Opens a tunnel to `remote_port` of `spec` and waits until it listens here, or says why it could not. Blocks for up
-/// to `timeout`: call it from a thread of its own. `program` is ssh (`ssh_program`, or a test's stand-in).
+/// The port of this computer a run's tunnel to `remote_port` of `spec` listens on: the one the person gave, else the
+/// same as the engine's there. `None` (any free port) when that one is taken here, by an engine of this computer; one
+/// the person gave that is taken is what they are told.
+pub fn port_here(spec: &RemoteSpec, remote_port: u16) -> Result<Option<u16>, String> {
+    let free = |port: u16| std::net::TcpListener::bind(("127.0.0.1", port)).is_ok();
+    match spec.local_port {
+        Some(port) if free(port) => Ok(Some(port)),
+        Some(port) => Err(format!(
+            "Port {port} of this computer is taken. Give {} another port here, in its More options.",
+            spec.name
+        )),
+        None => Ok(Some(remote_port).filter(|port| free(*port))),
+    }
+}
+
+/// Opens a tunnel from `local_port` here (`None`: any free port) to `remote_port` of `spec` and waits until it listens,
+/// or says why it could not. Blocks for up to `timeout`: call it from a thread of its own. `program` is ssh
+/// (`ssh_program`, or a test's stand-in).
 pub fn open_with(
     program: &Path,
     spec: &RemoteSpec,
+    local_port: Option<u16>,
     remote_port: u16,
     timeout: Duration,
 ) -> Result<Tunnel, String> {
     if let Some(problem) = spec.problem() {
         return Err(problem);
     }
-    let local_port = ephemeral_port().map_err(|e| format!("No free port on this computer: {e}"))?;
+    let local_port = match local_port {
+        Some(port) => port,
+        None => ephemeral_port().map_err(|e| format!("No free port on this computer: {e}"))?,
+    };
     let mut command = Command::new(program);
     command.args(ssh_args(spec, local_port, remote_port));
     let said: Arc<Mutex<Vec<String>>> = Arc::default();
@@ -319,7 +346,7 @@ pub fn explain(lines: &[String]) -> String {
         ("connection timed out", "The remote computer did not answer. Is it on, and on the same network (or VPN)?"),
         ("no route to host", "There is no way to the remote computer from here. Is it on, and on the same network (or VPN)?"),
         ("host key verification failed", KEY_CHANGED),
-        ("address already in use", "The port QuickAI chose here was taken at the last moment. Try again."),
+        ("address already in use", "The port here was taken at the last moment. Try again, or give the computer another port here, in its More options."),
     ];
     for (needle, sentence) in known {
         if lower.contains(needle) {
@@ -388,7 +415,8 @@ pub fn check_steps(
     path: &str,
     pointer: &str,
 ) -> Checked {
-    let mut tunnel = match open_with(program, spec, remote_port, OPEN_TIMEOUT) {
+    // any free port here: a test is not what an app is given, and the run's own tunnel may have that one
+    let mut tunnel = match open_with(program, spec, None, remote_port, OPEN_TIMEOUT) {
         Ok(tunnel) => tunnel,
         Err(why) => {
             return Checked {
@@ -507,13 +535,39 @@ pub fn ssh_config_hosts(text: &str) -> Vec<SshHost> {
         .collect()
 }
 
+/// The person's own `~/.ssh`.
+pub fn ssh_dir() -> Option<PathBuf> {
+    directories::BaseDirs::new().map(|d| d.home_dir().join(".ssh"))
+}
+
 /// `ssh_config_hosts` of the person's own `~/.ssh/config`; none when there is no such file.
 pub fn read_ssh_config_hosts() -> Vec<SshHost> {
-    directories::BaseDirs::new()
-        .map(|d| d.home_dir().join(".ssh").join("config"))
-        .and_then(|path| std::fs::read_to_string(path).ok())
+    ssh_dir()
+        .and_then(|dir| std::fs::read_to_string(dir.join("config")).ok())
         .map(|text| ssh_config_hosts(&text))
         .unwrap_or_default()
+}
+
+/// The keys in `dir` a computer can be logged in to with: each file whose public half is beside it (`id_ed25519` and
+/// `id_ed25519.pub`), by name.
+pub fn ssh_keys(dir: &Path) -> Vec<PathBuf> {
+    let mut keys: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|path| {
+            let mut public = path.clone().into_os_string();
+            public.push(".pub");
+            path.is_file() && Path::new(&public).is_file()
+        })
+        .collect();
+    keys.sort();
+    keys
+}
+
+/// `ssh_keys` of the person's own `~/.ssh`.
+pub fn read_ssh_keys() -> Vec<PathBuf> {
+    ssh_dir().map(|dir| ssh_keys(&dir)).unwrap_or_default()
 }
 
 /// What a computer is called when nobody named it, from its address: `me@studio.local` is `Studio`.
@@ -598,7 +652,47 @@ mod tests {
         assert_eq!(RemoteSpec::new("PC", "pc.local").problem(), None);
         assert_eq!(RemoteSpec::new("PC", "me@10.0.0.5").problem(), None);
         assert_eq!(slug("  My GPU box!! "), "my-gpu-box");
+        let mut spec = RemoteSpec::new("PC", "pc.local");
+        spec.local_port = Some(0);
+        assert!(spec.problem().is_some());
         assert_eq!(slug("!!"), "remote");
+    }
+
+    #[test]
+    fn the_port_here_is_the_one_there_unless_it_is_taken_or_another_was_given() {
+        let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let busy = taken.local_addr().unwrap().port();
+        let free = ephemeral_port().unwrap();
+        let mut spec = RemoteSpec::new("Studio", "studio.local");
+        assert_eq!(port_here(&spec, free), Ok(Some(free)));
+        assert_eq!(
+            port_here(&spec, busy),
+            Ok(None),
+            "any free port, when this computer has that one"
+        );
+        spec.local_port = Some(free);
+        assert_eq!(port_here(&spec, busy), Ok(Some(free)));
+        spec.local_port = Some(busy);
+        assert!(port_here(&spec, free)
+            .unwrap_err()
+            .contains("another port here"));
+    }
+
+    #[test]
+    fn the_keys_offered_are_the_files_with_their_public_half_beside_them() {
+        let dir = crate::testkit::scratch("remote-keys");
+        for name in [
+            "id_ed25519",
+            "id_ed25519.pub",
+            "studio",
+            "studio.pub",
+            "known_hosts",
+            "config",
+        ] {
+            std::fs::write(dir.join(name), "").unwrap();
+        }
+        assert_eq!(ssh_keys(&dir), [dir.join("id_ed25519"), dir.join("studio")]);
+        assert!(ssh_keys(&dir.join("none")).is_empty());
     }
 
     #[test]
@@ -642,7 +736,7 @@ mod tests {
             let fake = FakeOllama::start();
             let spec = RemoteSpec::new("Studio", "studio.local");
             let mut tunnel =
-                open_with(&ssh, &spec, fake.port(), OPEN_TIMEOUT).expect("the tunnel opens");
+                open_with(&ssh, &spec, None, fake.port(), OPEN_TIMEOUT).expect("the tunnel opens");
             assert_ne!(tunnel.local_port, fake.port());
             assert!(fake_ssh::last_args(&ssh).contains(&format!(
                 "127.0.0.1:{}:127.0.0.1:{}",
@@ -691,10 +785,11 @@ mod tests {
             let fake = FakeOllama::start();
             let port = fake.port();
             let spec = RemoteSpec::new("Studio", "studio.local");
-            let mut tunnel = std::thread::spawn(move || open_with(&ssh, &spec, port, OPEN_TIMEOUT))
-                .join()
-                .unwrap()
-                .expect("the tunnel opens");
+            let mut tunnel =
+                std::thread::spawn(move || open_with(&ssh, &spec, None, port, OPEN_TIMEOUT))
+                    .join()
+                    .unwrap()
+                    .expect("the tunnel opens");
             std::thread::sleep(Duration::from_millis(300));
             assert!(
                 tunnel.alive(),
@@ -713,7 +808,7 @@ mod tests {
                 return;
             };
             let open = |host: &str| {
-                open_with(&ssh, &RemoteSpec::new("X", host), 11434, OPEN_TIMEOUT)
+                open_with(&ssh, &RemoteSpec::new("X", host), None, 11434, OPEN_TIMEOUT)
                     .err()
                     .unwrap()
             };

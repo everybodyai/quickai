@@ -103,14 +103,15 @@ Settings.
 ## Run models on another computer
 
 A desktop with a big graphics card, or a rented GPU server, can run the models while you use them from here:
-click **This computer** at the right end of the status bar, choose **Add a computer…**, and give its SSH address (the
+click **This computer** at the right end of the status bar, choose **Manage computers…**, and give its SSH address (the
 hosts of your `~/.ssh/config` are offered). QuickAI tests it step by step and says what to do about anything that fails;
 then choose it in the same menu. Start connects to it; the models, the chat and **Connect an app** then work as they do
 on this computer.
 
 QuickAI connects with your own `ssh` (your keys, your agent and `~/.ssh/config` are used as they are) and opens no
 port to the network on either side: the engine on that computer listens on its own loopback, and an SSH tunnel brings
-its port here. On that computer, run Ollama (or ComfyUI) as you would there, or `quickai-run up` with a configuration.
+its port here, as the same port unless you give another (**Port here**, under the computer's **More options**). On that
+computer, run Ollama (or ComfyUI) as you would there, or `quickai-run up` with a configuration.
 
 ## Use it from other apps
 

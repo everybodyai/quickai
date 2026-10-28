@@ -90,8 +90,8 @@ impl Guide {
             Guide::Remote => &[
                 "Install Ollama on the other computer, start it there, and check that you can reach that computer \
                  with ssh from here.",
-                "Click This computer at the bottom right, then Add a computer: its SSH address (user@host, or a \
-                 Host of your SSH config). QuickAI tests it and says what to do about anything that fails.",
+                "Click This computer at the bottom right, then Manage computers, and add it: its SSH address \
+                 (user@host, or a Host of your SSH config). QuickAI tests it and says what to do about anything that fails.",
                 "Choose it in the same menu. Start then connects to it.",
                 "Nothing is opened to the network: QuickAI uses your own ssh and keys.",
             ],

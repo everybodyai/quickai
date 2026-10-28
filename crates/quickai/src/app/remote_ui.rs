@@ -22,6 +22,7 @@ use quickai_core::value::Value;
 
 use super::icons::{self, Icon};
 use super::theme::{self, Role, Tone};
+use super::widgets::Picked;
 use super::App;
 use crate::models::ModelEntry;
 use crate::remote::{self, Checked, RemoteSpec, SshHost, Tunnel};
@@ -57,8 +58,9 @@ pub struct RemoteState {
     form: Option<RemoteForm>,
     /// The computer whose test the window shows (`None`: the list).
     detail: Option<String>,
-    /// The hosts of `~/.ssh/config`, read when the form opens.
+    /// The hosts of `~/.ssh/config` and the keys of `~/.ssh`, read when the form opens.
     hosts: Vec<SshHost>,
+    keys: Vec<PathBuf>,
     /// A test of a computer that is going, and what the last one found, by the computer's id.
     checking: Option<(String, Receiver<Checked>)>,
     checked: BTreeMap<String, Checked>,
@@ -94,6 +96,7 @@ impl Default for RemoteState {
             form: None,
             detail: None,
             hosts: Vec::new(),
+            keys: Vec::new(),
             checking: None,
             checked: BTreeMap::new(),
         }
@@ -109,31 +112,53 @@ pub struct RemoteForm {
     pub host: String,
     pub ssh_port: String,
     pub engine_port: String,
+    /// The port here, the tunnel's end on this computer.
+    pub local_port: String,
     pub identity: String,
     pub problem: Option<String>,
     /// The name was typed: it no longer follows the address.
     pub name_typed: bool,
+    /// The port here was typed: it no longer follows the engine's port.
+    pub here_typed: bool,
     /// More options (the ports and the key file) are open.
     pub more: bool,
 }
 
 impl RemoteForm {
-    fn of(spec: &RemoteSpec) -> RemoteForm {
+    /// The form of a new computer, its ports the usual ones: `own` is the engine's.
+    fn new(own: u16) -> RemoteForm {
+        RemoteForm {
+            ssh_port: "22".into(),
+            engine_port: own.to_string(),
+            local_port: own.to_string(),
+            ..RemoteForm::default()
+        }
+    }
+
+    /// The form of `spec`, where the engine's own port is `own`.
+    fn of(spec: &RemoteSpec, own: u16) -> RemoteForm {
+        let engine_port = spec.port_for(own);
         RemoteForm {
             editing: Some(spec.id.clone()),
             name: spec.name.clone(),
             host: spec.host.clone(),
             ssh_port: spec.ssh_port.to_string(),
-            engine_port: spec.engine_port.map(|p| p.to_string()).unwrap_or_default(),
+            engine_port: engine_port.to_string(),
+            local_port: spec.local_port.unwrap_or(engine_port).to_string(),
             identity: spec.identity.clone().unwrap_or_default(),
             problem: None,
             name_typed: true,
-            more: spec.ssh_port != 22 || spec.engine_port.is_some() || spec.identity.is_some(),
+            here_typed: spec.local_port.is_some(),
+            more: spec.ssh_port != 22
+                || spec.engine_port.is_some()
+                || spec.local_port.is_some()
+                || spec.identity.is_some(),
         }
     }
 
-    /// The computer the fields describe, or what is wrong with them.
-    fn spec(&self, taken: &[RemoteSpec]) -> Result<RemoteSpec, String> {
+    /// The computer the fields describe, or what is wrong with them. A port that is the usual one is kept as none
+    /// given: the engine's (`own`) follows the engine in use, and the one here follows the engine's.
+    fn spec(&self, taken: &[RemoteSpec], own: u16) -> Result<RemoteSpec, String> {
         let port = |text: &str, what: &str| -> Result<Option<u16>, String> {
             let text = text.trim();
             if text.is_empty() {
@@ -153,7 +178,9 @@ impl RemoteForm {
         };
         let mut spec = RemoteSpec::new(&name, &self.host);
         spec.ssh_port = port(&self.ssh_port, "The SSH port")?.unwrap_or(22);
-        spec.engine_port = port(&self.engine_port, "The engine's port")?;
+        spec.engine_port = port(&self.engine_port, "The engine's port")?.filter(|p| *p != own);
+        let there = spec.port_for(own);
+        spec.local_port = port(&self.local_port, "The port here")?.filter(|p| *p != there);
         spec.identity = Some(self.identity.trim().to_string()).filter(|i| !i.is_empty());
         if let Some(problem) = spec.problem() {
             return Err(problem);
@@ -207,11 +234,16 @@ impl App {
 
     /// The engine's port on `spec`: the one the person gave, else the engine's own.
     fn remote_port(&self, spec: &RemoteSpec) -> u16 {
-        let own = self
-            .engine_doc()
+        spec.port_for(self.own_remote_port())
+    }
+
+    /// The port the engine listens on of itself, on another computer: the engine in use's own, or Ollama's while it is
+    /// one that cannot run elsewhere.
+    fn own_remote_port(&self) -> u16 {
+        self.engine_doc()
+            .filter(|e| runs_elsewhere(e))
             .and_then(|e| e.doc.provides.default_port)
-            .unwrap_or(remote::DEFAULT_ENGINE_PORT);
-        spec.port_for(own)
+            .unwrap_or(remote::DEFAULT_ENGINE_PORT)
     }
 
     /// The port of this computer the tunnel of the run listens on, while there is one.
@@ -267,11 +299,14 @@ impl App {
             return;
         };
         let port = self.remote_port(&spec);
+        let here = remote::port_here(&spec, port);
         let ssh = self.remote.ssh.clone();
         let (tx, rx) = crossbeam_channel::bounded(1);
         let wake = ctx.clone();
         std::thread::spawn(move || {
-            let _ = tx.send(remote::open_with(&ssh, &spec, port, remote::OPEN_TIMEOUT));
+            let opened = here
+                .and_then(|here| remote::open_with(&ssh, &spec, here, port, remote::OPEN_TIMEOUT));
+            let _ = tx.send(opened);
             wake.request_repaint();
         });
         self.remote.error = None;
@@ -387,25 +422,33 @@ impl App {
         self.remote.checking = Some((id, rx));
     }
 
-    /// Opens the Computers window (or brings it to the front): on its form when `add`, or when there is no computer yet
-    /// (there is nothing else to do in it then), else on its list.
-    pub(super) fn open_computers(&mut self, add: bool) {
+    /// Opens the Computers window (or brings it to the front): on its form when there is no computer yet (there is
+    /// nothing else to do in it then), else on its list.
+    pub(super) fn open_computers(&mut self) {
         self.remote.show_window = true;
         self.remote.raise_window = true;
         self.remote.detail = None;
-        if add || self.remote.remotes.is_empty() {
+        if self.remote.remotes.is_empty() {
             self.new_remote_form();
         }
     }
 
-    /// An empty form, with the hosts of `~/.ssh/config` to suggest (read now: it may have changed since).
+    /// An empty form, with the hosts of `~/.ssh/config` and the keys of `~/.ssh` to suggest (read now: they may have
+    /// changed since).
     fn new_remote_form(&mut self) {
+        self.read_ssh_files();
+        self.remote.form = Some(RemoteForm::new(self.own_remote_port()));
+    }
+
+    /// What the form suggests: the hosts of `~/.ssh/config` and the keys of `~/.ssh`.
+    fn read_ssh_files(&mut self) {
         self.remote.hosts = remote::read_ssh_config_hosts();
-        self.remote.form = Some(RemoteForm::default());
+        self.remote.keys = remote::read_ssh_keys();
     }
 
     /// The form's computer is added, or changes the one it was; its id when it was kept.
     pub(super) fn save_remote_form(&mut self) -> Option<String> {
+        let own = self.own_remote_port();
         let form = self.remote.form.as_mut()?;
         let others: Vec<RemoteSpec> = self
             .remote
@@ -414,7 +457,7 @@ impl App {
             .filter(|r| Some(&r.id) != form.editing.as_ref())
             .cloned()
             .collect();
-        match form.spec(&others) {
+        match form.spec(&others, own) {
             Ok(spec) => {
                 let id = spec.id.clone();
                 match self.remote.remotes.iter_mut().find(|r| r.id == spec.id) {
@@ -629,11 +672,8 @@ impl App {
             }
         }
         ui.separator();
-        if menu_item(ui, Icon::Plus, "Add a computer…").clicked() {
-            self.open_computers(true);
-        }
         if menu_item(ui, Icon::Gear, "Manage computers…").clicked() {
-            self.open_computers(false);
+            self.open_computers();
         }
         if let Some(id) = chosen {
             self.choose_runner(id);
@@ -697,7 +737,7 @@ impl App {
         } else if here {
             self.choose_runner(None);
         } else if test {
-            self.open_computers(false);
+            self.open_computers();
             self.act(Action::Check(spec.id.clone()), ui.ctx());
         }
     }
@@ -849,8 +889,8 @@ impl App {
             Action::New => self.new_remote_form(),
             Action::Back => self.remote.detail = None,
             Action::Edit(spec) => {
-                self.remote.hosts = remote::read_ssh_config_hosts();
-                self.remote.form = Some(RemoteForm::of(&spec));
+                self.read_ssh_files();
+                self.remote.form = Some(RemoteForm::of(&spec, self.own_remote_port()));
             }
             Action::Remove(id) => self.remove_remote(&id),
             Action::Check(id) => {
@@ -862,18 +902,21 @@ impl App {
     }
 
     /// The form that adds or changes a computer: the address (with the hosts of `~/.ssh/config` offered), its name (made
-    /// from the address until it is typed), and under More options the ports and the key file.
+    /// from the address until it is typed), and under More options the ports and the key file (with the keys of `~/.ssh`
+    /// offered).
     fn show_computer_form(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette();
         let can = self.can_run_remote();
         let mut save = false;
         let mut cancel = false;
-        let RemoteState { form, hosts, .. } = &mut self.remote;
+        let RemoteState {
+            form, hosts, keys, ..
+        } = &mut self.remote;
         let Some(form) = form.as_mut() else {
             return;
         };
         let title = match &form.editing {
-            Some(_) => format!("Change {}", form.name),
+            Some(_) => format!("Edit {}", form.name),
             None => "Add a computer".to_string(),
         };
         ui.label(
@@ -892,14 +935,14 @@ impl App {
             .spacing([10.0, 8.0])
             .show(ui, |ui| address_rows(ui, form, hosts));
         ui.add_space(4.0);
-        egui::CollapsingHeader::new("More options: SSH port, engine port, key file")
+        egui::CollapsingHeader::new("More options: ports, key file")
             .id_salt("computer_more")
             .open(Some(form.more))
             .show(ui, |ui| {
                 egui::Grid::new("computer_more_grid")
                     .num_columns(2)
                     .spacing([10.0, 8.0])
-                    .show(ui, |ui| more_rows(ui, form));
+                    .show(ui, |ui| more_rows(ui, form, keys));
             })
             .header_response
             .clicked()
@@ -1029,7 +1072,7 @@ impl App {
             if ui.link("All computers").clicked() {
                 action = Some(Action::Back);
             }
-            if ui.link("Change…").clicked() {
+            if ui.link("Edit…").clicked() {
                 action = Some(Action::Edit(spec.clone()));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1123,8 +1166,9 @@ fn address_rows(ui: &mut egui::Ui, form: &mut RemoteForm, hosts: &[SshHost]) {
     ui.end_row();
 }
 
-/// The rows of the form under More options: the SSH port, the engine's port there and the key file.
-fn more_rows(ui: &mut egui::Ui, form: &mut RemoteForm) {
+/// The rows of the form under More options: the SSH port, the engine's port there, the port here (the same as the
+/// engine's until it is typed) and the key file, with the keys of `~/.ssh` (`keys`) offered.
+fn more_rows(ui: &mut egui::Ui, form: &mut RemoteForm, keys: &[PathBuf]) {
     ui.label("SSH port");
     ui.add(
         egui::TextEdit::singleline(&mut form.ssh_port)
@@ -1133,14 +1177,29 @@ fn more_rows(ui: &mut egui::Ui, form: &mut RemoteForm) {
     );
     ui.end_row();
     ui.label("Engine port").on_hover_text(
-        "The port the engine listens on, on that computer. Empty is the engine's own: 11434 for Ollama, 8188 for \
-         ComfyUI.",
+        "The port the engine listens on, on that computer: 11434 is Ollama's own, 8188 ComfyUI's.",
     );
-    ui.add(
-        egui::TextEdit::singleline(&mut form.engine_port)
-            .hint_text("the engine's own")
-            .desired_width(120.0),
+    let before = form.engine_port.clone();
+    ui.add(egui::TextEdit::singleline(&mut form.engine_port).desired_width(80.0));
+    if form.engine_port != before && !form.here_typed {
+        form.local_port = form.engine_port.clone();
+    }
+    ui.end_row();
+    ui.label("Port here").on_hover_text(
+        "The port of this computer the engine is reached on, through the SSH tunnel: the address an app is given \
+         (Connect an app). The same as the engine port unless you give another; when that one is taken here, by an \
+         engine of this computer, a free one is used.",
     );
+    if ui
+        .add(
+            egui::TextEdit::singleline(&mut form.local_port)
+                .hint_text(form.engine_port.trim())
+                .desired_width(80.0),
+        )
+        .changed()
+    {
+        form.here_typed = !form.local_port.trim().is_empty();
+    }
     ui.end_row();
     ui.label("Key file").on_hover_text(
         "Only when ssh would not find the key by itself (your agent, ~/.ssh/id_*, ~/.ssh/config).",
@@ -1151,13 +1210,57 @@ fn more_rows(ui: &mut egui::Ui, form: &mut RemoteForm) {
                 .hint_text("optional")
                 .desired_width(240.0),
         );
-        if ui.small_button("…").clicked() {
-            if let Some(path) = rfd::FileDialog::new().pick_file() {
-                form.identity = path.display().to_string();
+        let mut browse = false;
+        ui.menu_button("…", |ui| {
+            for key in keys {
+                let name = key.file_name().unwrap_or_default().to_string_lossy();
+                if ui
+                    .button(name)
+                    .on_hover_text(key.display().to_string())
+                    .clicked()
+                {
+                    form.identity = key.display().to_string();
+                    form.problem = None;
+                }
+            }
+            if keys.is_empty() {
+                ui.label(theme::muted("No keys in ~/.ssh"));
+            }
+            ui.separator();
+            browse = ui.button("Other file…").clicked();
+        })
+        .response
+        .on_hover_text("A key of ~/.ssh, or another file");
+        if browse {
+            match browse_key(&form.identity) {
+                Picked::File(path) => form.identity = path.display().to_string(),
+                Picked::NoDialog => {
+                    form.problem = Some(
+                        "No file dialog could open: this computer has no desktop portal and no zenity to show one. \
+                         Type the key's path in the box."
+                            .into(),
+                    )
+                }
+                Picked::Closed => {}
             }
         }
     });
     ui.end_row();
+}
+
+/// A native dialog for a key file, opened in the folder of the one given, else in `~/.ssh` (a hidden folder, which a
+/// dialog does not show).
+fn browse_key(given: &str) -> Picked {
+    let mut dialog = rfd::FileDialog::new().set_title("Key file");
+    let folder = std::path::Path::new(given.trim())
+        .parent()
+        .filter(|dir| dir.is_dir())
+        .map(PathBuf::from)
+        .or_else(|| remote::ssh_dir().filter(|dir| dir.is_dir()));
+    if let Some(dir) = folder {
+        dialog = dialog.set_directory(dir);
+    }
+    super::widgets::pick_file(dialog)
 }
 
 /// Whether `engine` can run on another computer: its document can attach to one that is already running, and says
@@ -1217,8 +1320,8 @@ struct ComputerRow<'a> {
 }
 
 /// A row of the list: a dot of whether it answered, its name (and `in use`) over its line, Use when it can be used
-/// (`usable`) and is not, and a computer's menu: Test (when the engine `can` run elsewhere), Change and Remove. What was
-/// clicked comes back.
+/// (`usable`) and is not, and a computer's Edit and its menu: Test (when the engine `can` run elsewhere) and Remove.
+/// What was clicked comes back.
 fn computer_row(
     ui: &mut egui::Ui,
     row: &ComputerRow,
@@ -1263,8 +1366,15 @@ fn computer_row(
                             if let Some(asked) = computer_menu(ui, spec, can, row.removable) {
                                 action = Some(asked);
                             }
+                            if icons::icon_button(ui, Icon::Pencil, ROW_BUTTON, true, false)
+                                .on_hover_text("Edit: its address, name, ports and key file")
+                                .clicked()
+                            {
+                                action = Some(Action::Edit(spec.clone()));
+                            }
                         }
-                        None => ui.add_space(28.0 + ui.spacing().item_spacing.x),
+                        // this computer's Use in line with the others'
+                        None => ui.add_space(2.0 * (ROW_BUTTON.x + ui.spacing().item_spacing.x)),
                     }
                     if !row.on
                         && ui
@@ -1284,7 +1394,10 @@ fn computer_row(
     action
 }
 
-/// The … of a computer of the list and its menu: Test, Change and Remove. What was chosen comes back.
+/// The size of the picture buttons of a computer's row.
+const ROW_BUTTON: egui::Vec2 = egui::vec2(28.0, 24.0);
+
+/// The … of a computer of the list and its menu: Test and Remove. What was chosen comes back.
 fn computer_menu(
     ui: &mut egui::Ui,
     spec: &RemoteSpec,
@@ -1292,16 +1405,13 @@ fn computer_menu(
     removable: bool,
 ) -> Option<Action> {
     let mut action = None;
-    let more = icons::icon_button(ui, Icon::More, egui::vec2(28.0, 24.0), true, false)
-        .on_hover_text("Test, change or remove it");
+    let more = icons::icon_button(ui, Icon::More, ROW_BUTTON, true, false)
+        .on_hover_text("Test or remove it");
     egui::Popup::menu(&more)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
         .show(|ui| {
             if ui.add_enabled(can, egui::Button::new("Test")).clicked() {
                 action = Some(Action::Check(spec.id.clone()));
-            }
-            if ui.button("Change…").clicked() {
-                action = Some(Action::Edit(spec.clone()));
             }
             if ui
                 .add_enabled(removable, egui::Button::new("Remove"))
@@ -1335,7 +1445,7 @@ fn start_engine_help(ui: &mut egui::Ui, id: &str, name: &str, computer: &str) {
     let p = theme::palette();
     ui.label(
         egui::RichText::new(format!(
-            "It isn't running on {computer}, or it listens on another port (More options, under Change)."
+            "It isn't running on {computer}, or it listens on another port (More options, under Edit)."
         ))
         .small(),
     );
