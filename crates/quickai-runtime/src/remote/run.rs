@@ -156,6 +156,46 @@ pub fn start_sent(
     }
 }
 
+/// Stops the programs that listen on `ports` of `spec` (ones QuickAI did not start), with its headless program of
+/// `version` (`quickai-run free`); what could not be stopped there is said, with the command for the person.
+pub fn free(
+    ssh: &Path,
+    spec: &RemoteSpec,
+    computer: &Computer,
+    version: &str,
+    ports: &[u16],
+) -> Result<(), String> {
+    let words: Vec<String> = ports.iter().map(u16::to_string).collect();
+    let command = format!(
+        "{} free {} --json",
+        computer.program_command(version),
+        words.join(" ")
+    );
+    let said = ssh::run(ssh, spec, &command, STOP_TIMEOUT)?;
+    if said.ok() {
+        return Ok(());
+    }
+    let freed: Vec<serde_json::Value> =
+        serde_json::from_str(said.stdout.trim()).unwrap_or_default();
+    let hints: Vec<String> = freed
+        .iter()
+        .filter(|f| f["free"].as_bool() == Some(false))
+        .map(|f| {
+            format!(
+                "port {} ({}): {}",
+                f["port"],
+                f["program"].as_str().unwrap_or("a program"),
+                f["hint"].as_str().unwrap_or("it could not be stopped")
+            )
+        })
+        .collect();
+    if hints.is_empty() {
+        Err(failed(spec, "free its ports", &said))
+    } else {
+        Err(format!("On {}, {}", spec.name.trim(), hints.join("; ")))
+    }
+}
+
 /// Stops what runs on `spec`, and waits until it has.
 pub fn stop(
     ssh: &Path,

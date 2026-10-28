@@ -15,7 +15,7 @@ use std::sync::Arc;
 use crossbeam_channel::Receiver;
 use eframe::egui;
 
-use crate::provision::EndpointInfo;
+use crate::provision::{EndpointInfo, PortUse};
 use crate::remote::alternatives::{self, Issue};
 use crate::remote::job::{self, Job, Launching, Update};
 use crate::remote::{self, RemoteSpec, Tunnel, Way};
@@ -37,6 +37,8 @@ pub struct SetupRun {
     pub there: Option<Box<RunFile>>,
     /// Another run goes on there, and the person is asked what to do with it (`answer_busy`).
     pub busy: Option<Option<Box<RunFile>>>,
+    /// Programs QuickAI did not start listen on ports the configuration needs there: the person is asked too.
+    pub occupied: Option<Vec<PortUse>>,
     /// What the configuration lacks there, each with another way, while the person is asked about them.
     pub alternatives: Option<Vec<Issue>>,
     /// The person's answers to them, by the issue's id: accepted or rejected.
@@ -214,16 +216,34 @@ impl App {
         let Some(id) = self.setup_in_use().map(|s| s.id.clone()) else {
             return;
         };
-        if let Some(run) = self.remote.setup.get_mut(&id) {
+        let occupied = self.remote.setup.get_mut(&id).and_then(|run| {
             run.busy = None;
-        }
-        match answer {
-            Answer::Override => self.start_setup_run(ctx, true),
-            Answer::StopIt => self.stop_setup_run(),
-            Answer::Cancel => {
+            run.occupied.take()
+        });
+        match (answer, occupied) {
+            (Answer::Override, _) => self.start_setup_run(ctx, true),
+            // what holds the ports is not a run of QuickAI's: it is stopped by its process, or its service
+            (Answer::StopIt, Some(ports)) => self.free_ports(&id, ports, ctx),
+            (Answer::StopIt, None) => self.stop_setup_run(),
+            (Answer::Cancel, _) => {
                 self.remote.setup.remove(&id);
             }
         }
+    }
+
+    /// Stops the programs QuickAI did not start that hold `ports` on the computer `id`.
+    fn free_ports(&mut self, id: &str, ports: Vec<PortUse>, ctx: &egui::Context) {
+        let Some(spec) = self.remote.remotes.iter().find(|r| r.id == id).cloned() else {
+            return;
+        };
+        let numbers = ports.iter().map(|p| p.port).collect();
+        let wake = ctx.clone();
+        let updates = job::free(self.job_for(&spec), numbers, move || wake.request_repaint());
+        let run = self.remote.setup.entry(spec.id.clone()).or_default();
+        run.doing = format!("Stopping what holds those ports on {}", spec.name);
+        run.failed = None;
+        run.updates = Some(updates);
+        run.wake = Some(ctx.clone());
     }
 
     /// Each frame: the runs that are to be looked for are (each computer QuickAI sets up, when the window starts, and
@@ -281,20 +301,33 @@ impl App {
         let Some(run) = self.setup_run() else {
             return;
         };
-        let Some(other) = run.busy.clone() else {
+        let (busy, occupied) = (run.busy.clone(), run.occupied.clone());
+        if busy.is_none() && occupied.is_none() {
             return;
-        };
+        }
         let computer = self
             .setup_in_use()
             .map_or_else(|| "That computer".to_string(), |s| s.name.clone());
         let ours = self.selected_configuration_name();
-        let what = match &other {
-            Some(other) => format!(
+        let what = match (&busy, &occupied) {
+            (Some(Some(other)), _) => format!(
                 "QuickAI runs \"{}\" on {computer}, started {}.",
                 other.name(),
                 since(other.started)
             ),
-            None => format!("Another run of QuickAI goes on on {computer}."),
+            (Some(None), _) => format!("Another run of QuickAI goes on on {computer}."),
+            (None, Some(ports)) => ports
+                .iter()
+                .map(|p| {
+                    format!(
+                        "{} answers on port {} on {computer}, and QuickAI did not start it.",
+                        p.answers_as.as_deref().unwrap_or("Another program"),
+                        p.port
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+            (None, None) => String::new(),
         };
         let mut answer = None;
         let modal = egui::Modal::new(egui::Id::new("remote_busy_modal")).show(ctx, |ui| {
@@ -538,6 +571,11 @@ fn take_updates(run: &mut SetupRun, name: &str, log: &mut Vec<String>) -> bool {
                 run.there = Some(there);
                 run.endpoints = endpoints;
                 run.tunnel = Some(tunnel);
+            }
+            Update::Occupied(ports) => {
+                run.reached = true;
+                run.doing.clear();
+                run.occupied = Some(ports);
             }
             Update::Alternatives(issues) => {
                 run.reached = true;

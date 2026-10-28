@@ -628,6 +628,12 @@ quickai-run down [--no-wait]       # stop it, in the background or in another te
 - **`down` writes a `stop` file** the run looks for each second: a stop is the same on Linux, macOS and Windows, where there is no
   SIGTERM to send to a program of another console. Ctrl-C and SIGTERM still stop a run in a terminal; a hang-up stops it only when
   it is not in the background.
+- **`free PORT... [--json]`** stops the programs that listen on those ports (for a window that was told to override
+  them, [remote-runs.md](remote-runs.md) section 3.2): a program of the person is asked to end, then ended; a system
+  service is stopped by its manager (`systemctl` on Linux, `launchctl` on macOS) through `sudo -n` when that needs no
+  password, and otherwise the command that stops it is said; on Windows `taskkill`. It exits with 8 when a port stays
+  taken. `check` says the ports a run would listen on and whether another program has one now (the `ports` event,
+  with what answers there when it answers as the engine does).
 - **`--detach`** starts the program again with `--detached --json` and returns once the run has made its plan and gone on (or has
   ended, with its code and why, or after a minute). On Linux and macOS the run is in a session of its own; on Windows it has no
   console, a group of its own, and is started out of the job Windows' OpenSSH server closes with a connection (asked again without

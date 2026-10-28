@@ -236,6 +236,24 @@ impl Human {
                 lines
             }
             Event::Stopping => say("Stopping...".to_string()),
+            Event::Ports { items } => items
+                .iter()
+                .filter(|p| p.taken)
+                .map(|p| {
+                    let what = p
+                        .answers_as
+                        .as_deref()
+                        .map(|a| format!(": {a} answers there"))
+                        .unwrap_or_default();
+                    (
+                        false,
+                        format!(
+                            "Port {} ({}) is taken by another program{what}.",
+                            p.port, p.program
+                        ),
+                    )
+                })
+                .collect(),
             Event::Finished {
                 outcome, message, ..
             } => match (outcome.as_str(), message) {

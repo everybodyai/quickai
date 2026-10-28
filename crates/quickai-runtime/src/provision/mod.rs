@@ -40,7 +40,7 @@ pub use build::pick_build;
 pub use quickai_core::profile::environment::Secret;
 pub use report::{
     in_the_words_of_the_command_line, EndpointInfo, EnvironmentItem, Event, Failure, FailureKind,
-    FileInfo, Lack, Outcome, PrerequisiteInfo, StepInfo,
+    FileInfo, Lack, Outcome, PortUse, PrerequisiteInfo, StepInfo,
 };
 
 use crate::config::{build_registry, ConfigDirs};
@@ -546,13 +546,17 @@ fn up_inner(request: &Request, sink: &mut dyn FnMut(Event), stop: &AtomicBool) -
             return failed(FailureKind::Needs, lines.join("\n"));
         }
     }
-    if options.dry_run {
-        return Outcome::Planned;
-    }
-
-    // room for the files, before the first byte of them is fetched
+    // room for the files, before the first byte of them is fetched (and said by a check)
     if let Err(failure) = check_room(&planned, &planned.intent.models_dir) {
         return Outcome::Failed(failure);
+    }
+    if options.dry_run {
+        // the ports it would listen on, and whether another program has one now
+        let ports = ports_of(&registry, &planned.intent);
+        if !ports.is_empty() {
+            sink(Event::Ports { items: ports });
+        }
+        return Outcome::Planned;
     }
 
     // do what is missing
@@ -608,6 +612,41 @@ fn up_inner(request: &Request, sink: &mut dyn FnMut(Event), stop: &AtomicBool) -
         notes: Vec::new(),
     };
     run::serve(&world, &planned, sink, stop)
+}
+
+/// The ports the run of `intent` would listen on (each `<program>.port` of its values), whether another program
+/// listens on each now, and, for the engine's, whether what answers there answers as the engine does.
+fn ports_of(registry: &quickai_core::registry::Registry, intent: &plan::Intent) -> Vec<PortUse> {
+    let mut uses = Vec::new();
+    for (key, value) in &intent.values {
+        let Some(program) = key.strip_suffix(".port") else {
+            continue;
+        };
+        let Some(port) = (match value {
+            Value::Int(n) => u16::try_from(*n).ok(),
+            Value::Str(s) => s.trim().parse().ok(),
+            _ => None,
+        }) else {
+            continue;
+        };
+        let document = registry.engine(program);
+        let name = document.map_or_else(|| program.to_string(), |e| e.doc.engine.name.clone());
+        let taken = std::net::TcpListener::bind(("127.0.0.1", port)).is_err();
+        let answers_as = document
+            .filter(|_| taken)
+            .and_then(|e| e.doc.launch.attach.as_ref())
+            .and_then(|attach| {
+                crate::remote::identity(port, &attach.identity.path, &attach.identity.pointer)
+            })
+            .map(|version| format!("{name} {version}"));
+        uses.push(PortUse {
+            port,
+            program: name,
+            taken,
+            answers_as,
+        });
+    }
+    uses
 }
 
 /// Whether the folder the files go in has room for what the plan fetches (the installs check their own).

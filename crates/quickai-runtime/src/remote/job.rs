@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender};
 
-use crate::provision::EndpointInfo;
+use crate::provision::{EndpointInfo, PortUse};
 use crate::run_file::{RunFile, Status};
 
 use super::alternatives::{self, Found, Issue, Remedy};
@@ -37,6 +37,9 @@ pub enum Update {
     Status(Box<Status>),
     /// Another run goes on there, and nothing was started: the window asks whether to override it (section 3.2).
     Busy(Option<Box<RunFile>>),
+    /// Programs QuickAI did not start listen on ports the configuration needs there, and nothing was started: the
+    /// window asks whether to override them (stop them and run ours), stop them, or leave them (section 3.2).
+    Occupied(Vec<PortUse>),
     /// The configuration lacks these there, each with another way, and nothing was started: the window asks the
     /// person to accept or reject each (section 6), and starts again with the answers.
     Alternatives(Vec<Issue>),
@@ -171,6 +174,20 @@ pub fn find(job: Job, wake: impl Fn() + Send + 'static) -> Receiver<Update> {
     })
 }
 
+/// Stops the programs QuickAI did not start that listen on `ports` of the job's computer.
+pub fn free(job: Job, ports: Vec<u16>, wake: impl Fn() + Send + 'static) -> Receiver<Update> {
+    spawn(wake, move |say| {
+        say(Update::Doing(format!(
+            "Stopping what holds those ports on {}",
+            job.spec.name
+        )));
+        let computer = reach(&job, say)?;
+        run::free(&job.ssh, &job.spec, &computer, &job.version, &ports)?;
+        say(Update::Stopped);
+        Ok(())
+    })
+}
+
 /// Stops what runs on the job's computer.
 pub fn stop(job: Job, wake: impl Fn() + Send + 'static) -> Receiver<Update> {
     spawn(wake, move |say| {
@@ -219,6 +236,19 @@ fn resolve(
             &launching.local_models,
         )?;
         let issues = match found {
+            Found::Taken(ports) if launching.override_first => {
+                say(Update::Doing(format!(
+                    "Stopping what holds the ports of \"{}\" on {}",
+                    launching.name, job.spec.name
+                )));
+                let numbers: Vec<u16> = ports.iter().map(|p| p.port).collect();
+                run::free(&job.ssh, &job.spec, computer, &job.version, &numbers)?;
+                continue;
+            }
+            Found::Taken(ports) => {
+                say(Update::Occupied(ports));
+                return Ok(None);
+            }
             Found::Fine => {
                 if !remember.is_empty() {
                     say(Update::Remember(remember));
