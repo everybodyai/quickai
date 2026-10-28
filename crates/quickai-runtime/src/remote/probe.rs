@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::ssh::{self, sh_quote};
-use super::RemoteSpec;
+use super::{deploy, Checked, RemoteSpec};
 
 /// How long a question about the computer may take: the connection, the login and a few small commands.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(40);
@@ -97,6 +97,38 @@ pub fn probe(program: &Path, spec: &RemoteSpec, version: &str) -> Result<Compute
             }
         )
     })
+}
+
+/// The test of a computer QuickAI sets up (WP4.33), as the window shows it step by step: reached over SSH, and
+/// whether QuickAI can run there (its headless program of `version` is there, or this package has the one for that
+/// computer to copy there at the start).
+pub fn check_setup(program: &Path, spec: &RemoteSpec, version: &str) -> Checked {
+    let computer = match probe(program, spec, version) {
+        Ok(computer) => computer,
+        Err(why) => {
+            return Checked {
+                reached: Err(why),
+                engine: None,
+            }
+        }
+    };
+    let can = if computer.headless.is_some() {
+        Ok(format!(
+            "{}: QuickAI {version} is there already.",
+            computer.describe()
+        ))
+    } else {
+        deploy::local_program(&computer).map(|_| {
+            format!(
+                "{}: QuickAI is copied there when you start.",
+                computer.describe()
+            )
+        })
+    };
+    Checked {
+        reached: Ok(()),
+        engine: Some(can),
+    }
 }
 
 /// The question for a POSIX shell: the system and the processor, the home, and the headless program of `version`.

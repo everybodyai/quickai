@@ -46,6 +46,7 @@ mod lookup_view;
 mod model_bar;
 mod model_details;
 mod named_models;
+mod remote_run;
 mod remote_ui;
 mod run_bar;
 mod run_settings;
@@ -888,6 +889,7 @@ impl eframe::App for App {
         self.poll_named_models(ui.ctx());
         self.poll_chat();
         self.poll_remote(ui.ctx());
+        self.poll_setup_run(ui.ctx());
 
         self.poll_restart(ui.ctx());
 
@@ -912,6 +914,7 @@ impl eframe::App for App {
         self.show_model_details(ui.ctx());
         self.show_add_model_window(ui.ctx());
         self.show_connect_popover(ui.ctx());
+        self.show_busy_dialog(ui.ctx());
         self.show_guide_window(ui.ctx());
         self.show_foreign_program_modal(ui.ctx());
         self.show_configuration_modals(ui.ctx(), false);

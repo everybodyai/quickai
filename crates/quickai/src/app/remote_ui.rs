@@ -25,7 +25,7 @@ use super::theme::{self, Role, Tone};
 use super::widgets::Picked;
 use super::App;
 use crate::models::ModelEntry;
-use crate::remote::{self, Checked, RemoteSpec, SshHost, Tunnel};
+use crate::remote::{self, Checked, RemoteSpec, SshHost, Tunnel, Way};
 
 /// The answer of a tunnel being opened: the tunnel, or why there is none.
 type Opening = Receiver<Result<Tunnel, String>>;
@@ -49,7 +49,7 @@ pub struct RemoteState {
     /// Why the last connection failed, or the tunnel closed.
     error: Option<RemoteError>,
     /// The program that makes tunnels (`ssh`; a test's stand-in).
-    ssh: PathBuf,
+    pub(super) ssh: PathBuf,
     /// The window that keeps the computers is open.
     show_window: bool,
     /// It was asked for again while open: it comes to the front.
@@ -64,6 +64,10 @@ pub struct RemoteState {
     /// A test of a computer that is going, and what the last one found, by the computer's id.
     checking: Option<(String, Receiver<Checked>)>,
     checked: BTreeMap<String, Checked>,
+    /// The run of the selected configuration on a computer QuickAI set up (WP4.33, `remote_run`).
+    pub setup: Option<super::remote_run::SetupRun>,
+    /// A run there is to be looked for: when the window starts, and when a computer is chosen.
+    pub find_wanted: bool,
 }
 
 /// Why the computer in use is not there: it could not be reached, or the connection to it closed during the run.
@@ -99,6 +103,8 @@ impl Default for RemoteState {
             keys: Vec::new(),
             checking: None,
             checked: BTreeMap::new(),
+            setup: None,
+            find_wanted: true,
         }
     }
 }
@@ -120,6 +126,8 @@ pub struct RemoteForm {
     pub name_typed: bool,
     /// The port here was typed: it no longer follows the engine's port.
     pub here_typed: bool,
+    /// How a run there is made.
+    pub way: Way,
     /// More options (the ports and the key file) are open.
     pub more: bool,
 }
@@ -130,7 +138,9 @@ impl RemoteForm {
         RemoteForm {
             ssh_port: "22".into(),
             engine_port: own.to_string(),
-            local_port: own.to_string(),
+            // QuickAI sets a new computer up, and runs the selected configuration there (WP4.33): the port here is
+            // the same as its run's there
+            way: Way::SetUp,
             ..RemoteForm::default()
         }
     }
@@ -144,11 +154,15 @@ impl RemoteForm {
             host: spec.host.clone(),
             ssh_port: spec.ssh_port.to_string(),
             engine_port: engine_port.to_string(),
-            local_port: spec.local_port.unwrap_or(engine_port).to_string(),
+            local_port: match spec.way {
+                Way::SetUp => spec.local_port.map(|p| p.to_string()).unwrap_or_default(),
+                Way::Attach => spec.local_port.unwrap_or(engine_port).to_string(),
+            },
             identity: spec.identity.clone().unwrap_or_default(),
             problem: None,
             name_typed: true,
             here_typed: spec.local_port.is_some(),
+            way: spec.way,
             more: spec.ssh_port != 22
                 || spec.engine_port.is_some()
                 || spec.local_port.is_some()
@@ -178,10 +192,18 @@ impl RemoteForm {
         };
         let mut spec = RemoteSpec::new(&name, &self.host);
         spec.ssh_port = port(&self.ssh_port, "The SSH port")?.unwrap_or(22);
-        spec.engine_port = port(&self.engine_port, "The engine's port")?.filter(|p| *p != own);
-        let there = spec.port_for(own);
-        spec.local_port = port(&self.local_port, "The port here")?.filter(|p| *p != there);
+        match self.way {
+            // the ports are the configuration's: only the one here can be given
+            Way::SetUp => spec.local_port = port(&self.local_port, "The port here")?,
+            Way::Attach => {
+                spec.engine_port =
+                    port(&self.engine_port, "The engine's port")?.filter(|p| *p != own);
+                let there = spec.port_for(own);
+                spec.local_port = port(&self.local_port, "The port here")?.filter(|p| *p != there);
+            }
+        }
         spec.identity = Some(self.identity.trim().to_string()).filter(|i| !i.is_empty());
+        spec.way = self.way;
         if let Some(problem) = spec.problem() {
             return Err(problem);
         }
@@ -223,13 +245,31 @@ impl App {
         }
     }
 
-    /// The computer the engine's models run on, when it is not this one.
+    /// The computer the engine's models run on, when it is not this one and the window attaches to the engine there
+    /// (WP4.27).
     pub(super) fn remote_in_use(&self) -> Option<&RemoteSpec> {
-        if !self.can_run_remote() {
-            return None;
-        }
+        self.runner_spec().filter(|r| r.way == Way::Attach)
+    }
+
+    /// The computer QuickAI sets up and runs the selected configuration on, when that is where it runs (WP4.33).
+    pub(super) fn setup_in_use(&self) -> Option<&RemoteSpec> {
+        self.runner_spec().filter(|r| r.way == Way::SetUp)
+    }
+
+    /// The computer chosen in the status bar, when it can be used with the engine in use.
+    fn runner_spec(&self) -> Option<&RemoteSpec> {
         let id = self.remote.runner.as_deref()?;
-        self.remote.remotes.iter().find(|r| r.id == id)
+        self.remote
+            .remotes
+            .iter()
+            .find(|r| r.id == id)
+            .filter(|r| self.usable_with_engine(r))
+    }
+
+    /// Whether `spec` can be used with the engine in use: any engine on a computer QuickAI sets up, and on one where
+    /// the window attaches, an engine that can attach (Ollama, ComfyUI).
+    fn usable_with_engine(&self, spec: &RemoteSpec) -> bool {
+        spec.way == Way::SetUp || self.can_run_remote()
     }
 
     /// The engine's port on `spec`: the one the person gave, else the engine's own.
@@ -258,12 +298,13 @@ impl App {
 
     /// The models run on the computer `id`.
     fn in_use(&self, id: &str) -> bool {
-        self.remote_in_use().is_some_and(|r| r.id == id)
+        self.runner_spec().is_some_and(|r| r.id == id)
     }
 
     /// Why where the models run cannot be changed now (`engine_locked`).
     fn where_lock_reason(&self) -> &'static str {
-        if self.session.is_active() || self.remote_opening() {
+        let remote_run = self.setup_run().is_some_and(|r| r.running() || r.working());
+        if self.session.is_active() || self.remote_opening() || remote_run {
             "Stop the server to change where it runs."
         } else {
             "Wait for what is being fetched to finish to change where it runs."
@@ -380,6 +421,8 @@ impl App {
         }
         self.remote.runner = id;
         self.remote.error = None;
+        self.remote.setup = None;
+        self.remote.find_wanted = true;
         self.store_remotes();
         // what is listed is what that computer has: its own list, when it gave one
         self.named = Default::default();
@@ -400,6 +443,21 @@ impl App {
 
     /// Tests `spec`: the tunnel, and the engine in use answering through it, on a thread.
     fn check_remote(&mut self, spec: RemoteSpec, ctx: &egui::Context) {
+        if spec.way == Way::SetUp {
+            // reached, and QuickAI can run there: the engine is the configuration's, and is not asked for
+            let ssh = self.remote.ssh.clone();
+            let (tx, rx) = crossbeam_channel::bounded(1);
+            let wake = ctx.clone();
+            let id = spec.id.clone();
+            std::thread::spawn(move || {
+                let found = remote::probe::check_setup(&ssh, &spec, env!("CARGO_PKG_VERSION"));
+                let _ = tx.send(found);
+                wake.request_repaint();
+            });
+            self.remote.checked.remove(&id);
+            self.remote.checking = Some((id, rx));
+            return;
+        }
         let Some(engine) = self.engine_doc() else {
             return;
         };
@@ -487,10 +545,11 @@ impl App {
 
     /// Tests the computer `id`, when the engine in use can run on it.
     fn test_computer(&mut self, id: &str, ctx: &egui::Context) {
-        if !self.can_run_remote() || self.remote.checking.is_some() {
+        if self.remote.checking.is_some() {
             return;
         }
-        if let Some(spec) = self.remote.remotes.iter().find(|r| r.id == id).cloned() {
+        let spec = self.remote.remotes.iter().find(|r| r.id == id).cloned();
+        if let Some(spec) = spec.filter(|s| self.usable_with_engine(s)) {
             self.check_remote(spec, ctx);
         }
     }
@@ -562,7 +621,7 @@ impl App {
     /// add and manage them. Under an engine that cannot run elsewhere the computers are there, greyed, with why.
     pub(super) fn show_where_switch(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette();
-        let (label, dot) = match self.remote_in_use() {
+        let (label, dot) = match self.runner_spec() {
             Some(r) => (r.name.clone(), self.answers(&r.id)),
             None => ("This computer".to_string(), None),
         };
@@ -626,11 +685,10 @@ impl App {
 
     /// The menu of the status bar's place: the choices, and the ways to the window.
     fn show_where_menu(&mut self, ui: &mut egui::Ui) {
-        let can = self.can_run_remote();
         let locked = self.engine_locked();
         let lock_why = self.where_lock_reason();
         let mut chosen: Option<Option<String>> = None;
-        let here = self.remote_in_use().is_none();
+        let here = self.runner_spec().is_none();
         let this = where_row(
             ui,
             here,
@@ -648,6 +706,7 @@ impl App {
             "Run the models here."
         });
         for spec in &self.remote.remotes {
+            let can = self.usable_with_engine(spec);
             let line = if can {
                 self.computer_line(spec)
             } else {
@@ -835,10 +894,12 @@ impl App {
         ui.label(theme::muted(
             "Use the models of a more powerful computer: a desktop with a big graphics card, or a rented server.",
         ));
-        if !can {
+        // a computer the window attaches to has an engine there of its own: with another, it is greyed
+        if !can && self.remote.remotes.iter().any(|r| r.way == Way::Attach) {
             ui.label(
                 egui::RichText::new(format!(
-                    "With {} the models run on this computer; {} can use the ones here.",
+                    "With {} the models run on this computer, or on one QuickAI sets up; {} can use the ones \
+                     you run yourself.",
                     self.engine_name(),
                     self.remote_engine_names("and")
                 ))
@@ -851,7 +912,7 @@ impl App {
             spec: None,
             line: self.this_computer_line(),
             answers: None,
-            on: self.remote_in_use().is_none(),
+            on: self.runner_spec().is_none(),
             removable: false,
         };
         let rows =
@@ -864,7 +925,8 @@ impl App {
                 removable: !(locked && self.remote.runner.as_deref() == Some(spec.id.as_str())),
             }));
         for row in rows {
-            let usable = !locked && (can || row.spec.is_none());
+            let can = row.spec.is_none_or(|spec| self.usable_with_engine(spec));
+            let usable = !locked && can;
             if let Some(asked) = computer_row(ui, &row, can, usable, locked, lock_why) {
                 action = Some(asked);
             }
@@ -930,6 +992,16 @@ impl App {
              the network.",
         ));
         ui.add_space(10.0);
+        let was = form.way;
+        way_choice(ui, &mut form.way);
+        if form.way != was && !form.here_typed {
+            // the port here follows what is there: the engine's port, or for a run QuickAI sets up, its own
+            form.local_port = match form.way {
+                Way::SetUp => String::new(),
+                Way::Attach => form.engine_port.clone(),
+            };
+        }
+        ui.add_space(8.0);
         egui::Grid::new("computer_form")
             .num_columns(2)
             .spacing([10.0, 8.0])
@@ -986,7 +1058,7 @@ impl App {
             self.remote.detail = None;
             return;
         };
-        let can = self.can_run_remote();
+        let can = self.usable_with_engine(&spec);
         let engine = self.engine_name();
         let port = self.remote_port(&spec);
         let testing = self
@@ -1048,6 +1120,17 @@ impl App {
                 ),
             }
             match &found.engine {
+                // a computer QuickAI sets up: whether QuickAI can run there, in a sentence
+                Some(Ok(said)) if spec.way == Way::SetUp => {
+                    step(ui, true, "QuickAI can run there", |ui| {
+                        ui.label(theme::muted(said.clone()).small());
+                    })
+                }
+                Some(Err(why)) if spec.way == Way::SetUp => {
+                    step(ui, false, "QuickAI can't run there", |ui| {
+                        ui.label(egui::RichText::new(why).small());
+                    })
+                }
                 Some(Ok(version)) => step(
                     ui,
                     true,
@@ -1166,8 +1249,44 @@ fn address_rows(ui: &mut egui::Ui, form: &mut RemoteForm, hosts: &[SshHost]) {
     ui.end_row();
 }
 
-/// The rows of the form under More options: the SSH port, the engine's port there, the port here (the same as the
-/// engine's until it is typed) and the key file, with the keys of `~/.ssh` (`keys`) offered.
+/// How a run there is made: QuickAI sets it up (the default), or the window attaches to an engine the person runs
+/// there.
+fn way_choice(ui: &mut egui::Ui, way: &mut Way) {
+    let p = theme::palette();
+    ui.label(egui::RichText::new("How it runs there").color(p.text));
+    for (choice, title, said) in [
+        (
+            Way::SetUp,
+            "QuickAI sets it up",
+            "It copies QuickAI's headless program there and runs the configuration you select. Nothing to install \
+             there but SSH.",
+        ),
+        (
+            Way::Attach,
+            "Connect to an engine already running there",
+            "Ollama or ComfyUI that you run there yourself.",
+        ),
+    ] {
+        ui.horizontal_top(|ui| {
+            if ui.radio(*way == choice, "").clicked() {
+                *way = choice;
+            }
+            ui.vertical(|ui| {
+                if ui
+                    .add(egui::Label::new(egui::RichText::new(title).color(p.text)).sense(egui::Sense::click()))
+                    .clicked()
+                {
+                    *way = choice;
+                }
+                ui.label(egui::RichText::new(said).small().color(p.muted));
+            });
+        });
+    }
+}
+
+/// The rows of the form under More options: the SSH port, the engine's port there (for an engine the person runs
+/// there), the port here (the same as the engine's until it is typed) and the key file, with the keys of `~/.ssh`
+/// (`keys`) offered.
 fn more_rows(ui: &mut egui::Ui, form: &mut RemoteForm, keys: &[PathBuf]) {
     ui.label("SSH port");
     ui.add(
@@ -1176,6 +1295,15 @@ fn more_rows(ui: &mut egui::Ui, form: &mut RemoteForm, keys: &[PathBuf]) {
             .desired_width(80.0),
     );
     ui.end_row();
+    if form.way == Way::Attach {
+        engine_port_row(ui, form);
+    }
+    port_here_row(ui, form);
+    key_row(ui, form, keys);
+}
+
+/// The engine's port there.
+fn engine_port_row(ui: &mut egui::Ui, form: &mut RemoteForm) {
     ui.label("Engine port").on_hover_text(
         "The port the engine listens on, on that computer: 11434 is Ollama's own, 8188 ComfyUI's.",
     );
@@ -1185,15 +1313,27 @@ fn more_rows(ui: &mut egui::Ui, form: &mut RemoteForm, keys: &[PathBuf]) {
         form.local_port = form.engine_port.clone();
     }
     ui.end_row();
-    ui.label("Port here").on_hover_text(
+}
+
+/// The port here: where the tunnel brings the engine's port (for a computer QuickAI sets up, the first port its run
+/// listens on), the same as there unless another is given.
+fn port_here_row(ui: &mut egui::Ui, form: &mut RemoteForm) {
+    let (there, hint) = match form.way {
+        Way::SetUp => (
+            "the run's first port there (its API)",
+            "the same as there".to_string(),
+        ),
+        Way::Attach => ("the engine port", form.engine_port.trim().to_string()),
+    };
+    ui.label("Port here").on_hover_text(format!(
         "The port of this computer the engine is reached on, through the SSH tunnel: the address an app is given \
-         (Connect an app). The same as the engine port unless you give another; when that one is taken here, by an \
-         engine of this computer, a free one is used.",
-    );
+         (Connect an app). The same as {there} unless you give another; when that one is taken here, by an engine \
+         of this computer, a free one is used."
+    ));
     if ui
         .add(
             egui::TextEdit::singleline(&mut form.local_port)
-                .hint_text(form.engine_port.trim())
+                .hint_text(hint)
                 .desired_width(80.0),
         )
         .changed()
@@ -1201,6 +1341,10 @@ fn more_rows(ui: &mut egui::Ui, form: &mut RemoteForm, keys: &[PathBuf]) {
         form.here_typed = !form.local_port.trim().is_empty();
     }
     ui.end_row();
+}
+
+/// The key file, with the keys of `~/.ssh` (`keys`) offered and a native dialog for another.
+fn key_row(ui: &mut egui::Ui, form: &mut RemoteForm, keys: &[PathBuf]) {
     ui.label("Key file").on_hover_text(
         "Only when ssh would not find the key by itself (your agent, ~/.ssh/id_*, ~/.ssh/config).",
     );

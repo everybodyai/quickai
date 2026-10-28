@@ -42,6 +42,19 @@ pub const DEFAULT_ENGINE_PORT: u16 = 11434;
 /// How long a tunnel has to come up: the connection, the login and the forward.
 pub const OPEN_TIMEOUT: Duration = Duration::from_secs(25);
 
+/// How a run on a computer is made (docs/remote-runs.md, section 7).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Way {
+    /// QuickAI copies its headless program there and runs the configuration selected in the window, with any engine
+    /// (WP4.33); what the window adds a computer with.
+    SetUp,
+    /// The window attaches to an engine the person runs there, Ollama or ComfyUI (WP4.27); what a computer added
+    /// before WP4.33 is.
+    #[default]
+    Attach,
+}
+
 /// A computer the models can run on, as the person described it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteSpec {
@@ -62,6 +75,9 @@ pub struct RemoteSpec {
     /// A key file to log in with, when it is not one ssh finds by itself.
     #[serde(default)]
     pub identity: Option<String>,
+    /// How a run there is made.
+    #[serde(default)]
+    pub way: Way,
 }
 
 fn ssh_port() -> u16 {
@@ -79,6 +95,7 @@ impl RemoteSpec {
             engine_port: None,
             local_port: None,
             identity: None,
+            way: Way::Attach,
         }
     }
 

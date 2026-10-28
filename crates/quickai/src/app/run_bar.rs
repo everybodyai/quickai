@@ -102,6 +102,12 @@ impl App {
 
     /// What the Start button does: start the engine with the model the picker has selected.
     pub(super) fn start_selected(&mut self, ctx: &egui::Context) {
+        // on a computer QuickAI sets up, the selected configuration runs there, whatever its engine (WP4.33)
+        if self.setup_in_use().is_some() {
+            self.save_settings();
+            self.start_setup_run(ctx, false);
+            return;
+        }
         // an engine that runs on its own is started with no model: the work it is sent names them
         let model = if self.runs_alone() {
             None
@@ -162,6 +168,11 @@ impl App {
 
     /// Stops the server, and the companion with it: the page goes with what it talks to.
     pub(super) fn stop_server(&mut self) {
+        // on a computer QuickAI set up, the run there is stopped (it lives until it is, WP4.33)
+        if self.setup_run().is_some_and(|r| r.running() || r.working()) {
+            self.stop_setup_run();
+            return;
+        }
         self.stop_companion();
         self.session.stop();
     }
