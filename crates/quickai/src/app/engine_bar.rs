@@ -294,7 +294,7 @@ impl App {
                     self.advanced_section_wanted = true;
                     self.open_settings();
                 }
-                Some("Run on another computer...") => self.open_computers(false),
+                Some("Run on another computer...") => self.open_computers(),
                 Some(_) => {
                     if let Some((id, _)) = &fallback {
                         self.switch_engine(id);

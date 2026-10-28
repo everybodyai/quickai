@@ -31,6 +31,7 @@ pub(super) enum Icon {
     Stop,
     Play,
     Copy,
+    Pencil,
 }
 
 /// Draws `icon` in `rect` (it is drawn in the largest square that fits, in the middle) in `color`.
@@ -221,6 +222,18 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
                 })
                 .collect();
             line(&points);
+        }
+        Icon::Pencil => {
+            // a pencil slanting up to the right, its point at the bottom left, and the line where its tip begins
+            line(&[
+                (16.5, 4.0),
+                (20.0, 7.5),
+                (8.0, 19.5),
+                (4.0, 20.0),
+                (4.5, 16.0),
+                (16.5, 4.0),
+            ]);
+            line(&[(14.0, 6.5), (17.5, 10.0)]);
         }
         Icon::Copy => {
             // two sheets, the front one whole

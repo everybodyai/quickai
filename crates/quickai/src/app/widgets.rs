@@ -245,6 +245,25 @@ pub fn path_picker(ui: &mut egui::Ui, field: &FormField, browse: Browse) -> Opti
     reply
 }
 
+/// What a native file dialog gave: a file, nothing (the person closed it), or no dialog at all.
+pub(super) enum Picked {
+    File(std::path::PathBuf),
+    Closed,
+    NoDialog,
+}
+
+/// The file `dialog` picks. rfd says nothing when it could show no dialog (on Linux it asks the
+/// desktop's portal, else runs zenity, and a computer can have neither), and a dialog a person
+/// closes was open for longer than a moment: no file at once is no dialog.
+pub(super) fn pick_file(dialog: rfd::FileDialog) -> Picked {
+    let asked = std::time::Instant::now();
+    match dialog.pick_file() {
+        Some(path) => Picked::File(path),
+        None if asked.elapsed() < std::time::Duration::from_millis(500) => Picked::NoDialog,
+        None => Picked::Closed,
+    }
+}
+
 /// A native dialog for a folder or a file, opened where the box already points when it points
 /// somewhere that exists.
 fn native_browse(ty: FieldType, current: &str) -> Option<String> {
