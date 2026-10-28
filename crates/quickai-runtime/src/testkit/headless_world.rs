@@ -71,6 +71,9 @@ pub struct World {
     pub github: FakeGithub,
     /// The port the stand-in engine is told to listen on.
     pub port: u16,
+    /// The release the patched document says was tested: the newest of the world's (the shipped one's, b11889, is
+    /// not among them, and would be asked for by its tag).
+    pub tested: String,
 }
 
 impl World {
@@ -128,6 +131,7 @@ impl World {
             files,
             github,
             port,
+            tested: tags.first().map(|t| t.to_string()).unwrap_or_default(),
         };
         world.write_documents(spawn_env, 0);
         world
@@ -154,6 +158,9 @@ id = "llamacpp"
 [locate]
 strategies = [ {{ use = "setting", field = "bin_override" }} ]
 
+[acquire]
+tested = {{ tag = "{tested}" }}
+
 [acquire.feed]
 repo = "acme/llama"
 api = "{api}"
@@ -164,6 +171,7 @@ site = "{site}"
 {env}"#,
                 api = self.github.base(),
                 site = self.files.base(),
+                tested = self.tested,
             ),
         )
         .unwrap();

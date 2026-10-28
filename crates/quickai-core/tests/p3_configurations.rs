@@ -1395,11 +1395,13 @@ fn p3_a71_a_model_is_the_same_whether_it_is_said_as_a_file_or_as_the_entry_of_th
 ) {
     let r = registry();
     let mut st = as_stored(llama_state());
-    st.values
-        .insert("llamacpp.last_model".into(), s("Bonsai-1.7B-Q1_0.gguf"));
+    st.values.insert(
+        "llamacpp.last_model".into(),
+        s("Ternary-Bonsai-2-4B-Q2_0.gguf"),
+    );
     // the file of the recommended list, of the size the list says: it is said as the entry
     let listed = ModelFacts {
-        size: Some(248_302_272),
+        size: Some(1_212_103_520),
         ..ModelFacts::default()
     };
     let by_entry = capture(&r, &st, &first_run(), Some(&listed)).configuration;

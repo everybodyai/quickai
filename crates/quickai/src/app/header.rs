@@ -114,6 +114,12 @@ mod tests {
         app.reload_configurations();
         app.find_active_configuration();
         app.bundled_models_dir = dir.join("bundled");
+        // the engine's program is there (a file is all the window looks for): the page is the model's, not the one that
+        // installs the engine (WP4.31)
+        let bin = dir.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        app.binary = bin.join(engine);
+        std::fs::write(&app.binary, "").unwrap();
         app
     }
 
@@ -781,7 +787,8 @@ mod tests {
             .extend([Turn::said(true, "Hello"), Turn::said(false, "Hi there")]);
         assert_eq!(done(&app), [true, true, true], "a reply is the last step");
         // and an engine that is not installed is the first step not done
-        let ollama = app_in(&dir, "ollama");
+        let mut ollama = app_in(&dir, "ollama");
+        ollama.binary = dir.join("nowhere/ollama");
         assert!(!done(&ollama)[0]);
         let _ = std::fs::remove_dir_all(&dir);
     }
