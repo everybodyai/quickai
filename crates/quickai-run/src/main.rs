@@ -1,13 +1,12 @@
 //! `quickai-run`: QuickAI with no window (docs/headless.md).
 //!
 //! It reads a configuration, gets what it needs on this computer, starts it and stays until it is told to
-//! stop. Everything that is done is the runtime's (`quickai_runtime::provision`), the same code the window
-//! uses for the same things; this is the command line around it.
-
-// the run itself is for Linux and macOS in this version: elsewhere the program says so
-#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+//! stop, in a terminal or in the background (`background`). Everything that is done is the runtime's
+//! (`quickai_runtime::provision`), the same code the window uses for the same things; this is the command line
+//! around it. It runs on Linux, macOS and Windows.
 
 mod args;
+mod background;
 mod render;
 mod signals;
 
@@ -15,7 +14,8 @@ use std::io::Write;
 use std::path::Path;
 
 use quickai_runtime::config::ConfigDirs;
-use quickai_runtime::provision::{self, Event, FetchWord, Options, Request, Secret};
+use quickai_runtime::provision::{self, Event, FetchWord, Options, Outcome, Request, Secret};
+use quickai_runtime::run_file::{self, NotHeld};
 
 use args::{InitInvocation, Parsed, USAGE};
 
@@ -167,6 +167,14 @@ fn main() {
             return;
         }
         Ok(Parsed::Init(init)) => std::process::exit(run_init(init)),
+        Ok(Parsed::Status { json }) => {
+            let dir = run_file::run_dir(&ConfigDirs::from_environment());
+            std::process::exit(background::status(&dir, json))
+        }
+        Ok(Parsed::Down { wait }) => {
+            let dir = run_file::run_dir(&ConfigDirs::from_environment());
+            std::process::exit(background::down(&dir, wait))
+        }
         Ok(Parsed::Run(invocation)) => {
             let mut invocation = *invocation;
             // the variables first, so that a flag, which comes later in the list, wins
@@ -182,41 +190,75 @@ fn main() {
         }
     };
 
-    #[cfg(not(unix))]
-    {
-        let _ = invocation;
-        eprintln!("quickai-run runs on Linux and macOS in this version.");
-        std::process::exit(2);
+    let dirs = ConfigDirs::from_environment();
+    let dir = run_file::run_dir(&dirs);
+    if invocation.detach {
+        std::process::exit(background::start(&args, &dir));
     }
-    #[cfg(unix)]
-    {
-        signals::install();
-        let request = Request {
-            dirs: ConfigDirs::from_environment(),
-            target: invocation.target.clone(),
-            options: invocation.options.clone(),
-        };
-        let mut human = render::Human::new(invocation.quiet);
-        let (json, ready_file) = (invocation.json, invocation.ready_file.clone());
-        let stdout = std::io::stdout();
-        let stderr = std::io::stderr();
-        let outcome = provision::up(
-            &request,
-            &mut |event| {
-                if let Some(path) = &ready_file {
-                    write_ready_file(path, &event);
-                }
-                if json {
-                    let _ = writeln!(stdout.lock(), "{}", render::json_line(&event));
-                } else {
-                    human.show(&event, &mut stdout.lock(), &mut stderr.lock());
-                }
-            },
-            &signals::STOP,
-        );
-        if let Some(path) = &invocation.ready_file {
-            let _ = std::fs::remove_file(path);
+    signals::install(invocation.background);
+    // one run at a time: what changes this computer holds its run (`check` changes nothing)
+    let mut held = if invocation.options.dry_run {
+        None
+    } else {
+        match run_file::hold(&dir, &invocation.target, invocation.background) {
+            Ok(held) => Some(held),
+            Err(NotHeld::Busy(run)) => {
+                eprintln!("quickai-run: {}", background::busy(run.as_deref()));
+                std::process::exit(7);
+            }
+            Err(NotHeld::Io(e)) => {
+                eprintln!("quickai-run: could not write in {}: {e}", dir.display());
+                std::process::exit(1);
+            }
         }
-        std::process::exit(outcome.exit_code());
+    };
+    if held.is_some() {
+        signals::watch_stop_file(dir.clone());
     }
+    let request = Request {
+        dirs,
+        target: invocation.target.clone(),
+        options: invocation.options.clone(),
+    };
+    let mut human = render::Human::new(invocation.quiet);
+    let (json, ready_file) = (invocation.json, invocation.ready_file.clone());
+    let stdout = std::io::stdout();
+    let stderr = std::io::stderr();
+    let outcome = provision::up(
+        &request,
+        &mut |event| {
+            if let Some(held) = held.as_mut() {
+                match &event {
+                    Event::Plan { .. } | Event::Step { .. } => held.set_state("preparing"),
+                    Event::Ready { endpoints, model } => {
+                        held.set_ready(endpoints, model.as_deref())
+                    }
+                    Event::Stopping => held.set_state("stopping"),
+                    _ => {}
+                }
+            }
+            if let Some(path) = &ready_file {
+                write_ready_file(path, &event);
+            }
+            if json {
+                let _ = writeln!(stdout.lock(), "{}", render::json_line(&event));
+            } else {
+                human.show(&event, &mut stdout.lock(), &mut stderr.lock());
+            }
+        },
+        &signals::STOP,
+    );
+    if let Some(path) = &invocation.ready_file {
+        let _ = std::fs::remove_file(path);
+    }
+    if let Some(held) = held.take() {
+        let message = match &outcome {
+            Outcome::Failed(failure) => Some(failure.message.clone()),
+            _ => None,
+        };
+        held.record_end(outcome.word(), message, outcome.exit_code());
+        // the run's file goes before the exit, which runs no destructor
+        drop(held);
+    }
+    std::process::exit(outcome.exit_code());
 }

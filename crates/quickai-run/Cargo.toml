@@ -16,6 +16,10 @@ serde_json = "1"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# the console's Ctrl-C, and a run in the background started out of the job of the SSH connection
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_System_Threading"] }
+
 [dev-dependencies]
 # the fakes the runtime's own tests use: a GitHub that lists releases, a file server, a hub
 quickai-runtime = { path = "../quickai-runtime", features = ["testkit"] }
