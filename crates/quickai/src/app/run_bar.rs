@@ -119,6 +119,13 @@ impl App {
             self.missing_binary_warned = true;
             return;
         }
+        // here, a port another program holds is asked about first (an engine that already runs: use it, or override)
+        if !remote && !std::mem::take(&mut self.port_check_skip) {
+            if let Some(taken) = self.port_taken_now() {
+                self.port_taken = Some(taken);
+                return;
+            }
+        }
         self.save_settings();
         self.run_reached_running = false;
         self.log_lines.clear();

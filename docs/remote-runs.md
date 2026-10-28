@@ -133,9 +133,13 @@ the window says the command that stops it (`sudo systemctl stop ollama`) and wai
 What is built: a run of QuickAI's there is found by `quickai-run status`; another program by `check`, which says the
 ports the run would listen on and whether another program has one now (and what answers there, when it answers as the
 engine does: `Ollama 0.12.3`). Override stops it (`quickai-run down`, or `quickai-run free PORT...` for another
-program), then checks again and runs ours; Stop it stops it and runs nothing. Not yet: the same check for a run on this
-computer, where it would replace what the window does today with a port that is taken (*Use port N*, and C171's
-attach to an Ollama already answering).
+program), then checks again and runs ours; Stop it stops it and runs nothing. For a run on this computer the same
+is asked before Start (`app/port_taken.rs`; the stopping is the runtime's `ports`, which `quickai-run free` uses too):
+an engine that already runs there, which QuickAI did not start, is **Use it** (what the window did by itself before:
+the run attaches to it; *Always use the one that runs* sets the engine's mode to attach, and it is not asked again),
+**Override**, **Stop it** or **Cancel**; another program on the port is **Override**, **Use port N** (the next free
+one, as the advice after a failed start offers), **Stop it** or **Cancel**. An engine set to attach is not asked
+about.
 
 ### 3.3 Several runs at once, and the page of each
 
