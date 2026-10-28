@@ -14,10 +14,11 @@
 //!
 //! The parts of a run QuickAI starts there itself (WP4.33, docs/remote-runs.md) are modules of their own: `ssh` (a
 //! command run there, a file copied there), `probe` (what the computer is), `deploy` (the headless program and
-//! what it runs, copied there) and `run` (the run started, asked after and stopped there, and its ports brought
-//! here).
+//! what it runs, copied there), `run` (the run started, asked after and stopped there, and its ports brought here)
+//! and `job` (those steps on a thread of their own, for the window).
 
 pub mod deploy;
+pub mod job;
 pub mod probe;
 pub mod run;
 pub mod ssh;

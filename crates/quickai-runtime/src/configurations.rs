@@ -1160,6 +1160,34 @@ pub fn export_text(
     Ok((text, exported.notes))
 }
 
+/// The text of a configuration made from what the window holds now (`captured`), to be run elsewhere: on another
+/// computer, by QuickAI's own headless program (docs/remote-runs.md). It is written as `export_text` writes a stored
+/// one, the secrets taken out; `id` and `name` are the ones of the configuration in use.
+pub fn export_captured(
+    registry: &Registry,
+    captured: Captured,
+    id: &str,
+    name: &str,
+    host: &Host,
+) -> (String, Vec<Note>) {
+    let exported = export(
+        registry,
+        captured,
+        id,
+        name,
+        ExportMeta {
+            note: None,
+            made_with: format!("QuickAI {}", env!("CARGO_PKG_VERSION")),
+            made_on: host.made_on(),
+        },
+    );
+    let text =
+        exported
+            .configuration
+            .to_toml(registry.engine_map(), env!("CARGO_PKG_VERSION"), false);
+    (text, exported.notes)
+}
+
 /// The lowest application version that reads what this build writes, for the docs and the tests.
 pub fn requires() -> String {
     requires_for(env!("CARGO_PKG_VERSION"))

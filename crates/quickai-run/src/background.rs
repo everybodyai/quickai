@@ -21,7 +21,7 @@ pub fn busy(run: Option<&RunFile>) -> String {
     match run {
         Some(run) if !run.configuration.is_empty() => format!(
             "\"{}\" runs on this computer ({}, {}); stop it first with `quickai-run down`",
-            run.configuration,
+            run.name(),
             run.state,
             for_how_long(run.started)
         ),
@@ -94,7 +94,7 @@ pub fn start(args: &[String], dir: &Path) -> i32 {
             println!(
                 "\"{}\" runs in the background (process {}), until `quickai-run down` stops it. \
                  `quickai-run status` says how it goes; what it says is in {}.",
-                run.configuration,
+                run.name(),
                 run.pid,
                 run_file::events_path(dir).display()
             );
@@ -170,7 +170,7 @@ pub fn status(dir: &Path, json: bool) -> i32 {
             };
             println!(
                 "\"{}\" runs {place} (process {}, {}), {}.",
-                run.configuration,
+                run.name(),
                 run.pid,
                 run.state,
                 for_how_long(run.started)
@@ -194,7 +194,7 @@ pub fn status(dir: &Path, json: bool) -> i32 {
                 .unwrap_or_default();
             println!(
                 "The last run, of \"{}\", ended {} ago ({}{why}).",
-                last.configuration,
+                run_file::configuration_name(&last.configuration),
                 how_long(run_file::now().saturating_sub(last.ended)),
                 last.outcome
             );
@@ -215,7 +215,7 @@ pub fn down(dir: &Path, wait: bool) -> i32 {
         return 1;
     }
     if !wait {
-        println!("\"{}\" was asked to stop.", run.configuration);
+        println!("\"{}\" was asked to stop.", run.name());
         return 0;
     }
     let asked = Instant::now();
@@ -223,14 +223,14 @@ pub fn down(dir: &Path, wait: bool) -> i32 {
         if asked.elapsed() > STOP_WAIT {
             eprintln!(
                 "quickai-run: \"{}\" has not stopped in {} seconds; it goes on stopping.",
-                run.configuration,
+                run.name(),
                 STOP_WAIT.as_secs()
             );
             return 1;
         }
         std::thread::sleep(Duration::from_millis(500));
     }
-    println!("\"{}\" stopped.", run.configuration);
+    println!("\"{}\" stopped.", run.name());
     0
 }
 
