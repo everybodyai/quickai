@@ -76,6 +76,25 @@ pub fn start(
     version: &str,
     launch: &Launch,
 ) -> Result<Started, String> {
+    let sent = send(ssh, scp, spec, computer, launch)?;
+    start_sent(ssh, spec, computer, version, &sent, &launch.flags)
+}
+
+/// What was copied there for a run: the configuration, and its environment file, by their paths there (relative to
+/// the home).
+pub struct Sent {
+    pub configuration: String,
+    pub environment: Option<String>,
+}
+
+/// Copies the configuration of `launch` (and its environment file) to `spec`, into `~/.quickai/remote`.
+pub fn send(
+    ssh: &Path,
+    scp: &Path,
+    spec: &RemoteSpec,
+    computer: &Computer,
+    launch: &Launch,
+) -> Result<Sent, String> {
     let name = slug(launch.name);
     let configuration = format!(".quickai/remote/{name}.toml");
     deploy::copy_file(
@@ -86,17 +105,41 @@ pub fn start(
         launch.configuration,
         &configuration,
     )?;
+    let environment = match launch.environment {
+        Some(environment) => {
+            let there = format!(".quickai/remote/{name}.environment.toml");
+            deploy::copy_file(ssh, scp, spec, computer, environment, &there)?;
+            Some(there)
+        }
+        None => None,
+    };
+    Ok(Sent {
+        configuration,
+        environment,
+    })
+}
+
+/// Starts the run of what was `sent` to `spec` in the background, with `flags` of `quickai-run up`.
+pub fn start_sent(
+    ssh: &Path,
+    spec: &RemoteSpec,
+    computer: &Computer,
+    version: &str,
+    sent: &Sent,
+    flags: &[String],
+) -> Result<Started, String> {
     let mut command = format!(
         "{} up {} --detach",
         computer.program_command(version),
-        computer.shell_path(&configuration)
+        computer.shell_path(&sent.configuration)
     );
-    if let Some(environment) = launch.environment {
-        let there = format!(".quickai/remote/{name}.environment.toml");
-        deploy::copy_file(ssh, scp, spec, computer, environment, &there)?;
-        command.push_str(&format!(" --environment {}", computer.shell_path(&there)));
+    if let Some(environment) = &sent.environment {
+        command.push_str(&format!(
+            " --environment {}",
+            computer.shell_path(environment)
+        ));
     }
-    for flag in &launch.flags {
+    for flag in flags {
         command.push(' ');
         command.push_str(&word(computer, flag));
     }

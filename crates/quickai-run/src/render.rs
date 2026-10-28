@@ -236,7 +236,9 @@ impl Human {
                 lines
             }
             Event::Stopping => say("Stopping...".to_string()),
-            Event::Finished { outcome, message } => match (outcome.as_str(), message) {
+            Event::Finished {
+                outcome, message, ..
+            } => match (outcome.as_str(), message) {
                 ("failed", Some(message)) => vec![(true, format!("quickai-run: {message}"))],
                 ("failed", None) => vec![(true, "quickai-run: it failed".to_string())],
                 ("planned", _) => say("Nothing was changed.".to_string()),
@@ -503,6 +505,7 @@ mod tests {
         let failure = Event::Finished {
             outcome: "failed".into(),
             message: Some("it did not work".into()),
+            lack: None,
         };
         let lines = quiet.lines(&failure);
         assert_eq!(lines, [(true, "quickai-run: it did not work".to_string())]);

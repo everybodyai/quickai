@@ -25,7 +25,7 @@ use quickai_core::registry::{Engine, Registry};
 use quickai_core::value::Value;
 
 use super::build;
-use super::report::{Failure, FailureKind, FileInfo, StepInfo};
+use super::report::{Failure, FailureKind, FileInfo, Lack, StepInfo};
 use super::Options;
 use crate::config::ConfigDirs;
 use crate::configurations::runtime_field;
@@ -205,6 +205,9 @@ fn program(
         needs(format!(
             "{name} is not on this computer, and which build to install could not be told: {why}"
         ))
+        .with_lack(Lack::Build {
+            program: name.to_string(),
+        })
     })?;
     // and, unless a Python is named (`--python`), that its Python is QuickAI's own, downloaded with it (C181)
     let own = quickai_core::acquire::own_python_sentence(engine)
@@ -499,7 +502,10 @@ fn locate(
                 piece.store_as,
                 folder_of(piece, dir).display(),
                 piece.store_as
-            )));
+            ))
+            .with_lack(Lack::Model {
+                file: piece.store_as.clone(),
+            }));
         }
         if let Some(endpoint) = &endpoint {
             if let Some(rest) = piece.url.strip_prefix(&site) {
@@ -687,7 +693,8 @@ fn wanted_downloads(
                     return Err(needs(format!(
                         "{name} is not in {} and the configuration does not say where to get it; put the file there, name where it is with --model-source {name}=PATH, give a folder that has it with --models-from, or name a model of the recommended list",
                         models_dir.display()
-                    )));
+                    ))
+                    .with_lack(Lack::Model { file: name.clone() }));
                 } else {
                     Wanted {
                         weights: name.clone(),

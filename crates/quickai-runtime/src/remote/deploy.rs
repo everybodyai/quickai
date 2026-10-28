@@ -20,6 +20,9 @@ const COPY_TIMEOUT: Duration = Duration::from_secs(600);
 /// How long a small command there may take.
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How long the copy of a model file may take: gigabytes over a line at home.
+const BIG_COPY_TIMEOUT: Duration = Duration::from_secs(12 * 3600);
+
 /// Where the headless programs for each system are: `QUICKAI_REMOTE_PROGRAMS` when it names a folder (a test, or a
 /// build run from its sources), else the package's `remote/` folder (in the macOS app, `Contents/Resources/remote`).
 pub fn programs_dir() -> Option<PathBuf> {
@@ -119,10 +122,34 @@ pub fn copy_file(
     local: &Path,
     relative: &str,
 ) -> Result<(), String> {
+    copy_within(ssh, scp, spec, computer, local, relative, COPY_TIMEOUT)
+}
+
+/// `copy_file` for a file of gigabytes (a model), given hours.
+pub fn copy_big_file(
+    ssh: &Path,
+    scp: &Path,
+    spec: &RemoteSpec,
+    computer: &Computer,
+    local: &Path,
+    relative: &str,
+) -> Result<(), String> {
+    copy_within(ssh, scp, spec, computer, local, relative, BIG_COPY_TIMEOUT)
+}
+
+fn copy_within(
+    ssh: &Path,
+    scp: &Path,
+    spec: &RemoteSpec,
+    computer: &Computer,
+    local: &Path,
+    relative: &str,
+    timeout: Duration,
+) -> Result<(), String> {
     if let Some((folder, _)) = relative.rsplit_once('/') {
         make_folder(ssh, spec, computer, folder)?;
     }
-    ssh::copy(scp, spec, local, relative, COPY_TIMEOUT)
+    ssh::copy(scp, spec, local, relative, timeout)
 }
 
 /// Makes `relative` (below the person's home) on `spec`, and the folders above it.

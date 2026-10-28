@@ -916,6 +916,7 @@ impl eframe::App for App {
         self.show_add_model_window(ui.ctx());
         self.show_connect_popover(ui.ctx());
         self.show_busy_dialog(ui.ctx());
+        self.show_alternatives_dialog(ui.ctx());
         self.show_guide_window(ui.ctx());
         self.show_foreign_program_modal(ui.ctx());
         self.show_configuration_modals(ui.ctx(), false);

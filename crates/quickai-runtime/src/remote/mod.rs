@@ -17,6 +17,7 @@
 //! what it runs, copied there), `run` (the run started, asked after and stopped there, and its ports brought here)
 //! and `job` (those steps on a thread of their own, for the window).
 
+pub mod alternatives;
 pub mod deploy;
 pub mod job;
 pub mod probe;
@@ -78,6 +79,10 @@ pub struct RemoteSpec {
     /// How a run there is made.
     #[serde(default)]
     pub way: Way,
+    /// The other ways the person accepted for this computer (section 6), as words of `quickai-run up`
+    /// (`--models-dir /data/quickai-models`): given to each run there, so that it does not ask again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accepted: Vec<String>,
 }
 
 fn ssh_port() -> u16 {
@@ -96,6 +101,7 @@ impl RemoteSpec {
             local_port: None,
             identity: None,
             way: Way::Attach,
+            accepted: Vec::new(),
         }
     }
 

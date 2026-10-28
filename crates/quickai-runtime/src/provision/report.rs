@@ -69,7 +69,23 @@ pub enum Event {
     Finished {
         outcome: String,
         message: Option<String>,
+        /// What it lacks that another way can be proposed for, when that is why it failed.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        lack: Option<Lack>,
     },
+}
+
+/// What a run lacks that another way can be proposed for (docs/remote-runs.md, section 6): the window that runs a
+/// configuration on another computer reads it from the end of `check`, and offers the way to accept or reject.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "lack", rename_all = "snake_case")]
+pub enum Lack {
+    /// A model file that is not there, and that nobody says where to get.
+    Model { file: String },
+    /// The folder the models go in has not room for what the plan fetches.
+    Room { bytes: u64, dir: String, free: u64 },
+    /// Which build of the engine's program to install could not be told for this computer.
+    Build { program: String },
 }
 
 /// One thing that was said about this computer.
@@ -175,6 +191,8 @@ pub enum FailureKind {
 pub struct Failure {
     pub kind: FailureKind,
     pub message: String,
+    /// What it lacks that another way can be proposed for.
+    pub lack: Option<Lack>,
 }
 
 impl Failure {
@@ -182,7 +200,14 @@ impl Failure {
         Failure {
             kind,
             message: message.into(),
+            lack: None,
         }
+    }
+
+    /// The failure, with what it lacks that another way can be proposed for.
+    pub fn with_lack(mut self, lack: Lack) -> Failure {
+        self.lack = Some(lack);
+        self
     }
 }
 

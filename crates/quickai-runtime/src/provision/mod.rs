@@ -40,7 +40,7 @@ pub use build::pick_build;
 pub use quickai_core::profile::environment::Secret;
 pub use report::{
     in_the_words_of_the_command_line, EndpointInfo, EnvironmentItem, Event, Failure, FailureKind,
-    FileInfo, Outcome, PrerequisiteInfo, StepInfo,
+    FileInfo, Lack, Outcome, PrerequisiteInfo, StepInfo,
 };
 
 use crate::config::{build_registry, ConfigDirs};
@@ -140,6 +140,10 @@ pub fn up(request: &Request, sink: &mut dyn FnMut(Event), stop: &AtomicBool) -> 
         outcome: outcome.word().to_string(),
         message: match &outcome {
             Outcome::Failed(failure) => Some(failure.message.clone()),
+            _ => None,
+        },
+        lack: match &outcome {
+            Outcome::Failed(failure) => failure.lack.clone(),
             _ => None,
         },
     });
@@ -637,7 +641,12 @@ fn check_room(planned: &plan::Plan, dir: &Path) -> Result<(), Failure> {
                 dir.display(),
                 human_bytes(free)
             ),
-        ));
+        )
+        .with_lack(Lack::Room {
+            bytes,
+            dir: dir.display().to_string(),
+            free,
+        }));
     }
     Ok(())
 }

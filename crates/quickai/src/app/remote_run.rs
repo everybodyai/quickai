@@ -7,6 +7,8 @@
 //! it (section 3.2). A run lives until it is stopped, from here or there; the window finds the ones that go on when
 //! it starts (`find`). The steps are `remote::job`'s, on threads of their own; this is what the window keeps of them.
 
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -14,6 +16,7 @@ use crossbeam_channel::Receiver;
 use eframe::egui;
 
 use crate::provision::EndpointInfo;
+use crate::remote::alternatives::{self, Issue};
 use crate::remote::job::{self, Job, Launching, Update};
 use crate::remote::{self, RemoteSpec, Tunnel, Way};
 use crate::run_file::RunFile;
@@ -34,6 +37,12 @@ pub struct SetupRun {
     pub there: Option<Box<RunFile>>,
     /// Another run goes on there, and the person is asked what to do with it (`answer_busy`).
     pub busy: Option<Option<Box<RunFile>>>,
+    /// What the configuration lacks there, each with another way, while the person is asked about them.
+    pub alternatives: Option<Vec<Issue>>,
+    /// The person's answers to them, by the issue's id: accepted or rejected.
+    pub answers: BTreeMap<String, bool>,
+    /// The words of `quickai-run up` the accepted answers came to, for the window to keep for the computer.
+    remember: Vec<String>,
     /// It runs there, and each thing it started is reached here at these addresses.
     pub endpoints: Vec<EndpointInfo>,
     /// Why it could not be done, or stopped.
@@ -117,6 +126,13 @@ impl App {
             return;
         }
         let (name, text) = self.selected_configuration_text();
+        // what was answered about the other ways proposed is kept from one start to the next
+        let answers = self
+            .remote
+            .setup
+            .get(&spec.id)
+            .map(|r| r.answers.clone())
+            .unwrap_or_default();
         let cancel = Arc::new(AtomicBool::new(false));
         let wake = ctx.clone();
         let updates = job::start(
@@ -124,8 +140,10 @@ impl App {
             Launching {
                 name: name.clone(),
                 text,
-                flags: Vec::new(),
+                flags: spec.accepted.clone(),
                 override_first,
+                answers: answers.clone(),
+                local_models: self.local_model_files(),
             },
             move || wake.request_repaint(),
             cancel.clone(),
@@ -136,6 +154,7 @@ impl App {
             SetupRun {
                 configuration: name,
                 doing: format!("Connecting to {}", spec.name),
+                answers,
                 updates: Some(updates),
                 cancel,
                 wake: Some(ctx.clone()),
@@ -224,6 +243,7 @@ impl App {
         }
         let mut log = Vec::new();
         let mut gone = Vec::new();
+        let mut remembered = Vec::new();
         for (id, run) in self.remote.setup.iter_mut() {
             let name = self
                 .remote
@@ -234,9 +254,21 @@ impl App {
             if take_updates(run, &name, &mut log) {
                 gone.push(id.clone());
             }
+            if !run.remember.is_empty() {
+                remembered.push((id.clone(), std::mem::take(&mut run.remember)));
+            }
         }
         for id in gone {
             self.remote.setup.remove(&id);
+        }
+        // what the person accepted for a computer is kept with it, so that the next run does not ask again
+        if !remembered.is_empty() {
+            for (id, words) in remembered {
+                if let Some(spec) = self.remote.remotes.iter_mut().find(|r| r.id == id) {
+                    alternatives::merge_accepted(&mut spec.accepted, &words);
+                }
+            }
+            self.store_remotes();
         }
         for line in log {
             self.push_log(line);
@@ -302,6 +334,112 @@ impl App {
         }
         if let Some(answer) = answer {
             self.answer_busy(answer, ctx);
+        }
+    }
+
+    /// The model files this computer has, by name, with their path and size: what can be copied to a computer that
+    /// lacks one.
+    fn local_model_files(&self) -> BTreeMap<String, (PathBuf, u64)> {
+        self.models
+            .iter()
+            .filter(|m| m.path.is_file())
+            .map(|m| (m.filename.clone(), (m.path.clone(), m.size_bytes)))
+            .collect()
+    }
+
+    /// The questions about the other ways for what the configuration lacks there (section 6): each with Accept and
+    /// Reject, and Continue once each is answered, which starts again with the answers.
+    pub(super) fn show_alternatives_dialog(&mut self, ctx: &egui::Context) {
+        let Some(spec) = self.setup_in_use().cloned() else {
+            return;
+        };
+        let Some(run) = self.remote.setup.get_mut(&spec.id) else {
+            return;
+        };
+        let Some(issues) = run.alternatives.clone() else {
+            return;
+        };
+        let p = theme::palette();
+        let configuration = run.configuration.clone();
+        let mut go = false;
+        let mut cancel = false;
+        let modal = egui::Modal::new(egui::Id::new("remote_alternatives_modal")).show(ctx, |ui| {
+            ui.set_width(640.0);
+            ui.label(
+                egui::RichText::new(format!(
+                    "Before \"{configuration}\" runs on {}",
+                    spec.name
+                ))
+                .size(16.0)
+                .family(theme::semibold(ui)),
+            );
+            ui.label(theme::muted(format!(
+                "What {} lacks for it, each with another way. Accept or reject each; nothing is installed before \
+                 you continue.",
+                spec.name
+            )));
+            ui.add_space(8.0);
+            for issue in &issues {
+                let answer = run.answers.get(&issue.id).copied();
+                theme::card(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
+                            ui.set_max_width(440.0);
+                            ui.label(egui::RichText::new(format!("⚠ {}", issue.problem)).color(p.text));
+                            let way = egui::RichText::new(format!("↳ {}", issue.alternative));
+                            ui.label(match answer {
+                                Some(false) => way.strikethrough().color(p.muted),
+                                _ => way.color(p.ok),
+                            });
+                            if answer == Some(false) {
+                                ui.label(egui::RichText::new(&issue.then).small().color(p.bad));
+                            }
+                        });
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.selectable_label(answer == Some(false), "Reject").clicked() {
+                                run.answers.insert(issue.id.clone(), false);
+                            }
+                            if ui.selectable_label(answer == Some(true), "Accept").clicked() {
+                                run.answers.insert(issue.id.clone(), true);
+                            }
+                        });
+                    });
+                });
+                ui.add_space(4.0);
+            }
+            ui.label(theme::muted(format!(
+                "What you accept is kept for {}, so the next run does not ask again.",
+                spec.name
+            )));
+            ui.separator();
+            let left = issues
+                .iter()
+                .filter(|i| !run.answers.contains_key(&i.id))
+                .count();
+            ui.horizontal(|ui| {
+                if left > 0 {
+                    ui.label(theme::muted(format!("{left} left to answer")));
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if theme::button_sized(ui, Role::Primary, left == 0, "Continue", egui::vec2(0.0, 30.0))
+                        .clicked()
+                    {
+                        go = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+        });
+        if modal.should_close() && !go {
+            cancel = true;
+        }
+        if go {
+            run.alternatives = None;
+            self.start_setup_run(ctx, false);
+        } else if cancel {
+            self.remote.setup.remove(&spec.id);
         }
     }
 
@@ -401,6 +539,12 @@ fn take_updates(run: &mut SetupRun, name: &str, log: &mut Vec<String>) -> bool {
                 run.endpoints = endpoints;
                 run.tunnel = Some(tunnel);
             }
+            Update::Alternatives(issues) => {
+                run.reached = true;
+                run.doing.clear();
+                run.alternatives = Some(issues);
+            }
+            Update::Remember(words) => run.remember.extend(words),
             Update::Nothing | Update::Stopped => gone = true,
             Update::Failed(why) => {
                 log.push(format!("[remote] {why}"));
