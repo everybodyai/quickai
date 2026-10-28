@@ -181,8 +181,9 @@ impl App {
             .id(egui::Id::new("guides"))
             .open(&mut open)
             .collapsible(false)
-            .resizable(true)
-            .default_size([620.0, 360.0])
+            // as tall as what it holds; only its width can be changed
+            .resizable([true, false])
+            .default_width(620.0)
             .show(ctx, |ui| {
                 ui.horizontal_top(|ui| {
                     ui.vertical(|ui| {

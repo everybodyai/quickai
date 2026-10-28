@@ -69,9 +69,9 @@ impl App {
             .id(egui::Id::new("add_model"))
             .open(&mut open)
             .collapsible(false)
-            .resizable(true)
+            // as tall as what it holds (a long list of results scrolls in its own room)
+            .resizable([true, false])
             .default_width(width)
-            .default_height(440.0)
             .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 60.0))
             .show(ctx, |ui| {
                 ui.set_min_width(width - 24.0);

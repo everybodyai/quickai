@@ -17,10 +17,11 @@ use crate::hardware;
 /// What the window is called to the window manager: its title bar, and what a taskbar lists.
 pub(super) const SETTINGS_TITLE: &str = "QuickAI Settings";
 
-/// The size the window opens at, and the least it can be made. It is tall enough for the longest of what it
-/// holds (an engine's Advanced section, open) without scrolling.
-const OPENS_AT: [f32; 2] = [500.0, 700.0];
-const LEAST: [f32; 2] = [400.0, 320.0];
+/// The size the window opens at, and the least it can be made. Its height then follows what it holds
+/// (`theme::fit_window_height`): as tall as an engine's Advanced section, open, and no taller than the rest when it
+/// is closed.
+const OPENS_AT: [f32; 2] = [500.0, 420.0];
+const LEAST: [f32; 2] = [400.0, 200.0];
 
 /// Which window the Settings are: the id the display knows it by.
 pub(super) fn settings_viewport() -> egui::ViewportId {
@@ -67,21 +68,33 @@ impl App {
                 if ui.input(|input| input.viewport().close_requested()) {
                     close = true;
                 }
-                egui::Panel::bottom("settings_footer").show(ui, |ui| {
-                    ui.add_space(6.0);
-                    if ui.button("Close").clicked() {
-                        close = true;
-                    }
-                    ui.add_space(6.0);
-                });
-                egui::CentralPanel::default()
+                let footer = egui::Panel::bottom("settings_footer")
+                    .show(ui, |ui| {
+                        ui.add_space(6.0);
+                        if ui.button("Close").clicked() {
+                            close = true;
+                        }
+                        ui.add_space(6.0);
+                    })
+                    .response
+                    .rect
+                    .height();
+                let content = egui::CentralPanel::default()
                     .frame(super::theme::page_frame())
                     .show(ui, |ui| {
                         egui::ScrollArea::vertical()
                             .id_salt("settings_scroll")
                             .auto_shrink([false, false])
-                            .show(ui, |ui| self.show_settings_body(ui, &form));
-                    });
+                            .show(ui, |ui| self.show_settings_body(ui, &form))
+                            .content_size
+                            .y
+                    })
+                    .inner;
+                super::theme::fit_window_height(
+                    ui.ctx(),
+                    content + super::theme::page_frame_margin() + footer,
+                    LEAST[1],
+                );
             }
             // every delete button of the window asks its question in the window, where it was pressed
             if !self.delete_asked_in_window {
@@ -679,8 +692,9 @@ mod tests {
                     && window.builder.resizable != Some(false),
                 "the window manager's own title bar, and a size the person can change"
             );
+            // a size to open at; its height then follows what it holds (`theme::fit_window_height`)
             let size = window.builder.inner_size.expect("a size to open at");
-            assert!(size.x >= 400.0 && size.y >= 500.0, "{size:?}");
+            assert!(size.x >= 400.0 && size.y >= 300.0, "{size:?}");
             // ...and what is in it is there, and in no other window
             let inside = said(&window.shapes);
             for text in [

@@ -29,8 +29,8 @@ use crate::gpu::GpuVendor;
 pub(super) const CONFIGURATIONS_TITLE: &str = "QuickAI Configurations";
 
 /// The size the window opens at, and the least it can be made.
-const OPENS_AT: [f32; 2] = [580.0, 640.0];
-const LEAST: [f32; 2] = [440.0, 360.0];
+const OPENS_AT: [f32; 2] = [580.0, 480.0];
+const LEAST: [f32; 2] = [440.0, 240.0];
 
 /// Which window the configurations are: the id the display knows it by.
 pub(super) fn configurations_viewport() -> egui::ViewportId {
@@ -275,24 +275,38 @@ impl App {
                 if ui.input(|input| input.viewport().close_requested()) {
                     close = true;
                 }
-                egui::Panel::bottom("configurations_footer").show(ui, |ui| {
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        if ui.button("Close").clicked() {
-                            close = true;
-                        }
-                        if let Some(status) = &self.configs.status {
-                            ui.label(egui::RichText::new(status).small().weak());
-                        }
-                    });
-                    ui.add_space(6.0);
-                });
-                egui::CentralPanel::default().show(ui, |ui| {
-                    egui::ScrollArea::vertical()
-                        .id_salt("configurations_scroll")
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| self.show_configurations_body(ui));
-                });
+                let footer = egui::Panel::bottom("configurations_footer")
+                    .show(ui, |ui| {
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            if ui.button("Close").clicked() {
+                                close = true;
+                            }
+                            if let Some(status) = &self.configs.status {
+                                ui.label(egui::RichText::new(status).small().weak());
+                            }
+                        });
+                        ui.add_space(6.0);
+                    })
+                    .response
+                    .rect
+                    .height();
+                let panel = egui::CentralPanel::default();
+                let margin = egui::Frame::central_panel(&ui.ctx().global_style())
+                    .total_margin()
+                    .sum()
+                    .y;
+                let content = panel
+                    .show(ui, |ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt("configurations_scroll")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| self.show_configurations_body(ui))
+                            .content_size
+                            .y
+                    })
+                    .inner;
+                super::theme::fit_window_height(ui.ctx(), content + margin + footer, LEAST[1]);
             }
             // the questions of the window are asked in it
             self.show_configuration_modals(ui.ctx(), true);
