@@ -82,6 +82,9 @@ pub struct Options {
     pub env_lines: Vec<String>,
     /// `FILE=WHERE`, as `--model-source` has them.
     pub model_sources: Vec<String>,
+    /// Of the recommended list's model the configuration names, this file instead of the configuration's
+    /// (`--model-file`): a smaller one where its own does not fit. Given, the size is not looked at.
+    pub model_file: Option<String>,
     /// Logins and the address of a mirror, from flags and from the variables a program reads; they win over a file.
     pub fetch: Vec<FetchWord>,
     /// Fetch nothing: use what is here, and say what is missing and where it goes.

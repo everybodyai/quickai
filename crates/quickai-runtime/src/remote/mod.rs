@@ -29,6 +29,7 @@ pub mod probe;
 pub mod run;
 pub mod ssh;
 
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
@@ -84,10 +85,12 @@ pub struct RemoteSpec {
     /// How a run there is made.
     #[serde(default)]
     pub way: Way,
-    /// The other ways the person accepted for this computer (section 6), as words of `quickai-run up`
-    /// (`--models-dir /data/quickai-models`): given to each run there, so that it does not ask again.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub accepted: Vec<String>,
+    /// The other ways the person accepted for this computer (section 6), by the configuration they were accepted
+    /// for (its name as a slug), as words of `quickai-run up` (`--models-dir /data/quickai-models`): given to each
+    /// run of it there, so that it does not ask again. By configuration, as some are of its model alone
+    /// (`--model-source`, `--model-file`), which another configuration's run would not take.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub accepted: BTreeMap<String, Vec<String>>,
 }
 
 fn ssh_port() -> u16 {
@@ -106,7 +109,7 @@ impl RemoteSpec {
             local_port: None,
             identity: None,
             way: Way::Attach,
-            accepted: Vec::new(),
+            accepted: BTreeMap::new(),
         }
     }
 

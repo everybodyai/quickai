@@ -94,6 +94,8 @@ Where the models come from, when not where the configuration says:
                        an address, or huggingface:owner/repo; may be given again
   --models-from DIR    look in DIR for the files of the models before fetching them (they are linked,
                        not copied, and checked); may be given again
+  --model-file NAME    of the recommended list's model the configuration names, this file instead (a
+                       smaller one where its own does not fit; `check` says when it does not)
   --offline            fetch nothing: use what is here, and say what is missing and where each file goes
   --version, --help
 
@@ -244,6 +246,7 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
                 .options
                 .model_sources
                 .push(value("--model-source")?),
+            "--model-file" => invocation.options.model_file = Some(value("--model-file")?),
             "--models-from" => invocation
                 .options
                 .models_from

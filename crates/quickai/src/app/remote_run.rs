@@ -142,7 +142,11 @@ impl App {
             Launching {
                 name: name.clone(),
                 text,
-                flags: spec.accepted.clone(),
+                flags: spec
+                    .accepted
+                    .get(&remote::slug(&name))
+                    .cloned()
+                    .unwrap_or_default(),
                 override_first,
                 answers: answers.clone(),
                 local_models: self.local_model_files(),
@@ -263,7 +267,7 @@ impl App {
         }
         let mut log = Vec::new();
         let mut gone = Vec::new();
-        let mut remembered = Vec::new();
+        let mut remembered: Vec<(String, String, Vec<String>)> = Vec::new();
         for (id, run) in self.remote.setup.iter_mut() {
             let name = self
                 .remote
@@ -275,7 +279,11 @@ impl App {
                 gone.push(id.clone());
             }
             if !run.remember.is_empty() {
-                remembered.push((id.clone(), std::mem::take(&mut run.remember)));
+                remembered.push((
+                    id.clone(),
+                    remote::slug(&run.configuration),
+                    std::mem::take(&mut run.remember),
+                ));
             }
         }
         for id in gone {
@@ -283,9 +291,10 @@ impl App {
         }
         // what the person accepted for a computer is kept with it, so that the next run does not ask again
         if !remembered.is_empty() {
-            for (id, words) in remembered {
+            for (id, configuration, words) in remembered {
                 if let Some(spec) = self.remote.remotes.iter_mut().find(|r| r.id == id) {
-                    alternatives::merge_accepted(&mut spec.accepted, &words);
+                    let accepted = spec.accepted.entry(configuration).or_default();
+                    alternatives::merge_accepted(accepted, &words);
                 }
             }
             self.store_remotes();
@@ -425,7 +434,9 @@ impl App {
                                 _ => way.color(p.ok),
                             });
                             if answer == Some(false) {
-                                ui.label(egui::RichText::new(&issue.then).small().color(p.bad));
+                                // a rejection that ends it is said in red; one it goes on after, in amber
+                                let color = if issue.on_reject.is_some() { p.warn } else { p.bad };
+                                ui.label(egui::RichText::new(&issue.then).small().color(color));
                             }
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

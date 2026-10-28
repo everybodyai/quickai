@@ -102,6 +102,15 @@ pub enum Lack {
     Room { bytes: u64, dir: String, free: u64 },
     /// Which build of the engine's program to install could not be told for this computer.
     Build { program: String },
+    /// The file of the recommended list's model is more than this computer's memory holds, and a smaller file of the
+    /// same model is not (`--model-file` chooses it).
+    Memory {
+        file: String,
+        bytes: u64,
+        memory: u64,
+        smaller: String,
+        smaller_bytes: u64,
+    },
 }
 
 /// One thing that was said about this computer.

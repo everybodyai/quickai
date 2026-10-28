@@ -40,6 +40,9 @@ pub struct Issue {
     /// What happens when the other way is rejected.
     pub then: String,
     pub remedy: Remedy,
+    /// What is done when it is rejected and the run goes on as it is (a model that may not fit is tried); `None`
+    /// when a rejection ends it.
+    pub on_reject: Option<Remedy>,
 }
 
 /// How an accepted other way is done.
@@ -127,6 +130,7 @@ pub fn check(
                 spec.name
             ),
             remedy: Remedy::Flags(vec![INSTALL_PACKAGES.into()]),
+            on_reject: None,
         });
     }
 
@@ -159,6 +163,7 @@ pub fn check(
                     local: local.clone(),
                     file,
                 },
+                on_reject: None,
             }),
             None => return Ok(Found::Blocked(message)),
         },
@@ -180,6 +185,7 @@ pub fn check(
                         spec.name
                     ),
                     remedy: Remedy::Flags(vec!["--models-dir".into(), folder]),
+                    on_reject: None,
                 }),
                 None => return Ok(Found::Blocked(message)),
             }
@@ -194,8 +200,34 @@ pub fn check(
                 alternative: "Use the build for the processor: slower, and it runs on any computer.".into(),
                 then: "Then it stops here: name the build in the configuration, and start again.".into(),
                 remedy: Remedy::Flags(vec!["--gpu".into(), "none".into()]),
+                on_reject: None,
             })
         }
+        Some(Lack::Memory {
+            file,
+            bytes,
+            memory,
+            smaller,
+            smaller_bytes,
+        }) => issues.push(Issue {
+            id: format!("memory:{file}"),
+            problem: format!(
+                "{file} ({}) is more than the {} of memory of {} holds.",
+                crate::hardware::format_bytes(bytes),
+                crate::hardware::format_bytes(memory),
+                spec.name
+            ),
+            alternative: format!(
+                "Use {smaller} ({}) of the same model.",
+                crate::hardware::format_bytes(smaller_bytes)
+            ),
+            then: format!(
+                "Then {file} is run as it is: it may not start there, or be slow."
+            ),
+            remedy: Remedy::Flags(vec!["--model-file".into(), smaller]),
+            // the configuration's own file, named, is not looked at again
+            on_reject: Some(Remedy::Flags(vec!["--model-file".into(), file])),
+        }),
         _ if failed && issues.is_empty() => return Ok(Found::Blocked(message)),
         _ => {}
     }

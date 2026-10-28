@@ -271,10 +271,16 @@ fn resolve(
             return Ok(None);
         }
         for issue in issues {
-            if launching.answers.get(&issue.id) != Some(&true) {
-                return Err(issue.then);
-            }
-            let added = match issue.remedy {
+            let remedy = if launching.answers.get(&issue.id) == Some(&true) {
+                issue.remedy
+            } else {
+                match issue.on_reject {
+                    // rejected, and it goes on as it is
+                    Some(remedy) => remedy,
+                    None => return Err(issue.then),
+                }
+            };
+            let added = match remedy {
                 Remedy::Flags(added) => added,
                 Remedy::CopyModel { local, file } => {
                     say(Update::Doing(format!(
