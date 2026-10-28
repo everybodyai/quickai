@@ -203,8 +203,24 @@ Examples of what is offered:
 - a model that does not fit in its memory: a smaller quantization of the same model;
 - not enough free space: another folder there, or fewer models.
 
-Each is accepted or rejected in the window. What was accepted is kept in that computer's environment file, so the next
-run does not ask again.
+Each is accepted or rejected in the window. What was accepted is kept with that computer (`RemoteSpec::accepted`, as
+words of `quickai-run up`), so the next run does not ask again.
+
+What is built (WP4.33.6, `remote::alternatives`): the configuration is copied there and `quickai-run check` run on it;
+what stops it is read from its JSON, where a failure that has another way says what it lacks (`provision::Lack`:
+`model`, `room`, `build`), and missing packages come with the command that brings them. The other ways:
+
+| What it lacks | The other way | Done with |
+|---|---|---|
+| packages (a compiler, the headers of Python) | install them with its package manager | `--install-system-packages` |
+| a model file nobody says where to get, that this computer has | copy it from here | `scp`, then `--model-source FILE=PATH` |
+| room for the models | a folder on another disk there that has room | `--models-dir` |
+| a build of the engine's program that could be told for its cards | the build for the processor | `--gpu none` |
+
+The configuration is the person's own, made by their window, so what it asks is taken (`--accept-review`). After the
+ways accepted are done it is checked again, as one may bring out the next (a copied model that needs room). Anything
+else that stops it is said as it is. Not built yet: a smaller file of the same model when it does not fit the card's
+memory (it needs the recommended list's other files for that model).
 
 ## 7. Decided, and what is left
 

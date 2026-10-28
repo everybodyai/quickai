@@ -447,7 +447,7 @@ impl App {
     }
 
     /// Writes the computers and the choice into the settings.
-    fn store_remotes(&mut self) {
+    pub(super) fn store_remotes(&mut self) {
         let mut stored = self.settings_now();
         stored.set_remotes(&self.remote.remotes);
         stored.set_runner(self.remote.runner.as_deref());
@@ -533,7 +533,12 @@ impl App {
             Ok(spec) => {
                 let id = spec.id.clone();
                 match self.remote.remotes.iter_mut().find(|r| r.id == spec.id) {
-                    Some(existing) => *existing = spec,
+                    Some(existing) => {
+                        // what was accepted for it stays with it (section 6)
+                        let accepted = std::mem::take(&mut existing.accepted);
+                        *existing = spec;
+                        existing.accepted = accepted;
+                    }
                     None => self.remote.remotes.push(spec),
                 }
                 // what was found of it before is of the address it had

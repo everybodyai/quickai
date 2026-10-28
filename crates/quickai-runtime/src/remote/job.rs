@@ -10,6 +10,7 @@
 //!
 //! The tunnel that comes back belongs to whoever asked; the run there does not, and goes on until it is stopped.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -20,6 +21,7 @@ use crossbeam_channel::{Receiver, Sender};
 use crate::provision::EndpointInfo;
 use crate::run_file::{RunFile, Status};
 
+use super::alternatives::{self, Found, Issue, Remedy};
 use super::probe::Computer;
 use super::run::{self, Launch, Started};
 use super::{deploy, open_forwards, probe, slug, RemoteSpec, Tunnel, OPEN_TIMEOUT};
@@ -35,6 +37,11 @@ pub enum Update {
     Status(Box<Status>),
     /// Another run goes on there, and nothing was started: the window asks whether to override it (section 3.2).
     Busy(Option<Box<RunFile>>),
+    /// The configuration lacks these there, each with another way, and nothing was started: the window asks the
+    /// person to accept or reject each (section 6), and starts again with the answers.
+    Alternatives(Vec<Issue>),
+    /// The words of `quickai-run up` the person's accepted answers came to, for the window to keep for that computer.
+    Remember(Vec<String>),
     /// It runs there, and each thing it started is reached here at `endpoints`, through `tunnel`.
     Running {
         tunnel: Tunnel,
@@ -60,13 +67,17 @@ pub struct Job {
 }
 
 /// What a start runs: the configuration's name and text (the window's export of what it holds), flags of
-/// `quickai-run up`, and whether what runs there now is to be stopped first (the person said Override).
-#[derive(Clone)]
+/// `quickai-run up` (what was accepted for that computer before), whether what runs there now is to be stopped first
+/// (the person said Override), the person's answers to the other ways proposed (by the issue's id: accepted or not),
+/// and the model files this computer has (by name, with their path and size), which can be copied there.
+#[derive(Clone, Default)]
 pub struct Launching {
     pub name: String,
     pub text: String,
     pub flags: Vec<String>,
     pub override_first: bool,
+    pub answers: BTreeMap<String, bool>,
+    pub local_models: BTreeMap<String, (PathBuf, u64)>,
 }
 
 /// Starts `launching` on the job's computer. `wake` is called after each update; `cancel` ends the following of a
@@ -97,7 +108,7 @@ pub fn start(
             run::stop(&job.ssh, &job.spec, &computer, &job.version)?;
         }
         say(Update::Doing(format!(
-            "Starting \"{}\" on {}",
+            "Sending \"{}\" to {}",
             launching.name, job.spec.name
         )));
         let file = std::env::temp_dir().join(format!(
@@ -107,12 +118,11 @@ pub fn start(
         ));
         std::fs::write(&file, &launching.text)
             .map_err(|e| format!("Could not write {}: {e}", file.display()))?;
-        let started = run::start(
+        let sent = run::send(
             &job.ssh,
             &job.scp,
             &job.spec,
             &computer,
-            &job.version,
             &Launch {
                 configuration: &file,
                 name: &launching.name,
@@ -121,6 +131,16 @@ pub fn start(
             },
         );
         let _ = std::fs::remove_file(&file);
+        let sent = sent?;
+        let Some(flags) = resolve(&job, &computer, &launching, &sent, say)? else {
+            // the person is asked first
+            return Ok(());
+        };
+        say(Update::Doing(format!(
+            "Starting \"{}\" on {}",
+            launching.name, job.spec.name
+        )));
+        let started = run::start_sent(&job.ssh, &job.spec, &computer, &job.version, &sent, &flags);
         match started? {
             Started::Started => follow(&job, &computer, say, &cancel),
             Started::Busy(running) => {
@@ -165,6 +185,87 @@ pub fn stop(job: Job, wake: impl Fn() + Send + 'static) -> Receiver<Update> {
         say(Update::Stopped);
         Ok(())
     })
+}
+
+/// What the configuration `sent` there lacks, and the other way for each (section 6): checked, and the ways the
+/// person accepted done (a flag added, a model file copied), until nothing is lacking. The flags to start it with,
+/// or `None` when the person is asked first (the issues are said as `Alternatives`). A rejected way ends it with what
+/// then.
+fn resolve(
+    job: &Job,
+    computer: &Computer,
+    launching: &Launching,
+    sent: &run::Sent,
+    say: &dyn Fn(Update),
+) -> Result<Option<Vec<String>>, String> {
+    let mut flags = launching.flags.clone();
+    // the configuration is the person's own, made by their window: what it asks is what they asked for
+    if !flags.iter().any(|f| f == "--accept-review") {
+        flags.push("--accept-review".into());
+    }
+    let mut remember = Vec::new();
+    for _ in 0..4 {
+        say(Update::Doing(format!(
+            "Checking what {} needs for \"{}\"",
+            job.spec.name, launching.name
+        )));
+        let found = alternatives::check(
+            &job.ssh,
+            &job.spec,
+            computer,
+            &job.version,
+            &sent.configuration,
+            &flags,
+            &launching.local_models,
+        )?;
+        let issues = match found {
+            Found::Fine => {
+                if !remember.is_empty() {
+                    say(Update::Remember(remember));
+                }
+                return Ok(Some(flags));
+            }
+            Found::Blocked(why) => {
+                return Err(format!(
+                    "\"{}\" cannot run on {}: {why}",
+                    launching.name, job.spec.name
+                ))
+            }
+            Found::Issues(issues) => issues,
+        };
+        if issues
+            .iter()
+            .any(|i| !launching.answers.contains_key(&i.id))
+        {
+            say(Update::Alternatives(issues));
+            return Ok(None);
+        }
+        for issue in issues {
+            if launching.answers.get(&issue.id) != Some(&true) {
+                return Err(issue.then);
+            }
+            let added = match issue.remedy {
+                Remedy::Flags(added) => added,
+                Remedy::CopyModel { local, file } => {
+                    say(Update::Doing(format!(
+                        "Copying {file} to {}",
+                        job.spec.name
+                    )));
+                    let (relative, whole) = alternatives::copied_model(computer, &file);
+                    deploy::copy_big_file(
+                        &job.ssh, &job.scp, &job.spec, computer, &local, &relative,
+                    )?;
+                    vec!["--model-source".into(), format!("{file}={whole}")]
+                }
+            };
+            remember.extend(added.iter().cloned());
+            flags.extend(added);
+        }
+    }
+    Err(format!(
+        "\"{}\" still lacks something on {} after what was accepted; the log has what it said.",
+        launching.name, job.spec.name
+    ))
 }
 
 /// What the computer is, with the headless program of this release there (copied when it is not).
