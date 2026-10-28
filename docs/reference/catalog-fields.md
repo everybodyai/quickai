@@ -25,12 +25,14 @@ One model of the list. A model id is unique across every catalog document: a sec
 | `by` | text | Who made it. |
 | `type` | text | An id of the vocabulary's `[[model_type]]` (`chat`, `code`, `vision`, ...); default the vocabulary's default type. One no vocabulary defines is an error, with the nearest one suggested. |
 | `note` | text | What it is good for, in a sentence or two (a warning beyond 600 characters). |
+| `tagline` | text | What it is in a few words, the line under its name on the first page of the list (a warning beyond 80 characters). |
 | `license` | text | Its licence, as its makers name it. |
 | `params` | text | How big it is as its makers say (`4B`, `30B-A3B`). |
 | `context` | whole number | The tokens of context it was made for. |
 | `input` | list of text | What it reads, as ids of the vocabulary's `[[modality]]` (`text`, `image`, `audio`); default `text`. |
 | `features` | list of text | What else is worth knowing, as short lower case words of 24 characters at most, eight at most (`thinking`, `tools`, `multilingual`). They are searched. |
-| `start` | bool | Whether "Start here" shows it. Default false. |
+| `tasks` | list of text | Ids of the vocabulary's `[[task]]` it does besides the ones the tasks' rules give it (`scans` for a vision model that reads documents well). One no vocabulary defines is an error. |
+| `start` | bool | Whether "Start here" shows it, and whether the first page of the list picks it before the others. Default false. |
 | `bundled` | bool | Whether the packages ship it, so that it counts as there when its file is in the folder of the models that come with the application. Default false. |
 | `hidden` | bool | A person's document sets it to take a shipped model out of the list: it is not checked and takes no name. Default false. |
 | `run` | table of tables, below | How each engine gets and runs it, `[model.run.<engine id>]`. An engine with no table does not offer the model; a model that no engine offers is a warning. An engine id that does not exist is an error. |

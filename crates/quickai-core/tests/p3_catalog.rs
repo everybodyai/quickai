@@ -976,6 +976,7 @@ fn p3_j07_a_list_is_browsed_by_scope_words_and_size_with_counts_for_each_choice(
         scope: Scope::Start,
         words: "acme".into(),
         size: Some("small".into()),
+        ..Browse::default()
     };
     assert_eq!(
         browsed(&list, &r, &all_three).0,
@@ -1534,5 +1535,102 @@ fn p3_j09_the_reference_page_of_catalog_documents_is_the_one_generated_from_its_
                 attribute.name
             );
         }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------- J13
+
+#[test]
+fn p3_j13_a_model_does_the_tasks_whose_rule_holds_for_it_and_the_ones_it_says_and_says_what_it_is()
+{
+    // Alpha chats, thinks and reads pictures: its type, its features and what it reads say so
+    let r = registry(&[(
+        "user:catalog/t.toml",
+        &doc(
+            "t",
+            &alpha().replace(
+                "note = \"A small chat model.\"",
+                "note = \"A small chat model.\"\ntagline = \"Small, and it thinks.\"",
+            ),
+        ),
+    )]);
+    assert!(errors(&r).is_empty(), "{:#?}", errors(&r));
+    let model = r.catalog().model("alpha-4b").unwrap();
+    assert_eq!(model.tasks, ["chat", "reason", "pictures"]);
+    assert_eq!(model.tagline, "Small, and it thinks.");
+    let entry = &recommended(&r, r.engine("llamacpp").unwrap())
+        .into_iter()
+        .find(|e| e.name == "Alpha 4B")
+        .unwrap();
+    let card = entry.card.as_ref().unwrap();
+    assert_eq!(card.tasks, ["chat", "reason", "pictures"]);
+    assert_eq!(card.tagline, "Small, and it thinks.");
+
+    // a task it says it does besides, in the order of the tasks
+    let r = registry(&[(
+        "user:catalog/t.toml",
+        &doc(
+            "t",
+            &alpha().replace("start = true", "tasks = [\"translate\"]\nstart = true"),
+        ),
+    )]);
+    assert_eq!(
+        r.catalog().model("alpha-4b").unwrap().tasks,
+        ["chat", "reason", "pictures", "translate"]
+    );
+
+    // one no vocabulary defines is refused, with the nearest one
+    refused(
+        |a| a.replace("start = true", "tasks = [\"translat\"]\nstart = true"),
+        "`translat` is not a task any vocabulary defines",
+    );
+
+    // and a tagline that is not one line is too long
+    let long = "word ".repeat(30);
+    let r = registry(&[(
+        "user:catalog/t.toml",
+        &doc(
+            "t",
+            &alpha().replace(
+                "note = \"A small chat model.\"",
+                &format!("note = \"A small chat model.\"\ntagline = \"{long}\""),
+            ),
+        ),
+    )]);
+    assert!(
+        texts(&r, Severity::Warning)
+            .iter()
+            .any(|w| w.contains("tagline of `alpha-4b` is longer than 80 characters")),
+        "{:#?}",
+        texts(&r, Severity::Warning)
+    );
+}
+
+#[test]
+fn p3_j14_every_model_of_the_shipped_list_says_what_it_is_and_every_task_has_models_to_start_with()
+{
+    let r = shipped_registry(&[]);
+    let models = r.catalog().models();
+    for m in models {
+        assert!(!m.tagline.is_empty(), "{} has no tagline", m.id);
+        assert!(!m.tasks.is_empty(), "{} does no task", m.id);
+    }
+    // each task llama.cpp offers has a model to start with that does it, so that its page shows one
+    let llamacpp = recommended(&r, r.engine("llamacpp").unwrap());
+    for task in quickai_core::lookup::picks::offered(r.vocabulary().tasks(), &llamacpp) {
+        let picks = quickai_core::lookup::picks::pick(
+            &llamacpp,
+            std::slice::from_ref(&task.id),
+            r.vocabulary().tasks(),
+            16_000_000_000,
+        );
+        let best = picks.best.unwrap_or_else(|| panic!("{}: no pick", task.id));
+        assert!(picks.best_fits, "{}: the pick does not fit 16 GB", task.id);
+        assert!(
+            llamacpp[best].card.as_ref().is_some_and(|c| c.start),
+            "{}: the pick, {}, is not one to start with",
+            task.id,
+            llamacpp[best].name
+        );
     }
 }

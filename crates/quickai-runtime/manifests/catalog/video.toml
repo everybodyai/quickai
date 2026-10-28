@@ -15,6 +15,7 @@ name = "LTX-Video 2B distilled"
 by = "Lightricks"
 type = "video"
 note = "Makes a short clip from a prompt: Lightricks' 2B video model, distilled to need about 8 steps and no guidance pass. A 4-second 512x288 clip took about a minute and a half on a 12 GB card (RX 6700 XT). It likes long prompts. Free below $10M a year in revenue; above that, ask Lightricks."
+tagline = "Short clips from a prompt, fast."
 license = "LTXV Open Weights License 0.X"
 params = "2B"
 features = ["fast", "distilled"]

@@ -70,6 +70,8 @@ pub fn entry(model: &CatalogModel, ctx: &Context<'_>) -> Option<Entry> {
             context: model.context,
             input: model.input.clone(),
             features: model.features.clone(),
+            tagline: model.tagline.clone(),
+            tasks: model.tasks.clone(),
             start: model.start,
             bundled: model.bundled,
         })),

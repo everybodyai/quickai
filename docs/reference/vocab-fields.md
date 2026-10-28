@@ -2,7 +2,7 @@
 
 _Generated from the types in `crates/quickai-core/src/doc/vocab.rs` by `quickai config docs vocab`. Do not edit by hand: `QUICKAI_UPDATE_GOLDEN=1 cargo test -p quickai-core --test reference` rewrites it, and a test fails while it is out of date._
 
-A vocabulary document (`kind = "vocab"`) names what engines and the window have in common: the kinds of input and output a model can have, the APIs an engine can serve, with where the text is in the requests and replies of each, so that the Live tab can read the traffic of an engine the code has never heard of, the types of model and the classes of size a look-up sorts what it found by, and the sentences of the notes a person is told about a configuration. A vocabulary can name things and describe them; it cannot start a program or reach a host. A document in the user's configuration directory with the same `id` patches the embedded one: tables merge by key and `[[modality]]`, `[[api]]`, `[[model_type]]`, `[[size_class]]` and `[[finding]]` entries by `id` (docs/architecture.md, section 5.2). A key this version does not know is a warning; `quickai config check --strict` makes warnings fail.
+A vocabulary document (`kind = "vocab"`) names what engines and the window have in common: the kinds of input and output a model can have, the APIs an engine can serve, with where the text is in the requests and replies of each, so that the Live tab can read the traffic of an engine the code has never heard of, the types of model and the classes of size a look-up sorts what it found by, and the sentences of the notes a person is told about a configuration. A vocabulary can name things and describe them; it cannot start a program or reach a host. A document in the user's configuration directory with the same `id` patches the embedded one: tables merge by key and `[[modality]]`, `[[api]]`, `[[model_type]]`, `[[size_class]]`, `[[task]]` and `[[finding]]` entries by `id` (docs/architecture.md, section 5.2). A key this version does not know is a warning; `quickai config check --strict` makes warnings fail.
 
 The primitives a document relies on go in `requires` (`requires = { primitives = ["decode@1"] }` for one with `decode` tables); a build that lacks one skips the document and says which.
 
@@ -50,6 +50,28 @@ A band of sizes, which is a button of the size filter of a look-up. A model's bu
 | `label` | text | What the filter says (`Small (< 4 GB)`); default the id. |
 | `help` | text | A sentence for the person who wonders what it is. |
 | `below` | size | Where it ends: sizes below it are in the class (`4GiB`, `500MB`; `GB` counts thousands, `GiB` 1024s). Left out, the class takes every size beyond the last bound. |
+
+## `[[task]]`
+
+Something a person can want a model for, which is a button of the first page of the recommended list (Chat, Write code, Read pictures, ...; docs/catalog.md, section 1). A person chooses one or several, and the page shows the models of the list that do every one. A model does a task when the task's `match` holds for it or when it says so itself (its `tasks`); a task no model of the engine does has no button. The list merges by `id`.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `id` | text | Lower case letters, digits and `.`, `_`, `-` (`pictures`). Required. |
+| `label` | text | What its button says (`Read pictures`); default the id. |
+| `help` | text | What it means, shown when the pointer rests on the button. |
+| `order` | whole number | Where its button stands: lowest first; default after the ones that say, in the order written. |
+| `match` | table, below | Which models do it; any one hit is enough. |
+
+## `[task.match]`
+
+What a task's rule looks at. An id that no vocabulary has matches nothing.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `types` | list of text | Ids of `[[model_type]]`. The first is the task's own: the page picks from the models of that type first, so that a person who asks for Chat is shown assistants before the code models that also chat. |
+| `input` | list of text | Ids of `[[modality]]` the model reads (`image`). |
+| `features` | list of text | Features a model of the list has (`thinking`). |
 
 ## `[[finding]]`
 

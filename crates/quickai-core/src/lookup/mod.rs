@@ -14,6 +14,7 @@ pub mod catalog;
 pub mod glob;
 pub mod huggingface;
 pub mod ollama_library;
+pub mod picks;
 pub mod present;
 pub mod quant;
 pub mod size;

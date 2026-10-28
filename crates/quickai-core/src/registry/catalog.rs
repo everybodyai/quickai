@@ -22,6 +22,8 @@ pub const MAX_FEATURES: usize = 8;
 pub const MAX_FEATURE_CHARS: usize = 24;
 /// The longest a note is before it is called too long.
 pub const MAX_NOTE_CHARS: usize = 600;
+/// The longest a tagline is before it is called too long: it is one line under a name.
+pub const MAX_TAGLINE_CHARS: usize = 80;
 
 /// One file of a repository the catalog names, with what is known of it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,12 +80,17 @@ pub struct CatalogModel {
     /// An id of the vocabulary's `[[model_type]]`.
     pub kind: String,
     pub note: String,
+    /// What it is in a few words; empty when the list says none.
+    pub tagline: String,
     pub license: String,
     pub params: String,
     pub context: Option<u64>,
     /// Ids of the vocabulary's `[[modality]]`.
     pub input: Vec<String>,
     pub features: Vec<String>,
+    /// Ids of the vocabulary's `[[task]]` it does, in the order of the tasks: the ones it says and the
+    /// ones the tasks' rules give it.
+    pub tasks: Vec<String>,
     pub start: bool,
     pub bundled: bool,
     /// The catalog document it is written in.
@@ -432,6 +439,39 @@ fn compile_model(
         );
         return None;
     }
+    // what a person can want it for: the tasks it says it does, then the ones whose rule holds
+    let defined = ctx.vocabulary.tasks();
+    let mut said: Vec<&str> = Vec::new();
+    for (i, task) in model.tasks.iter().enumerate() {
+        let task = task.trim();
+        if !defined.iter().any(|t| t.id == task) {
+            report(
+                merged,
+                problems,
+                at.clone().key("tasks").index(i),
+                format!("`{task}` is not a task any vocabulary defines"),
+                Some(match suggest(task, defined.iter().map(|t| t.id.as_str())) {
+                    Some(near) => format!("did you mean `{near}`?"),
+                    None if defined.is_empty() => "no vocabulary defines a `[[task]]`".to_string(),
+                    None => format!(
+                        "the tasks: {}",
+                        defined
+                            .iter()
+                            .map(|t| t.id.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                }),
+            );
+            return None;
+        }
+        said.push(task);
+    }
+    let tasks: Vec<String> = defined
+        .iter()
+        .filter(|t| said.contains(&t.id.as_str()) || t.holds(&kind, &input, &features))
+        .map(|t| t.id.clone())
+        .collect();
     if model.context == Some(0) {
         report(
             merged,
@@ -503,6 +543,22 @@ fn compile_model(
             ),
         ));
     }
+    let tagline = model
+        .tagline
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if tagline.chars().count() > MAX_TAGLINE_CHARS {
+        problems.push(merged.diagnostic(
+            Severity::Warning,
+            &at.clone().key("tagline"),
+            format!(
+                "the tagline of `{}` is longer than {MAX_TAGLINE_CHARS} characters: it is one line under the name",
+                model.id
+            ),
+        ));
+    }
     Some(CatalogModel {
         id: model.id.clone(),
         name: model
@@ -513,11 +569,13 @@ fn compile_model(
         by: model.by.clone().unwrap_or_default(),
         kind,
         note,
+        tagline,
         license: model.license.clone().unwrap_or_default(),
         params: model.params.clone().unwrap_or_default(),
         context: model.context,
         input,
         features,
+        tasks,
         start: model.start,
         bundled: model.bundled,
         document: document.to_string(),

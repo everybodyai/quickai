@@ -2898,6 +2898,9 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
 
         app.open_catalog();
         assert!(app.catalog.open);
+        // it opens on what the person wants to do, with the first thing chosen
+        assert_eq!(app.catalog.page, super::super::catalog_view::Page::Tasks);
+        assert_eq!(app.catalog.chosen, ["chat"]);
         // what the engine offers, smallest first; the shipped list is there too
         let names = catalog_names(&app);
         assert!(
@@ -2916,8 +2919,9 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
         for state in [ServerState::Idle, ServerState::Running] {
             draw_everything(&mut app, &ctx, state);
         }
-        // every choice of the window draws: a scope, words, a size
+        // every choice of the list draws: a scope, words, a size
         use quickai_core::lookup::view::Scope;
+        app.catalog.page = super::super::catalog_view::Page::List;
         for scope in [
             Scope::All,
             Scope::Start,
@@ -3109,14 +3113,20 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
         let ctx = egui::Context::default();
         let dir = crate::testkit::scratch("j24b");
         let mut app = app_on(&dir, Settings::default());
+        app.total_ram_bytes = 16 * GB;
         app.open_catalog();
         let mut failed: Vec<String> = Vec::new();
+        // the first page (`None`), then the list at each of its places
         for scope in [
-            quickai_core::lookup::view::Scope::Start,
-            quickai_core::lookup::view::Scope::All,
-            quickai_core::lookup::view::Scope::Type("chat".into()),
+            None,
+            Some(quickai_core::lookup::view::Scope::Start),
+            Some(quickai_core::lookup::view::Scope::All),
+            Some(quickai_core::lookup::view::Scope::Type("chat".into())),
         ] {
-            app.catalog.browse.scope = scope.clone();
+            if let Some(scope) = &scope {
+                app.catalog.page = super::super::catalog_view::Page::List;
+                app.catalog.browse.scope = scope.clone();
+            }
             // the first frames of a window only measure it
             let size = egui::vec2(760.0, 560.0);
             for _ in 0..2 {
@@ -3145,12 +3155,151 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
     }
 
     #[test]
+    fn p3_j25_the_window_asks_what_a_person_wants_to_do_and_shows_the_models_that_do_all_of_it() {
+        use super::super::catalog_view::Page;
+        let ctx = egui::Context::default();
+        // the shipped list and the test's, every file of it fetched from a hub of the test's
+        let (_dir, _hub, mut app) = catalog_world("j25");
+        app.total_ram_bytes = 32 * GB;
+        app.open_catalog();
+        assert_eq!(app.catalog.page, Page::Tasks);
+        let size = egui::vec2(980.0, 680.0);
+        let draw = |app: &mut App, events: Vec<egui::Event>| {
+            painted_texts(
+                &frame_with(&ctx, size, events, |ui| app.show_catalog_window(ui.ctx())).shapes,
+            )
+        };
+        // a window needs a few frames to be measured
+        let show = |app: &mut App| {
+            let mut texts = Vec::new();
+            for _ in 0..3 {
+                texts = draw(app, Vec::new());
+            }
+            texts
+        };
+        let click = |app: &mut App, texts: &[Painted], word: &str| {
+            let at = texts
+                .iter()
+                .find(|p| p.text == word)
+                .unwrap_or_else(|| panic!("{word} is not on the screen"))
+                .at
+                + egui::vec2(4.0, 4.0);
+            let button = |pressed| egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            for events in [
+                vec![egui::Event::PointerMoved(at)],
+                vec![button(true)],
+                vec![button(false)],
+            ] {
+                draw(app, events);
+            }
+            show(app)
+        };
+        let has = |texts: &[Painted], word: &str| texts.iter().any(|p| p.text == word);
+
+        // Chat is chosen: the assistant to get for 32 GB, a smaller one and the smallest, one button each
+        let texts = show(&mut app);
+        assert!(
+            has(&texts, "What do you want to do?"),
+            "{:?}",
+            texts.iter().map(|p| &p.text).collect::<Vec<_>>()
+        );
+        for task in [
+            "Chat",
+            "Write code",
+            "Read pictures",
+            "Transcribe",
+            "Search my files",
+        ] {
+            assert!(has(&texts, task), "the button {task} is not there");
+        }
+        for name in ["Qwen3.5 9B", "Qwen3.5 4B", "LFM2.5 1.2B Instruct"] {
+            assert!(has(&texts, name), "{name} is not one of the picks");
+        }
+        assert!(has(&texts, "RECOMMENDED") && has(&texts, "The all-rounder to start with."));
+        // nothing a card says is cut short
+        let cut = cut_texts(&texts);
+        assert!(cut.is_empty(), "cut short: {cut:#?}");
+
+        // Transcribe too: what does both, and only that
+        let texts = click(&mut app, &texts, "Transcribe");
+        assert_eq!(app.catalog.chosen, ["chat", "transcribe"]);
+        assert!(
+            has(&texts, "Gemma 4 E4B"),
+            "the model that chats and hears is the pick"
+        );
+        assert!(
+            !has(&texts, "Qwen3.5 9B"),
+            "a model that does not hear is not shown"
+        );
+        // Write code with it: nothing does both, and the window says so
+        let texts = click(&mut app, &texts, "Chat");
+        let texts = click(&mut app, &texts, "Write code");
+        assert_eq!(app.catalog.chosen, ["code", "transcribe"]);
+        assert!(
+            has(
+                &texts,
+                "No model in the list does all of these. Choose fewer."
+            ),
+            "{:?}",
+            texts.iter().map(|p| &p.text).collect::<Vec<_>>()
+        );
+        // nothing chosen
+        let texts = click(&mut app, &texts, "Write code");
+        let texts = click(&mut app, &texts, "Transcribe");
+        assert!(app.catalog.chosen.is_empty());
+        assert!(has(
+            &texts,
+            "Choose one or more, and the models that do them are shown here."
+        ));
+
+        // the button of a pick fetches what the list recommends, with what goes with it
+        let texts = click(&mut app, &texts, "Write code");
+        let coder = app
+            .catalog
+            .entries
+            .iter()
+            .find(|e| e.name == "Qwen2.5-Coder 7B Instruct")
+            .unwrap()
+            .clone();
+        let main = quickai_core::lookup::picks::main_offer(&coder).unwrap();
+        assert!(main.recommended);
+        let words = format!(
+            "Download · {}",
+            crate::hardware::format_bytes(main.bytes.unwrap())
+        );
+        assert!(has(&texts, &words), "{words} is not on the screen");
+        click(&mut app, &texts, &words);
+        assert!(app.download.is_some(), "the click did not start a download");
+        app.cancel_download();
+
+        // and the whole list is a click away, with only the models that do it when asked
+        let texts = show(&mut app);
+        let all = texts
+            .iter()
+            .find(|p| p.text.starts_with("All ") && p.text.ends_with(" models that do this"))
+            .map(|p| p.text.clone())
+            .expect("the way to every model that does it");
+        click(&mut app, &texts, &all);
+        assert_eq!(app.catalog.page, Page::List);
+        assert_eq!(app.catalog.browse.tasks, ["code"]);
+        let texts = show(&mut app);
+        assert!(has(&texts, "Only the models that do: Write code"));
+        assert!(has(&texts, "What do you want to do?"), "the way back");
+    }
+
+    #[test]
     fn p3_j24c_another_page_of_the_list_starts_at_its_top() {
         use quickai_core::lookup::view::{browse, Scope};
         let ctx = egui::Context::default();
         let dir = crate::testkit::scratch("j24c");
         let mut app = app_on(&dir, Settings::default());
         app.open_catalog();
+        app.catalog.page = super::super::catalog_view::Page::List;
         app.catalog.browse.scope = Scope::All;
         let size = egui::vec2(760.0, 560.0);
         let draw = |app: &mut App, events: Vec<egui::Event>| {
@@ -3232,6 +3381,7 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
         // and a window that is opened again
         scroll_down(&mut app);
         app.open_catalog();
+        app.catalog.page = super::super::catalog_view::Page::List;
         let first_start = first_of(&app, &app.catalog.browse);
         assert!(
             on_screen(&show(&mut app), &first_start),

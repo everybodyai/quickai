@@ -31,6 +31,8 @@ pub struct ModelDoc {
     pub kind: Option<String>,
     /// What it is good for, in a sentence or two.
     pub note: Option<String>,
+    /// What it is, in a few words, for the line under its name.
+    pub tagline: Option<String>,
     pub license: Option<String>,
     /// How big it is as its makers say (`4B`, `30B-A3B`).
     pub params: Option<String>,
@@ -42,6 +44,9 @@ pub struct ModelDoc {
     /// What else is worth knowing, as short words (`thinking`, `tools`, `multilingual`).
     #[serde(default)]
     pub features: Vec<String>,
+    /// Ids of the vocabulary's `[[task]]` it does besides the ones the tasks' rules give it.
+    #[serde(default)]
+    pub tasks: Vec<String>,
     /// Whether it is one of the models "Start here" shows.
     #[serde(default)]
     pub start: bool,

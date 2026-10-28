@@ -13,6 +13,7 @@ pub(super) enum Icon {
     Help,
     Gear,
     Chevron,
+    Back,
     Plus,
     Folder,
     Search,
@@ -32,6 +33,21 @@ pub(super) enum Icon {
     Play,
     Copy,
     Pencil,
+    // what a model can be wanted for, on the first page of the recommended list
+    Code,
+    Bulb,
+    Image,
+    Document,
+    Translate,
+    Mic,
+    FileSearch,
+    Film,
+    Brush,
+    // what a model can do, beside its name
+    Eye,
+    Headphones,
+    Wrench,
+    Bolt,
 }
 
 /// Draws `icon` in `rect` (it is drawn in the largest square that fits, in the middle) in `color`.
@@ -107,6 +123,7 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
             }
         }
         Icon::Chevron => line(&[(6.0, 9.0), (12.0, 15.0), (18.0, 9.0)]),
+        Icon::Back => line(&[(15.0, 6.0), (9.0, 12.0), (15.0, 18.0)]),
         Icon::Plus => {
             line(&[(12.0, 5.0), (12.0, 19.0)]);
             line(&[(5.0, 12.0), (19.0, 12.0)]);
@@ -266,6 +283,179 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
                 color,
             );
         }
+        Icon::Code => {
+            line(&[(8.0, 6.0), (2.5, 12.0), (8.0, 18.0)]);
+            line(&[(16.0, 6.0), (21.5, 12.0), (16.0, 18.0)]);
+            line(&[(13.5, 4.5), (10.5, 19.5)]);
+        }
+        Icon::Bulb => {
+            // a bulb: a round top narrowing to its base, and the two lines of the base
+            let mut points = vec![(9.5, 15.0)];
+            for i in 0..=10 {
+                let a = (135.0 + i as f32 * 27.0).to_radians();
+                points.push((12.0 + 6.5 * a.cos(), 9.0 + 6.5 * a.sin()));
+            }
+            points.push((14.5, 15.0));
+            line(&points);
+            line(&[(9.5, 15.0), (9.5, 17.0), (14.5, 17.0), (14.5, 15.0)]);
+            line(&[(10.0, 20.0), (14.0, 20.0)]);
+        }
+        Icon::Image => {
+            line(&[
+                (3.5, 4.5),
+                (20.5, 4.5),
+                (20.5, 19.5),
+                (3.5, 19.5),
+                (3.5, 4.5),
+            ]);
+            ring(9.0, 9.5, 1.8);
+            line(&[
+                (3.5, 17.0),
+                (9.5, 12.0),
+                (13.5, 15.5),
+                (16.0, 13.5),
+                (20.5, 17.5),
+            ]);
+        }
+        Icon::Document => {
+            line(&[
+                (14.0, 3.0),
+                (6.0, 3.0),
+                (6.0, 21.0),
+                (18.0, 21.0),
+                (18.0, 7.0),
+                (14.0, 3.0),
+                (14.0, 7.0),
+                (18.0, 7.0),
+            ]);
+            line(&[(9.0, 12.0), (15.0, 12.0)]);
+            line(&[(9.0, 16.0), (13.5, 16.0)]);
+        }
+        Icon::Translate => {
+            // a character of a script on the left and a Latin A on the right
+            line(&[(3.0, 6.0), (12.0, 6.0)]);
+            line(&[(7.5, 3.5), (7.5, 6.0)]);
+            line(&[(10.0, 6.0), (8.0, 11.0), (4.0, 14.0)]);
+            line(&[(6.0, 8.5), (11.0, 13.0)]);
+            line(&[(12.5, 20.5), (16.5, 10.5), (20.5, 20.5)]);
+            line(&[(14.0, 17.0), (19.0, 17.0)]);
+        }
+        Icon::Mic => {
+            let mut points = vec![(9.0, 6.0)];
+            for i in 0..=8 {
+                let a = (180.0 + i as f32 * 22.5).to_radians();
+                points.push((12.0 + 3.0 * a.cos(), 6.0 + 3.0 * a.sin()));
+            }
+            points.push((15.0, 12.0));
+            for i in 0..=8 {
+                let a = (i as f32 * 22.5).to_radians();
+                points.push((12.0 + 3.0 * a.cos(), 12.0 + 3.0 * a.sin()));
+            }
+            points.push((9.0, 6.0));
+            line(&points);
+            let cup: Vec<(f32, f32)> = (0..=12)
+                .map(|i| {
+                    let a = (i as f32 * 15.0).to_radians();
+                    (12.0 + 6.5 * a.cos(), 11.0 + 6.5 * a.sin())
+                })
+                .collect();
+            line(&cup);
+            line(&[(12.0, 17.5), (12.0, 21.0)]);
+        }
+        Icon::FileSearch => {
+            line(&[(13.0, 3.0), (5.0, 3.0), (5.0, 21.0), (10.5, 21.0)]);
+            line(&[(13.0, 3.0), (17.0, 7.0), (17.0, 10.0)]);
+            line(&[(13.0, 3.0), (13.0, 7.0), (17.0, 7.0)]);
+            ring(15.0, 15.5, 3.2);
+            line(&[(17.4, 17.9), (20.5, 21.0)]);
+        }
+        Icon::Film => {
+            line(&[
+                (3.5, 5.0),
+                (20.5, 5.0),
+                (20.5, 19.0),
+                (3.5, 19.0),
+                (3.5, 5.0),
+            ]);
+            line(&[(7.5, 5.0), (7.5, 19.0)]);
+            line(&[(16.5, 5.0), (16.5, 19.0)]);
+            line(&[(3.5, 12.0), (7.5, 12.0)]);
+            line(&[(16.5, 12.0), (20.5, 12.0)]);
+        }
+        Icon::Brush => {
+            // a brush slanting down to the left, and its stroke
+            line(&[(19.5, 3.5), (11.0, 12.0)]);
+            line(&[(21.0, 5.0), (12.5, 13.5)]);
+            line(&[(19.5, 3.5), (21.0, 5.0)]);
+            line(&[
+                (11.0, 12.0),
+                (8.0, 13.0),
+                (6.5, 17.0),
+                (3.5, 20.0),
+                (8.5, 19.5),
+                (11.5, 16.5),
+                (12.5, 13.5),
+            ]);
+        }
+        Icon::Eye => {
+            let lid = |sign: f32| -> Vec<(f32, f32)> {
+                (0..=16)
+                    .map(|i| {
+                        let x = 2.0 + i as f32 * 1.25;
+                        let t = (x - 12.0) / 10.0;
+                        (x, 12.0 + sign * 6.5 * (1.0 - t * t))
+                    })
+                    .collect()
+            };
+            line(&lid(-1.0));
+            line(&lid(1.0));
+            ring(12.0, 12.0, 3.0);
+        }
+        Icon::Headphones => {
+            let band: Vec<(f32, f32)> = (0..=12)
+                .map(|i| {
+                    let a = (180.0 + i as f32 * 15.0).to_radians();
+                    (12.0 + 8.5 * a.cos(), 13.0 + 8.5 * a.sin())
+                })
+                .collect();
+            line(&band);
+            line(&[
+                (3.5, 13.0),
+                (3.5, 19.5),
+                (7.5, 19.5),
+                (7.5, 14.5),
+                (3.5, 14.5),
+            ]);
+            line(&[
+                (20.5, 13.0),
+                (20.5, 19.5),
+                (16.5, 19.5),
+                (16.5, 14.5),
+                (20.5, 14.5),
+            ]);
+        }
+        Icon::Wrench => {
+            // the head, open at the top right, and the handle down to the bottom left
+            let head: Vec<(f32, f32)> = (0..=10)
+                .map(|i| {
+                    let a = (80.0 + i as f32 * 30.0).to_radians();
+                    (15.0 + 5.0 * a.cos(), 9.0 + 5.0 * a.sin())
+                })
+                .collect();
+            line(&head);
+            line(&[(11.5, 12.5), (4.5, 19.5)]);
+            line(&[(13.5, 14.0), (6.5, 21.0)]);
+            line(&[(4.5, 19.5), (6.5, 21.0)]);
+        }
+        Icon::Bolt => line(&[
+            (13.5, 2.5),
+            (4.5, 13.5),
+            (11.5, 13.5),
+            (10.5, 21.5),
+            (19.5, 10.5),
+            (12.5, 10.5),
+            (13.5, 2.5),
+        ]),
     }
 }
 

@@ -1,5 +1,6 @@
 # The shared nouns that engines and the interface refer to by id: the kinds of input and output a
-# model can have, the types of model and the classes of size a look-up sorts by, and the APIs an
+# model can have, the types of model and the classes of size a look-up sorts by, the tasks the
+# recommended list asks a person about, and the APIs an
 # engine can serve, with how the live-traffic proxy reads each one (docs/examples/vocab/core.toml is
 # the fuller design, with the adapter kinds of Phase 4; they join this file when the interface uses
 # them).
@@ -142,6 +143,81 @@ below = "15GiB"
 id = "large"
 label = "Large (15 GB+)"
 help = "Wants a lot of memory."
+
+# ---- what a person can want a model for -----------------------------------------------------------------
+# The buttons the recommended list opens with (docs/catalog.md, section 1). A model of the list does a task when
+# its type is one of `types`, it reads one of `input`, or it has one of `features`, or when it says so itself
+# (`tasks`). The first type is the task's own: its models are picked first. A task no model of the engine does
+# has no button.
+[[task]]
+id = "chat"
+label = "Chat"
+help = "Talk with it, ask it things, have it write for you."
+order = 10
+match = { types = ["chat", "reasoning", "vision", "code"] }
+
+[[task]]
+id = "code"
+label = "Write code"
+help = "Write, explain and fix programs."
+order = 20
+match = { types = ["code"] }
+
+[[task]]
+id = "reason"
+label = "Solve problems"
+help = "Think step by step before it answers: maths, logic, planning."
+order = 30
+match = { types = ["reasoning"], features = ["thinking"] }
+
+[[task]]
+id = "pictures"
+label = "Read pictures"
+help = "Say what is in a picture or a screenshot, and answer questions about it."
+order = 40
+match = { types = ["vision"], input = ["image"] }
+
+[[task]]
+id = "scans"
+label = "Read scans"
+help = "Turn scanned pages, forms and tables into text."
+order = 50
+match = { types = ["documents"] }
+
+[[task]]
+id = "translate"
+label = "Translate"
+help = "Translate between languages."
+order = 60
+match = { types = ["translation"] }
+
+[[task]]
+id = "transcribe"
+label = "Transcribe"
+help = "Write down what is said in a recording."
+order = 70
+match = { types = ["audio"], input = ["audio"] }
+
+[[task]]
+id = "search"
+label = "Search my files"
+help = "Find passages by what they mean, for search over notes and documents (it does not chat)."
+order = 80
+match = { types = ["embedding"] }
+
+[[task]]
+id = "make-pictures"
+label = "Make pictures"
+help = "Make pictures from a prompt."
+order = 90
+match = { types = ["image"] }
+
+[[task]]
+id = "make-videos"
+label = "Make videos"
+help = "Make short clips from a prompt or a picture."
+order = 100
+match = { types = ["video"] }
 
 # ---- OpenAI's shapes, which both engines serve --------------------------------------------------------
 [[api]]

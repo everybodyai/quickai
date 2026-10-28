@@ -13,7 +13,7 @@ use crate::docpath::DocPath;
 use crate::expr::types::suggest;
 use crate::expr::{Expr, Template, Type};
 use crate::lookup::size::parse_size;
-use crate::lookup::types::{SizeClassDef, TypeDef, TypeMatch};
+use crate::lookup::types::{SizeClassDef, TaskDef, TypeDef, TypeMatch};
 use crate::profile::notes;
 
 /// An API the vocabulary defines.
@@ -48,6 +48,7 @@ pub(super) struct VocabParts {
     pub paths: Vec<(String, String)>,
     pub types: Vec<TypeDef>,
     pub sizes: Vec<SizeClassDef>,
+    pub tasks: Vec<TaskDef>,
     /// The kinds of input and output a model can have, as `(id, label)`.
     pub modalities: Vec<(String, String)>,
     /// The sentences of the notes about a configuration, by the id of the note.
@@ -65,6 +66,8 @@ pub struct Vocabulary {
     types: Vec<TypeDef>,
     /// The classes of size, in the order they are written: from the smallest up.
     sizes: Vec<SizeClassDef>,
+    /// What a person can want a model for, by `order` (ties in the order written).
+    tasks: Vec<TaskDef>,
     /// The modalities, `(id, label)`, in the order the documents list them.
     modalities: Vec<(String, String)>,
     /// The sentence of each note about a configuration, by the id of the note.
@@ -100,6 +103,11 @@ impl Vocabulary {
     /// The classes of size, from the smallest up.
     pub fn size_classes(&self) -> &[SizeClassDef] {
         &self.sizes
+    }
+
+    /// What a person can want a model for, in the order their buttons stand.
+    pub fn tasks(&self) -> &[TaskDef] {
+        &self.tasks
     }
 
     /// The kinds of input and output a model can have (`text`, `image`), as `(id, label)`.
@@ -185,6 +193,18 @@ impl Vocabulary {
                 }
             }
         }
+        for task in &parts.tasks {
+            if let Some(owner) = self.owners.get(&format!("task:{}", task.id)) {
+                problems.push(merged.diagnostic(
+                    Severity::Error,
+                    &DocPath::default().key("task").id(&task.id),
+                    format!(
+                        "the task `{}` is already defined by the vocabulary `{owner}`",
+                        task.id
+                    ),
+                ));
+            }
+        }
         for (id, _) in &parts.findings {
             if let Some(owner) = self.owners.get(&format!("finding:{id}")) {
                 problems.push(merged.diagnostic(
@@ -228,6 +248,12 @@ impl Vocabulary {
                 .insert(format!("size:{}", class.id), vocab_id.clone());
             self.sizes.push(class);
         }
+        for task in parts.tasks {
+            self.owners
+                .insert(format!("task:{}", task.id), vocab_id.clone());
+            self.tasks.push(task);
+        }
+        self.tasks.sort_by_key(|t| t.order);
         for modality in parts.modalities {
             if !self.modalities.iter().any(|(id, _)| *id == modality.0) {
                 self.modalities.push(modality);
@@ -384,6 +410,7 @@ pub(super) fn compile(merged: &MergedDoc, doc: &VocabDoc) -> (VocabParts, Vec<Di
 
     let types = compile_types(merged, doc, &mut problems);
     let sizes = compile_sizes(merged, doc, &mut problems);
+    let tasks = compile_tasks(merged, doc, &mut problems);
     let modalities = compile_modalities(merged, doc, &mut problems);
     let findings = compile_findings(merged, doc, &mut problems);
     let deny_env = compile_deny_env(merged, doc, &mut problems);
@@ -397,6 +424,7 @@ pub(super) fn compile(merged: &MergedDoc, doc: &VocabDoc) -> (VocabParts, Vec<Di
             paths,
             types,
             sizes,
+            tasks,
             modalities,
             findings,
             deny_env,
@@ -660,6 +688,80 @@ fn compile_types(
         });
     }
     types
+}
+
+/// The tasks of one document, checked: the ids are names and are not repeated, and every entry of a `match`
+/// list says something. An id a `match` names that no vocabulary has matches nothing.
+fn compile_tasks(
+    merged: &MergedDoc,
+    doc: &VocabDoc,
+    problems: &mut Vec<Diagnostic>,
+) -> Vec<TaskDef> {
+    let mut tasks: Vec<TaskDef> = Vec::new();
+    for (index, def) in doc.tasks.iter().enumerate() {
+        let at = DocPath::default().key("task").id(&def.id);
+        if !valid_id(&def.id) {
+            problems.push(
+                merged
+                    .diagnostic(
+                        Severity::Error,
+                        &at.key("id"),
+                        format!("`{}` is not a valid task id", def.id),
+                    )
+                    .with_hint("lower case letters, digits and . _ -"),
+            );
+            continue;
+        }
+        if tasks.iter().any(|t| t.id == def.id) {
+            problems.push(merged.diagnostic(
+                Severity::Error,
+                &at,
+                format!("the task `{}` is written twice", def.id),
+            ));
+            continue;
+        }
+        let mut lists: [Vec<String>; 3] = Default::default();
+        let mut ok = true;
+        for ((key, list), into) in [
+            ("types", &def.rule.types),
+            ("input", &def.rule.input),
+            ("features", &def.rule.features),
+        ]
+        .into_iter()
+        .zip(lists.iter_mut())
+        {
+            for (i, entry) in list.iter().enumerate() {
+                if entry.trim().is_empty() {
+                    problems.push(merged.diagnostic(
+                        Severity::Error,
+                        &at.clone().key("match").key(key).index(i),
+                        format!("an empty entry in `match.{key}` matches nothing"),
+                    ));
+                    ok = false;
+                } else {
+                    into.push(entry.trim().to_lowercase());
+                }
+            }
+        }
+        if !ok {
+            continue;
+        }
+        let [types, input, features] = lists;
+        tasks.push(TaskDef {
+            id: def.id.clone(),
+            label: def
+                .label
+                .clone()
+                .filter(|l| !l.trim().is_empty())
+                .unwrap_or_else(|| def.id.clone()),
+            help: def.help.clone().unwrap_or_default(),
+            order: def.order.unwrap_or(100 + index as i64),
+            types,
+            input,
+            features,
+        });
+    }
+    tasks
 }
 
 /// The size classes of one document, checked: the ids are names and are not repeated, every bound is
