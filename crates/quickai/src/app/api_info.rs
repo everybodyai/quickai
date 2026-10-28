@@ -17,16 +17,29 @@ impl App {
     /// How to connect an app to the server that is running: what the engine's `[api_info]` says, for the model that is
     /// loaded, by the name the engine knows it by.
     pub(super) fn connection_panel(&self) -> Option<ApiPanel> {
+        let mut values = self.run_values();
+        let mut model = self.session.model_name().map(str::to_string);
+        let mut proxy = self.traffic_proxy_on();
+        // a run on a computer QuickAI set up, shown: its API here, through the tunnel, and the model it runs
+        if self.setup_in_use().is_some() {
+            let (port, there) = self.setup_run()?.chat_target()?;
+            values.insert(
+                format!("{}.port", self.engine),
+                quickai_core::value::Value::Int(i64::from(port)),
+            );
+            model = Some(there).filter(|m| !m.is_empty());
+            proxy = false;
+        }
         let selection = launch::selection_from_values(
             &self.engine,
-            self.session.model_name().map(|name| ModelInfo {
-                id: name.to_string(),
-                display: name.to_string(),
+            model.map(|name| ModelInfo {
+                id: name.clone(),
+                display: name,
                 path: String::new(),
                 size_bytes: 0,
             }),
-            &self.run_values(),
-            self.traffic_proxy_on(),
+            &values,
+            proxy,
         );
         api_panel(&self.registry, &selection, &self.form_facts())
     }
@@ -76,7 +89,12 @@ impl App {
     /// API key in a word, and the example in curl, Python and JavaScript, a tab each. A click outside it, Escape, or
     /// the plug again closes it.
     pub(super) fn show_connect_popover(&mut self, ctx: &egui::Context) {
-        if self.session.state() != ServerState::Running {
+        let running = if self.setup_in_use().is_some() {
+            self.setup_run().is_some_and(|r| r.running())
+        } else {
+            self.session.state() == ServerState::Running
+        };
+        if !running {
             self.show_api_info = false;
         }
         if !self.show_api_info {

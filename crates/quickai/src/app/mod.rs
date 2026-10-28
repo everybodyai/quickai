@@ -46,6 +46,7 @@ mod lookup_view;
 mod model_bar;
 mod model_details;
 mod named_models;
+mod remote_page;
 mod remote_run;
 mod remote_ui;
 mod run_bar;

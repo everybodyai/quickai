@@ -1,9 +1,11 @@
-//! A run of the selected configuration on a computer QuickAI sets up (WP4.33, docs/remote-runs.md): Start sends it
-//! there with QuickAI's own headless program, the window follows it until it is ready and brings its ports here, and
-//! Stop stops it there. Another run there is said, and the person chooses: override it, stop it, or leave it
-//! (section 3.2). The run lives until it is stopped, from here or there; a window that starts again, or a computer
-//! chosen again, finds it (`find`). The steps are `remote::job`'s, on threads of their own; this is what the window
-//! keeps of them.
+//! Runs of configurations on computers QuickAI sets up (WP4.33, docs/remote-runs.md): Start sends the selected
+//! configuration to the computer chosen in the status bar with QuickAI's own headless program, the window follows it
+//! until it is ready and brings its ports here, and Stop stops it there. Each computer has a run of its own, and one
+//! here can go on at the same time: choosing a computer in the status bar shows its run, and the chat talks to it
+//! (the user: "It should also be able to run locally or run multiple remotes ... the chat attaches automatically to
+//! the connected (running cfg)"). Another run there is said, and the person chooses: override it, stop it, or leave
+//! it (section 3.2). A run lives until it is stopped, from here or there; the window finds the ones that go on when
+//! it starts (`find`). The steps are `remote::job`'s, on threads of their own; this is what the window keeps of them.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -13,8 +15,8 @@ use eframe::egui;
 
 use crate::provision::EndpointInfo;
 use crate::remote::job::{self, Job, Launching, Update};
-use crate::remote::{self, RemoteSpec, Tunnel};
-use crate::run_file::{RunFile, Status};
+use crate::remote::{self, RemoteSpec, Tunnel, Way};
+use crate::run_file::RunFile;
 
 use super::theme::{self, Role};
 use super::App;
@@ -22,15 +24,15 @@ use super::App;
 /// What the window keeps of the run on a computer it set up.
 #[derive(Default)]
 pub struct SetupRun {
-    /// The computer, by id.
-    pub computer: String,
     /// The configuration, by name.
     pub configuration: String,
-    /// What is being done now, in a few words (`Copying QuickAI to Studio`); empty once it runs.
+    /// What is being done now, in a few words (`Copying QuickAI to Studio`); empty when nothing is.
     pub doing: String,
-    /// What the run there says of itself while it is being prepared.
-    pub status: Option<Box<Status>>,
-    /// Another run goes on there, and the person is asked what to do with it (`answer`).
+    /// QuickAI is on the computer, of this release: the first step, done.
+    pub reached: bool,
+    /// The run there as it last said itself: its state, the steps of its plan, the computer, where it listens.
+    pub there: Option<Box<RunFile>>,
+    /// Another run goes on there, and the person is asked what to do with it (`answer_busy`).
     pub busy: Option<Option<Box<RunFile>>>,
     /// It runs there, and each thing it started is reached here at these addresses.
     pub endpoints: Vec<EndpointInfo>,
@@ -53,6 +55,32 @@ impl SetupRun {
     pub fn working(&self) -> bool {
         self.updates.is_some()
     }
+
+    /// The address here of what it started that has `role` (`api`, `page`).
+    pub fn endpoint(&self, role: &str) -> Option<&EndpointInfo> {
+        self.endpoints.iter().find(|e| e.role == role)
+    }
+
+    /// Where the chat asks for a reply: the port here of its API, and the model it runs.
+    pub fn chat_target(&self) -> Option<(u16, String)> {
+        let api = self.endpoint("api").filter(|_| self.running())?;
+        let port = api
+            .url
+            .split_once("://")
+            .map_or(api.url.as_str(), |(_, rest)| rest)
+            .split('/')
+            .next()?
+            .rsplit_once(':')?
+            .1
+            .parse()
+            .ok()?;
+        let model = self
+            .there
+            .as_ref()
+            .and_then(|t| t.model.clone())
+            .unwrap_or_default();
+        Some((port, model))
+    }
 }
 
 /// What the person answers when another run goes on there.
@@ -67,9 +95,16 @@ pub enum Answer {
 }
 
 impl App {
-    /// The run on a computer QuickAI set up, when there is one (working, running, or asking).
+    /// The run on the computer chosen in the status bar, when it is one QuickAI sets up and has one (working,
+    /// running, or asking).
     pub(super) fn setup_run(&self) -> Option<&SetupRun> {
-        self.remote.setup.as_ref()
+        let spec = self.setup_in_use()?;
+        self.remote.setup.get(&spec.id)
+    }
+
+    /// The run on the computer `id`, when there is one.
+    pub(super) fn setup_run_of(&self, id: &str) -> Option<&SetupRun> {
+        self.remote.setup.get(id)
     }
 
     /// Start, with a computer QuickAI sets up chosen: the selected configuration is sent there and run.
@@ -96,15 +131,17 @@ impl App {
             cancel.clone(),
         );
         self.push_log(format!("[remote] Running \"{name}\" on {}...", spec.name));
-        self.remote.setup = Some(SetupRun {
-            computer: spec.id.clone(),
-            configuration: name,
-            doing: format!("Connecting to {}", spec.name),
-            updates: Some(updates),
-            cancel,
-            wake: Some(ctx.clone()),
-            ..SetupRun::default()
-        });
+        self.remote.setup.insert(
+            spec.id.clone(),
+            SetupRun {
+                configuration: name,
+                doing: format!("Connecting to {}", spec.name),
+                updates: Some(updates),
+                cancel,
+                wake: Some(ctx.clone()),
+                ..SetupRun::default()
+            },
+        );
     }
 
     /// Stop, with a computer QuickAI set up chosen: what runs there is stopped, and its ports are let go of here.
@@ -112,129 +149,94 @@ impl App {
         let Some(spec) = self.setup_in_use().cloned() else {
             return;
         };
-        let wake = self.setup_run().and_then(|r| r.wake.clone());
-        let updates = job::stop(self.job_for(&spec), move || {
-            if let Some(ctx) = &wake {
-                ctx.request_repaint();
-            }
-        });
-        let run = self.remote.setup.get_or_insert_with(SetupRun::default);
+        let job = self.job_for(&spec);
+        let run = self.remote.setup.entry(spec.id.clone()).or_default();
+        let wake = run.wake.clone();
         run.cancel.store(true, Ordering::SeqCst);
         if let Some(mut tunnel) = run.tunnel.take() {
             tunnel.close();
         }
-        run.computer = spec.id.clone();
         run.doing = format!("Stopping the run on {}", spec.name);
         run.busy = None;
+        run.failed = None;
         run.endpoints.clear();
-        run.updates = Some(updates);
+        run.updates = Some(job::stop(job, move || {
+            if let Some(ctx) = &wake {
+                ctx.request_repaint();
+            }
+        }));
     }
 
-    /// Finds the run that goes on on the computer QuickAI set up, if one does, and brings its ports here: when the
-    /// window starts, and when that computer is chosen.
-    pub(super) fn find_setup_run(&mut self, ctx: &egui::Context) {
-        let Some(spec) = self.setup_in_use().cloned() else {
-            return;
-        };
-        if self.setup_run().is_some_and(|r| r.working() || r.running()) {
+    /// Finds the run that goes on on the computer `spec` QuickAI set up, if one does, and brings its ports here.
+    fn find_setup_run(&mut self, spec: &RemoteSpec, ctx: &egui::Context) {
+        if self
+            .remote
+            .setup
+            .get(&spec.id)
+            .is_some_and(|r| r.working() || r.running())
+        {
             return;
         }
         let wake = ctx.clone();
-        let updates = job::find(self.job_for(&spec), move || wake.request_repaint());
-        self.remote.setup = Some(SetupRun {
-            computer: spec.id.clone(),
-            doing: format!("Looking for a run on {}", spec.name),
-            updates: Some(updates),
-            wake: Some(ctx.clone()),
-            ..SetupRun::default()
-        });
+        let updates = job::find(self.job_for(spec), move || wake.request_repaint());
+        self.remote.setup.insert(
+            spec.id.clone(),
+            SetupRun {
+                doing: format!("Looking for a run on {}", spec.name),
+                updates: Some(updates),
+                wake: Some(ctx.clone()),
+                ..SetupRun::default()
+            },
+        );
     }
 
     /// What the person answered about another run there.
     pub(super) fn answer_busy(&mut self, answer: Answer, ctx: &egui::Context) {
-        if let Some(run) = self.remote.setup.as_mut() {
+        let Some(id) = self.setup_in_use().map(|s| s.id.clone()) else {
+            return;
+        };
+        if let Some(run) = self.remote.setup.get_mut(&id) {
             run.busy = None;
         }
         match answer {
             Answer::Override => self.start_setup_run(ctx, true),
             Answer::StopIt => self.stop_setup_run(),
-            Answer::Cancel => self.remote.setup = None,
+            Answer::Cancel => {
+                self.remote.setup.remove(&id);
+            }
         }
     }
 
-    /// Each frame: a run that is to be looked for is, what the steps said is kept, and a tunnel that closed by itself
-    /// is said.
+    /// Each frame: the runs that are to be looked for are (each computer QuickAI sets up, when the window starts, and
+    /// one chosen again), what the steps said is kept, and a tunnel that closed by itself is said.
     pub(super) fn poll_setup_run(&mut self, ctx: &egui::Context) {
         if std::mem::take(&mut self.remote.find_wanted) {
-            self.find_setup_run(ctx);
-        }
-        let Some(run) = self.remote.setup.as_mut() else {
-            return;
-        };
-        let mut said = Vec::new();
-        if let Some(updates) = &run.updates {
-            loop {
-                match updates.try_recv() {
-                    Ok(update) => said.push(update),
-                    Err(crossbeam_channel::TryRecvError::Empty) => break,
-                    Err(crossbeam_channel::TryRecvError::Disconnected) => {
-                        run.updates = None;
-                        break;
-                    }
-                }
+            let specs: Vec<RemoteSpec> = self
+                .remote
+                .remotes
+                .iter()
+                .filter(|r| r.way == Way::SetUp)
+                .cloned()
+                .collect();
+            for spec in specs {
+                self.find_setup_run(&spec, ctx);
             }
         }
         let mut log = Vec::new();
-        let mut gone = false;
-        for update in said {
-            match update {
-                Update::Doing(what) => {
-                    log.push(format!("[remote] {what}..."));
-                    run.doing = what;
-                }
-                Update::Status(status) => run.status = Some(status),
-                Update::Busy(other) => {
-                    run.doing.clear();
-                    run.busy = Some(other);
-                }
-                Update::Running {
-                    tunnel,
-                    endpoints,
-                    run: there,
-                } => {
-                    if run.configuration.is_empty() {
-                        run.configuration = there.name();
-                    }
-                    for endpoint in &endpoints {
-                        log.push(format!(
-                            "[remote] {} ({}) is at {}",
-                            endpoint.program, endpoint.role, endpoint.url
-                        ));
-                    }
-                    run.doing.clear();
-                    run.status = None;
-                    run.endpoints = endpoints;
-                    run.tunnel = Some(tunnel);
-                }
-                Update::Nothing | Update::Stopped => gone = true,
-                Update::Failed(why) => {
-                    log.push(format!("[remote] {why}"));
-                    run.doing.clear();
-                    run.failed = Some(why);
-                }
+        let mut gone = Vec::new();
+        for (id, run) in self.remote.setup.iter_mut() {
+            let name = self
+                .remote
+                .remotes
+                .iter()
+                .find(|r| &r.id == id)
+                .map_or_else(|| id.clone(), |r| r.name.clone());
+            if take_updates(run, &name, &mut log) {
+                gone.push(id.clone());
             }
         }
-        if let Some(tunnel) = run.tunnel.as_mut() {
-            if !tunnel.alive() {
-                let why = format!("The connection closed: {}", tunnel.why_closed());
-                log.push(format!("[remote] {why}"));
-                run.tunnel = None;
-                run.endpoints.clear();
-                run.failed = Some(why);
-            }
-        }
-        if gone {
-            self.remote.setup = None;
+        for id in gone {
+            self.remote.setup.remove(&id);
         }
         for line in log {
             self.push_log(line);
@@ -272,8 +274,11 @@ impl App {
             );
             ui.add_space(6.0);
             ui.label(what);
+            ui.label(theme::muted(
+                "One run at a time on a computer. Nothing is stopped until you choose.",
+            ));
             ui.add_space(12.0);
-            ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if theme::button_sized(ui, Role::Primary, true, "Override", egui::vec2(0.0, 30.0))
                     .on_hover_text(format!("Stop it, then run \"{ours}\" on {computer}."))
                     .clicked()
@@ -301,7 +306,7 @@ impl App {
     }
 
     /// The name of the configuration selected in the window.
-    fn selected_configuration_name(&self) -> String {
+    pub(super) fn selected_configuration_name(&self) -> String {
         self.registry
             .profile(&self.configs.active)
             .map(|e| e.configuration.name.clone())
@@ -333,6 +338,87 @@ impl App {
             version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }
+}
+
+/// What the steps of `run` (on the computer `name`) said since the last frame, kept in it; what is to be logged is
+/// added to `log`. Whether the run is gone (nothing runs there, or it was stopped).
+fn take_updates(run: &mut SetupRun, name: &str, log: &mut Vec<String>) -> bool {
+    let mut said = Vec::new();
+    if let Some(updates) = &run.updates {
+        loop {
+            match updates.try_recv() {
+                Ok(update) => said.push(update),
+                Err(crossbeam_channel::TryRecvError::Empty) => break,
+                Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                    run.updates = None;
+                    break;
+                }
+            }
+        }
+    }
+    let mut gone = false;
+    for update in said {
+        match update {
+            Update::Doing(what) => {
+                log.push(format!("[remote] {what}..."));
+                // past the connection and the copy, QuickAI is there
+                if what.starts_with("Starting") || what.starts_with("Stopping \"") {
+                    run.reached = true;
+                }
+                run.doing = what;
+            }
+            Update::Status(status) => {
+                run.reached = true;
+                if let Some(there) = status.running {
+                    if run.configuration.is_empty() {
+                        run.configuration = there.name();
+                    }
+                    run.there = Some(Box::new(there));
+                }
+            }
+            Update::Busy(other) => {
+                run.reached = true;
+                run.doing.clear();
+                run.busy = Some(other);
+            }
+            Update::Running {
+                tunnel,
+                endpoints,
+                run: there,
+            } => {
+                if run.configuration.is_empty() {
+                    run.configuration = there.name();
+                }
+                for endpoint in &endpoints {
+                    log.push(format!(
+                        "[remote] {} ({}) on {name} is at {}",
+                        endpoint.program, endpoint.role, endpoint.url
+                    ));
+                }
+                run.reached = true;
+                run.doing.clear();
+                run.there = Some(there);
+                run.endpoints = endpoints;
+                run.tunnel = Some(tunnel);
+            }
+            Update::Nothing | Update::Stopped => gone = true,
+            Update::Failed(why) => {
+                log.push(format!("[remote] {why}"));
+                run.doing.clear();
+                run.failed = Some(why);
+            }
+        }
+    }
+    if let Some(tunnel) = run.tunnel.as_mut() {
+        if !tunnel.alive() {
+            let why = format!("The connection to {name} closed: {}", tunnel.why_closed());
+            log.push(format!("[remote] {why}"));
+            run.tunnel = None;
+            run.endpoints.clear();
+            run.failed = Some(why);
+        }
+    }
+    gone
 }
 
 /// How long ago `started` (seconds since 1970) was, in words: `3 minutes ago`.

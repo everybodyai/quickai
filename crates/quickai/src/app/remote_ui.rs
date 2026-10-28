@@ -64,9 +64,9 @@ pub struct RemoteState {
     /// A test of a computer that is going, and what the last one found, by the computer's id.
     checking: Option<(String, Receiver<Checked>)>,
     checked: BTreeMap<String, Checked>,
-    /// The run of the selected configuration on a computer QuickAI set up (WP4.33, `remote_run`).
-    pub setup: Option<super::remote_run::SetupRun>,
-    /// A run there is to be looked for: when the window starts, and when a computer is chosen.
+    /// The runs on computers QuickAI set up, by the computer's id (WP4.33, `remote_run`).
+    pub setup: BTreeMap<String, super::remote_run::SetupRun>,
+    /// The runs that go on there are to be looked for: when the window starts, and when a computer is chosen.
     pub find_wanted: bool,
 }
 
@@ -103,7 +103,7 @@ impl Default for RemoteState {
             keys: Vec::new(),
             checking: None,
             checked: BTreeMap::new(),
-            setup: None,
+            setup: BTreeMap::new(),
             find_wanted: true,
         }
     }
@@ -256,8 +256,13 @@ impl App {
         self.runner_spec().filter(|r| r.way == Way::SetUp)
     }
 
+    /// The name of the computer chosen in the status bar, when it is not this one.
+    pub(super) fn runner_name(&self) -> Option<String> {
+        self.runner_spec().map(|r| r.name.clone())
+    }
+
     /// The computer chosen in the status bar, when it can be used with the engine in use.
-    fn runner_spec(&self) -> Option<&RemoteSpec> {
+    pub(super) fn runner_spec(&self) -> Option<&RemoteSpec> {
         let id = self.remote.runner.as_deref()?;
         self.remote
             .remotes
@@ -301,10 +306,20 @@ impl App {
         self.runner_spec().is_some_and(|r| r.id == id)
     }
 
+    /// Whether the computer shown cannot be changed to `to` now. Between this computer and the ones QuickAI sets up it
+    /// always can: each has a run of its own, which goes on while another is shown. A computer the window attaches to
+    /// shares the window's one session with this computer, which must be free for it (`engine_locked`).
+    pub(super) fn runner_change_locked(&self, to: Option<&str>) -> bool {
+        let attaches = |id: Option<&str>| {
+            id.and_then(|id| self.remote.remotes.iter().find(|r| r.id == id))
+                .is_some_and(|r| r.way == Way::Attach)
+        };
+        (attaches(self.remote.runner.as_deref()) || attaches(to)) && self.engine_locked()
+    }
+
     /// Why where the models run cannot be changed now (`engine_locked`).
     fn where_lock_reason(&self) -> &'static str {
-        let remote_run = self.setup_run().is_some_and(|r| r.running() || r.working());
-        if self.session.is_active() || self.remote_opening() || remote_run {
+        if self.session.is_active() || self.remote_opening() {
             "Stop the server to change where it runs."
         } else {
             "Wait for what is being fetched to finish to change where it runs."
@@ -416,12 +431,11 @@ impl App {
 
     /// Chooses where the models run (a computer by id, or this one) and writes it down.
     pub(super) fn choose_runner(&mut self, id: Option<String>) {
-        if self.engine_locked() || self.remote.runner == id {
+        if self.remote.runner == id || self.runner_change_locked(id.as_deref()) {
             return;
         }
         self.remote.runner = id;
         self.remote.error = None;
-        self.remote.setup = None;
         self.remote.find_wanted = true;
         self.store_remotes();
         // what is listed is what that computer has: its own list, when it gave one
@@ -573,6 +587,12 @@ impl App {
     /// What is known of whether the computer `id` answers: a test that passed, one that did not, or none yet (the
     /// connection of the run in use counts as a test).
     fn answers(&self, id: &str) -> Option<bool> {
+        // a computer QuickAI set up whose run goes on, or did not come up
+        match self.setup_run_of(id) {
+            Some(run) if run.running() => return Some(true),
+            Some(run) if run.failed.is_some() && !run.working() => return Some(false),
+            _ => {}
+        }
         if self.in_use(id) {
             if self.remote.error.is_some() {
                 return Some(false);
@@ -685,10 +705,10 @@ impl App {
 
     /// The menu of the status bar's place: the choices, and the ways to the window.
     fn show_where_menu(&mut self, ui: &mut egui::Ui) {
-        let locked = self.engine_locked();
         let lock_why = self.where_lock_reason();
         let mut chosen: Option<Option<String>> = None;
         let here = self.runner_spec().is_none();
+        let locked = self.runner_change_locked(None);
         let this = where_row(
             ui,
             here,
@@ -707,6 +727,7 @@ impl App {
         });
         for spec in &self.remote.remotes {
             let can = self.usable_with_engine(spec);
+            let locked = self.runner_change_locked(Some(&spec.id));
             let line = if can {
                 self.computer_line(spec)
             } else {
@@ -915,17 +936,22 @@ impl App {
             on: self.runner_spec().is_none(),
             removable: false,
         };
-        let rows =
-            std::iter::once(here).chain(self.remote.remotes.iter().map(|spec| ComputerRow {
+        let rows = std::iter::once(here).chain(self.remote.remotes.iter().map(|spec| {
+            ComputerRow {
                 spec: Some(spec),
                 line: self.computer_line(spec),
                 answers: self.answers(&spec.id),
                 on: self.in_use(&spec.id),
-                // not the one chosen, while a run or a fetch keeps it
-                removable: !(locked && self.remote.runner.as_deref() == Some(spec.id.as_str())),
-            }));
+                // not the one chosen, while a run or a fetch keeps it, nor one a run goes on on
+                removable: !(locked && self.remote.runner.as_deref() == Some(spec.id.as_str()))
+                    && !self
+                        .setup_run_of(&spec.id)
+                        .is_some_and(|r| r.running() || r.working()),
+            }
+        }));
         for row in rows {
             let can = row.spec.is_none_or(|spec| self.usable_with_engine(spec));
+            let locked = self.runner_change_locked(row.spec.map(|s| s.id.as_str()));
             let usable = !locked && can;
             if let Some(asked) = computer_row(ui, &row, can, usable, locked, lock_why) {
                 action = Some(asked);
@@ -1068,7 +1094,7 @@ impl App {
             .is_some_and(|(checking, _)| checking == id);
         let found = self.remote.checked.get(id).cloned();
         let in_use = self.in_use(id);
-        let locked = self.engine_locked();
+        let locked = self.runner_change_locked(Some(id));
         let lock_why = self.where_lock_reason();
         let mut action: Option<Action> = None;
         ui.horizontal(|ui| {

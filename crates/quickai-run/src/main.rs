@@ -228,14 +228,7 @@ fn main() {
         &request,
         &mut |event| {
             if let Some(held) = held.as_mut() {
-                match &event {
-                    Event::Plan { .. } | Event::Step { .. } => held.set_state("preparing"),
-                    Event::Ready { endpoints, model } => {
-                        held.set_ready(endpoints, model.as_deref())
-                    }
-                    Event::Stopping => held.set_state("stopping"),
-                    _ => {}
-                }
+                held.note(&event);
             }
             if let Some(path) = &ready_file {
                 write_ready_file(path, &event);
