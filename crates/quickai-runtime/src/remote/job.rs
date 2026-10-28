@@ -114,9 +114,13 @@ pub fn start(
             "Sending \"{}\" to {}",
             launching.name, job.spec.name
         )));
+        // a file of this start's own: the same configuration may be sent to two computers at once
+        static STARTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let file = std::env::temp_dir().join(format!(
-            "quickai-remote-{}-{}.toml",
+            "quickai-remote-{}-{}-{}-{}.toml",
             std::process::id(),
+            STARTS.fetch_add(1, Ordering::Relaxed),
+            job.spec.id,
             slug(&launching.name)
         ));
         std::fs::write(&file, &launching.text)

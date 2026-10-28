@@ -52,6 +52,9 @@ pub struct RunFile {
 /// A step of a run's plan (install a build, fetch a model, ...), and how far it has gone.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RunStep {
+    /// `install`, `fetch`, `start`... (the plan's kinds).
+    #[serde(default)]
+    pub kind: String,
     pub text: String,
     /// `pending`, `doing` or `done`.
     pub state: String,
@@ -127,10 +130,14 @@ pub fn now() -> u64 {
 }
 
 /// The run this program holds: while it is kept, the lock is held and `run.json` says what runs. Dropped, the file
-/// and a stop that was asked for are removed, and the lock is let go of.
+/// and a stop that was asked for are removed, and the lock is let go of. A run in a terminal leaves nothing behind
+/// (the folders it made are removed when nothing else is in them, as a run that failed at once wrote nothing before);
+/// a run in the background leaves how it ended (`last.json`) for `status` to say.
 pub struct Held {
     dir: PathBuf,
     file: RunFile,
+    /// The folders `hold` made, the outermost first.
+    made: Vec<PathBuf>,
     _lock: File,
 }
 
@@ -144,6 +151,12 @@ pub enum NotHeld {
 
 /// Holds the run of `dir` for a run of `configuration`, unless another goes on.
 pub fn hold(dir: &Path, configuration: &str, detached: bool) -> Result<Held, NotHeld> {
+    let mut made: Vec<PathBuf> = dir
+        .ancestors()
+        .take_while(|d| !d.exists())
+        .map(Path::to_path_buf)
+        .collect();
+    made.reverse();
     std::fs::create_dir_all(dir).map_err(NotHeld::Io)?;
     let lock = open_lock(dir).map_err(NotHeld::Io)?;
     // `running` takes the lock for a moment to see whether anyone holds it: a lock that stays taken for a second is
@@ -157,7 +170,8 @@ pub fn hold(dir: &Path, configuration: &str, detached: bool) -> Result<Held, Not
                 std::thread::sleep(std::time::Duration::from_millis(200));
             }
             Err(TryLockError::WouldBlock) => {
-                return Err(NotHeld::Busy(read_run_file(dir).map(Box::new)))
+                remove_made(&made);
+                return Err(NotHeld::Busy(read_run_file(dir).map(Box::new)));
             }
             Err(TryLockError::Error(e)) => return Err(NotHeld::Io(e)),
         }
@@ -178,6 +192,7 @@ pub fn hold(dir: &Path, configuration: &str, detached: bool) -> Result<Held, Not
             steps: Vec::new(),
             computer: None,
         },
+        made,
         _lock: lock,
     };
     held.write().map_err(NotHeld::Io)?;
@@ -204,6 +219,7 @@ impl Held {
                 self.file.steps = steps
                     .iter()
                     .map(|s| RunStep {
+                        kind: s.kind.clone(),
                         text: s.text.clone(),
                         state: "pending".into(),
                         done: 0,
@@ -218,6 +234,7 @@ impl Held {
                 // a step the plan did not list (a model pulled by name) is added where it comes
                 while self.file.steps.len() < *index {
                     self.file.steps.push(RunStep {
+                        kind: String::new(),
                         text: text.clone(),
                         state: "pending".into(),
                         done: 0,
@@ -249,6 +266,11 @@ impl Held {
                 self.file.state = "ready".into();
                 self.file.endpoints = endpoints.clone();
                 self.file.model = model.clone();
+                // what the plan said is done when the programs run (their start) is done now
+                for step in self.file.steps.iter_mut().filter(|s| s.state != "done") {
+                    step.state = "done".into();
+                    step.ended = Some(now());
+                }
             }
             Event::Stopping => self.file.state = "stopping".into(),
             _ => return,
@@ -272,8 +294,11 @@ impl Held {
         let _ = self.write();
     }
 
-    /// Writes how the run ended, for `status` to say once it is gone.
+    /// Writes how the run ended, for `status` to say once it is gone: of a run in the background, which nobody watched.
     pub fn record_end(&self, outcome: &str, message: Option<String>, code: i32) {
+        if !self.file.detached {
+            return;
+        }
         let ended = Ended {
             configuration: self.file.configuration.clone(),
             started: self.file.started,
@@ -297,6 +322,19 @@ impl Drop for Held {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(self.dir.join("run.json"));
         let _ = std::fs::remove_file(self.dir.join("stop"));
+        if !self.file.detached {
+            let _ = std::fs::remove_file(self.dir.join("lock"));
+            remove_made(&self.made);
+        }
+    }
+}
+
+/// Removes the folders of `made` that nothing else is in, the innermost first.
+fn remove_made(made: &[PathBuf]) {
+    for folder in made.iter().rev() {
+        if std::fs::remove_dir(folder).is_err() {
+            break;
+        }
     }
 }
 
