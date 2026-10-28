@@ -803,10 +803,25 @@ mod tests {
             shown.contains("Memory is about the graphics card: choose auto, or turn the GPU on."),
             "the rule of the Memory field is said: {shown}"
         );
+        // and with Change shut, the line of how it runs says it under itself: nothing else on the page would
+        app.change_open = false;
+        let line = painted(&ctx, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| app.show_run_line(ui));
+        })
+        .join("\n");
+        assert!(
+            line.contains("Memory is about the graphics card: choose auto, or turn the GPU on."),
+            "{line}"
+        );
         // the same two choices, with the memory left to the program, are fine
         app.values.set("memory", "auto");
         let shown = controls(&mut app, &ctx);
         assert!(!shown.contains("graphics card: choose auto"), "{shown}");
+        let line = painted(&ctx, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| app.show_run_line(ui));
+        })
+        .join("\n");
+        assert!(!line.contains("graphics card: choose auto"), "{line}");
         // llama.cpp's row has no choice and says nothing of the kind
         let mut llama = app_for(&dir, "llamacpp");
         let shown = controls(&mut llama, &ctx);
