@@ -64,7 +64,7 @@ impl Guide {
                 "Choose an engine at the top right. llama.cpp is ready to use; Ollama and ComfyUI are installed with \
                  one click.",
                 "Add a model with the button at the top of the list. The suggestions suit this computer.",
-                "Press Start beside the model's name, then type a message in the Chat tab.",
+                "Press the green play button beside the model's name, then type a message in the Chat tab.",
             ],
             Guide::FindModel => &[
                 "Press Add a model. With the box empty, it suggests models that fit this computer's memory.",
@@ -82,10 +82,10 @@ impl Guide {
                 "Nothing you type leaves this computer, unless the model runs on another one you added.",
             ],
             Guide::ConnectApp => &[
-                "While a model runs, press Connect an app beside its name.",
+                "While a model runs, press the plug button beside its name (Connect an app).",
                 "Copy the address into any app that works with OpenAI's API, with the model's name. Any API key \
                  works.",
-                "The same window opens a chat in your browser, when the engine has one.",
+                "The globe button beside it opens a chat in your browser, when the engine has one.",
             ],
             Guide::Remote => &[
                 "Install Ollama on the other computer, start it there, and check that you can reach that computer \

@@ -1525,18 +1525,29 @@ mod tests {
                 output = Some(out);
             }
             let mut into = Vec::new();
-            fn walk(shape: &egui::epaint::Shape, into: &mut Vec<(String, egui::Rect)>) {
+            // the words, and the green buttons (Start is a picture) as "<green>"
+            fn walk(
+                shape: &egui::epaint::Shape,
+                green: egui::Color32,
+                into: &mut Vec<(String, egui::Rect)>,
+            ) {
                 match shape {
-                    egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, into)),
+                    egui::epaint::Shape::Vec(inner) => {
+                        inner.iter().for_each(|s| walk(s, green, into))
+                    }
                     egui::epaint::Shape::Text(t) => into.push((
                         t.galley.text().to_string(),
                         t.galley.rect.translate(t.pos.to_vec2()),
                     )),
+                    egui::epaint::Shape::Rect(r) if r.fill == green => {
+                        into.push(("<green>".to_string(), r.rect))
+                    }
                     _ => {}
                 }
             }
+            let green = super::super::theme::palette().accent;
             for clipped in &output.unwrap().shapes {
-                walk(&clipped.shape, &mut into);
+                walk(&clipped.shape, green, &mut into);
             }
             into
         };
@@ -1582,7 +1593,7 @@ mod tests {
                     .map(|(_, r)| *r)
                     .max_by(|a, b| a.left().total_cmp(&b.left()))
                     .unwrap_or_else(|| panic!("{name} at {width} {live}: {found:?}"));
-                let start = at("Start", 30.0, 120.0);
+                let start = at("<green>", 30.0, 120.0);
                 assert!(
                     heading.right() < start.left() && start.right() <= width,
                     "{width} {live}: {heading:?} {start:?}"

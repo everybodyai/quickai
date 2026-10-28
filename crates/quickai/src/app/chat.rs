@@ -1042,7 +1042,7 @@ impl App {
                 format!("{server} runs with no model loaded: choose one, then Load model.")
             }
             _ => match self.models.get(self.selected) {
-                Some(m) => format!("Press Start to chat with {}.", m.display),
+                Some(m) => format!("Press the play button to chat with {}.", m.display),
                 None => format!("Start {server} with a model to chat with it here."),
             },
         };

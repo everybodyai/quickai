@@ -53,8 +53,8 @@ pub(super) fn first_sentence(note: &str) -> &str {
 
 impl App {
     /// The head of the page: the chosen model's name, what it is doing, and at the right end of its row what can be
-    /// done with it: Start (or Load model, or Use this model), Connect an app and Stop while it runs, and its menu.
-    /// Under the name, what is known of it as chips.
+    /// done with it, as pictures: play (Start, or Load model, or Use this model), and while it runs the chat in a
+    /// browser, Connect an app and Stop; and its menu. Under the name, what is known of it as chips.
     pub(super) fn show_model_header(
         &mut self,
         ui: &mut egui::Ui,
@@ -105,44 +105,51 @@ impl App {
                     .show(|ui| {
                         pressed.menu = self.model_menu(ui, index, lists);
                     });
+                // while it runs, the things to do with it are pictures, each named when the pointer rests on it
+                let square = egui::vec2(height, height);
                 if can_stop {
-                    pressed.stop = theme::button_sized(
-                        ui,
-                        Role::Danger,
-                        true,
-                        "Stop",
-                        egui::vec2(64.0, height),
-                    )
-                    .on_hover_text(format!("Stop the running {server} (Ctrl+Enter)."))
-                    .clicked();
+                    pressed.stop =
+                        icons::framed_icon_button(ui, Role::Danger, true, Icon::Stop, square)
+                            .on_hover_text(format!("Stop the running {server} (Ctrl+Enter)"))
+                            .clicked();
                 }
                 if state == ServerState::Running {
-                    pressed.connect = theme::button_sized(
+                    let plug = icons::framed_icon_button(
                         ui,
                         Role::Normal,
                         true,
-                        "Connect an app",
-                        egui::vec2(0.0, height),
+                        Icon::Plug,
+                        square,
                     )
                     .on_hover_text(
-                        "The address to give another app, and a chat in your browser when the engine has one.",
-                    )
-                    .clicked();
+                        "Connect an app: the address to give another app (an editor, a script, a chat app), \
+                         with an example.",
+                    );
+                    pressed.connect = plug.clicked();
+                    if let Some((label, hover, enabled)) = self.browser_chat() {
+                        pressed.browser =
+                            icons::framed_icon_button(ui, Role::Normal, enabled, Icon::Globe, square)
+                                .on_hover_text(format!("{}: {hover}", label.trim_end_matches('.')))
+                                .on_disabled_hover_text(format!(
+                                    "{}: {hover}",
+                                    label.trim_end_matches('.')
+                                ))
+                                .clicked();
+                    }
                 }
                 if show_start {
-                    pressed.start = theme::button_sized(
-                        ui,
-                        if can_press_start && first_model {
-                            Role::Primary
-                        } else {
-                            Role::Normal
-                        },
-                        can_press_start,
-                        start_label,
-                        egui::vec2(76.0, height),
-                    )
-                    .on_hover_text(start_hint)
-                    .clicked();
+                    // a play button, green while it is the thing to do; what it does is said when the pointer rests on it
+                    let role = if can_press_start && first_model {
+                        Role::Primary
+                    } else {
+                        Role::Normal
+                    };
+                    let hint = format!("{start_label}: {start_hint}");
+                    pressed.start =
+                        icons::framed_icon_button(ui, role, can_press_start, Icon::Play, square)
+                            .on_hover_text(&hint)
+                            .on_disabled_hover_text(&hint)
+                            .clicked();
                 }
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.add(
@@ -191,6 +198,9 @@ impl App {
         if let Some(action) = pressed.menu {
             self.do_row_action(ui.ctx(), index, action);
         }
+        if pressed.browser {
+            self.open_browser_chat(state);
+        }
     }
 
     /// The head of the page of an engine that runs on its own (ComfyUI), or of one that lists its models and has listed
@@ -214,29 +224,19 @@ impl App {
         let mut open_page = false;
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let square = egui::vec2(height, height);
                 if can_stop {
-                    stop = theme::button_sized(
-                        ui,
-                        Role::Danger,
-                        true,
-                        "Stop",
-                        egui::vec2(64.0, height),
-                    )
-                    .on_hover_text(format!("Stop the running {server} (Ctrl+Enter)."))
-                    .clicked();
+                    stop = icons::framed_icon_button(ui, Role::Danger, true, Icon::Stop, square)
+                        .on_hover_text(format!("Stop the running {server} (Ctrl+Enter)"))
+                        .clicked();
                 }
                 if state == ServerState::Running {
-                    connect = theme::button_sized(
-                        ui,
-                        Role::Normal,
-                        true,
-                        "Connect an app",
-                        egui::vec2(0.0, height),
-                    )
-                    .on_hover_text(format!(
-                        "Show how to connect an app to the running {server}."
-                    ))
-                    .clicked();
+                    let plug =
+                        icons::framed_icon_button(ui, Role::Normal, true, Icon::Plug, square)
+                            .on_hover_text(format!(
+                                "Connect an app: how to connect an app to the running {server}."
+                            ));
+                    connect = plug.clicked();
                     if let Some(web_ui) = &web_ui {
                         open_page = theme::button_sized(
                             ui,
@@ -250,14 +250,16 @@ impl App {
                     }
                 }
                 if !active {
-                    start = theme::button_sized(
+                    let hint = format!("Start: start {server} (Ctrl+Enter).");
+                    start = icons::framed_icon_button(
                         ui,
                         Role::Primary,
                         !self.engine_missing(),
-                        "Start",
-                        egui::vec2(76.0, height),
+                        Icon::Play,
+                        square,
                     )
-                    .on_hover_text(format!("Start {server} (Ctrl+Enter)."))
+                    .on_hover_text(&hint)
+                    .on_disabled_hover_text(&hint)
                     .clicked();
                 }
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -442,6 +444,7 @@ struct HeaderPress {
     stop: bool,
     connect: bool,
     menu: Option<RowAction>,
+    browser: bool,
 }
 
 /// What the model is doing, after its name: a dot and a word in the colour of the state.

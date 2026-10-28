@@ -304,8 +304,8 @@ impl App {
             ui.add_space(2.0);
             ui.label(
                 egui::RichText::new(format!(
-                    "{engine} makes pictures and video from workflows built in its own page: press Start, \
-                     then Open {engine}."
+                    "{engine} makes pictures and video from workflows built in its own page: press the play \
+                     button, then Open {engine}."
                 ))
                 .small()
                 .color(super::theme::palette().muted),
@@ -656,7 +656,7 @@ mod tests {
             "{shown}"
         );
         assert!(
-            shown.contains("press Start, then Open ComfyUI"),
+            shown.contains("press the play button, then Open ComfyUI"),
             "the next step is said: {shown}"
         );
         // it is not llama.cpp's picker (no `.gguf` to find in a folder, no picker), but it has the ways

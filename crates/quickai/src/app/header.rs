@@ -241,6 +241,17 @@ mod tests {
         into
     }
 
+    /// The green button (in either theme) on the row of `name`, at its right: Start, which is a picture.
+    fn green_beside(output: &egui::FullOutput, name: egui::Rect) -> Option<egui::Rect> {
+        [
+            theme::palette_of(true).accent,
+            theme::palette_of(false).accent,
+        ]
+        .iter()
+        .flat_map(|c| filled_with(output, *c))
+        .find(|r| (r.center().y - name.center().y).abs() < 12.0 && r.left() > name.right())
+    }
+
     #[test]
     fn p3_i10_the_status_bar_says_what_the_server_is_doing_at_the_foot_of_the_window_on_both_tabs()
     {
@@ -351,19 +362,15 @@ mod tests {
         let output = settled(&mut app, &ctx, true);
         let found = rects(&output);
         let green = filled_with(&output, theme::palette_of(true).accent);
-        let start = found.get("Start").expect("a Start button");
         // dark is what a context starts in; the colour of the button is the accent of the theme drawn now
         let green: Vec<egui::Rect> = if green.is_empty() {
             filled_with(&output, theme::palette_of(false).accent)
         } else {
             green
         };
+        // the one green button is Start: a play button, named when the pointer rests on it
         assert_eq!(green.len(), 1, "{green:?}");
-        assert!(
-            green[0].contains(start.center()),
-            "{:?} {start:?}",
-            green[0]
-        );
+        let start = &green[0];
         // and Start is beside the model's name, at the right end of its row; Stop and Connect an app are not there while
         // nothing runs (UI v2: there is no toolbar)
         let name = heading_of(&found, &app.models[0].display);
@@ -387,11 +394,11 @@ mod tests {
         app.binary = dir.join("ollama");
         app.models.clear();
         let ctx = egui::Context::default();
-        let found = rects(&settled(&mut app, &ctx, true));
-        let start = *found
-            .get("Start")
-            .unwrap_or_else(|| panic!("a Start button: {:?}", found.keys()));
+        let output = settled(&mut app, &ctx, true);
+        let found = rects(&output);
         let name = heading_of(&found, "Ollama");
+        let start = green_beside(&output, name)
+            .unwrap_or_else(|| panic!("a green play button beside {name:?}: {:?}", found.keys()));
         assert!(
             (start.center().y - name.center().y).abs() < 12.0 && start.left() > name.right(),
             "{start:?} is not beside {name:?}"
@@ -408,13 +415,25 @@ mod tests {
         // llama.cpp's first run has no Start: there is nothing to start until a model is added
         let mut llama = app_in(&dir, "llamacpp");
         llama.models.clear();
-        let found = rects(&settled(&mut llama, &ctx, true));
-        assert!(
-            found.contains_key("Add your first model"),
-            "{:?}",
+        let output = settled(&mut llama, &ctx, true);
+        let found = rects(&output);
+        let title = *found
+            .get("Add your first model")
+            .unwrap_or_else(|| panic!("{:?}", found.keys()));
+        let green = [
+            theme::palette_of(true).accent,
+            theme::palette_of(false).accent,
+        ]
+        .iter()
+        .flat_map(|c| filled_with(&output, *c))
+        .filter(|r| r.bottom() < title.top())
+        .count();
+        assert_eq!(
+            green,
+            0,
+            "a green button over the title: {:?}",
             found.keys()
         );
-        assert!(!found.contains_key("Start"), "{:?}", found.keys());
         assert!(!found.contains_key("Log"), "{:?}", found.keys());
         let _ = std::fs::remove_dir_all(&dir);
     }

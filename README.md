@@ -69,14 +69,14 @@ opened: choose **Done**, then press **Open Anyway** in **System Settings → Pri
 ## Quick start
 
 1. **Start QuickAI.** Bonsai 2 4B is already selected, or QuickAI's recommendation for your computer is.
-2. **Press Start** beside the model's name. The status bar at the foot of the window turns green and says *Running*.
-3. **Chat** in the **Chat** tab under the model, or press **Connect an app** to use the model from another app (or
-   to chat in your browser).
+2. **Press the green play button** beside the model's name. The status bar at the foot of the window turns green and says *Running*.
+3. **Chat** in the **Chat** tab under the model. Beside its name, the plug button (**Connect an app**) gives the
+   address for another app, and the globe button opens a chat in your browser. The square button stops it.
 
 To get more models, press **Add a model** at the top of the list. With its box empty it suggests models that suit
 this computer; type words to search online, paste a link to download a file, or press the folder to add a `.gguf`
 you already have. **Models → Recommended** has the whole curated list. To use another model, choose it in the list
-and press **Use this model**; its **⋯** menu (or a right-click in the list) has Details, Show in folder and Delete.
+and press the play button; its **⋯** menu (or a right-click in the list) has Details, Show in folder and Delete.
 
 The line under the model's name says how it runs. **Change** chooses *Balanced*, *Long chats* or *Light*, or the
 numbers themselves under *Custom*, and where the models run.
