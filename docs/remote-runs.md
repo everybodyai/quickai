@@ -111,8 +111,24 @@ The user: "forever - unless it is stopped from the UI - or unless the user manua
 - **`down`**: stops the run. It writes a stop file the run looks for each second, so that a stop is the same on every
   system (Windows has no SIGTERM to send to a program of another console); the signals stay for Ctrl-C and a service
   manager on Linux and macOS.
-- **One run at a time** on a computer, for one person: a second `up` while one runs says what runs, and the window offers
-  to stop it and start the one selected.
+- **One run at a time** on a computer, for one person: a second `up` while one runs says what runs, and starts nothing.
+
+### 3.2 An engine that is already running there
+
+The user: "if an engine is already running, inform the user and confirm over-ride - provide an option to stop it also".
+Before Start changes anything, the resolver looks at what already runs on that computer: `status --json` for a run of
+QuickAI's, and the ports the configuration will listen on for any other program (an Ollama started as a service, a
+ComfyUI someone left running). What it finds is said, and the person chooses; nothing is stopped or started without it:
+
+- **A run of QuickAI's** (`Studio runs "Vision chat", since 14:02`): **Stop it and run "Wan video"**, **Keep it** (its ports
+  are tunnelled here, as a run found again is), or **Cancel**.
+- **Another program on a port the configuration needs** (`Ollama answers on port 11434 on Studio, and QuickAI did not
+  start it`): **Run anyway** (the override: the configuration listens on a free port there instead), **Stop it** (a
+  program of the same person is stopped; a system service is said with the command that stops it, `sudo systemctl stop
+  ollama`, run by QuickAI only through `sudo -n` when that needs no password), or **Cancel**.
+
+The same check is made for a run on this computer, where it replaces what the window does today with a port that is
+taken (*Use port N*, C171's attach to an Ollama already answering).
 
 What the window does with it:
 
@@ -200,6 +216,6 @@ Not answered, and done as recommended unless the user says otherwise:
 | 4.33.4 | `remote.ssh` and `remote.probe`: run a command and copy a file over the person's `ssh` and `scp`; identify a computer, Windows' shell too | the stand-in for ssh (`testkit::fake_ssh`) runs them on this machine |
 | 4.33.5 | `remote.deploy`: copy, check, replace another version; the selected configuration and its environment file | the stand-in, and a computer with an older copy |
 | 4.33.6 | `resolve` with alternatives, for this computer first, then in `quickai-run check --json` | planner tests with documents that lack a build, a program, or room |
-| 4.33.7 | `remote.run` and `remote.tunnel`: start detached, follow `status`, tunnel every port it reports, find a run again, stop | the stand-in end to end, then the rented server for real |
+| 4.33.7 | `remote.run` and `remote.tunnel`: start detached, follow `status`, tunnel every port it reports, find a run again, stop; an engine already running there said, with stop, run anyway (override) or cancel (section 3.2) | the stand-in end to end, then the rented server for real |
 | 4.33.8 | The window: a computer's way, the run's progress, the alternatives to accept or reject, the addresses here, a run that goes on when the window closes | the GUI suites, when the user asks for them |
 | 4.33.9 | The modules as features, and their switches in the settings | a build with each feature off compiles and hides its part |
