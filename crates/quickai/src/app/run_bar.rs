@@ -193,6 +193,8 @@ impl App {
         match self.session.state() {
             ServerState::Idle => {
                 self.restart_with_selected = false;
+                // the port is the one this window's server just let go of: not a question for the person
+                self.port_check_skip = true;
                 self.start_selected(ctx);
             }
             ServerState::Crashed => self.restart_with_selected = false,

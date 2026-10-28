@@ -496,7 +496,12 @@ mod tests {
         assert!(!take_stop(&dir), "a stop is answered once");
         held.record_end("stopped", None, 0);
         drop(held);
-        assert_eq!(running(&dir), None);
+        // a program another test starts at that moment has the lock's file for the moment between its fork and its exec
+        crate::testkit::wait_until(
+            std::time::Duration::from_secs(5),
+            "the lock to be free",
+            || running(&dir).is_none(),
+        );
         assert!(!dir.join("run.json").exists());
         let said = status(&dir, 10);
         assert_eq!(said.running, None);
