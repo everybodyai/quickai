@@ -135,18 +135,15 @@ pub struct RemoteForm {
 }
 
 impl RemoteForm {
-    /// The form of a new computer, its ports the usual ones: `own` is the engine's.
-    fn new(own: u16) -> RemoteForm {
+    /// The form of a new computer, its ports the usual ones: `own` is the engine's. QuickAI sets it up when it
+    /// may (`setup_on`).
+    fn new(own: u16, setup_on: bool) -> RemoteForm {
         RemoteForm {
             ssh_port: "22".into(),
             engine_port: own.to_string(),
             // QuickAI sets a new computer up, and runs the selected configuration there (WP4.33): the port here is
             // the same as its run's there; a window built without that attaches
-            way: if cfg!(feature = "remote-setup") {
-                Way::SetUp
-            } else {
-                Way::Attach
-            },
+            way: if setup_on { Way::SetUp } else { Way::Attach },
             ..RemoteForm::default()
         }
     }
@@ -261,7 +258,22 @@ impl App {
     /// in a window built without them.
     pub(super) fn setup_in_use(&self) -> Option<&RemoteSpec> {
         self.runner_spec()
-            .filter(|r| r.way == Way::SetUp && cfg!(feature = "remote-setup"))
+            .filter(|r| r.way == Way::SetUp && self.remote_setup_on())
+    }
+
+    /// Whether QuickAI sets up other computers: built in, and not switched off in Settings.
+    pub(super) fn remote_setup_on(&self) -> bool {
+        cfg!(feature = "remote-setup") && self.stored.remote_setup()
+    }
+
+    /// Switches QuickAI's setting up of other computers on or off, and writes it down. Off stops nothing: a run that
+    /// goes on there goes on until it is stopped, from a window where it is on or on that computer.
+    pub(super) fn set_remote_setup(&mut self, on: bool) {
+        let mut stored = self.settings_now();
+        stored.set_remote_setup(on);
+        self.write_settings(&stored);
+        self.stored = stored;
+        self.remote.find_wanted = on;
     }
 
     /// The name of the computer chosen in the status bar, when it is not this one.
@@ -282,7 +294,10 @@ impl App {
     /// Whether `spec` can be used with the engine in use: any engine on a computer QuickAI sets up, and on one where
     /// the window attaches, an engine that can attach (Ollama, ComfyUI).
     fn usable_with_engine(&self, spec: &RemoteSpec) -> bool {
-        (spec.way == Way::SetUp && cfg!(feature = "remote-setup")) || self.can_run_remote()
+        match spec.way {
+            Way::SetUp => self.remote_setup_on(),
+            Way::Attach => self.can_run_remote(),
+        }
     }
 
     /// The engine's port on `spec`: the one the person gave, else the engine's own.
@@ -518,7 +533,10 @@ impl App {
     /// changed since).
     fn new_remote_form(&mut self) {
         self.read_ssh_files();
-        self.remote.form = Some(RemoteForm::new(self.own_remote_port()));
+        self.remote.form = Some(RemoteForm::new(
+            self.own_remote_port(),
+            self.remote_setup_on(),
+        ));
     }
 
     /// What the form suggests: the hosts of `~/.ssh/config` and the keys of `~/.ssh`.
@@ -754,7 +772,11 @@ impl App {
                 chosen = Some(Some(spec.id.clone()));
             }
             // a greyed computer says why when the pointer rests on it, and nothing more is said in the menu
-            if !can {
+            if !can && spec.way == Way::SetUp {
+                item.on_hover_text(
+                    "Setting up other computers is off in Settings: switch it on to use this one.",
+                );
+            } else if !can {
                 item.on_hover_text(format!(
                     "{} runs its models on this computer. {} can use {}.",
                     self.engine_name(),
@@ -1008,7 +1030,8 @@ impl App {
     /// offered).
     fn show_computer_form(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette();
-        let can = self.can_run_remote();
+        let setup_on = self.remote_setup_on();
+        let attach_can = self.can_run_remote();
         let mut save = false;
         let mut cancel = false;
         let RemoteState {
@@ -1033,7 +1056,7 @@ impl App {
         ));
         ui.add_space(10.0);
         let was = form.way;
-        if cfg!(feature = "remote-setup") {
+        if setup_on {
             way_choice(ui, &mut form.way);
         }
         if form.way != was && !form.here_typed {
@@ -1069,6 +1092,11 @@ impl App {
         ui.separator();
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // a computer that can be tested now is added and tested
+                let can = match form.way {
+                    Way::SetUp => setup_on,
+                    Way::Attach => attach_can,
+                };
                 let label = match (form.editing.is_some(), can) {
                     (false, true) => "Add and test",
                     (false, false) => "Add",

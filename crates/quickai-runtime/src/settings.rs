@@ -30,6 +30,10 @@ pub const REMOTES_KEY: &str = "app.remotes";
 /// The one of them the models run on now; absent for this computer.
 pub const RUNNER_KEY: &str = "app.runner";
 
+/// Whether QuickAI sets up other computers and runs configurations there (WP4.33); absent, it does, `false` when
+/// the person switched it off in Settings.
+pub const REMOTE_SETUP_KEY: &str = "app.remote_setup";
+
 /// The conversations of the Chat tab are kept on this computer (WP4.28); absent, they are not.
 pub const KEEP_CHATS_KEY: &str = "app.keep_chats";
 /// The key under which a first conversation is remembered: the last step of Getting started is done.
@@ -312,6 +316,21 @@ impl Settings {
     /// Records where the models run: a remote computer by its id, or this computer (`None`, the key taken away).
     pub fn set_runner(&mut self, id: Option<&str>) {
         self.set_app_value(RUNNER_KEY, id.map(serde_json::Value::from));
+    }
+
+    /// Whether QuickAI sets up other computers and runs configurations there: on unless it was switched off.
+    pub fn remote_setup(&self) -> bool {
+        self.app_value(REMOTE_SETUP_KEY)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true)
+    }
+
+    /// Records it; on takes the key away.
+    pub fn set_remote_setup(&mut self, on: bool) {
+        self.set_app_value(
+            REMOTE_SETUP_KEY,
+            (!on).then_some(serde_json::Value::Bool(false)),
+        );
     }
 
     /// Whether the conversations of the Chat tab are kept on this computer.

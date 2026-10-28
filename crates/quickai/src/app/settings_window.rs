@@ -198,6 +198,26 @@ impl App {
             });
         });
 
+        // QuickAI's setting up of other computers (WP4.33), when it is built in
+        if cfg!(feature = "remote-setup") {
+            ui.add_space(6.0);
+            super::theme::card(ui, |ui| {
+                let mut on = self.remote_setup_on();
+                if ui
+                    .checkbox(&mut on, "Set up other computers and run configurations there")
+                    .on_hover_text(
+                        "With it, a computer you add can be one QuickAI sets up: it copies its headless program \
+                         there and runs the configuration you select, and the status bar switches between the runs. \
+                         Off, the computers you add are ones you run an engine on yourself. Switching it off stops \
+                         nothing: a run there goes on until it is stopped.",
+                    )
+                    .changed()
+                {
+                    self.set_remote_setup(on);
+                }
+            });
+        }
+
         if let Some(msg) = &self.settings_error {
             ui.add_space(6.0);
             ui.colored_label(super::theme::palette().bad, msg);
