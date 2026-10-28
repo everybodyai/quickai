@@ -26,6 +26,10 @@ pub(super) enum Icon {
     Sliders,
     Chat,
     Refresh,
+    Plug,
+    Globe,
+    Stop,
+    Play,
 }
 
 /// Draws `icon` in `rect` (it is drawn in the largest square that fits, in the middle) in `color`.
@@ -192,6 +196,45 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
             let (ex, ey) = (12.0 + 7.5 * end.cos(), 12.0 + 7.5 * end.sin());
             line(&[(ex - 4.5, ey - 0.6), (ex, ey), (ex - 0.4, ey + 4.6)]);
         }
+        Icon::Plug => {
+            // two prongs, the body of the plug, and its cord
+            line(&[(9.0, 2.5), (9.0, 7.5)]);
+            line(&[(15.0, 2.5), (15.0, 7.5)]);
+            let mut body = vec![(6.0, 7.5), (18.0, 7.5), (18.0, 12.0)];
+            for i in 0..=8 {
+                let a = (i as f32 * 22.5).to_radians();
+                body.push((12.0 + 6.0 * a.cos(), 12.0 + 5.0 * a.sin()));
+            }
+            body.push((6.0, 7.5));
+            line(&body);
+            line(&[(12.0, 17.0), (12.0, 21.5)]);
+        }
+        Icon::Globe => {
+            ring(12.0, 12.0, 9.0);
+            line(&[(3.0, 12.0), (21.0, 12.0)]);
+            // a meridian: an ellipse as tall as the globe
+            let points: Vec<(f32, f32)> = (0..=24)
+                .map(|i| {
+                    let a = (i as f32 * 15.0).to_radians();
+                    (12.0 + 4.0 * a.cos(), 12.0 + 9.0 * a.sin())
+                })
+                .collect();
+            line(&points);
+        }
+        Icon::Play => {
+            painter.add(Shape::convex_polygon(
+                vec![at(8.0, 5.0), at(19.5, 12.0), at(8.0, 19.0)],
+                color,
+                Stroke::NONE,
+            ));
+        }
+        Icon::Stop => {
+            painter.rect_filled(
+                Rect::from_min_max(at(7.0, 7.0), at(17.0, 17.0)),
+                1.8 * unit,
+                color,
+            );
+        }
     }
 }
 
@@ -272,6 +315,26 @@ pub(super) fn labelled_button(
             galley,
             color,
         );
+    }
+    response
+}
+
+/// A button that is a picture in a frame, drawn as the window's buttons are (`role`), `size` big: for a header whose
+/// actions are known by their pictures, each named by the text that is shown when the pointer rests on it.
+pub(super) fn framed_icon_button(
+    ui: &mut egui::Ui,
+    role: theme::Role,
+    enabled: bool,
+    icon: Icon,
+    size: egui::Vec2,
+) -> egui::Response {
+    let response = theme::button_sized(ui, role, enabled, "", size);
+    if ui.is_rect_visible(response.rect) {
+        let visuals = ui.style().interact(&response);
+        let color = text_color(role, enabled, visuals.fg_stroke.color);
+        let side = (size.y - 13.0).clamp(12.0, 18.0);
+        let square = Rect::from_center_size(response.rect.center(), egui::vec2(side, side));
+        paint(ui.painter(), square, icon, color);
     }
     response
 }

@@ -51,7 +51,7 @@ impl App {
     }
 
     /// What the button of the chat in a browser does.
-    fn open_browser_chat(&mut self, _state: ServerState) {
+    pub(super) fn open_browser_chat(&mut self, _state: ServerState) {
         if let Some(web_ui) = self
             .engine_doc()
             .and_then(|e| e.doc.provides.web_ui.clone())
