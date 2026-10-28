@@ -285,48 +285,37 @@ mod tests {
     }
 
     #[test]
-    fn p3_i11_the_speed_of_the_model_is_a_tag_under_its_name_in_the_page_and_not_in_a_bar() {
+    fn p3_i11_the_speed_of_the_model_is_a_word_of_its_row_in_the_list_and_not_under_its_name() {
         let dir = scratch("z11");
         let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
-        // a model a sixteenth of the memory is fast; one that is most of it is slower
+        // a model a sixteenth of the memory is fast; one that is most of it is slower (C185: what is said of a model is
+        // in its row of the list, coloured, and the head of the page is its name and how it runs)
         for (name, bytes, said) in [
-            ("Small-Q4_K_M.gguf", GB, "Fast on this computer"),
-            ("Large-Q4_K_M.gguf", 12 * GB, "Slower on this computer"),
+            ("Small-Q4_K_M.gguf", GB, "fast"),
+            ("Large-Q4_K_M.gguf", 12 * GB, "slower"),
         ] {
             only_model(&mut app, &dir, name, bytes);
             let found = rects(&settled(&mut app, &ctx, true));
-            let chip = found
+            let row = found
                 .iter()
-                .find(|(text, _)| text.ends_with(said))
+                .find(|(text, _)| text.split(" · ").any(|word| word == said))
                 .unwrap_or_else(|| panic!("{said}: {:?}", found.keys()))
                 .1;
-            let display = app.models[0].display.clone();
-            // the name is in the list on the left and is the heading of the page: the heading is the one on the right
-            let heading = found
-                .iter()
-                .filter(|(text, _)| **text == display)
-                .map(|(_, rect)| *rect)
-                .max_by(|a, b| a.left().total_cmp(&b.left()))
-                .unwrap_or_else(|| panic!("{display}: {:?}", found.keys()));
+            assert!(row.left() < 170.0, "{name}: {row:?} is not in the list");
             assert!(
-                heading.left() > 170.0,
-                "{name}: {heading:?} is not in the page"
-            );
-            assert!(
-                chip.top() >= heading.bottom() - 1.0 && chip.top() - heading.bottom() < 30.0,
-                "{name}: {chip:?} is not under {heading:?}"
-            );
-            assert!(
-                chip.left() > 170.0 && chip.bottom() < 500.0,
-                "{name}: {chip:?}"
+                !found.keys().any(|text| text.contains("on this computer")),
+                "{name}: {:?}",
+                found.keys()
             );
         }
         // an engine with no list of models to start has no model to say it of
         let mut comfy = app_in(&dir, "comfyui");
         let found = rects(&settled(&mut comfy, &ctx, true));
         assert!(
-            !found.keys().any(|text| text.contains("on this computer")),
+            !found
+                .keys()
+                .any(|text| text.split(" · ").any(|w| w == "fast" || w == "slower")),
             "{:?}",
             found.keys()
         );
@@ -485,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn p3_i24_what_is_said_of_a_listed_model_is_chips_on_one_row_and_not_lines_of_small_print() {
+    fn p3_i24_what_is_said_of_a_listed_model_is_in_its_row_and_the_head_of_the_page_is_two_lines() {
         let dir = scratch("z24");
         let mut app = app_in(&dir, "ollama");
         // an Ollama that is installed (a page of its own installs one that is not)
@@ -497,57 +486,55 @@ mod tests {
         app.recommended_filename = Some("qwen3-vl:8b".to_string());
         app.named.stale = true;
         let found = rects(&settled(&mut app, &ctx, true));
-        let picker = heading_of(&found, "qwen3-vl:8b");
+        let heading = heading_of(&found, "qwen3-vl:8b");
         let get = *found
             .iter()
             .find(|(text, _)| text.contains(" context · "))
             .unwrap_or_else(|| panic!("the line of how it runs: {:?}", found.keys()))
             .1;
-        let chips: Vec<egui::Rect> = [
+        // the head of the page: its name, and under it how it runs; nothing between them (C185)
+        assert!(
+            get.top() > heading.bottom() && get.top() - heading.bottom() < 24.0,
+            "{get:?} is not right under {heading:?}"
+        );
+        for text in [
             "vision",
             "tools",
             "thinking",
             "★ Recommended",
-            "from the last run",
-        ]
-        .iter()
-        .map(|text| {
-            *found
-                .get(*text)
-                .unwrap_or_else(|| panic!("{text}: {:?}", found.keys()))
-        })
-        .collect();
-        // all on one row, under the name and over the line that says how it runs
-        for chip in &chips {
+            "Fast on this computer",
+        ] {
             assert!(
-                chip.top() > picker.bottom() && chip.bottom() < get.top(),
-                "{chip:?} is not between {picker:?} and {get:?}"
-            );
-            assert!(
-                (chip.center().y - chips[0].center().y).abs() < 3.0,
-                "{chip:?} is not on the row of {:?}",
-                chips[0]
+                !found.contains_key(text),
+                "{text} is still a chip: {:?}",
+                found.keys()
             );
         }
-        // the three lines they replace are gone, and so is `completion`, which every model that chats has
-        for text in found.keys() {
-            assert!(
-                !text.contains("RAM detected")
-                    && !text.starts_with("(as ")
-                    && !text.contains("completion"),
-                "{text:?} is still there"
-            );
-        }
-        // the row is the height of its chips: the line under it is that row further down
+        // in the list: recommended in the row of the model, and that the list is from the last run at its head
+        let row = found
+            .iter()
+            .find(|(text, _)| text.split(" · ").any(|w| w == "recommended"))
+            .unwrap_or_else(|| panic!("the row's facts: {:?}", found.keys()))
+            .1;
+        assert!(row.left() < 170.0, "{row:?} is not in the list");
+        let stale = found
+            .get("from the last run")
+            .unwrap_or_else(|| panic!("from the last run: {:?}", found.keys()));
         assert!(
-            get.top() - picker.bottom() < 60.0,
-            "{get:?} is far below {picker:?}"
+            stale.left() < 170.0 && stale.top() < row.top(),
+            "{stale:?} {row:?}"
+        );
+        // and nothing says `completion`, which every model that chats can do
+        assert!(
+            !found.keys().any(|text| text.contains("completion")),
+            "{:?}",
+            found.keys()
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn p3_i25_a_note_is_cut_at_its_first_sentence_and_the_rest_is_there_when_the_pointer_is() {
+    fn p3_i25_a_note_is_cut_at_its_first_sentence_and_how_a_model_starts_is_a_word_of_its_row() {
         use super::super::model_bar::first_sentence;
         assert_eq!(first_sentence("A, b. C d."), "A, b.");
         assert_eq!(first_sentence("One sentence."), "One sentence.");
@@ -565,65 +552,47 @@ mod tests {
         let dir = scratch("z25");
         let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
-        app.models = vec![listed(
-            "Bonsai-1.7B-Q1_0.gguf",
-            "1-bit quantized, ~0.25 GB, Apache-2.0. Bundled with this package \u{2014} the lighter pick if the 8B runs slowly on this machine.",
-        )];
+        let mut model = listed("Embed-Q8_0.gguf", "");
+        model.note =
+            "Turns text into numbers for the tests. Starts as an embedding server.".to_string();
+        app.models = vec![model];
         app.selected = 0;
+        // the note is the model's hover in the list, and is not drawn in the page (C185); how it starts is a word of
+        // its row
         let found = rects(&settled(&mut app, &ctx, true));
-        assert!(
-            found.contains_key("1-bit quantized, ~0.25 GB, Apache-2.0."),
-            "{:?}",
-            found.keys()
-        );
         assert!(
             !found
                 .keys()
-                .any(|text| text.contains("Bundled with this package")),
+                .any(|text| text.contains("Turns text into numbers") || text.contains("Starts as")),
             "{:?}",
             found.keys()
         );
-        // a note that is one sentence is all there
-        app.models[0].note = "Instruction-tuned chat model, small and fast.".to_string();
-        let found = rects(&settled(&mut app, &ctx, true));
-        assert!(found.contains_key("Instruction-tuned chat model, small and fast."));
-        // how a model is started is a chip, whatever else its note says: it is not left for the hover
-        app.models[0].note =
-            "Turns text into numbers for the tests. Starts as an embedding server.".to_string();
-        let found = rects(&settled(&mut app, &ctx, true));
+        let (detail, hover) = app.row_facts(&app.models[0], false);
         assert!(
-            found.contains_key("embedding server")
-                && found.contains_key("Turns text into numbers for the tests."),
-            "{:?}",
-            found.keys()
+            detail.iter().any(|(word, _)| word == "embedding server"),
+            "{detail:?}"
         );
         assert!(
-            !found.keys().any(|text| text.contains("Starts as")),
-            "{:?}",
-            found.keys()
+            hover.contains("Turns text into numbers for the tests.")
+                && hover.contains("Starts as an embedding server."),
+            "{hover}"
         );
+        let row = found
+            .iter()
+            .find(|(text, _)| text.split(" · ").any(|w| w == "embedding server"))
+            .unwrap_or_else(|| panic!("the row's words: {:?}", found.keys()))
+            .1;
+        assert!(row.left() < 170.0, "{row:?}");
+        // a mode this engine does not have is said in its row, in the colour of a warning
         app.models[0].note =
             "It is meant to start in the mode `rerank`, which this engine does not have."
                 .to_string();
-        let found = rects(&settled(&mut app, &ctx, true));
+        let (detail, _) = app.row_facts(&app.models[0], false);
         assert!(
-            found.contains_key("mode this engine lacks"),
-            "{:?}",
-            found.keys()
-        );
-        // and a model with nothing but its speed to say has a row of one tag: the line of how it runs is only that row
-        // further down
-        app.models[0].note = String::new();
-        let found = rects(&settled(&mut app, &ctx, true));
-        let picker = heading_of(&found, "Bonsai-1.7B-Q1_0.gguf");
-        let get = *found
-            .iter()
-            .find(|(text, _)| text.contains(" context · "))
-            .unwrap_or_else(|| panic!("the line of how it runs: {:?}", found.keys()))
-            .1;
-        assert!(
-            get.top() - picker.bottom() < 60.0,
-            "{get:?} is far below {picker:?} with nothing said of the model"
+            detail
+                .iter()
+                .any(|(word, color)| word == "mode this engine lacks" && color.is_some()),
+            "{detail:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

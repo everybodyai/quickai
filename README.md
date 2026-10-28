@@ -76,7 +76,8 @@ opened: choose **Done**, then press **Open Anyway** in **System Settings → Pri
 To get more models, press **Add a model** at the top of the list. With its box empty it suggests models that suit
 this computer; type words to search online, paste a link to download a file, or press the folder to add a `.gguf`
 you already have. **Models → Recommended** has the whole curated list. To use another model, choose it in the list
-and press the play button; its **⋯** menu (or a right-click in the list) has Details, Show in folder and Delete.
+and press the play button; the **⋯** on its row in the list (or a right-click) has Details, Show in folder and Delete,
+and the row says its size, whether it should be fast here, and whether it is the one recommended for this computer.
 
 The line under the model's name says how it runs. **Change** chooses *Balanced*, *Long chats* or *Light*, or the
 numbers themselves under *Custom*, and where the models run.
