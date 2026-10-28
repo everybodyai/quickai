@@ -28,25 +28,9 @@ impl App {
         api_panel(&self.registry, &selection, &self.form_facts())
     }
 
-    /// The ways to chat in a browser, as items of a menu: the engine's own page (llama.cpp's), or the companion's
-    /// (Open WebUI beside Ollama), to set up or to open.
-    pub(super) fn show_browser_chat_items(&mut self, ui: &mut egui::Ui, state: ServerState) {
-        if let Some((label, hover, enabled)) = self.browser_chat() {
-            if ui
-                .add_enabled(enabled, egui::Button::new(label))
-                .on_hover_text(hover)
-                .clicked()
-            {
-                self.open_browser_chat(state);
-                ui.close();
-            }
-        }
-        let _ = state;
-    }
-
     /// The chat in a browser there is for this engine: the words of its button, what it does, and whether it can be
     /// pressed now.
-    fn browser_chat(&self) -> Option<(String, String, bool)> {
+    pub(super) fn browser_chat(&self) -> Option<(String, String, bool)> {
         let running = self.session.state() == ServerState::Running;
         if let Some(web_ui) = self
             .engine_doc()

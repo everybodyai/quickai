@@ -366,10 +366,184 @@ pub fn check_with(
     path: &str,
     pointer: &str,
 ) -> Result<String, String> {
-    let mut tunnel = open_with(program, spec, remote_port, OPEN_TIMEOUT)?;
+    check_steps(program, spec, remote_port, engine, path, pointer).into_result()
+}
+
+/// What a test of a computer found, step by step, for the window to show as a list: it was reached over SSH (or why
+/// not), and then the engine answered on its port there (what it says it is), or why not. The engine is not asked when
+/// the computer was not reached.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Checked {
+    pub reached: Result<(), String>,
+    pub engine: Option<Result<String, String>>,
+}
+
+impl Checked {
+    /// Every step passed.
+    pub fn passed(&self) -> bool {
+        self.reached.is_ok() && matches!(self.engine, Some(Ok(_)))
+    }
+
+    /// The engine's identity, or the first step's reason it is not there.
+    pub fn into_result(self) -> Result<String, String> {
+        self.reached?;
+        self.engine
+            .unwrap_or_else(|| Err("The engine was not asked.".to_string()))
+    }
+}
+
+/// `check_with`, step by step.
+pub fn check_steps(
+    program: &Path,
+    spec: &RemoteSpec,
+    remote_port: u16,
+    engine: &str,
+    path: &str,
+    pointer: &str,
+) -> Checked {
+    let mut tunnel = match open_with(program, spec, remote_port, OPEN_TIMEOUT) {
+        Ok(tunnel) => tunnel,
+        Err(why) => {
+            return Checked {
+                reached: Err(why),
+                engine: None,
+            }
+        }
+    };
     let found = identity(tunnel.local_port, path, pointer);
     tunnel.close();
-    found.ok_or_else(|| not_answering(spec, engine, remote_port))
+    Checked {
+        reached: Ok(()),
+        engine: Some(found.ok_or_else(|| not_answering(spec, engine, remote_port))),
+    }
+}
+
+/// The command that fixes why `spec` could not be reached, when there is one to run on this computer: a login with no
+/// key there is the key copied over once, and a changed key of the computer is the old one forgotten.
+pub fn login_fix(spec: &RemoteSpec, why: &str) -> Option<String> {
+    let host = spec.host.trim();
+    let port = if spec.ssh_port == 22 {
+        String::new()
+    } else {
+        format!("-p {} ", spec.ssh_port)
+    };
+    if why.contains("refused the login") {
+        return Some(format!("ssh-copy-id {port}{host}"));
+    }
+    if why.contains("key is not the one it had before") {
+        let bare = host.rsplit('@').next().unwrap_or(host);
+        return Some(format!("ssh-keygen -R {bare}"));
+    }
+    None
+}
+
+/// A `Host` of the person's `~/.ssh/config`, for the address box to offer: the name to give ssh, and where it goes
+/// (`nigo@studio.local · port 2222`) as far as the file says.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SshHost {
+    pub alias: String,
+    pub goes_to: String,
+}
+
+/// The hosts `~/.ssh/config` names, in its order: each name of a `Host` line that is not a pattern, with the
+/// `HostName`, `User` and `Port` given under it. What ssh reads beyond that (`Match`, `Include`, the defaults of
+/// `Host *`) is not needed to offer a name: ssh itself reads the file when it connects.
+pub fn ssh_config_hosts(text: &str) -> Vec<SshHost> {
+    struct Entry {
+        alias: String,
+        hostname: Option<String>,
+        user: Option<String>,
+        port: Option<String>,
+    }
+    let mut entries: Vec<Entry> = Vec::new();
+    let mut current: std::ops::Range<usize> = 0..0;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let (key, value) = match line.split_once(|c: char| c.is_whitespace() || c == '=') {
+            Some((k, v)) => (
+                k.to_ascii_lowercase(),
+                v.trim().trim_start_matches('=').trim(),
+            ),
+            None => continue,
+        };
+        let value = value.trim_matches('"').to_string();
+        match key.as_str() {
+            "host" => {
+                let start = entries.len();
+                for name in value.split_whitespace() {
+                    if name.contains(['*', '?', '!']) || entries.iter().any(|e| e.alias == name) {
+                        continue;
+                    }
+                    entries.push(Entry {
+                        alias: name.to_string(),
+                        hostname: None,
+                        user: None,
+                        port: None,
+                    });
+                }
+                current = start..entries.len();
+            }
+            "match" => current = entries.len()..entries.len(),
+            "hostname" | "user" | "port" => {
+                for entry in &mut entries[current.clone()] {
+                    let slot = match key.as_str() {
+                        "hostname" => &mut entry.hostname,
+                        "user" => &mut entry.user,
+                        _ => &mut entry.port,
+                    };
+                    // the first value given is the one ssh uses
+                    slot.get_or_insert_with(|| value.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    entries
+        .into_iter()
+        .map(|e| {
+            let host = e.hostname.unwrap_or_else(|| e.alias.clone());
+            let mut goes_to = match e.user {
+                Some(user) => format!("{user}@{host}"),
+                None => host,
+            };
+            if let Some(port) = e.port.filter(|p| p != "22") {
+                goes_to.push_str(&format!(" · port {port}"));
+            }
+            SshHost {
+                alias: e.alias,
+                goes_to,
+            }
+        })
+        .collect()
+}
+
+/// `ssh_config_hosts` of the person's own `~/.ssh/config`; none when there is no such file.
+pub fn read_ssh_config_hosts() -> Vec<SshHost> {
+    directories::BaseDirs::new()
+        .map(|d| d.home_dir().join(".ssh").join("config"))
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .map(|text| ssh_config_hosts(&text))
+        .unwrap_or_default()
+}
+
+/// What a computer is called when nobody named it, from its address: `me@studio.local` is `Studio`.
+pub fn name_from_address(host: &str) -> String {
+    let bare = host.trim().rsplit('@').next().unwrap_or_default();
+    let first = bare.split('.').next().unwrap_or_default();
+    // an IP address stays whole
+    let word = if bare.parse::<std::net::IpAddr>().is_ok() {
+        bare
+    } else {
+        first
+    };
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
 }
 
 /// The sentence for a computer that was reached but has no such engine answering on the port.
@@ -578,5 +752,63 @@ mod tests {
             let bad = open("-oProxyCommand=x");
             assert!(bad.contains("not an address"), "{bad}");
         }
+    }
+
+    #[test]
+    fn the_hosts_of_an_ssh_config_are_offered_with_where_they_go() {
+        let text = "\
+# my machines
+Host studio
+    HostName studio.local
+    User nigo
+Host gpu-box rented
+  Hostname=203.0.113.7
+  Port 2222
+  User root
+Host *.internal *
+    User someone
+Match host foo
+    User other
+Host studio
+    User ignored
+";
+        let hosts = ssh_config_hosts(text);
+        let said: Vec<(&str, &str)> = hosts
+            .iter()
+            .map(|h| (h.alias.as_str(), h.goes_to.as_str()))
+            .collect();
+        assert_eq!(
+            said,
+            [
+                ("studio", "nigo@studio.local"),
+                ("gpu-box", "root@203.0.113.7 · port 2222"),
+                ("rented", "root@203.0.113.7 · port 2222"),
+            ]
+        );
+        assert!(ssh_config_hosts("").is_empty());
+    }
+
+    #[test]
+    fn a_name_is_made_from_an_address_and_a_failed_login_has_its_fix() {
+        assert_eq!(name_from_address("me@studio.local"), "Studio");
+        assert_eq!(name_from_address("gpu-box"), "Gpu-box");
+        assert_eq!(name_from_address("root@203.0.113.7"), "203.0.113.7");
+        let mut spec = RemoteSpec::new("Studio", "me@studio.local");
+        let refused = explain(&["me@studio.local: Permission denied (publickey).".into()]);
+        assert_eq!(
+            login_fix(&spec, &refused).as_deref(),
+            Some("ssh-copy-id me@studio.local")
+        );
+        spec.ssh_port = 2222;
+        assert_eq!(
+            login_fix(&spec, &refused).as_deref(),
+            Some("ssh-copy-id -p 2222 me@studio.local")
+        );
+        let changed = explain(&["Host key verification failed.".into()]);
+        assert_eq!(
+            login_fix(&spec, &changed).as_deref(),
+            Some("ssh-keygen -R studio.local")
+        );
+        assert_eq!(login_fix(&spec, "That address was not found."), None);
     }
 }

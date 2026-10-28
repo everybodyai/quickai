@@ -24,8 +24,7 @@ downloaded when the person asks, and QuickAI leaves its name and logo as they ar
   and `not installed yet` beside it until there is one): nothing of Open WebUI is bundled, and the window never says
   so. *Open WebUI's internet access* is whether it may use the internet (`OFFLINE_MODE`, below); it reaches Ollama
   either way.
-* **The button of the chat in a browser,** in **Connect an app** (beside Stop while Ollama runs) and in the Server
-  menu. For Ollama it is **Set up chat UI...** while Open WebUI is off or not installed (it opens the settings with its
+* **The button of the chat in a browser,** in **Connect an app** (beside Stop while Ollama runs). For Ollama it is **Set up chat UI...** while Open WebUI is off or not installed (it opens the settings with its
   section open), and **Open Chat UI** once it is on and installed: disabled until the page runs, then it opens
   `http://127.0.0.1:3000` in the browser.
 * **The status line** says what the pair is doing: `Ollama ready, no model loaded (port 11434) · Open WebUI on port

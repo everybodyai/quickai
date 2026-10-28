@@ -102,9 +102,10 @@ Settings.
 ## Run models on another computer
 
 A desktop with a big graphics card, or a rented GPU server, can run the models while you use them from here:
-**Server → Remote computers…** (or *Run on another computer…* under **Change**), add the computer by its SSH address,
-and choose it under **Change → Runs on**. Start connects to it; the models, the chat and **Connect an app** then work as they do on
-this computer.
+click **This computer** at the right end of the status bar, choose **Add a computer…**, and give its SSH address (the
+hosts of your `~/.ssh/config` are offered). QuickAI tests it step by step and says what to do about anything that fails;
+then choose it in the same menu. Start connects to it; the models, the chat and **Connect an app** then work as they do
+on this computer.
 
 QuickAI connects with your own `ssh` (your keys, your agent and `~/.ssh/config` are used as they are) and opens no
 port to the network on either side: the engine on that computer listens on its own loopback, and an SSH tunnel brings
