@@ -221,6 +221,72 @@ impl App {
         ((!active && can_start) || loadable, loadable)
     }
 
+    /// What the list says of a model under its name, and when the pointer rests on it (option D of the samples in
+    /// `mockups/header/`, C185: the facts left the head of the page for the list). Under the name: its size, how fast
+    /// it should be here (only when it is fast or slower, and not of a computer it runs on elsewhere), recommended,
+    /// bundled, and how it is started when that is not as a chat model. On the pointer: its name, what the engine says
+    /// it can do or the first sentence of its note, and what the speed rests on.
+    pub(super) fn row_facts(
+        &self,
+        m: &crate::models::ModelEntry,
+        lists: bool,
+    ) -> (Vec<(String, Option<egui::Color32>)>, String) {
+        let p = theme::palette();
+        let mut detail: Vec<(String, Option<egui::Color32>)> =
+            vec![(size_text(m.size_bytes), None)];
+        let mut hover = m.display.clone();
+        if self.remote_in_use().is_none() && m.size_bytes > 0 {
+            let tier =
+                crate::hardware::speed_tier(m.size_bytes, self.total_ram_bytes, self.gpu_offload());
+            let color = match tier {
+                crate::hardware::SpeedTier::Fast => Some(p.accent_text),
+                crate::hardware::SpeedTier::Slow => Some(p.warn),
+                crate::hardware::SpeedTier::Medium => None,
+            };
+            if color.is_some() {
+                detail.push((tier.label().to_lowercase(), color));
+            }
+            hover.push_str(&format!(
+                "\n{} on this computer: a rough guess from its size, this computer's memory ({}) and whether the \
+                 graphics card is used, not a measurement.",
+                tier.label(),
+                crate::hardware::format_bytes(self.total_ram_bytes)
+            ));
+        }
+        if self.recommended_filename.as_deref() == Some(m.filename.as_str()) {
+            detail.push(("recommended".to_string(), Some(p.accent_text)));
+        }
+        if m.bundled {
+            detail.push(("bundled".to_string(), None));
+        }
+        if lists {
+            // what the engine says it can do; `completion` is what every model that chats does
+            let can: Vec<&str> = m
+                .note
+                .split(", ")
+                .filter(|w| !w.is_empty() && *w != "completion")
+                .collect();
+            for word in can {
+                let help = super::named_models::capability_help(word);
+                hover.push_str(&format!("\n{word}"));
+                if !help.is_empty() {
+                    hover.push_str(&format!(": {help}"));
+                }
+            }
+        } else {
+            let (note, mode) = super::model_bar::split_mode(&m.note);
+            let first = super::model_bar::first_sentence(note);
+            if !first.is_empty() {
+                hover.push_str(&format!("\n{first}"));
+            }
+            if let Some(mode) = mode {
+                hover.push_str(&format!("\n{}", mode.hover));
+                detail.push((mode.text, mode.tone.map(|t| t.color())));
+            }
+        }
+        (detail, hover)
+    }
+
     /// Reads the list of models again: the folders, or what the running engine says it has.
     pub(super) fn refresh_list(&mut self, ctx: &egui::Context) {
         if self.lists_models() {
@@ -299,6 +365,14 @@ impl App {
                 )
                 .on_hover_text("The room the models listed take on the disk.");
             }
+            // what an engine that lists its models listed the last time it ran, while it is stopped
+            if self.lists_models() && self.named.stale {
+                ui.label(egui::RichText::new("from the last run").size(11.0).color(p.faint))
+                    .on_hover_text(format!(
+                        "As {} listed them the last time it ran. Start it to see what it has now.",
+                        self.engine_name()
+                    ));
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(6.0);
                 if icons::icon_button(ui, Icon::Refresh, egui::vec2(24.0, 20.0), !active, false)
@@ -363,32 +437,29 @@ impl App {
                         continue;
                     }
                     shown += 1;
-                    let recommended =
-                        self.recommended_filename.as_deref() == Some(m.filename.as_str());
-                    let mut detail = vec![size_text(m.size_bytes)];
-                    if recommended {
-                        detail.push("recommended".to_string());
-                    }
-                    if m.bundled {
-                        detail.push("bundled".to_string());
-                    }
+                    let (detail, hover) = self.row_facts(m, lists);
                     let running = self.runs_model(i);
-                    let row = model_row(
-                        ui,
-                        &m.display,
-                        &detail.join(" · "),
-                        i == self.selected,
-                        running,
-                    );
+                    let (row, more) =
+                        model_row(ui, &m.display, &detail, &hover, i == self.selected, running);
                     if row.clicked() {
                         picked = Some(i);
                     }
-                    // what can be done with a model, where it is: right-click it
+                    // what can be done with a model, where it is: its … (on the row the pointer is on, and on the
+                    // chosen one), or a right-click
                     row.context_menu(|ui| {
                         if let Some(action) = self.model_menu(ui, i, lists) {
                             asked = Some((i, action));
                         }
                     });
+                    if let Some(more) = more {
+                        egui::Popup::menu(&more)
+                            .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+                            .show(|ui| {
+                                if let Some(action) = self.model_menu(ui, i, lists) {
+                                    asked = Some((i, action));
+                                }
+                            });
+                    }
                 }
                 if shown == 0 {
                     ui.add_space(6.0);
@@ -409,7 +480,7 @@ impl App {
             });
     }
 
-    /// The items of a model's menu (right-click in the list, or the ... beside its name): Details, Show in folder, Copy
+    /// The items of a model's menu (right-click its row in the list, or the … on the row): Details, Show in folder, Copy
     /// name, Delete. What was chosen comes back; the menu is closed.
     pub(super) fn model_menu(
         &self,
@@ -808,19 +879,30 @@ pub(super) fn size_text(bytes: u64) -> String {
     }
 }
 
-/// One model of the list: its name, and under it its size and what else is known, the chosen one tinted with a bar of
-/// the accent along its left edge.
+/// A model of the list: its name (a green dot after it when it runs), and under it what is known of it as words, a
+/// few of them coloured (`fast` and `recommended` green, `slower` amber). Chosen, it is green at its left edge. On the
+/// chosen row and the one the pointer is on there is a … at its right end, whose response comes back with the row's
+/// for the menu of what can be done with the model.
 fn model_row(
     ui: &mut egui::Ui,
     name: &str,
-    detail: &str,
+    detail: &[(String, Option<egui::Color32>)],
+    hover: &str,
     chosen: bool,
     running: bool,
-) -> egui::Response {
+) -> (egui::Response, Option<egui::Response>) {
     let p = theme::palette();
     let width = ui.available_width();
     let (rect, response) =
         ui.allocate_exact_size(egui::vec2(width, MODEL_ROW), egui::Sense::click());
+    let more_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.right() - 20.0, rect.center().y),
+        egui::vec2(26.0, 24.0),
+    );
+    let more_id = response.id.with("more");
+    let menu_open = egui::Popup::is_id_open(ui.ctx(), more_id.with("popup"));
+    let more = (chosen || response.contains_pointer() || menu_open)
+        .then(|| ui.interact(more_rect, more_id, egui::Sense::click()));
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         if chosen {
@@ -835,20 +917,32 @@ fn model_row(
             painter.rect_filled(rect, 0, p.raised_hover.gamma_multiply(0.6));
         }
         let left = rect.left() + 12.0;
-        let room = (rect.right() - 8.0 - left).max(10.0);
+        let right = if more.is_some() {
+            more_rect.left() - 4.0
+        } else {
+            rect.right() - 8.0
+        };
+        let room = (right - left).max(10.0);
         let title = egui::WidgetText::from(egui::RichText::new(name).color(p.text)).into_galley(
             ui,
             Some(egui::TextWrapMode::Truncate),
             room,
             egui::TextStyle::Body,
         );
-        let small = egui::WidgetText::from(egui::RichText::new(detail).small().color(p.muted))
-            .into_galley(
-                ui,
-                Some(egui::TextWrapMode::Truncate),
-                room,
-                egui::TextStyle::Small,
+        let font = egui::TextStyle::Small.resolve(ui.style());
+        let mut job = egui::text::LayoutJob::default();
+        for (i, (text, color)) in detail.iter().enumerate() {
+            if i > 0 {
+                job.append(" · ", 0.0, egui::TextFormat::simple(font.clone(), p.muted));
+            }
+            job.append(
+                text,
+                0.0,
+                egui::TextFormat::simple(font.clone(), color.unwrap_or(p.muted)),
             );
+        }
+        job.wrap = egui::text::TextWrapping::truncate_at_width(room);
+        let small = painter.layout_job(job);
         let top = rect.top() + (MODEL_ROW - title.size().y - small.size().y - 2.0) / 2.0;
         let below = top + title.size().y + 2.0;
         let title_right = left + title.size().x;
@@ -859,8 +953,24 @@ fn model_row(
         if running {
             painter.circle_filled(egui::pos2(title_right + 8.0, title_mid), 3.5, p.ok);
         }
+        if let Some(more) = &more {
+            let lit = more.hovered() || menu_open;
+            if lit {
+                painter.rect_filled(more_rect, 4.0, p.raised_hover);
+            }
+            let icon = egui::Rect::from_center_size(more_rect.center(), egui::vec2(15.0, 15.0));
+            icons::paint(
+                painter,
+                icon,
+                Icon::More,
+                if lit { p.text } else { p.muted },
+            );
+        }
     }
-    response.on_hover_text(name)
+    (
+        response.on_hover_text(hover),
+        more.map(|m| m.on_hover_text("Details, Show in folder, Copy name, Delete")),
+    )
 }
 
 /// A tab with a dot after its name, when `marked`: something new is there, in green, or something went wrong, in red

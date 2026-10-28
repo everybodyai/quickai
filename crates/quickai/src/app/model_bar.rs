@@ -3,11 +3,9 @@
 use eframe::egui;
 
 use super::icons::{self, Icon};
-use super::shell::RowAction;
 use super::theme::{self, Role, Tone};
 use super::App;
 use crate::events::ServerState;
-use crate::hardware;
 
 /// One thing that is said of the picked model, as a chip: its words, the tone it is drawn in and what is said more of
 /// it when the pointer rests on it (nothing when it needs no more).
@@ -54,7 +52,7 @@ pub(super) fn first_sentence(note: &str) -> &str {
 impl App {
     /// The head of the page: the chosen model's name, what it is doing, and at the right end of its row what can be
     /// done with it, as pictures: play (Start, or Load model, or Use this model), and while it runs the chat in a
-    /// browser, Connect an app and Stop; and its menu. Under the name, what is known of it as chips.
+    /// browser, Connect an app and Stop. What is known of the model is said in its row of the list (C185).
     pub(super) fn show_model_header(
         &mut self,
         ui: &mut egui::Ui,
@@ -98,13 +96,6 @@ impl App {
         let mut pressed = HeaderPress::default();
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let more = icons::icon_button(ui, Icon::More, egui::vec2(30.0, height), true, false)
-                    .on_hover_text("Details, Show in folder, Copy name, Delete");
-                egui::Popup::menu(&more)
-                    .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
-                    .show(|ui| {
-                        pressed.menu = self.model_menu(ui, index, lists);
-                    });
                 // while it runs, the things to do with it are pictures, each named when the pointer rests on it
                 let square = egui::vec2(height, height);
                 if can_stop {
@@ -173,7 +164,6 @@ impl App {
                 });
             });
         });
-        self.show_header_facts(ui, &model);
         if pressed.start {
             self.start_pressed_at = Some(std::time::Instant::now());
             if loadable {
@@ -195,9 +185,6 @@ impl App {
         }
         if pressed.connect {
             self.show_api_info = !self.show_api_info;
-        }
-        if let Some(action) = pressed.menu {
-            self.do_row_action(ui.ctx(), index, action);
         }
         if pressed.browser {
             self.open_browser_chat(state);
@@ -301,142 +288,6 @@ impl App {
             }
         }
     }
-
-    /// What is known of the chosen model, under its name: its size and quantization in words, then chips (how fast it
-    /// will be here, what it can do, that it is the one recommended), then the first sentence of its note.
-    fn show_header_facts(&self, ui: &mut egui::Ui, model: &crate::models::ModelEntry) {
-        let mut lead = vec![super::shell::size_text(model.size_bytes)];
-        if let Some(q) = super::model_details::quantization(&model.filename) {
-            lead.push(q);
-        }
-        let mut chips = Vec::new();
-        let mut sentence = None;
-        if self.lists_models() {
-            // what the engine says the model can do is a chip each; `completion` is what every model that chats
-            // does, and is not worth a chip
-            chips.extend(
-                model
-                    .note
-                    .split(", ")
-                    .filter(|word| !word.is_empty() && *word != "completion")
-                    .map(|word| Fact {
-                        text: word.to_string(),
-                        tone: None,
-                        hover: super::named_models::capability_help(word).to_string(),
-                    }),
-            );
-            if self.named.stale {
-                chips.push(Fact {
-                    text: "from the last run".to_string(),
-                    tone: None,
-                    hover: format!(
-                        "(as {} listed them the last time it ran)",
-                        self.engine_name()
-                    ),
-                });
-            }
-        } else {
-            let (note, mode) = split_mode(&model.note);
-            chips.extend(mode);
-            sentence = (!note.is_empty()).then_some(note);
-        }
-        if self.recommended_filename.as_deref() == Some(model.filename.as_str()) {
-            chips.push(self.recommended_fact());
-        }
-        self.show_model_facts(ui, Some(lead.join(" · ")), chips, sentence, true);
-    }
-
-    /// How fast the selected model is likely to run here: the words of the chip, its tone and what its hover text says. It is
-    /// said of the model, so it is drawn with the model (it was an icon in the title row).
-    fn speed_chip_parts(&self) -> (String, Option<Tone>, String) {
-        let size = self
-            .models
-            .get(self.selected)
-            .map(|m| m.size_bytes)
-            .unwrap_or(0);
-        let tier = hardware::speed_tier(size, self.total_ram_bytes, self.gpu_offload());
-        let tone = match tier {
-            hardware::SpeedTier::Fast => Some(Tone::Good),
-            hardware::SpeedTier::Medium => None,
-            hardware::SpeedTier::Slow => Some(Tone::Warn),
-        };
-        (
-            format!("{} on this computer", tier.label()),
-            tone,
-            format!(
-                "Estimated speed for the selected model on this machine: {}. \
-                 Rough estimate (model size vs. detected RAM, and whether GPU \
-                 offload is on) — not a live benchmark.",
-                tier.label()
-            ),
-        )
-    }
-
-    /// The badge that says the picked model is the one this computer is recommended: what it rests on is said when the
-    /// pointer is on it.
-    pub(super) fn recommended_fact(&self) -> Fact {
-        Fact {
-            text: "★ Recommended".to_string(),
-            tone: Some(Tone::Good),
-            hover: format!(
-                "Recommended for this machine (~{} RAM detected{}). A starting point, not a guarantee: \
-                 based on total RAM and whether GPU offload is enabled, favoring a smaller/faster \
-                 model on CPU-only setups since a big model stays slow token-by-token no matter how \
-                 much RAM is free. This can't see actual VRAM, so a model with GPU offload on can \
-                 still run slower than expected if it doesn't fully fit on the GPU.",
-                hardware::format_bytes(self.total_ram_bytes),
-                if self.gpu_offload() { "" } else { ", CPU only" }
-            ),
-        }
-    }
-
-    /// What is said of the picked model under the picker, on one row: the chips (what it can do, that it is the
-    /// recommended one, that what is said of it is from the last run), then a sentence of what the application knows
-    /// of it, cut at its first full stop and whole when the pointer is on it. `with_speed` puts the speed chip in
-    /// front, for a picker whose row had no room for it. Nothing is drawn when there is nothing to say.
-    pub(super) fn show_model_facts(
-        &self,
-        ui: &mut egui::Ui,
-        lead: Option<String>,
-        chips: Vec<Fact>,
-        sentence: Option<&str>,
-        with_speed: bool,
-    ) {
-        // how fast a model is, is this computer's guess, and says nothing of one that runs on another
-        let with_speed = with_speed && self.remote_in_use().is_none();
-        if chips.is_empty() && sentence.is_none() && !with_speed {
-            return;
-        }
-        ui.add_space(2.0);
-        // a row of small print and chips is as high as they are and not as a button (the height of a wrapped row is
-        // the room it is begun with, so it is set on the ui that begins it)
-        ui.scope(|ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
-            ui.spacing_mut().interact_size.y = 20.0;
-            ui.horizontal_wrapped(|ui| {
-                if let Some(lead) = &lead {
-                    ui.label(theme::muted(lead.as_str()));
-                }
-                if with_speed {
-                    let (text, tone, hover) = self.speed_chip_parts();
-                    theme::chip(ui, &text, tone).on_hover_text(hover);
-                }
-                for fact in chips {
-                    let chip = theme::chip(ui, &fact.text, fact.tone);
-                    if !fact.hover.is_empty() {
-                        chip.on_hover_text(fact.hover);
-                    }
-                }
-                if let Some(sentence) = sentence {
-                    let first = first_sentence(sentence);
-                    let label = ui.label(theme::muted(first));
-                    if first.len() < sentence.len() {
-                        label.on_hover_text(sentence);
-                    }
-                }
-            });
-        });
-    }
 }
 
 /// Pressed in the head of the page this frame.
@@ -445,7 +296,6 @@ struct HeaderPress {
     start: bool,
     stop: bool,
     connect: bool,
-    menu: Option<RowAction>,
     browser: bool,
 }
 
