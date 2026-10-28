@@ -629,3 +629,146 @@ fn since(started: u64) -> String {
         format!("{n} {unit}s ago")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use eframe::egui;
+
+    use super::SetupRun;
+    use crate::app::App;
+    use crate::config::{build_registry, ConfigDirs};
+    use crate::remote::alternatives::{Issue, Remedy};
+    use crate::remote::{RemoteSpec, Way};
+    use crate::settings::Settings;
+    use crate::testkit::scratch;
+
+    /// One frame of the window and the dialog of the other ways, with `events`: what was drawn.
+    fn frame(app: &mut App, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::FullOutput {
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(980.0, 680.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(raw, |ui| {
+            app.show_window(ui);
+            app.show_alternatives_dialog(ui.ctx());
+        });
+        output.textures_delta.clear();
+        output
+    }
+
+    /// Where `text` was drawn.
+    fn rect_of(output: &egui::FullOutput, text: &str) -> Option<egui::Rect> {
+        fn walk(shape: &egui::epaint::Shape, text: &str, found: &mut Option<egui::Rect>) {
+            match shape {
+                egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, text, found)),
+                egui::epaint::Shape::Text(t) if t.galley.text() == text => {
+                    *found = Some(t.galley.rect.translate(t.pos.to_vec2()));
+                }
+                _ => {}
+            }
+        }
+        let mut found = None;
+        for clipped in &output.shapes {
+            walk(&clipped.shape, text, &mut found);
+        }
+        found
+    }
+
+    #[test]
+    fn an_other_way_is_accepted_by_a_click_and_continue_starts_again() {
+        let dir = scratch("alternatives-dialog");
+        let mut settings = Settings::default();
+        let mut studio = RemoteSpec::new("Studio", "me@studio.local");
+        studio.way = Way::SetUp;
+        settings.set_remotes(&[studio]);
+        settings.set_runner(Some("studio"));
+        let mut app = App::build_in(
+            settings,
+            build_registry(&ConfigDirs::default()),
+            16 * 1024 * 1024 * 1024,
+            Vec::new(),
+            Some(dir.join("settings.json")),
+            Some(dir.join("data").display().to_string()),
+        );
+        app.remote.find_wanted = false;
+        app.remote.setup.insert(
+            "studio".into(),
+            SetupRun {
+                configuration: "Default".into(),
+                alternatives: Some(vec![Issue {
+                    id: "model:Mine.gguf".into(),
+                    problem: "Mine.gguf is not on Studio.".into(),
+                    alternative: "Copy it from this computer (39 KB).".into(),
+                    then: "Then it stops here.".into(),
+                    remedy: Remedy::Flags(Vec::new()),
+                    on_reject: None,
+                }]),
+                ..SetupRun::default()
+            },
+        );
+        let ctx = egui::Context::default();
+        let mut drawn = frame(&mut app, &ctx, Vec::new());
+        for _ in 0..3 {
+            drawn = frame(&mut app, &ctx, Vec::new());
+        }
+        let accept = rect_of(&drawn, "Accept").expect("Accept is drawn").center();
+        let button = |pressed| egui::Event::PointerButton {
+            pos: accept,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        // a quick click, as a person's (and the GUI suites') is: the pointer there, pressed and let go in one frame
+        for events in [
+            vec![
+                egui::Event::PointerMoved(accept),
+                button(true),
+                button(false),
+            ],
+            Vec::new(),
+        ] {
+            frame(&mut app, &ctx, events);
+        }
+        let run = app.remote.setup.get("studio").expect("the run is kept");
+        assert_eq!(
+            run.answers,
+            BTreeMap::from([("model:Mine.gguf".to_string(), true)]),
+            "the click on Accept is the answer"
+        );
+
+        // Continue, now that each is answered: the question is gone, and a start with the answers is on its way
+        let mut drawn = frame(&mut app, &ctx, Vec::new());
+        for _ in 0..2 {
+            drawn = frame(&mut app, &ctx, Vec::new());
+        }
+        let go = rect_of(&drawn, "Continue")
+            .expect("Continue is drawn")
+            .center();
+        let button = |pressed| egui::Event::PointerButton {
+            pos: go,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for events in [
+            vec![egui::Event::PointerMoved(go), button(true), button(false)],
+            Vec::new(),
+        ] {
+            frame(&mut app, &ctx, events);
+        }
+        let run = app.remote.setup.get("studio").expect("the run is kept");
+        assert!(run.alternatives.is_none(), "the question is gone");
+        assert!(run.working(), "a start is on its way: {}", run.doing);
+        assert_eq!(
+            run.answers.get("model:Mine.gguf"),
+            Some(&true),
+            "with the answers"
+        );
+    }
+}
