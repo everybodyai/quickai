@@ -41,7 +41,7 @@ impl App {
 
         egui::Panel::top("menu_bar")
             .frame(theme::bar_frame(egui::Margin::symmetric(6, 3)))
-            .show(ui, |ui| self.show_menu_bar(ui, state, active));
+            .show(ui, |ui| self.show_menu_bar(ui, active));
         egui::Panel::bottom("status_bar")
             .frame(theme::bar_frame(egui::Margin::symmetric(10, 3)))
             .show(ui, |ui| self.show_status_bar(ui, state));
@@ -104,7 +104,7 @@ impl App {
 
     // ---- the menu bar -------------------------------------------------------------------------------
 
-    fn show_menu_bar(&mut self, ui: &mut egui::Ui, state: ServerState, active: bool) {
+    fn show_menu_bar(&mut self, ui: &mut egui::Ui, active: bool) {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
                 if ui.button("Configurations…").clicked() {
@@ -143,7 +143,6 @@ impl App {
                     super::workbench::open_folder(&self.models_dir);
                 }
             });
-            ui.menu_button("Server", |ui| self.show_server_menu(ui, state, active));
             ui.menu_button("Help", |ui| {
                 if ui.button("Getting started").clicked() {
                     self.open_guide(super::guide::Guide::GettingStarted);
@@ -207,61 +206,6 @@ impl App {
         });
     }
 
-    /// The Server menu: Start (or Load, or Use this model) and Stop, how to connect an app and chat in a browser, the
-    /// engines, and the other computers.
-    fn show_server_menu(&mut self, ui: &mut egui::Ui, state: ServerState, active: bool) {
-        let (can_start, loadable) = self.start_possible(active);
-        let switchable = self.can_switch_selected();
-        let label = if loadable {
-            "Load model"
-        } else if switchable {
-            "Use this model"
-        } else {
-            "Start"
-        };
-        if ui
-            .add_enabled(can_start || switchable, egui::Button::new(label))
-            .clicked()
-        {
-            if loadable {
-                self.load_selected();
-            } else if switchable {
-                self.switch_to_selected();
-            } else {
-                self.start_selected(ui.ctx());
-            }
-        }
-        let can_stop = matches!(state, ServerState::Starting | ServerState::Running);
-        if ui
-            .add_enabled(can_stop, egui::Button::new("Stop"))
-            .clicked()
-        {
-            self.stop_companion();
-            self.session.stop();
-        }
-        ui.separator();
-        if ui
-            .add_enabled(
-                state == ServerState::Running,
-                egui::Button::new("Connect an app…"),
-            )
-            .clicked()
-        {
-            self.show_api_info = true;
-        }
-        self.show_browser_chat_items(ui, state);
-        ui.separator();
-        self.show_engine_menu(ui);
-        ui.separator();
-        if ui
-            .button("Remote computers…")
-            .on_hover_text("Run the models on a more powerful computer, and use them from here.")
-            .clicked()
-        {
-            self.remote.show_window = true;
-        }
-    }
-
     /// Makes the theme `dark` or light, at once, and keeps it.
     pub(super) fn set_dark_mode(&mut self, ctx: &egui::Context, dark: bool) {
         self.dark_mode = dark;
@@ -306,17 +250,9 @@ impl App {
                 ui.separator();
                 ui.colored_label(theme::state_color(companion_state), text);
             }
-            // where the models run, at the right end
+            // where the models run, at the right end, and the menu that changes it
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let place = match self.remote_in_use() {
-                    Some(remote) => remote.name.clone(),
-                    None => "This computer".to_string(),
-                };
-                ui.label(theme::muted(place)).on_hover_text(
-                    "Where the models run. A computer you added under Server, Remote computers can run them instead.",
-                );
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-                icons::paint(ui.painter(), rect, Icon::Computer, theme::palette().muted);
+                self.show_where_switch(ui);
             });
         });
     }
@@ -631,7 +567,6 @@ impl App {
                     ui.label(theme::muted(self.first_run_sentence()));
                 });
                 ui.add_space(14.0);
-                self.show_runs_on(ui);
                 self.show_add_model_body(ui);
             });
         });
@@ -658,7 +593,6 @@ impl App {
                     }
                     self.show_alone_header(ui, state, active);
                     self.show_run_line(ui);
-                    self.show_runs_on(ui);
                     ui.add_space(10.0);
                     theme::card(ui, |ui| self.show_workbench(ui, active));
                     self.show_diagnostics(ui, state);

@@ -31,6 +31,8 @@ impl App {
 
     /// The missing-binary line and the crash panel with its advice.
     pub(super) fn show_diagnostics(&mut self, ui: &mut egui::Ui, state: ServerState) {
+        // the computer the models run on could not be reached, or the connection to it closed
+        self.show_remote_alert(ui);
         let server = self.server_name();
         // an engine that is not installed has the section that installs it at the top of the page
         if !self.engine_missing() && self.missing_binary_warned {

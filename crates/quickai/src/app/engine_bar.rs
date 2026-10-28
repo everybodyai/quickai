@@ -1,5 +1,5 @@
 //! Choosing the engine and getting it, from the main window: the engines as a menu at the right of the menu bar,
-//! each saying whether it is ready (and the same choice in the Server menu), and, for an engine that is downloaded on
+//! each saying whether it is ready, and, for an engine that is downloaded on
 //! request and is not here yet, a page with one button that installs the build its document offers first for this
 //! machine. Settings keeps the engine's row and its Advanced section, where
 //! another version or a program of the person's own is chosen.
@@ -119,32 +119,6 @@ impl App {
         if manage {
             self.advanced_section_wanted = true;
             self.open_settings();
-        }
-    }
-
-    /// The engines in the Server menu, the one in use ticked.
-    pub(super) fn show_engine_menu(&mut self, ui: &mut egui::Ui) {
-        let engines = self.engine_choices();
-        if engines.len() < 2 {
-            return;
-        }
-        let lock = self.engine_lock_reason();
-        let mut picked: Option<String> = None;
-        ui.label(theme::muted("Engine"));
-        for (id, name, _) in &engines {
-            let on = *id == self.engine;
-            let item = ui.add_enabled(lock.is_none(), egui::RadioButton::new(on, name.as_str()));
-            let item = match lock {
-                Some(why) => item.on_disabled_hover_text(why),
-                None => item,
-            };
-            if item.clicked() && !on {
-                picked = Some(id.clone());
-            }
-        }
-        if let Some(id) = picked {
-            self.switch_engine(&id);
-            ui.close();
         }
     }
 
@@ -332,7 +306,7 @@ impl App {
                     self.advanced_section_wanted = true;
                     self.open_settings();
                 }
-                Some("Run on another computer...") => self.remote.show_window = true,
+                Some("Run on another computer...") => self.open_computers(false),
                 Some(_) => {
                     if let Some((id, _)) = &fallback {
                         self.switch_engine(id);

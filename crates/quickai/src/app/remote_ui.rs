@@ -1,7 +1,13 @@
-//! Running the models on another computer (WP4.27): the computers the person added, which of them the models run on,
-//! the tunnel of the run that is going, and the window that adds, tests and removes them. The tunnel is `remote.rs`'s;
-//! here it is opened when Start is pressed (on a thread: a login takes seconds), the run attaches to the engine through
-//! it as to one that is already running here, and it is closed when the run is over.
+//! Running the models on another computer (WP4.27, and its window as it is now, WP4.32): the computers the person
+//! added, which of them the models run on, the tunnel of the run that is going, and the window that adds, tests and
+//! removes them. The tunnel is `remote.rs`'s; here it is opened when Start is pressed (on a thread: a login takes
+//! seconds), the run attaches to the engine through it as to one that is already running here, and it is closed when
+//! the run is over.
+//!
+//! Where the models run is chosen at the right end of the status bar, where it is said (C183): this computer, a
+//! computer that was added, or a new one. The Computers window is a window of its own, as Settings is: a list, a form
+//! that suggests the hosts of `~/.ssh/config`, and a test that says step by step what passed and what to do about what
+//! did not.
 //!
 //! An engine can run elsewhere when its document can attach to one that is already running (`[launch.attach]` and a
 //! `mode` field): Ollama and ComfyUI. llama.cpp starts its own server for each model, and stays on this computer.
@@ -13,13 +19,17 @@ use crossbeam_channel::Receiver;
 use eframe::egui;
 use quickai_core::value::Value;
 
-use super::theme::{self, Role};
+use super::icons::{self, Icon};
+use super::theme::{self, Role, Tone};
 use super::App;
 use crate::models::ModelEntry;
-use crate::remote::{self, RemoteSpec, Tunnel};
+use crate::remote::{self, Checked, RemoteSpec, SshHost, Tunnel};
 
 /// The answer of a tunnel being opened: the tunnel, or why there is none.
 type Opening = Receiver<Result<Tunnel, String>>;
+
+/// What the window calls itself to the window manager.
+const COMPUTERS_TITLE: &str = "QuickAI Computers";
 
 /// What the window holds of the remote computers.
 pub struct RemoteState {
@@ -37,11 +47,17 @@ pub struct RemoteState {
     pub ssh: PathBuf,
     /// The window that keeps the computers is open.
     pub show_window: bool,
+    /// It was asked for again while open: it comes to the front.
+    raise_window: bool,
     /// The computer being added or changed in that window (`None`: none is).
     pub form: Option<RemoteForm>,
+    /// The computer whose test the window shows (`None`: the list).
+    pub detail: Option<String>,
+    /// The hosts of `~/.ssh/config`, read when the form opens.
+    hosts: Vec<SshHost>,
     /// A test of a computer that is going, and what the last one found, by the computer's id.
-    checking: Option<(String, Receiver<Result<String, String>>)>,
-    pub checked: BTreeMap<String, Result<String, String>>,
+    checking: Option<(String, Receiver<Checked>)>,
+    pub checked: BTreeMap<String, Checked>,
 }
 
 impl Default for RemoteState {
@@ -54,7 +70,10 @@ impl Default for RemoteState {
             error: None,
             ssh: remote::ssh_program(),
             show_window: false,
+            raise_window: false,
             form: None,
+            detail: None,
+            hosts: Vec::new(),
             checking: None,
             checked: BTreeMap::new(),
         }
@@ -72,6 +91,10 @@ pub struct RemoteForm {
     pub engine_port: String,
     pub identity: String,
     pub problem: Option<String>,
+    /// The name was typed: it no longer follows the address.
+    pub name_typed: bool,
+    /// More options (the ports and the key file) are open.
+    pub more: bool,
 }
 
 impl RemoteForm {
@@ -84,6 +107,8 @@ impl RemoteForm {
             engine_port: spec.engine_port.map(|p| p.to_string()).unwrap_or_default(),
             identity: spec.identity.clone().unwrap_or_default(),
             problem: None,
+            name_typed: true,
+            more: spec.ssh_port != 22 || spec.engine_port.is_some() || spec.identity.is_some(),
         }
     }
 
@@ -100,9 +125,15 @@ impl RemoteForm {
                 .map(Some)
                 .ok_or_else(|| format!("{what} is a number from 1 to 65535."))
         };
-        let mut spec = RemoteSpec::new(&self.name, &self.host);
+        // a computer nobody named is called after its address
+        let name = if self.name.trim().is_empty() {
+            remote::name_from_address(&self.host)
+        } else {
+            self.name.clone()
+        };
+        let mut spec = RemoteSpec::new(&name, &self.host);
         spec.ssh_port = port(&self.ssh_port, "The SSH port")?.unwrap_or(22);
-        spec.engine_port = port(&self.engine_port, "The port there")?;
+        spec.engine_port = port(&self.engine_port, "The engine's port")?;
         spec.identity = Some(self.identity.trim().to_string()).filter(|i| !i.is_empty());
         if let Some(problem) = spec.problem() {
             return Err(problem);
@@ -300,7 +331,7 @@ impl App {
         let id = spec.id.clone();
         std::thread::spawn(move || {
             let found =
-                remote::check_with(&ssh, &spec, port, &name, &identity.path, &identity.pointer);
+                remote::check_steps(&ssh, &spec, port, &name, &identity.path, &identity.pointer);
             let _ = tx.send(found);
             wake.request_repaint();
         });
@@ -308,246 +339,26 @@ impl App {
         self.remote.checking = Some((id, rx));
     }
 
-    // ---- what is drawn -------------------------------------------------------------------------------------
-
-    /// The row that says where the models run, on the page of an engine that can run elsewhere, once there is somewhere
-    /// else: the choice, and what the connection is doing.
-    pub(super) fn show_runs_on(&mut self, ui: &mut egui::Ui) {
-        if !self.can_run_remote() || self.remote.remotes.is_empty() {
-            return;
-        }
-        ui.add_space(10.0);
-        theme::card(ui, |ui| self.show_runs_on_row(ui));
-        ui.add_space(10.0);
-    }
-
-    /// The row that chooses where the models run (this computer or one added), with what the connection is doing,
-    /// and under it why it failed.
-    pub(super) fn show_runs_on_row(&mut self, ui: &mut egui::Ui) {
-        let locked = self.engine_locked() || self.remote_opening();
-        let current = self.remote_label();
-        let mut chosen: Option<Option<String>> = None;
-        let mut manage = false;
-        ui.horizontal(|ui| {
-            ui.label("Runs on:").on_hover_text(
-                "Where the models run: this computer, or another one you added (reached over SSH). The chat, the \
-                 models and Connect an app work the same either way.",
-            );
-            ui.add_enabled_ui(!locked, |ui| {
-                egui::ComboBox::from_id_salt("runs_on")
-                    .selected_text(if self.remote_in_use().is_some() {
-                        current.clone()
-                    } else {
-                        "This computer".to_string()
-                    })
-                    .width(200.0)
-                    .show_ui(ui, |ui| {
-                        if ui
-                            .selectable_label(self.remote_in_use().is_none(), "This computer")
-                            .clicked()
-                        {
-                            chosen = Some(None);
-                        }
-                        for r in &self.remote.remotes {
-                            let on = self.remote.runner.as_deref() == Some(r.id.as_str());
-                            if ui
-                                .selectable_label(on, format!("{} ({})", r.name, r.host))
-                                .clicked()
-                            {
-                                chosen = Some(Some(r.id.clone()));
-                            }
-                        }
-                        ui.separator();
-                        if ui.button("Manage computers...").clicked() {
-                            manage = true;
-                        }
-                    });
-            });
-            if self.remote_opening() {
-                ui.spinner();
-                ui.label(theme::muted(format!("Connecting to {current}...")));
-            } else if self.tunnel_port().is_some() {
-                ui.label(
-                    egui::RichText::new(format!("Connected to {current}"))
-                        .small()
-                        .color(theme::palette().ok),
-                );
-            } else if self.remote_in_use().is_some() {
-                ui.label(theme::muted(format!(
-                    "Start connects to {current}; the models run there."
-                )));
-            }
-        });
-        if let Some(why) = &self.remote.error {
-            ui.colored_label(theme::palette().bad, why);
-        }
-        if let Some(id) = chosen {
-            self.choose_runner(id);
-        }
-        if manage {
-            self.remote.show_window = true;
+    /// Opens the Computers window (or brings it to the front): on its form when `add`, or when there is no computer yet
+    /// (there is nothing else to do in it then), else on its list.
+    pub(super) fn open_computers(&mut self, add: bool) {
+        self.remote.show_window = true;
+        self.remote.raise_window = true;
+        self.remote.detail = None;
+        if add || self.remote.remotes.is_empty() {
+            self.new_remote_form();
         }
     }
 
-    /// The window of the computers: what they are for, the list (Use, Test, Edit, Remove) and the form that adds or
-    /// changes one.
-    pub(super) fn show_remotes_window(&mut self, ctx: &egui::Context) {
-        if !self.remote.show_window {
-            return;
-        }
-        let mut open = true;
-        let mut action: Option<Action> = None;
-        egui::Window::new("Remote computers")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(true)
-            .default_size([560.0, 420.0])
-            .show(ctx, |ui| {
-                ui.label(
-                    "Run the models on a more powerful computer (a desktop with a big graphics card, a rented server) \
-                     and use them from here: the chat, the models and Connect an app work as they do on this one.",
-                );
-                ui.label(theme::muted(
-                    "QuickAI connects with your own ssh: its keys, your agent and ~/.ssh/config are used as they are, and \
-                     no port is opened to the network on either side. On that computer, run the engine as you would \
-                     there (Ollama's service, or `quickai-run up` with a configuration) and leave it running.",
-                ));
-                ui.add_space(6.0);
-                if self.remote.remotes.is_empty() && self.remote.form.is_none() {
-                    ui.label(theme::muted("No computers yet."));
-                }
-                let checking = self.remote.checking.as_ref().map(|(id, _)| id.clone());
-                for r in self.remote.remotes.clone() {
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(&r.name).strong());
-                        ui.label(theme::muted(r.host.clone()));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("Remove").clicked() {
-                                action = Some(Action::Remove(r.id.clone()));
-                            }
-                            if ui.small_button("Edit").clicked() {
-                                action = Some(Action::Edit(r.clone()));
-                            }
-                            if ui
-                                .add_enabled(checking.is_none(), egui::Button::new("Test").small())
-                                .on_hover_text("Connect, and ask the engine there what it is. Nothing is started.")
-                                .clicked()
-                            {
-                                action = Some(Action::Check(r.clone()));
-                            }
-                            let in_use = self.remote.runner.as_deref() == Some(r.id.as_str());
-                            if ui
-                                .add_enabled(!in_use && self.can_run_remote(), egui::Button::new("Use").small())
-                                .on_disabled_hover_text(if in_use {
-                                    "The models run on it now."
-                                } else {
-                                    "This engine runs on this computer only."
-                                })
-                                .clicked()
-                            {
-                                action = Some(Action::Use(r.id.clone()));
-                            }
-                        });
-                    });
-                    if checking.as_deref() == Some(r.id.as_str()) {
-                        ui.horizontal(|ui| {
-                            ui.spinner();
-                            ui.label(theme::muted("Testing..."));
-                        });
-                    } else if let Some(found) = self.remote.checked.get(&r.id) {
-                        match found {
-                            Ok(version) => ui.colored_label(
-                                theme::palette().ok,
-                                format!("Connected: {} {version} answers there.", self.engine_name()),
-                            ),
-                            Err(why) => ui.colored_label(theme::palette().bad, why),
-                        };
-                    }
-                }
-                ui.separator();
-                match &mut self.remote.form {
-                    None => {
-                        if ui.button("Add a computer...").clicked() {
-                            action = Some(Action::New);
-                        }
-                    }
-                    Some(form) => {
-                        let title = if form.editing.is_some() { "Change the computer" } else { "Add a computer" };
-                        ui.label(egui::RichText::new(title).strong());
-                        egui::Grid::new("remote_form").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                            ui.label("Name:");
-                            ui.add(egui::TextEdit::singleline(&mut form.name).hint_text("Studio PC").desired_width(260.0));
-                            ui.end_row();
-                            ui.label("Address:").on_hover_text(
-                                "A host name or IP address, user@host, or the name of a Host in your ~/.ssh/config.",
-                            );
-                            ui.add(egui::TextEdit::singleline(&mut form.host).hint_text("me@studio.local").desired_width(260.0));
-                            ui.end_row();
-                            ui.label("SSH port:");
-                            ui.add(egui::TextEdit::singleline(&mut form.ssh_port).hint_text("22").desired_width(80.0));
-                            ui.end_row();
-                            ui.label("Port there:").on_hover_text(
-                                "The port the engine listens on, on that computer. Empty is the engine's own: 11434 for Ollama, 8188 for ComfyUI.",
-                            );
-                            ui.add(
-                                egui::TextEdit::singleline(&mut form.engine_port)
-                                    .hint_text("the engine's own")
-                                    .desired_width(120.0),
-                            );
-                            ui.end_row();
-                            ui.label("Key file:").on_hover_text(
-                                "Only when ssh would not find the key by itself (your agent, ~/.ssh/id_*, ~/.ssh/config).",
-                            );
-                            ui.horizontal(|ui| {
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut form.identity)
-                                        .hint_text("optional")
-                                        .desired_width(220.0),
-                                );
-                                if ui.small_button("...").clicked() {
-                                    if let Some(path) = rfd::FileDialog::new().pick_file() {
-                                        form.identity = path.display().to_string();
-                                    }
-                                }
-                            });
-                            ui.end_row();
-                        });
-                        if let Some(problem) = &form.problem {
-                            ui.colored_label(theme::palette().bad, problem);
-                        }
-                        ui.horizontal(|ui| {
-                            if theme::button_sized(ui, Role::Normal, true, "Save", egui::vec2(64.0, 24.0)).clicked() {
-                                action = Some(Action::Save);
-                            }
-                            if ui.button("Cancel").clicked() {
-                                action = Some(Action::Cancel);
-                            }
-                        });
-                    }
-                }
-            });
-        if !open {
-            self.remote.show_window = false;
-            self.remote.form = None;
-        }
-        match action {
-            Some(Action::New) => self.remote.form = Some(RemoteForm::default()),
-            Some(Action::Edit(spec)) => self.remote.form = Some(RemoteForm::of(&spec)),
-            Some(Action::Cancel) => self.remote.form = None,
-            Some(Action::Save) => self.save_remote_form(),
-            Some(Action::Remove(id)) => self.remove_remote(&id),
-            Some(Action::Check(spec)) => self.check_remote(spec, ctx),
-            Some(Action::Use(id)) => self.choose_runner(Some(id)),
-            None => {}
-        }
+    /// An empty form, with the hosts of `~/.ssh/config` to suggest (read now: it may have changed since).
+    fn new_remote_form(&mut self) {
+        self.remote.hosts = remote::read_ssh_config_hosts();
+        self.remote.form = Some(RemoteForm::default());
     }
 
-    /// The form's computer is added, or changes the one it was.
-    pub(super) fn save_remote_form(&mut self) {
-        let Some(form) = self.remote.form.as_mut() else {
-            return;
-        };
+    /// The form's computer is added, or changes the one it was; its id when it was kept.
+    pub(super) fn save_remote_form(&mut self) -> Option<String> {
+        let form = self.remote.form.as_mut()?;
         let others: Vec<RemoteSpec> = self
             .remote
             .remotes
@@ -557,14 +368,41 @@ impl App {
             .collect();
         match form.spec(&others) {
             Ok(spec) => {
+                let id = spec.id.clone();
                 match self.remote.remotes.iter_mut().find(|r| r.id == spec.id) {
                     Some(existing) => *existing = spec,
                     None => self.remote.remotes.push(spec),
                 }
+                // what was found of it before is of the address it had
+                self.remote.checked.remove(&id);
                 self.remote.form = None;
                 self.store_remotes();
+                Some(id)
             }
-            Err(problem) => form.problem = Some(problem),
+            Err(problem) => {
+                form.problem = Some(problem);
+                None
+            }
+        }
+    }
+
+    /// Add and test: the form's computer is kept, and the window shows its test, which starts at once (for an engine
+    /// that can run elsewhere: the test asks for the engine in use).
+    fn add_and_test(&mut self, ctx: &egui::Context) {
+        let Some(id) = self.save_remote_form() else {
+            return;
+        };
+        self.remote.detail = Some(id.clone());
+        self.test_computer(&id, ctx);
+    }
+
+    /// Tests the computer `id`, when the engine in use can run on it.
+    fn test_computer(&mut self, id: &str, ctx: &egui::Context) {
+        if !self.can_run_remote() || self.remote.checking.is_some() {
+            return;
+        }
+        if let Some(spec) = self.remote.remotes.iter().find(|r| r.id == id).cloned() {
+            self.check_remote(spec, ctx);
         }
     }
 
@@ -578,19 +416,917 @@ impl App {
         }
         self.remote.remotes.retain(|r| r.id != id);
         self.remote.checked.remove(id);
+        if self.remote.detail.as_deref() == Some(id) {
+            self.remote.detail = None;
+        }
         self.store_remotes();
     }
+
+    /// What is known of whether the computer `id` answers: a test that passed, one that did not, or none yet (the
+    /// connection of the run in use counts as a test).
+    fn answers(&self, id: &str) -> Option<bool> {
+        if self.remote.runner.as_deref() == Some(id) && self.remote_in_use().is_some() {
+            if self.remote.error.is_some() {
+                return Some(false);
+            }
+            if self.tunnel_port().is_some() {
+                return Some(true);
+            }
+        }
+        self.remote.checked.get(id).map(Checked::passed)
+    }
+
+    /// The line under a computer's name: where it is and what its last test found.
+    fn computer_line(&self, spec: &RemoteSpec) -> String {
+        match self.remote.checked.get(&spec.id) {
+            Some(Checked {
+                engine: Some(Ok(version)),
+                ..
+            }) => format!("{} · {} {version}", spec.host, self.engine_name()),
+            Some(Checked {
+                reached: Err(_), ..
+            }) => format!("{} · could not be reached", spec.host),
+            Some(_) => format!(
+                "{} · {} is not answering there",
+                spec.host,
+                self.engine_name()
+            ),
+            None => spec.host.clone(),
+        }
+    }
+
+    /// What this computer has, in a few words (`16 GB memory · AMD`).
+    fn this_computer_line(&self) -> String {
+        let gb = self.total_ram_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+        let mut line = format!("{} GB memory", gb.round());
+        for vendor in &self.gpu_vendors {
+            line.push_str(" · ");
+            line.push_str(vendor.label());
+        }
+        line
+    }
+
+    // ---- what is drawn -------------------------------------------------------------------------------------
+
+    /// The right end of the status bar: where the models run, and the menu that changes it (option D of the samples,
+    /// C183). It opens upwards, with this computer, the computers added (each with whether it answered) and the ways to
+    /// add and manage them. Under an engine that cannot run elsewhere the computers are there, greyed, with why.
+    pub(super) fn show_where_switch(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette();
+        let in_use = self.remote_in_use().cloned();
+        let label = in_use
+            .as_ref()
+            .map_or_else(|| "This computer".to_string(), |r| r.name.clone());
+        let dot = in_use.as_ref().and_then(|r| self.answers(&r.id));
+        let font = egui::FontId::proportional(13.0);
+        let galley = ui.painter().layout_no_wrap(label, font, p.muted);
+        let width =
+            8.0 + 15.0 + 6.0 + galley.size().x + if dot.is_some() { 14.0 } else { 0.0 } + 18.0;
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, 22.0), egui::Sense::click());
+        let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
+        if ui.is_rect_visible(rect) {
+            let lit = open || response.hovered();
+            if lit {
+                ui.painter().rect(
+                    rect,
+                    4.0,
+                    p.raised_hover,
+                    egui::Stroke::new(1.0, p.outline),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            let color = if lit { p.text } else { p.muted };
+            let mut x = rect.left() + 8.0;
+            let icon = egui::Rect::from_min_size(
+                egui::pos2(x, rect.center().y - 7.5),
+                egui::vec2(15.0, 15.0),
+            );
+            icons::paint(ui.painter(), icon, Icon::Computer, color);
+            x += 15.0 + 6.0;
+            let text_at = egui::pos2(x, rect.center().y - galley.size().y / 2.0);
+            x += galley.size().x;
+            ui.painter().galley(text_at, galley, color);
+            if let Some(answers) = dot {
+                x += 8.0;
+                ui.painter().circle_filled(
+                    egui::pos2(x, rect.center().y),
+                    3.5,
+                    if answers { p.ok } else { p.bad },
+                );
+                x += 6.0;
+            }
+            let chevron = egui::Rect::from_min_size(
+                egui::pos2(x + 4.0, rect.center().y - 6.0),
+                egui::vec2(12.0, 12.0),
+            );
+            icons::paint(ui.painter(), chevron, Icon::Chevron, color);
+        }
+        let response = response.on_hover_text(
+            "Where the models run: this computer, or a more powerful one you added (reached over SSH). The chat, the \
+             models and Connect an app work the same either way.",
+        );
+        egui::Popup::menu(&response)
+            .align(egui::RectAlign::TOP_END)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+            .width(320.0)
+            .show(|ui| {
+                ui.set_width(320.0);
+                self.show_where_menu(ui);
+            });
+    }
+
+    /// The menu of the status bar's place: the choices, and the ways to the window.
+    fn show_where_menu(&mut self, ui: &mut egui::Ui) {
+        let can = self.can_run_remote();
+        let locked = self.engine_locked() || self.remote_opening();
+        let here = self.remote_in_use().is_none();
+        let mut chosen: Option<Option<String>> = None;
+        let lock_why = "Stop the server to change where it runs.";
+        let row = |ui: &mut egui::Ui,
+                   on: bool,
+                   enabled: bool,
+                   name: &str,
+                   line: &str,
+                   dot: Option<bool>| {
+            let p = theme::palette();
+            let response = ui
+                .add_enabled_ui(enabled, |ui| {
+                    ui.horizontal(|ui| {
+                        let _ = ui.radio(on, "");
+                        ui.vertical(|ui| {
+                            ui.label(egui::RichText::new(name).color(p.text));
+                            ui.label(egui::RichText::new(line).small().color(p.faint));
+                        });
+                        if let Some(answers) = dot {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.add_space(6.0);
+                                    let (rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(8.0, 8.0),
+                                        egui::Sense::hover(),
+                                    );
+                                    ui.painter().circle_filled(
+                                        rect.center(),
+                                        3.5,
+                                        if answers { p.ok } else { p.bad },
+                                    );
+                                },
+                            );
+                        }
+                    })
+                    .response
+                })
+                .inner;
+            ui.interact(response.rect, response.id.with("row"), egui::Sense::click())
+        };
+        let this = row(
+            ui,
+            here,
+            !locked,
+            "This computer",
+            &self.this_computer_line(),
+            None,
+        );
+        if this.clicked() {
+            chosen = Some(None);
+        }
+        let this = this.on_hover_text(if locked {
+            lock_why
+        } else {
+            "Run the models here."
+        });
+        let _ = this;
+        for spec in self.remote.remotes.clone() {
+            let on = !here && self.remote.runner.as_deref() == Some(spec.id.as_str());
+            let line = if can {
+                self.computer_line(&spec)
+            } else {
+                spec.host.clone()
+            };
+            let dot = if can { self.answers(&spec.id) } else { None };
+            let item = row(ui, on, can && !locked, &spec.name, &line, dot);
+            if item.clicked() && can && !locked {
+                chosen = Some(Some(spec.id.clone()));
+            }
+            // a greyed computer says why when the pointer rests on it, and nothing more is said in the menu
+            if !can {
+                item.on_hover_text(format!(
+                    "{} runs its models on this computer. Ollama and ComfyUI can use {}.",
+                    self.engine_name(),
+                    spec.name
+                ));
+            } else if locked {
+                item.on_hover_text(lock_why);
+            }
+        }
+        ui.separator();
+        if menu_item(ui, Icon::Plus, "Add a computer…").clicked() {
+            self.open_computers(true);
+        }
+        if menu_item(ui, Icon::Gear, "Manage computers…").clicked() {
+            self.open_computers(false);
+        }
+        if let Some(id) = chosen {
+            self.choose_runner(id);
+        }
+    }
+
+    /// The alert on the page when the computer in use could not be reached, or the connection to it closed: what
+    /// happened, and the two ways on (again, or here).
+    pub(super) fn show_remote_alert(&mut self, ui: &mut egui::Ui) {
+        let (Some(spec), Some(why)) = (self.remote_in_use().cloned(), self.remote.error.clone())
+        else {
+            return;
+        };
+        let lost = why.starts_with("The connection closed");
+        let mut again = false;
+        let mut here = false;
+        let mut test = false;
+        ui.add_space(8.0);
+        theme::alert(ui, Tone::Bad, |ui| {
+            ui.label(
+                egui::RichText::new(if lost {
+                    format!("Lost the connection to {}", spec.name)
+                } else {
+                    format!("Couldn't reach {}", spec.name)
+                })
+                .strong(),
+            );
+            ui.label(egui::RichText::new(&why).small());
+            ui.horizontal_wrapped(|ui| {
+                let idle = !self.session.is_active() && !self.remote_opening();
+                if theme::button_sized(ui, Role::Primary, idle, "Try again", egui::vec2(92.0, 26.0))
+                    .on_disabled_hover_text("Stop the server first.")
+                    .clicked()
+                {
+                    again = true;
+                }
+                if ui
+                    .add_enabled(idle, egui::Button::new("Use this computer"))
+                    .on_hover_text("Run the models here instead.")
+                    .clicked()
+                {
+                    here = true;
+                }
+                if ui
+                    .button("Test it…")
+                    .on_hover_text(
+                        "Open the computer in the Computers window and test it step by step.",
+                    )
+                    .clicked()
+                {
+                    test = true;
+                }
+            });
+        });
+        if again {
+            self.remote.error = None;
+            self.start_selected(ui.ctx());
+        } else if here {
+            self.choose_runner(None);
+        } else if test {
+            self.open_computers(false);
+            self.remote.detail = Some(spec.id.clone());
+            self.test_computer(&spec.id, ui.ctx());
+        }
+    }
+
+    /// The Computers window, if it is open: a window of its own, as Settings is (an immediate viewport: the frame that
+    /// draws the main window draws it too).
+    pub(super) fn show_remotes_window(&mut self, ctx: &egui::Context) {
+        if !self.remote.show_window {
+            return;
+        }
+        let id = egui::ViewportId::from_hash_of("quickai_computers");
+        if std::mem::take(&mut self.remote.raise_window) {
+            ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);
+        }
+        let mut close = false;
+        let builder = crate::with_app_icon(
+            egui::ViewportBuilder::default()
+                .with_title(COMPUTERS_TITLE)
+                .with_app_id(crate::APP_ID)
+                .with_inner_size([540.0, 520.0])
+                .with_min_inner_size([420.0, 360.0]),
+        );
+        ctx.show_viewport_immediate(id, builder, |ui, class| {
+            if class == egui::ViewportClass::EmbeddedWindow {
+                // a context that cannot open a window (a test draws on one with no display) shows it inside the main
+                // window, with its Close button under it
+                self.show_computers_body(ui);
+                ui.add_space(10.0);
+                if ui.button("Close").clicked() {
+                    close = true;
+                }
+            } else {
+                if ui.input(|input| input.viewport().close_requested()) {
+                    close = true;
+                }
+                egui::CentralPanel::default()
+                    .frame(theme::page_frame())
+                    .show(ui, |ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt("computers_scroll")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| self.show_computers_body(ui));
+                    });
+            }
+        });
+        if close {
+            self.remote.show_window = false;
+            self.remote.form = None;
+            self.remote.detail = None;
+        }
+    }
+
+    /// What the window shows: the form when a computer is being added or changed, a computer's test when one was
+    /// asked for, else the list.
+    fn show_computers_body(&mut self, ui: &mut egui::Ui) {
+        if self.remote.form.is_some() {
+            self.show_computer_form(ui);
+        } else if let Some(id) = self.remote.detail.clone() {
+            self.show_computer_test(ui, &id);
+        } else {
+            self.show_computer_list(ui);
+        }
+    }
+
+    /// The list: each computer with what it is and whether it answered, Use, and the rest in its menu.
+    fn show_computer_list(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette();
+        let can = self.can_run_remote();
+        let locked = self.engine_locked() || self.remote_opening();
+        let mut action: Option<Action> = None;
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Computers")
+                    .size(18.0)
+                    .family(theme::semibold(ui))
+                    .color(p.text),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if icons::labelled_button(
+                    ui,
+                    Role::Normal,
+                    true,
+                    Icon::Plus,
+                    "Add a computer",
+                    28.0,
+                )
+                .clicked()
+                {
+                    action = Some(Action::New);
+                }
+            });
+        });
+        ui.label(theme::muted(
+            "Use the models of a more powerful computer: a desktop with a big graphics card, or a rented server.",
+        ));
+        if !can {
+            ui.label(
+                egui::RichText::new(format!(
+                    "With {} the models run on this computer; Ollama and ComfyUI can use the ones here.",
+                    self.engine_name()
+                ))
+                .small()
+                .color(p.faint),
+            );
+        }
+        ui.add_space(8.0);
+        let here = self.remote_in_use().is_none();
+        let line = self.this_computer_line();
+        let mut rows: Vec<(Option<RemoteSpec>, String, Option<bool>, bool)> =
+            vec![(None, line, None, here)];
+        for spec in &self.remote.remotes {
+            let on = !here && self.remote.runner.as_deref() == Some(spec.id.as_str());
+            rows.push((
+                Some(spec.clone()),
+                self.computer_line(spec),
+                self.answers(&spec.id),
+                on,
+            ));
+        }
+        for (spec, line, dot, on) in rows {
+            let frame = egui::Frame::new()
+                .fill(if on {
+                    p.accent_soft
+                } else {
+                    egui::Color32::TRANSPARENT
+                })
+                .corner_radius(6.0)
+                .inner_margin(egui::Margin::symmetric(10, 8));
+            frame.show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
+                    let color = match dot {
+                        Some(true) => p.ok,
+                        Some(false) => p.bad,
+                        None => p.faint,
+                    };
+                    ui.painter().circle_filled(rect.center(), 4.0, color);
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            let name = spec.as_ref().map_or("This computer", |s| s.name.as_str());
+                            ui.label(egui::RichText::new(name).strong().color(p.text));
+                            if on {
+                                theme::chip(ui, "in use", Some(Tone::Good));
+                            }
+                        });
+                        ui.label(egui::RichText::new(&line).small().color(p.muted));
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if let Some(spec) = &spec {
+                            let more = icons::icon_button(
+                                ui,
+                                Icon::More,
+                                egui::vec2(28.0, 24.0),
+                                true,
+                                false,
+                            )
+                            .on_hover_text("Test, change or remove it");
+                            egui::Popup::menu(&more)
+                                .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+                                .show(|ui| {
+                                    if ui.add_enabled(can, egui::Button::new("Test")).clicked() {
+                                        action = Some(Action::Check(spec.id.clone()));
+                                    }
+                                    if ui.button("Change…").clicked() {
+                                        action = Some(Action::Edit(spec.clone()));
+                                    }
+                                    let in_use =
+                                        self.remote.runner.as_deref() == Some(spec.id.as_str());
+                                    if ui
+                                        .add_enabled(
+                                            !(in_use && locked),
+                                            egui::Button::new("Remove"),
+                                        )
+                                        .on_disabled_hover_text(
+                                            "Stop the server to remove the computer it runs on.",
+                                        )
+                                        .clicked()
+                                    {
+                                        action = Some(Action::Remove(spec.id.clone()));
+                                    }
+                                });
+                        } else {
+                            ui.add_space(28.0 + ui.spacing().item_spacing.x);
+                        }
+                        if !on
+                            && ui
+                                .add_enabled(
+                                    !locked && (can || spec.is_none()),
+                                    egui::Button::new("Use"),
+                                )
+                                .on_disabled_hover_text(if locked {
+                                    "Stop the server to change where it runs."
+                                } else {
+                                    "This engine runs on this computer only."
+                                })
+                                .clicked()
+                        {
+                            action = Some(Action::Use(spec.as_ref().map(|s| s.id.clone())));
+                        }
+                    });
+                });
+            });
+        }
+        ui.add_space(10.0);
+        ui.label(
+            egui::RichText::new(
+                "QuickAI connects with your own ssh: its keys, your agent and ~/.ssh/config, and no port is opened to \
+                 the network on either side. The engine there keeps running when QuickAI closes.",
+            )
+            .small()
+            .color(p.faint),
+        );
+        match action {
+            Some(Action::New) => self.new_remote_form(),
+            Some(Action::Edit(spec)) => {
+                self.remote.hosts = remote::read_ssh_config_hosts();
+                self.remote.form = Some(RemoteForm::of(&spec));
+            }
+            Some(Action::Remove(id)) => self.remove_remote(&id),
+            Some(Action::Check(id)) => {
+                self.remote.detail = Some(id.clone());
+                self.test_computer(&id, ui.ctx());
+            }
+            Some(Action::Use(id)) => self.choose_runner(id),
+            Some(Action::Back) | None => {}
+        }
+    }
+
+    /// The form that adds or changes a computer: the address (with the hosts of `~/.ssh/config` offered), its name (made
+    /// from the address until it is typed), and under More options the ports and the key file.
+    fn show_computer_form(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette();
+        let hosts = self.remote.hosts.clone();
+        let can = self.can_run_remote();
+        let mut save = false;
+        let mut cancel = false;
+        let Some(form) = self.remote.form.as_mut() else {
+            return;
+        };
+        let title = match &form.editing {
+            Some(_) => format!("Change {}", form.name),
+            None => "Add a computer".to_string(),
+        };
+        ui.label(
+            egui::RichText::new(title)
+                .size(18.0)
+                .family(theme::semibold(ui))
+                .color(p.text),
+        );
+        ui.label(theme::muted(
+            "Use the models of a more powerful computer, reached over SSH with your own keys. Nothing is opened to \
+             the network.",
+        ));
+        ui.add_space(10.0);
+        egui::Grid::new("computer_form")
+            .num_columns(2)
+            .spacing([10.0, 8.0])
+            .show(ui, |ui| {
+                ui.label("Address").on_hover_text(
+                    "A host name or IP address, user@host, or the name of a Host in your ~/.ssh/config.",
+                );
+                let before = form.host.clone();
+                let address = ui.add(
+                    egui::TextEdit::singleline(&mut form.host)
+                        .hint_text("studio.local, me@192.168.1.40, or a Host of ~/.ssh/config")
+                        .desired_width(320.0),
+                );
+                if form.host != before && !form.name_typed {
+                    form.name = remote::name_from_address(&form.host);
+                }
+                ui.end_row();
+                // the hosts of the file that fit what is typed, under the box while it is being typed in
+                let typed = form.host.trim().to_lowercase();
+                let fits: Vec<&SshHost> = hosts
+                    .iter()
+                    .filter(|h| h.alias.to_lowercase().contains(&typed) && h.alias != form.host.trim())
+                    .take(6)
+                    .collect();
+                if !fits.is_empty() && (address.has_focus() || typed.is_empty()) {
+                    ui.label("");
+                    ui.vertical(|ui| {
+                        ui.label(egui::RichText::new("From ~/.ssh/config").small().color(p.faint));
+                        for host in fits {
+                            let text = egui::RichText::new(format!("{}   {}", host.alias, host.goes_to));
+                            if ui.selectable_label(false, text).clicked() {
+                                form.host = host.alias.clone();
+                                if !form.name_typed {
+                                    form.name = remote::name_from_address(&host.alias);
+                                }
+                            }
+                        }
+                    });
+                    ui.end_row();
+                }
+                ui.label("Name");
+                if ui
+                    .add(
+                        egui::TextEdit::singleline(&mut form.name)
+                            .hint_text("Studio PC")
+                            .desired_width(320.0),
+                    )
+                    .changed()
+                {
+                    form.name_typed = !form.name.trim().is_empty();
+                }
+                ui.end_row();
+            });
+        ui.add_space(4.0);
+        egui::CollapsingHeader::new("More options: SSH port, engine port, key file")
+            .id_salt("computer_more")
+            .open(Some(form.more))
+            .show(ui, |ui| {
+                egui::Grid::new("computer_more_grid")
+                    .num_columns(2)
+                    .spacing([10.0, 8.0])
+                    .show(ui, |ui| {
+                        ui.label("SSH port");
+                        ui.add(egui::TextEdit::singleline(&mut form.ssh_port).hint_text("22").desired_width(80.0));
+                        ui.end_row();
+                        ui.label("Engine port").on_hover_text(
+                            "The port the engine listens on, on that computer. Empty is the engine's own: 11434 for \
+                             Ollama, 8188 for ComfyUI.",
+                        );
+                        ui.add(
+                            egui::TextEdit::singleline(&mut form.engine_port)
+                                .hint_text("the engine's own")
+                                .desired_width(120.0),
+                        );
+                        ui.end_row();
+                        ui.label("Key file").on_hover_text(
+                            "Only when ssh would not find the key by itself (your agent, ~/.ssh/id_*, ~/.ssh/config).",
+                        );
+                        ui.horizontal(|ui| {
+                            ui.add(
+                                egui::TextEdit::singleline(&mut form.identity)
+                                    .hint_text("optional")
+                                    .desired_width(240.0),
+                            );
+                            if ui.small_button("…").clicked() {
+                                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                                    form.identity = path.display().to_string();
+                                }
+                            }
+                        });
+                        ui.end_row();
+                    });
+            })
+            .header_response
+            .clicked()
+            .then(|| form.more = !form.more);
+        if let Some(problem) = &form.problem {
+            ui.add_space(4.0);
+            ui.colored_label(p.bad, problem);
+        }
+        ui.add_space(12.0);
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let label = if can { "Add and test" } else { "Add" };
+                let label = if form.editing.is_some() {
+                    if can {
+                        "Save and test"
+                    } else {
+                        "Save"
+                    }
+                } else {
+                    label
+                };
+                if theme::button_sized(ui, Role::Primary, true, label, egui::vec2(120.0, 30.0))
+                    .clicked()
+                {
+                    save = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        if save {
+            self.add_and_test(ui.ctx());
+        } else if cancel {
+            self.remote.form = None;
+        }
+    }
+
+    /// A computer's test, step by step: reached over SSH, then the engine answering on its port there, each with what to
+    /// do when it did not; and Use it, once it all passed.
+    fn show_computer_test(&mut self, ui: &mut egui::Ui, id: &str) {
+        let p = theme::palette();
+        let Some(spec) = self.remote.remotes.iter().find(|r| r.id == id).cloned() else {
+            self.remote.detail = None;
+            return;
+        };
+        let can = self.can_run_remote();
+        let engine = self.engine_name();
+        let port = self.remote_port(&spec);
+        let testing = self
+            .remote
+            .checking
+            .as_ref()
+            .is_some_and(|(checking, _)| checking == id);
+        let found = self.remote.checked.get(id).cloned();
+        let in_use = self.remote.runner.as_deref() == Some(id) && self.remote_in_use().is_some();
+        let locked = self.engine_locked() || self.remote_opening();
+        let mut action: Option<Action> = None;
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(&spec.name)
+                    .size(18.0)
+                    .family(theme::semibold(ui))
+                    .color(p.text),
+            );
+            ui.label(theme::muted(spec.host.clone()));
+        });
+        ui.add_space(8.0);
+        if !can {
+            note(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "It is kept. {engine} runs on this computer only: choose Ollama or ComfyUI to test it and use it."
+                    ))
+                    .small(),
+                );
+            });
+        } else if testing {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(theme::muted(format!("Testing {}…", spec.name)));
+            });
+        } else if let Some(found) = &found {
+            let step =
+                |ui: &mut egui::Ui, ok: bool, title: &str, add: &mut dyn FnMut(&mut egui::Ui)| {
+                    ui.horizontal_top(|ui| {
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
+                        let icon = if ok { Icon::Check } else { Icon::Close };
+                        icons::paint(ui.painter(), rect, icon, if ok { p.ok } else { p.bad });
+                        ui.vertical(|ui| {
+                            ui.label(egui::RichText::new(title).strong().color(p.text));
+                            add(ui);
+                        });
+                    });
+                    ui.add_space(4.0);
+                    ui.separator();
+                };
+            match &found.reached {
+                Ok(()) => step(ui, true, "Reached over SSH", &mut |ui| {
+                    ui.label(
+                        theme::muted(format!("Logged in to {} with your key.", spec.host)).small(),
+                    );
+                }),
+                Err(why) => step(
+                    ui,
+                    false,
+                    &format!("Couldn't log in to {}", spec.host),
+                    &mut |ui| {
+                        ui.label(egui::RichText::new(why).small());
+                        if let Some(fix) = remote::login_fix(&spec, why) {
+                            command_box(
+                                ui,
+                                &fix,
+                                "Run this once on this computer, then test again:",
+                            );
+                        }
+                    },
+                ),
+            }
+            match &found.engine {
+                Some(Ok(version)) => step(
+                    ui,
+                    true,
+                    &format!("{engine} answers on port {port}"),
+                    &mut |ui| {
+                        ui.label(theme::muted(format!("{engine} {version}")).small());
+                    },
+                ),
+                Some(Err(_)) => step(
+                    ui,
+                    false,
+                    &format!("{engine} isn't answering on port {port}"),
+                    &mut |ui| {
+                        ui.label(
+                        egui::RichText::new(format!(
+                            "It isn't running on {}, or it listens on another port (More options, under Change).",
+                            spec.name
+                        ))
+                        .small(),
+                    );
+                        match self.engine.as_str() {
+                            "ollama" => {
+                                command_box(
+                                    ui,
+                                    "ollama serve",
+                                    &format!("On {}, start it with:", spec.name),
+                                );
+                                ui.label(
+                                egui::RichText::new(
+                                    "or, to keep it running after a restart: sudo systemctl enable --now ollama",
+                                )
+                                .small()
+                                .color(p.faint),
+                            );
+                            }
+                            _ => {
+                                ui.label(
+                                egui::RichText::new(format!(
+                                    "On {}, start it with QuickAI's headless program and a configuration of {engine}: \
+                                     quickai-run up <configuration>",
+                                    spec.name
+                                ))
+                                .small(),
+                            );
+                            }
+                        }
+                    },
+                ),
+                None => {}
+            }
+        } else {
+            ui.label(theme::muted("Not tested yet."));
+        }
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            if ui.link("All computers").clicked() {
+                action = Some(Action::Back);
+            }
+            if ui.link("Change…").clicked() {
+                action = Some(Action::Edit(spec.clone()));
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let passed = found.as_ref().is_some_and(Checked::passed);
+                if in_use {
+                    theme::chip(ui, "in use", Some(Tone::Good));
+                } else if theme::button_sized(
+                    ui,
+                    Role::Primary,
+                    can && passed && !locked,
+                    "Use it",
+                    egui::vec2(84.0, 30.0),
+                )
+                .on_disabled_hover_text(if locked {
+                    "Stop the server to change where it runs."
+                } else {
+                    "Once every step passed."
+                })
+                .clicked()
+                {
+                    action = Some(Action::Use(Some(spec.id.clone())));
+                }
+                if ui
+                    .add_enabled(can && !testing, egui::Button::new("Test again"))
+                    .clicked()
+                {
+                    action = Some(Action::Check(spec.id.clone()));
+                }
+            });
+        });
+        match action {
+            Some(Action::Back) => self.remote.detail = None,
+            Some(Action::Edit(spec)) => {
+                self.remote.hosts = remote::read_ssh_config_hosts();
+                self.remote.form = Some(RemoteForm::of(&spec));
+            }
+            Some(Action::Check(id)) => self.test_computer(&id, ui.ctx()),
+            Some(Action::Use(id)) => self.choose_runner(id),
+            _ => {}
+        }
+    }
+}
+
+/// An item of a menu: its picture and words at the left, the width of the menu, lit when the pointer is on it.
+fn menu_item(ui: &mut egui::Ui, icon: Icon, text: &str) -> egui::Response {
+    let p = theme::palette();
+    let width = ui.available_width();
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        if response.hovered() {
+            ui.painter().rect_filled(rect, 4.0, p.raised_hover);
+        }
+        let color = if response.hovered() { p.text } else { p.body };
+        let square = egui::Rect::from_min_size(
+            egui::pos2(rect.left() + 8.0, rect.center().y - 7.0),
+            egui::vec2(14.0, 14.0),
+        );
+        icons::paint(ui.painter(), square, icon, color);
+        ui.painter().text(
+            egui::pos2(square.right() + 10.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            text,
+            egui::TextStyle::Button.resolve(ui.style()),
+            color,
+        );
+    }
+    response
+}
+
+/// A note that is neither good nor bad news: why something cannot be done here, and the way to it.
+fn note(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+    let p = theme::palette();
+    egui::Frame::new()
+        .fill(p.raised)
+        .corner_radius(6.0)
+        .inner_margin(egui::Margin::symmetric(10, 8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add(ui);
+        });
+}
+
+/// A command to run, in a box with a Copy button, under the sentence that says where.
+fn command_box(ui: &mut egui::Ui, command: &str, said: &str) {
+    let p = theme::palette();
+    ui.label(egui::RichText::new(said).small());
+    egui::Frame::new()
+        .fill(p.well)
+        .stroke(egui::Stroke::new(1.0, p.line))
+        .corner_radius(6.0)
+        .inner_margin(egui::Margin::symmetric(8, 4))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(command).monospace().color(p.text));
+                if ui.small_button("Copy").clicked() {
+                    ui.ctx().copy_text(command.to_string());
+                }
+            });
+        });
 }
 
 /// What a click in the window of the computers asked for.
 enum Action {
     New,
+    Back,
     Edit(RemoteSpec),
-    Cancel,
-    Save,
     Remove(String),
-    Check(RemoteSpec),
-    Use(String),
+    Check(String),
+    Use(Option<String>),
 }
 
 #[cfg(test)]

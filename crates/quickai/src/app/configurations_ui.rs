@@ -1556,7 +1556,7 @@ mod tests {
                 };
                 // the menus, in their order along the first row, and the engine's menu after them, whole, with room at
                 // the right end for the theme, the guides and Settings (three buttons of 30 points)
-                let menus: Vec<egui::Rect> = ["File", "Models", "Server", "Help", "llama.cpp"]
+                let menus: Vec<egui::Rect> = ["File", "Models", "Help", "llama.cpp"]
                     .iter()
                     .map(|m| at(m, 0.0, 30.0))
                     .collect();
@@ -1567,9 +1567,9 @@ mod tests {
                     "{width} {live}: {menus:?}"
                 );
                 assert!(
-                    menus[4].right() <= width - 3.0 * 30.0,
+                    menus[3].right() <= width - 3.0 * 30.0,
                     "{width} {live}: {:?}",
-                    menus[4]
+                    menus[3]
                 );
                 assert!(
                     !found.iter().any(|(t, _)| t == "View"),

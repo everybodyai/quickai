@@ -294,24 +294,6 @@ impl App {
         if running {
             ui.label(theme::muted("Stop the model to change these.").small());
         }
-        if self.can_run_remote() {
-            ui.add_space(6.0);
-            ui.separator();
-            if self.remote.remotes.is_empty() {
-                if ui
-                    .link("Run on another computer...")
-                    .on_hover_text(
-                        "Use the engine of a more powerful computer, reached over SSH. The chat and Connect an app \
-                         work the same.",
-                    )
-                    .clicked()
-                {
-                    self.remote.show_window = true;
-                }
-            } else {
-                self.show_runs_on_row(ui);
-            }
-        }
     }
 }
 
