@@ -997,7 +997,7 @@ fn p3_j10_the_modes_of_an_engine_are_checked_and_a_persons_document_can_change_t
     let m = modes(llama);
     assert_eq!(
         m.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
-        ["embedding", "rerank"]
+        ["embedding", "rerank", "direct"]
     );
     assert_eq!(m[0].arg, ["--embeddings"]);
     assert_eq!(m[1].arg, ["--reranking"]);
@@ -1022,14 +1022,15 @@ arg = ["--rope-scaling", "yarn"]
     let r = registry(&[("user:engines/llamacpp.toml", patch)]);
     assert!(errors(&r).is_empty(), "{:#?}", r.diagnostics);
     let m = modes(r.engine("llamacpp").unwrap());
-    assert_eq!(m.len(), 3);
+    // the three of the document (embedding, rerank, direct), and the one the patch adds
+    assert_eq!(m.len(), 4);
     assert_eq!(m[0].arg, ["--embeddings", "--pooling", "mean"]);
     assert_eq!(
         m[0].label, "embedding server",
         "what the patch leaves out stays"
     );
     assert_eq!(
-        (m[2].id.as_str(), m[2].label.as_str()),
+        (m[3].id.as_str(), m[3].label.as_str()),
         ("long", "long context")
     );
 
@@ -1057,7 +1058,7 @@ arg = ["--rope-scaling", "yarn"]
         );
         assert_eq!(
             modes(r.engine("llamacpp").unwrap()).len(),
-            2,
+            3,
             "the shipped document stays"
         );
     }
@@ -1409,7 +1410,13 @@ fn p3_j08_the_list_the_application_ships_is_valid_complete_and_pinned() {
                             m.id
                         );
                     } else {
-                        assert_eq!(run.mode, None, "{}", m.id);
+                        // a chat model that thinks before every answer is started with thinking off (Bonsai 2)
+                        assert!(
+                            run.mode.is_none() || run.mode.as_deref() == Some("direct"),
+                            "{}: {:?}",
+                            m.id,
+                            run.mode
+                        );
                     }
                     // the weights the window shows first fit in a band
                     let smallest = run.files.iter().filter_map(|f| f.size).min().unwrap();

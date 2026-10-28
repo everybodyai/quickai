@@ -1375,7 +1375,7 @@ mod tests {
     /// stand-in of the GUI suite's), where the models are.
     fn model_file_of_another_size(dir: &Path) {
         std::fs::create_dir_all(dir.join("models")).unwrap();
-        let file = std::fs::File::create(dir.join("models/Bonsai-1.7B-Q1_0.gguf")).unwrap();
+        let file = std::fs::File::create(dir.join("models/Ternary-Bonsai-2-4B-Q2_0.gguf")).unwrap();
         file.set_len(262_144_000).unwrap();
     }
 
@@ -1420,7 +1420,7 @@ mod tests {
         model_file_of_another_size(&dir);
         let settings = Settings {
             port: 9123,
-            last_model_filename: Some("Bonsai-1.7B-Q1_0.gguf".into()),
+            last_model_filename: Some("Ternary-Bonsai-2-4B-Q2_0.gguf".into()),
             ..Settings::default()
         };
         let mut app = app_with(&dir, settings);
@@ -1431,7 +1431,7 @@ mod tests {
         let written =
             std::fs::read_to_string(dir.join("config/profiles/default.toml")).expect("a Default");
         assert!(
-            written.contains("file = \"Bonsai-1.7B-Q1_0.gguf\""),
+            written.contains("file = \"Ternary-Bonsai-2-4B-Q2_0.gguf\""),
             "{written}"
         );
         assert!(written.contains("size = 262144000"), "{written}");
@@ -1508,6 +1508,11 @@ mod tests {
         let mut app = app_in(&dir, "llamacpp");
         model_file_of_another_size(&dir);
         only_the_model_file(&mut app, &dir);
+        // the engine's program is there (a file is all the window looks for): the page is the model's, not the one that
+        // installs the engine (WP4.31)
+        let program = dir.join("llama-server");
+        std::fs::write(&program, "").unwrap();
+        app.binary = program.clone();
         let ctx = egui::Context::default();
         // every text the whole window paints, with where (a text that is drawn twice is here twice)
         let painted = |app: &mut App, width: f32| -> Vec<(String, egui::Rect)> {
@@ -1640,6 +1645,8 @@ mod tests {
                 app.reload_configurations();
                 app.choose_configuration("long");
                 assert_eq!(app.configs.active, "long", "{:?}", app.configs.error);
+                // (a configuration taken up looks for the engine's program again, where it is installed)
+                app.binary = program.clone();
             }
             app.values.set("port", 9000u16);
             for width in [640.0, 680.0, 760.0, 1000.0, 1400.0] {

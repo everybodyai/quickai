@@ -675,6 +675,10 @@ mod tests {
     {
         let dir = scratch("f85");
         let mut app = app_in(&dir, "llamacpp");
+        // the engine's program is there (a file is all the window looks for): the main window's page is the model's, not
+        // the one that installs the engine (WP4.31)
+        app.binary = dir.join("llama-server");
+        std::fs::write(&app.binary, "").unwrap();
         let ctx = egui::Context::default();
         let display = Display::attach(&ctx);
 
@@ -1041,6 +1045,13 @@ mod tests {
 
     // ---- the program that goes with the engine (work package 4.16) ----------------------------------------
 
+    /// Windows as tall as what they hold, as the window manager makes them when they ask (`theme::fit_window_height`,
+    /// at most 900 when the screen is not known): this display keeps a window at the size it opens at, and what is under
+    /// that is not painted.
+    fn tall_enough_for_what_it_holds(display: &Display) {
+        display.open_windows_at(egui::vec2(OPENS_AT[0], 900.0));
+    }
+
     /// What the Settings window painted last.
     fn in_settings(display: &Display) -> String {
         said(&display.0.borrow().windows[&settings_viewport()].shapes)
@@ -1109,6 +1120,7 @@ mod tests {
         let mut app = app_in(&dir, "ollama");
         let ctx = egui::Context::default();
         let display = Display::attach(&ctx);
+        tall_enough_for_what_it_holds(&display);
         app.toggle_settings();
         settle(&mut app, &ctx, &display);
         let header = where_is(&display, "Chat UI: Open WebUI").expect("the section");
@@ -1242,6 +1254,7 @@ mod tests {
         let ollama_binary = app.binary.clone();
         let ctx = egui::Context::default();
         let display = Display::attach(&ctx);
+        tall_enough_for_what_it_holds(&display);
         app.toggle_settings();
         // wanted and there: the section is closed; open it
         settle(&mut app, &ctx, &display);

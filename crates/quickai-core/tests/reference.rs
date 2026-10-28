@@ -189,6 +189,8 @@ text = "/text"
 label = "Chat with an image"
 when = "has(model.modalities.input, 'image')"
 curl = "curl http://localhost/chat"
+python = "print('chat')"
+javascript = "console.log('chat')"
 
 [[api]]
 id = "acme.complete"
