@@ -13,11 +13,13 @@
 //! as ssh's own first connection does once the person says yes).
 //!
 //! The parts of a run QuickAI starts there itself (WP4.33, docs/remote-runs.md) are modules of their own: `ssh` (a
-//! command run there, a file copied there), `probe` (what the computer is) and `deploy` (the headless program and
-//! what it runs, copied there).
+//! command run there, a file copied there), `probe` (what the computer is), `deploy` (the headless program and
+//! what it runs, copied there) and `run` (the run started, asked after and stopped there, and its ports brought
+//! here).
 
 pub mod deploy;
 pub mod probe;
+pub mod run;
 pub mod ssh;
 
 use std::io::{BufRead, BufReader, Read, Write};
@@ -134,6 +136,12 @@ pub fn ssh_program() -> PathBuf {
 
 /// The arguments of the tunnel from `local_port` here to `remote_port` on `spec`'s loopback.
 pub fn ssh_args(spec: &RemoteSpec, local_port: u16, remote_port: u16) -> Vec<String> {
+    forward_args(spec, &[(local_port, remote_port)])
+}
+
+/// The arguments of one tunnel with a forward for each pair of `forwards`: a port here, and the port on `spec`'s
+/// loopback it is brought from.
+pub fn forward_args(spec: &RemoteSpec, forwards: &[(u16, u16)]) -> Vec<String> {
     let mut args: Vec<String> = ["-N", "-T"].iter().map(|s| s.to_string()).collect();
     args.extend(ssh::NO_QUESTIONS.iter().map(|s| s.to_string()));
     args.extend(
@@ -148,8 +156,10 @@ pub fn ssh_args(spec: &RemoteSpec, local_port: u16, remote_port: u16) -> Vec<Str
         .iter()
         .map(|s| s.to_string()),
     );
-    args.push("-L".into());
-    args.push(format!("127.0.0.1:{local_port}:127.0.0.1:{remote_port}"));
+    for (here, there) in forwards {
+        args.push("-L".into());
+        args.push(format!("127.0.0.1:{here}:127.0.0.1:{there}"));
+    }
     args.extend(ssh::port_and_key(spec, "-p"));
     // the address last, after `--`: nothing in it is read as an option
     args.push("--".into());
@@ -162,7 +172,10 @@ pub fn ssh_args(spec: &RemoteSpec, local_port: u16, remote_port: u16) -> Vec<Str
 /// is told to leave when the *thread* that started it ends (the parent-death signal, decision C38), so a tunnel opened
 /// by a thread that then ended was closed at once.
 pub struct Tunnel {
+    /// The first forward's port here.
     pub local_port: u16,
+    /// Each forward: the port here, and the port there it brings.
+    pub forwards: Vec<(u16, u16)>,
     alive: Arc<AtomicBool>,
     close: Sender<()>,
     keeper: Option<std::thread::JoinHandle<()>>,
@@ -221,15 +234,34 @@ pub fn open_with(
     remote_port: u16,
     timeout: Duration,
 ) -> Result<Tunnel, String> {
+    open_forwards(program, spec, &[(local_port, remote_port)], timeout)
+}
+
+/// Opens one tunnel with a forward for each pair of `forwards` (a port here, `None` for any free one, and the port
+/// there) and waits until each listens here, or says why it could not, as `open_with` does.
+pub fn open_forwards(
+    program: &Path,
+    spec: &RemoteSpec,
+    forwards: &[(Option<u16>, u16)],
+    timeout: Duration,
+) -> Result<Tunnel, String> {
     if let Some(problem) = spec.problem() {
         return Err(problem);
     }
-    let local_port = match local_port {
-        Some(port) => port,
-        None => ephemeral_port().map_err(|e| format!("No free port on this computer: {e}"))?,
-    };
+    if forwards.is_empty() {
+        return Err("There is no port to bring here.".into());
+    }
+    let mut pairs = Vec::new();
+    for (here, there) in forwards {
+        let here = match here {
+            Some(port) => *port,
+            None => ephemeral_port().map_err(|e| format!("No free port on this computer: {e}"))?,
+        };
+        pairs.push((here, *there));
+    }
+    let local_port = pairs[0].0;
     let mut command = Command::new(program);
-    command.args(ssh_args(spec, local_port, remote_port));
+    command.args(forward_args(spec, &pairs));
     let said: Arc<Mutex<Vec<String>>> = Arc::default();
     let alive = Arc::new(AtomicBool::new(true));
     let (started_tx, started_rx) = crossbeam_channel::bounded::<Result<(), String>>(1);
@@ -286,6 +318,7 @@ pub fn open_with(
     });
     let mut tunnel = Tunnel {
         local_port,
+        forwards: pairs.clone(),
         alive,
         close: close_tx,
         keeper: Some(keeper),
@@ -296,7 +329,10 @@ pub fn open_with(
         Ok(Err(why)) => return Err(why),
         Err(_) => return Err("ssh could not be started.".to_string()),
     }
-    let address = SocketAddr::from(([127, 0, 0, 1], local_port));
+    let addresses: Vec<SocketAddr> = pairs
+        .iter()
+        .map(|(here, _)| SocketAddr::from(([127, 0, 0, 1], *here)))
+        .collect();
     let deadline = Instant::now() + timeout;
     loop {
         if !tunnel.alive() {
@@ -304,7 +340,10 @@ pub fn open_with(
             std::thread::sleep(Duration::from_millis(150));
             return Err(tunnel.why_closed());
         }
-        if TcpStream::connect_timeout(&address, Duration::from_millis(200)).is_ok() {
+        if addresses
+            .iter()
+            .all(|a| TcpStream::connect_timeout(a, Duration::from_millis(200)).is_ok())
+        {
             return Ok(tunnel);
         }
         if Instant::now() > deadline {
