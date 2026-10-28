@@ -333,6 +333,37 @@ fn shape(style: &mut egui::Style) {
 // ---- frames -------------------------------------------------------------------------------------
 
 /// The frame of the page: the face of the window, and room round its group boxes.
+/// Makes the window of its own that is being drawn as tall as what it holds: `wanted` is its content with its margins
+/// and footer, kept between `least` and most of the screen (past that it scrolls). No empty room is left at its foot.
+/// The width stays the person's; a height they set by hand stays too, until what the window holds changes (the height
+/// last asked for is remembered, and asked for again only when it is another).
+pub(super) fn fit_window_height(ctx: &egui::Context, wanted: f32, least: f32) {
+    let (inner, monitor) = ctx.input(|i| (i.viewport().inner_rect, i.viewport().monitor_size));
+    let id = ctx.viewport_id();
+    let Some(inner) = inner else {
+        return;
+    };
+    let most = monitor.map_or(900.0, |m| (m.y * 0.85).max(least));
+    let want = wanted.ceil().clamp(least, most);
+    let key = egui::Id::new(("fit_window_height", id));
+    let asked: Option<f32> = ctx.data(|d| d.get_temp(key));
+    if asked.is_some_and(|a| (a - want).abs() < 1.5) {
+        return;
+    }
+    ctx.data_mut(|d| d.insert_temp(key, want));
+    if (inner.height() - want).abs() > 1.5 {
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+            inner.width(),
+            want,
+        )));
+    }
+}
+
+/// The vertical room a page frame's margins take.
+pub(super) fn page_frame_margin() -> f32 {
+    page_frame().total_margin().sum().y
+}
+
 pub(super) fn page_frame() -> egui::Frame {
     egui::Frame::new()
         .fill(palette().page)

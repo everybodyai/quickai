@@ -61,8 +61,8 @@ impl App {
             .id(egui::Id::new("model_details"))
             .open(&mut open)
             .collapsible(false)
-            .resizable(true)
-            .default_size([460.0, 260.0])
+            .resizable([true, false])
+            .default_width(460.0)
             .show(ctx, |ui| {
                 egui::Grid::new("model_details_grid")
                     .num_columns(2)

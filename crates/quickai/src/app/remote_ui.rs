@@ -708,8 +708,8 @@ impl App {
             egui::ViewportBuilder::default()
                 .with_title(COMPUTERS_TITLE)
                 .with_app_id(crate::APP_ID)
-                .with_inner_size([540.0, 520.0])
-                .with_min_inner_size([420.0, 360.0]),
+                .with_inner_size([540.0, 360.0])
+                .with_min_inner_size([420.0, 200.0]),
         );
         ctx.show_viewport_immediate(id, builder, |ui, class| {
             if class == egui::ViewportClass::EmbeddedWindow {
@@ -724,14 +724,19 @@ impl App {
                 if ui.input(|input| input.viewport().close_requested()) {
                     close = true;
                 }
-                egui::CentralPanel::default()
+                // as tall as what it shows: the form, a test, or the list
+                let content = egui::CentralPanel::default()
                     .frame(theme::page_frame())
                     .show(ui, |ui| {
                         egui::ScrollArea::vertical()
                             .id_salt("computers_scroll")
                             .auto_shrink([false, false])
-                            .show(ui, |ui| self.show_computers_body(ui));
-                    });
+                            .show(ui, |ui| self.show_computers_body(ui))
+                            .content_size
+                            .y
+                    })
+                    .inner;
+                theme::fit_window_height(ui.ctx(), content + theme::page_frame_margin(), 200.0);
             }
         });
         if close {
