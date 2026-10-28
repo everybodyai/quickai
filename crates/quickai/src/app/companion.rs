@@ -972,8 +972,11 @@ mod tests {
         let button = app.chat_button().unwrap();
         assert!(button.enabled && button.label == "Open Chat UI");
         assert!(matches!(button.action, ChatAction::Open(ref u) if *u == url));
-        // the window draws the pair: the button in Connect an app (opened beside the running model), what the page is
-        // doing in the status bar
+        // the window draws the pair: the globe beside the running model opens the page (its words are said when the
+        // pointer rests on it), and the status bar says what the page is doing
+        assert!(app
+            .browser_chat()
+            .is_some_and(|(label, _, enabled)| label == "Open Chat UI" && enabled));
         app.show_api_info = true;
         // (a window is measured, unseen, the first frame it is open)
         painted(&ctx, |ui| {
@@ -985,7 +988,7 @@ mod tests {
             app.show_connect_window(ui.ctx());
         });
         assert!(
-            drawn.contains("Open Chat UI") && drawn.contains(&format!("Open WebUI on port {port}")),
+            drawn.contains(&format!("Open WebUI on port {port}")),
             "{drawn}"
         );
 

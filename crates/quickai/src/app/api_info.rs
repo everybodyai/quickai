@@ -1,11 +1,13 @@
-//! How to connect an external app, from the engine's `[api_info]`: a window of its own, opened from *Connect an app*
-//! beside the running model, with the chat in a browser at its head.
+//! How to connect an external app, from the engine's `[api_info]`: a popover under the plug button beside the running
+//! model (C184). The chat in a browser is the globe button beside it.
 
 use eframe::egui;
 use quickai_core::api_info::{api_panel, ApiPanel};
 use quickai_core::plan::ModelInfo;
 
 use super::companion::ChatAction;
+use super::icons::{self, Icon};
+use super::theme::{self, Role};
 use super::App;
 use crate::events::ServerState;
 use crate::launch;
@@ -74,8 +76,10 @@ impl App {
         }
     }
 
-    /// The window of *Connect an app*, while the server runs and it was asked for: the chat in a browser, then the
-    /// address and the rest of what an app needs.
+    /// *Connect an app*, while the server runs and it was asked for: a popover under the plug button beside the model
+    /// (option A of the samples, `mockups/connect/`): the address and the model's name, each with its copy button, the
+    /// API key in a word, and the example in curl, Python and JavaScript, a tab each. A click outside it, Escape, or
+    /// the plug again closes it.
     pub(super) fn show_connect_window(&mut self, ctx: &egui::Context) {
         let state = self.session.state();
         if !self.show_api_info {
@@ -92,99 +96,175 @@ impl App {
         let Some(panel) = self.connection_panel() else {
             return;
         };
-        let browser = self.browser_chat();
-        let mut open = true;
-        let mut open_chat = false;
         let title = if self.runs_alone() {
             format!("Connect an app to {}", self.engine_name())
         } else {
-            "Connect an app to this model".to_string()
+            "Connect an app".to_string()
         };
-        egui::Window::new(title)
-            .id(egui::Id::new("connect_an_app"))
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(true)
-            .default_width(560.0)
-            .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 70.0))
+        let openai = panel.base_url.ends_with("/v1");
+        let width = 520.0;
+        // under the plug button, its right edge with the button's; where the button is not drawn, at the top right
+        let anchor: Option<egui::Rect> = ctx.data(|d| d.get_temp(connect_anchor_id()));
+        let screen = ctx.content_rect();
+        let pos = match anchor {
+            Some(button) => egui::pos2(
+                (button.right() - width).clamp(screen.left() + 8.0, screen.right() - width - 8.0),
+                button.bottom() + 6.0,
+            ),
+            None => egui::pos2(screen.right() - width - 16.0, screen.top() + 90.0),
+        };
+        let area = egui::Area::new(egui::Id::new("connect_an_app"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(pos)
             .show(ctx, |ui| {
-                super::theme::compact(ui);
-                if let Some((label, hover, enabled)) = &browser {
-                    ui.horizontal(|ui| {
-                        ui.label("Chat in your browser:");
-                        open_chat = ui
-                            .add_enabled(*enabled, egui::Button::new(label.as_str()))
-                            .on_hover_text(hover.as_str())
-                            .clicked();
+                egui::Frame::popup(ui.style())
+                    .inner_margin(egui::Margin::symmetric(16, 12))
+                    .show(ui, |ui| {
+                        ui.set_width(width - 32.0);
+                        let p = theme::palette();
+                        ui.label(
+                            egui::RichText::new(title)
+                                .size(15.0)
+                                .family(theme::semibold(ui))
+                                .color(p.text),
+                        );
+                        ui.label(theme::muted(if openai {
+                            "Give these to any app that works with OpenAI's API."
+                        } else {
+                            "Give this address to an app that uses its API."
+                        }));
+                        ui.add_space(6.0);
+                        show_connection_details(ui, &panel);
                     });
-                    ui.separator();
-                }
-                ui.label(super::theme::muted(
-                    "Any app that works with OpenAI's API can use this model: give it the address and the name.",
-                ));
-                ui.add_space(4.0);
-                show_connection_details(ui, &panel);
             });
-        if open_chat {
-            self.open_browser_chat(state);
-        }
-        if !open {
-            self.show_api_info = false;
+        // a press outside it closes it; not one on the plug, which opens and closes it itself
+        let pressed_at = ctx.input(|i| {
+            i.pointer
+                .any_pressed()
+                .then(|| i.pointer.interact_pos())
+                .flatten()
+        });
+        if let Some(at) = pressed_at {
+            let on_plug = anchor.is_some_and(|r| r.contains(at));
+            if !area.response.rect.contains(at) && !on_plug {
+                self.show_api_info = false;
+            }
         }
     }
 }
 
-/// The address, the other addresses, the key, the model's name and the example, each with its Copy.
+/// Where the plug button was drawn, kept for the popover to hang from.
+pub(super) fn connect_anchor_id() -> egui::Id {
+    egui::Id::new("connect_an_app_anchor")
+}
+
+/// The rows (the address, the other addresses, the model's name, the key) and the example, a tab for each language.
 fn show_connection_details(ui: &mut egui::Ui, panel: &ApiPanel) {
-    ui.horizontal(|ui| {
-        ui.label("Base URL:");
-        ui.code(&panel.base_url);
-        if ui.small_button("Copy").clicked() {
-            ui.ctx().copy_text(panel.base_url.clone());
-        }
-    });
-    for (label, url) in &panel.extra_urls {
+    let p = theme::palette();
+    // the engine's note on a value (Ollama's: name exactly this model) is said when the pointer rests on its row
+    let row = |ui: &mut egui::Ui, key: &str, value: &str, copy: bool, note: Option<&str>| {
+        ui.separator();
         ui.horizontal(|ui| {
-            ui.label(format!("{label}:"));
-            ui.code(url);
-            if ui.small_button("Copy").clicked() {
-                ui.ctx().copy_text(url.clone());
+            let label = ui.add_sized(
+                egui::vec2(70.0, 22.0),
+                egui::Label::new(egui::RichText::new(key).color(p.muted)),
+            );
+            if let Some(note) = note {
+                label.on_hover_text(note);
+            }
+            let room = ui.available_width() - if copy { 36.0 } else { 0.0 };
+            ui.add_sized(
+                egui::vec2(room, 22.0),
+                egui::Label::new(egui::RichText::new(value).monospace().color(p.text)).truncate(),
+            );
+            if copy {
+                copy_button(ui, key, value);
             }
         });
-    }
-    if let Some(key) = &panel.api_key {
-        ui.horizontal(|ui| {
-            ui.label("API key:");
-            ui.code(&key.value);
-        });
-        note(ui, key.note.as_deref());
+    };
+    row(ui, "Address", &panel.base_url, true, None);
+    for (label, url) in &panel.extra_urls {
+        row(ui, label, url, true, None);
     }
     if let Some(model) = &panel.model {
-        ui.horizontal(|ui| {
-            ui.label("Model:");
-            ui.code(&model.value);
-        });
-        note(ui, model.note.as_deref());
+        row(ui, "Model", &model.value, true, model.note.as_deref());
     }
-    if let Some(example) = &panel.example {
-        ui.add_space(4.0);
+    if let Some(key) = &panel.api_key {
+        ui.separator();
         ui.horizontal(|ui| {
-            ui.label("curl example:");
-            if ui.small_button("Copy").clicked() {
-                ui.ctx().copy_text(example.curl.clone());
+            let label = ui.add_sized(
+                egui::vec2(70.0, 22.0),
+                egui::Label::new(egui::RichText::new("API key").color(p.muted)),
+            );
+            if let Some(note) = &key.note {
+                label.on_hover_text(note);
+            }
+            if key.value == "none" {
+                ui.label(theme::muted("Any, or leave it blank"));
+            } else {
+                ui.label(egui::RichText::new(&key.value).monospace().color(p.text));
+                copy_button(ui, "API key", &key.value);
             }
         });
-        ui.code(&example.curl);
     }
+    let Some(example) = &panel.example else {
+        return;
+    };
+    // the languages there are, curl first; the one chosen last is kept for the next time
+    let mut codes: Vec<(&str, &str)> = vec![("curl", example.curl.as_str())];
+    if let Some(python) = &example.python {
+        codes.push(("Python", python));
+    }
+    if let Some(javascript) = &example.javascript {
+        codes.push(("JavaScript", javascript));
+    }
+    let tab_id = egui::Id::new("connect_an_app_tab");
+    let mut tab: usize = ui
+        .data(|d| d.get_temp(tab_id))
+        .unwrap_or(0)
+        .min(codes.len() - 1);
+    ui.separator();
+    ui.horizontal(|ui| {
+        for (i, (name, _)) in codes.iter().enumerate() {
+            if ui.selectable_label(tab == i, *name).clicked() {
+                tab = i;
+            }
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            copy_button(ui, "example", codes[tab].1);
+        });
+    });
+    ui.data_mut(|d| d.insert_temp(tab_id, tab));
+    egui::Frame::new()
+        .fill(p.well)
+        .stroke(egui::Stroke::new(1.0, p.line))
+        .corner_radius(6.0)
+        .inner_margin(egui::Margin::symmetric(10, 8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.add(
+                egui::Label::new(egui::RichText::new(codes[tab].1).monospace().color(p.text))
+                    .wrap(),
+            );
+        });
 }
 
-/// The small grey sentence under a value.
-fn note(ui: &mut egui::Ui, text: Option<&str>) {
-    if let Some(text) = text {
-        ui.label(
-            egui::RichText::new(text)
-                .small()
-                .color(super::theme::palette().muted),
-        );
+/// A copy button: a picture of two sheets, a tick for a moment once it has copied `text`.
+fn copy_button(ui: &mut egui::Ui, key: &str, text: &str) {
+    let id = egui::Id::new(("connect_an_app_copied", key));
+    let now = ui.input(|i| i.time);
+    let copied_at: Option<f64> = ui.data(|d| d.get_temp(id));
+    let just = copied_at.is_some_and(|at| now - at < 1.5);
+    let icon = if just { Icon::Check } else { Icon::Copy };
+    let response = icons::framed_icon_button(ui, Role::Normal, true, icon, egui::vec2(28.0, 24.0))
+        .on_hover_text(if just { "Copied" } else { "Copy" });
+    if response.clicked() {
+        ui.ctx().copy_text(text.to_string());
+        ui.data_mut(|d| d.insert_temp(id, now));
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(1600));
+    } else if just {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(200));
     }
 }

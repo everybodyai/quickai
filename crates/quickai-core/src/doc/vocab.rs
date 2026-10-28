@@ -167,11 +167,15 @@ pub struct PartsSpec {
     pub text: String,
 }
 
-/// One curl example for the API panel.
+/// One example for the API panel: a curl command, and the same in Python and JavaScript when they are given.
 #[derive(Clone, Debug, Deserialize)]
 pub struct ApiExample {
     pub label: String,
     /// Shown only while this holds (`has(model.modalities.input, 'image')`).
     pub when: Option<String>,
     pub curl: String,
+    #[serde(default)]
+    pub python: Option<String>,
+    #[serde(default)]
+    pub javascript: Option<String>,
 }

@@ -30,6 +30,7 @@ pub(super) enum Icon {
     Globe,
     Stop,
     Play,
+    Copy,
 }
 
 /// Draws `icon` in `rect` (it is drawn in the largest square that fits, in the middle) in `color`.
@@ -220,6 +221,23 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
                 })
                 .collect();
             line(&points);
+        }
+        Icon::Copy => {
+            // two sheets, the front one whole
+            line(&[
+                (8.5, 8.5),
+                (19.5, 8.5),
+                (19.5, 19.5),
+                (8.5, 19.5),
+                (8.5, 8.5),
+            ]);
+            line(&[
+                (15.5, 8.5),
+                (15.5, 4.5),
+                (4.5, 4.5),
+                (4.5, 15.5),
+                (8.5, 15.5),
+            ]);
         }
         Icon::Play => {
             painter.add(Shape::convex_polygon(

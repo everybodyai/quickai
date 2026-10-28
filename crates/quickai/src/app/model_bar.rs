@@ -125,6 +125,7 @@ impl App {
                         "Connect an app: the address to give another app (an editor, a script, a chat app), \
                          with an example.",
                     );
+                    ui.data_mut(|d| d.insert_temp(super::api_info::connect_anchor_id(), plug.rect));
                     pressed.connect = plug.clicked();
                     if let Some((label, hover, enabled)) = self.browser_chat() {
                         pressed.browser =
@@ -236,6 +237,7 @@ impl App {
                             .on_hover_text(format!(
                                 "Connect an app: how to connect an app to the running {server}."
                             ));
+                    ui.data_mut(|d| d.insert_temp(super::api_info::connect_anchor_id(), plug.rect));
                     connect = plug.clicked();
                     if let Some(web_ui) = &web_ui {
                         open_page = theme::button_sized(

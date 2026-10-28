@@ -985,12 +985,14 @@ pub const VOCAB_GROUPS: &[Group] = &[
     },
     Group {
         heading: "`[[api.examples]]`",
-        intro: "One curl example for the API panel.",
+        intro: "One example for the API panel: a curl command, and the same request in Python and JavaScript when they are given (the panel has a tab for each).",
         source: Some("ApiExample"),
         attributes: &[
             a("label", "text", "What the example shows (`Chat with an image`). Required."),
             a("when", "condition", "Show it only while this holds (`has(model.modalities.input, 'image')`)."),
             a("curl", "text", "The command, as text. Required."),
+            a("python", "text", "The same request in Python, as text."),
+            a("javascript", "text", "The same request in JavaScript, as text."),
         ],
     },
 ];
