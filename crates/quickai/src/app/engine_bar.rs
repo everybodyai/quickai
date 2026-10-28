@@ -539,6 +539,10 @@ mod tests {
     fn the_engine_is_a_menu_at_the_right_of_the_menu_bar_and_a_choice_in_it_changes_the_engine() {
         let dir = scratch("eb-switch");
         let mut app = app_in(&dir, "llamacpp");
+        // llama.cpp's program is there (a file is all the window looks for): the engine in use is ready, and its row
+        // says that it is in use (of one that is not installed it says "In use · Not installed", WP4.31)
+        app.binary = dir.join("llama-server");
+        std::fs::write(&app.binary, "").unwrap();
         let ctx = egui::Context::default();
         let found = settled(&mut app, &ctx, 980.0);
         let at = |text: &str| {
@@ -860,6 +864,55 @@ mod tests {
         app.selected = 0;
     }
 
+    /// The buttons of the head of the page, from left to right: the pictures in frames of 30 points beside the model's
+    /// name, under the menu bar, as a frame of the whole window draws them.
+    fn buttons_of_the_head(app: &mut App, ctx: &egui::Context, width: f32) -> Vec<egui::Rect> {
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(width, 680.0),
+            )),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(raw, |ui| app.show_window(ui));
+        output.textures_delta.clear();
+        fn walk(shape: &egui::epaint::Shape, into: &mut Vec<egui::Rect>) {
+            match shape {
+                egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, into)),
+                egui::epaint::Shape::Rect(r)
+                    if (r.rect.width() - 30.0).abs() < 2.5
+                        && (r.rect.height() - 30.0).abs() < 2.5
+                        && r.rect.center().y > 30.0
+                        && r.rect.center().y < 120.0 =>
+                {
+                    into.push(r.rect)
+                }
+                _ => {}
+            }
+        }
+        let mut into = Vec::new();
+        for clipped in &output.shapes {
+            walk(&clipped.shape, &mut into);
+        }
+        into.sort_by(|a, b| a.left().total_cmp(&b.left()));
+        into
+    }
+
+    /// The window once the pointer has rested at a place for long enough for what is there to say what it does.
+    fn rest_on(
+        app: &mut App,
+        ctx: &egui::Context,
+        width: f32,
+        at: egui::Pos2,
+    ) -> Vec<(String, egui::Rect)> {
+        painted(app, ctx, width, vec![egui::Event::PointerMoved(at)]);
+        // a frame is a 60th of a second, and what the pointer rests on says what it does after half a second
+        for _ in 0..60 {
+            painted(app, ctx, width, Vec::new());
+        }
+        painted(app, ctx, width, Vec::new())
+    }
+
     fn index_of(app: &App, file: &str) -> usize {
         app.models
             .iter()
@@ -1045,15 +1098,29 @@ mod tests {
             "the model that runs is not deleted"
         );
 
-        // beta is chosen: the button starts the server again with it
+        // beta is chosen: the button starts the server again with it. It is the picture beside the name, the first of
+        // the head's buttons (play, then the globe, the plug and Stop while it runs), and says so when the pointer rests
+        // on it
         app.selected = beta;
         assert!(app.can_switch_selected());
         let found = settled(&mut app, &ctx, 980.0);
+        let name = found
+            .iter()
+            .find(|(t, r)| t == "beta-Q4_K_M.gguf" && r.center().y < 120.0 && r.left() > 170.0)
+            .map(|(_, r)| *r)
+            .unwrap_or_else(|| panic!("the name in the head of the page: {found:?}"));
+        let buttons = buttons_of_the_head(&mut app, &ctx, 980.0);
+        let play = *buttons
+            .first()
+            .unwrap_or_else(|| panic!("the head has no buttons: {found:?}"));
         assert!(
-            found
-                .iter()
-                .any(|(t, r)| t == "Use this model" && r.center().y < 120.0),
-            "the button beside the name: {found:?}"
+            name.right() < play.left() && (name.center().y - play.center().y).abs() < 12.0,
+            "the button beside the name: {name:?} {buttons:?}"
+        );
+        let hover = rest_on(&mut app, &ctx, 980.0, play.center());
+        assert!(
+            hover.iter().any(|(t, _)| t.starts_with("Use this model")),
+            "the button beside the name: {hover:?}"
         );
         app.switch_to_selected();
         let mut log = Vec::new();

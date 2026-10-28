@@ -141,7 +141,7 @@ fn p3_o60_the_release_a_document_was_tested_with_is_the_one_when_nothing_is_name
     );
 }
 
-/// O61: with no tested release the newest release that has a usable build is taken, and among its builds
+/// O61: with the tested release not among those offered, the newest release that has a usable build is taken, and among its builds
 /// the card decides: a build for a card this computer lacks is never taken, the document's order of
 /// backends ranks the rest, and a computer whose cards could not be told gets the build that names no
 /// backend before the ones that name one.
@@ -149,7 +149,8 @@ fn p3_o60_the_release_a_document_was_tested_with_is_the_one_when_nothing_is_name
 fn p3_o61_the_newest_release_and_a_backend_the_card_can_run() {
     let r = common::shipped_registry(&[]);
     let llama = r.engine("llamacpp").expect("llama.cpp");
-    assert!(quickai_core::acquire::tested_tag(llama).is_none());
+    // the document's tested release (WP4.31) is not one of these
+    assert_eq!(quickai_core::acquire::tested_tag(llama), Some("b11889"));
     let rows = [
         ("b12", "llama-b12-bin-ubuntu-x64.tar.gz", false, false), // names no backend
         (

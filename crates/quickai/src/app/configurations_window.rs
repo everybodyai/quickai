@@ -2153,11 +2153,13 @@ mod tests {
             last(&display).is_none(),
             "the last row is below the fold: nothing is painted there"
         );
+        // the wheel turned over the list: halfway down the window (the least window is 240 high, and its foot is the
+        // footer with Close)
         for _ in 0..40 {
             display.give(
                 configurations_viewport(),
                 vec![
-                    egui::Event::PointerMoved(egui::pos2(100.0, 200.0)),
+                    egui::Event::PointerMoved(egui::pos2(100.0, narrow.y / 2.0)),
                     egui::Event::MouseWheel {
                         unit: egui::MouseWheelUnit::Line,
                         delta: egui::vec2(0.0, -20.0),

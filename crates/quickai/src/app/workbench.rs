@@ -684,8 +684,17 @@ mod tests {
         assert!(shown.contains("... and 2 more"), "{shown}");
 
         // llama.cpp's window is the list of models on the left, under Add a model, and with none yet, the box of Add a
-        // model on the page
+        // model on the page (its program is there, a file being all the window looks for: the page of an engine that is not
+        // installed is the one that installs it, WP4.31)
         let mut llama = app_for(&dir, "llamacpp");
+        llama.binary = dir.join("llama-server");
+        std::fs::write(&llama.binary, "").unwrap();
+        // and none yet is none: its folders are the test's, not the models folder of the home and the one of the models
+        // that came with the application
+        llama.models_dir = dir.join("models");
+        llama.bundled_models_dir = dir.join("bundled");
+        llama.rescan_models();
+        assert!(llama.models.is_empty(), "{:?}", llama.models_dir);
         let raw = || egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
