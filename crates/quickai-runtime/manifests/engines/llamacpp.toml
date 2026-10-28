@@ -67,6 +67,9 @@ on_timeout = "wait"
 root = "${data}/llama-bin"
 # Every CI build is a GitHub prerelease: there is no separate stable release with binaries attached.
 feed = { use = "github_release", repo = "ggml-org/llama.cpp", per_page = 10, show = 5, prereleases = true }
+# offered first, and what "Install llama.cpp" takes: the release the packages ship (build/config.env of quickai_base),
+# the first that runs Bonsai 2's ternary weights (Q2_0 with the Hadamard runtime, llama.cpp #29600)
+tested = { tag = "b11889" }
 # A `cudart-*` file is the CUDA runtime alone, with no llama-server inside it.
 assets = { by = "keywords", ext = [".zip", ".tar.gz"], exclude = ["cudart"], os = { windows = ["win"], macos = ["macos", "osx"], linux = ["ubuntu", "linux"] }, arch = { x86_64 = ["x64", "x86_64", "amd64"], aarch64 = ["arm64", "aarch64"] }, label = "${tag}-${stem}" }
 install = { use = "archive", binary = { name = "llama-server", search_depth = 4 }, chmod = true }
@@ -125,6 +128,15 @@ id = "rerank"
 label = "reranker"
 help = "llama-server answers /v1/rerank only when it is started with --reranking."
 arg = ["--reranking"]
+
+# A chat model that thinks before every answer unless told not to (Bonsai 2, made from Qwen3.5): a short question is
+# otherwise thousands of tokens of thought before the first word of the answer, minutes on a laptop's processor. It is
+# started with thinking off and the sampling its makers give for that.
+[[models.mode]]
+id = "direct"
+label = "assistant that answers without thinking first"
+help = "llama-server is started with --reasoning off and the sampling the model's makers recommend without thinking (temperature 0.7, top-p 0.8, top-k 20, presence penalty 1.5)."
+arg = ["--reasoning", "off", "--temp", "0.7", "--top-p", "0.8", "--top-k", "20", "--min-p", "0", "--presence-penalty", "1.5"]
 
 # ---- what the API panel says ---------------------------------------------------------------------------
 # The texts are the ones the window always had, word for word (the curl example is the vocabulary's).

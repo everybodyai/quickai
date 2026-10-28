@@ -6,9 +6,10 @@ their own license terms, reproduced in full below:
 
 - **llama-server**, built from [llama.cpp](https://github.com/ggml-org/llama.cpp)
   — MIT License.
-- **Bonsai-8B** and **Bonsai-1.7B** model weights, from
-  [PrismML](https://huggingface.co/prism-ml) — Apache License 2.0. Bundled
-  unmodified; no changes have been made to the weight files.
+- **Bonsai 2 4B** model weights (`Ternary-Bonsai-2-4B-Q2_0.gguf`), from
+  [Prism ML](https://huggingface.co/prism-ml), built from Qwen3.5-4B by Alibaba
+  Cloud — Apache License 2.0. Bundled unmodified; no changes have been made to
+  the weight file. Created using Bonsai by Prism ML.
 - **IBM Plex Sans** and **IBM Plex Mono**, the window's typefaces, from
   [IBM](https://github.com/IBM/plex) — SIL Open Font License 1.1. Embedded in the
   application unmodified (`assets/fonts/`).
@@ -250,9 +251,15 @@ SOFTWARE.
    END OF TERMS AND CONDITIONS
 ```
 
-Bonsai models are published by PrismML at
-<https://huggingface.co/prism-ml/Bonsai-8B-gguf> and
-<https://huggingface.co/prism-ml/Bonsai-1.7B-gguf>.
+Bonsai 2 4B is published by Prism ML at
+<https://huggingface.co/prism-ml/Ternary-Bonsai-2-4B-gguf>, whose NOTICE reads:
+
+```
+This software is copyright 2026-present Prism ML, Inc. It is available under the Apache 2.0 license.
+
+This software is built from Qwen3.5-4B, Copyright 2026 Alibaba Cloud, which is available under the Apache
+2.0 License: https://huggingface.co/Qwen/Qwen3.5-4B/blob/main/LICENSE
+```
 
 ---
 

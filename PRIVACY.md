@@ -267,8 +267,8 @@ not kept.
 ## Bundled software
 
 Ollama is not bundled: it is downloaded on request, and its archive carries its own licence files (see
-`THIRD_PARTY_LICENSES.md`). The app ships with `llama-server` (from [llama.cpp](https://github.com/ggml-org/llama.cpp), MIT) and two models,
-Bonsai 8B and Bonsai 1.7B (from PrismML, Apache-2.0), unmodified. They run entirely on your computer; QuickAI
+`THIRD_PARTY_LICENSES.md`). The app ships with `llama-server` (from [llama.cpp](https://github.com/ggml-org/llama.cpp), MIT) and one model,
+Bonsai 2 4B (from Prism ML, built from Alibaba Cloud's Qwen3.5-4B, Apache-2.0), unmodified. They run entirely on your computer; QuickAI
 starts `llama-server` without any option that makes it download anything. If you add your own extra command-line
 arguments in Settings, what they do is up to `llama-server`. The licenses are in `LICENSE` and
 `THIRD_PARTY_LICENSES.md`.

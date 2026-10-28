@@ -1471,16 +1471,21 @@ fn p3_j08_the_list_the_application_ships_is_valid_complete_and_pinned() {
         }
     }
 
-    // the models that ship with the packages are the ones the packaging pins, byte for byte
-    let config = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../build/config.env");
-    if let Ok(text) = std::fs::read_to_string(config) {
+    // the model that ships with the packages is the one the packaging pins, byte for byte (when the packaging's
+    // checkout is beside this one, or this one is inside it)
+    let above = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let config = ["quickai_base/build/config.env", "build/config.env"]
+        .iter()
+        .find_map(|c| std::fs::read_to_string(above.join(c)).ok());
+    if let Some(text) = config {
         let pin = |key: &str| {
             text.lines()
                 .find_map(|l| l.strip_prefix(&format!("{key}=")))
                 .map(str::to_string)
                 .unwrap_or_else(|| panic!("{key} is not in build/config.env"))
         };
-        for (id, prefix) in [("bonsai-8b", "BONSAI_8B"), ("bonsai-1.7b", "BONSAI_1_7B")] {
+        {
+            let (id, prefix) = ("bonsai-2-4b", "BONSAI2_4B");
             let m = r.catalog().model(id).unwrap();
             assert!(m.bundled, "{id}");
             let Run::Files(run) = &m.runs["llamacpp"] else {
@@ -1499,7 +1504,7 @@ fn p3_j08_the_list_the_application_ships_is_valid_complete_and_pinned() {
         }
     }
     // and nothing else claims to ship with them
-    assert_eq!(models.iter().filter(|m| m.bundled).count(), 2);
+    assert_eq!(models.iter().filter(|m| m.bundled).count(), 1);
 }
 
 // ---------------------------------------------------------------------------------------------- J09

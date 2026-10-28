@@ -124,8 +124,8 @@ impl App {
                         );
                         ui.label(
                             "• llama-server, from llama.cpp — MIT License, © the ggml authors.\n\
-                         • Bonsai 8B and Bonsai 1.7B model weights, from PrismML — Apache \
-                         License 2.0.",
+                         • Bonsai 2 4B model weights, created using Bonsai by Prism ML from \
+                         Qwen3.5-4B (© Alibaba Cloud) — Apache License 2.0.",
                         );
                         if let Some((_, license)) = &downloaded {
                             ui.add_space(4.0);
