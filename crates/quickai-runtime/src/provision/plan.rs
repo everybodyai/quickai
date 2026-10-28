@@ -104,6 +104,52 @@ pub(super) struct Plan {
     pub notes: Vec<String>,
 }
 
+/// That the file `file` of the recommended list's model `id` is more than `ram` holds (`heuristics::fit`), with
+/// the biggest of its other files that is not; `None` when it fits, when its size is not known, or when no other
+/// file of it fits either.
+fn too_big(
+    entries: &[quickai_core::lookup::present::Entry],
+    id: &str,
+    file: &str,
+    ram: u64,
+) -> Option<Failure> {
+    use quickai_core::heuristics::{fit, Fit};
+    let key = format!("catalog:{id}");
+    let files: Vec<(String, u64)> = entries
+        .iter()
+        .filter(|e| e.key == key)
+        .flat_map(|e| e.offers.iter())
+        .filter(|o| o.bundle.is_none() && !o.estimated)
+        .filter_map(|o| match &o.fetch {
+            Fetch::Files(download) => Some((download.weights()?.store_as.clone(), o.bytes?)),
+            Fetch::Reference(_) => None,
+        })
+        .collect();
+    let bytes = files.iter().find(|(f, _)| f == file)?.1;
+    if fit(bytes, ram) != Fit::TooBig {
+        return None;
+    }
+    let (smaller, smaller_bytes) = files
+        .iter()
+        .filter(|(_, b)| fit(*b, ram) != Fit::TooBig)
+        .max_by_key(|(_, b)| *b)?
+        .clone();
+    Some(
+        needs(format!(
+            "{file} ({}) is more than this computer's {} of memory holds",
+            human_bytes(bytes),
+            human_bytes(ram)
+        ))
+        .with_lack(Lack::Memory {
+            file: file.to_string(),
+            bytes,
+            memory: ram,
+            smaller,
+            smaller_bytes,
+        }),
+    )
+}
+
 fn needs(message: impl Into<String>) -> Failure {
     Failure::new(FailureKind::Needs, message)
 }
@@ -613,6 +659,14 @@ fn wanted_downloads(
                 id,
                 file: Some(file),
             } => {
+                // another file of the same model, when the person chose one
+                let file = ctx.options.model_file.as_ref().unwrap_or(file);
+                // a check says a file that does not fit this computer's memory, when a smaller one of it does
+                if ctx.options.dry_run && ctx.options.model_file.is_none() {
+                    if let Some(failure) = too_big(entries, id, file, ctx.facts.ram_bytes) {
+                        return Err(failure);
+                    }
+                }
                 let fetch =
                     quickai_core::models::catalog_fetch(entries, id, file).ok_or_else(|| {
                         needs(format!(

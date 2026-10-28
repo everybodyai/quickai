@@ -216,8 +216,9 @@ Examples of what is offered:
 - a model that does not fit in its memory: a smaller quantization of the same model;
 - not enough free space: another folder there, or fewer models.
 
-Each is accepted or rejected in the window. What was accepted is kept with that computer (`RemoteSpec::accepted`, as
-words of `quickai-run up`), so the next run does not ask again.
+Each is accepted or rejected in the window. What was accepted is kept with that computer and that configuration
+(`RemoteSpec::accepted`, by the configuration's name, as words of `quickai-run up`), so the next run of it does not ask
+again; by configuration, as some words are of its model alone, which another configuration's run would not take.
 
 What is built (WP4.33.6, `remote::alternatives`): the configuration is copied there and `quickai-run check` run on it;
 what stops it is read from its JSON, where a failure that has another way says what it lacks (`provision::Lack`:
@@ -229,11 +230,15 @@ what stops it is read from its JSON, where a failure that has another way says w
 | a model file nobody says where to get, that this computer has | copy it from here | `scp`, then `--model-source FILE=PATH` |
 | room for the models | a folder on another disk there that has room | `--models-dir` |
 | a build of the engine's program that could be told for its cards | the build for the processor | `--gpu none` |
+| memory for the file of the recommended list's model it names | the biggest file of the same model that fits | `--model-file` |
 
 The configuration is the person's own, made by their window, so what it asks is taken (`--accept-review`). After the
 ways accepted are done it is checked again, as one may bring out the next (a copied model that needs room). Anything
-else that stops it is said as it is. Not built yet: a smaller file of the same model when it does not fit the card's
-memory (it needs the recommended list's other files for that model).
+else that stops it is said as it is. A rejected way ends the start with what then, except the smaller file: rejected,
+the configuration's own file is run as it is (it may not start, or be slow), named with `--model-file` so that it is
+not looked at again. The fit is `heuristics::fit` against the computer's memory, as the window's list judges it
+(graphics memory is not known); `check` says it only when a smaller file of the same model fits, and `up` does not
+look at it.
 
 ## 7. Decided, and what is left
 
