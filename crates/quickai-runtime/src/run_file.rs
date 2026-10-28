@@ -43,6 +43,25 @@ pub struct RunFile {
     pub model: Option<String>,
 }
 
+impl RunFile {
+    /// The configuration as a person names it: the file's name without its folder and `.toml` when it was given as
+    /// a file (a run the window started is given the file it copied there), else the id as it was given.
+    pub fn name(&self) -> String {
+        configuration_name(&self.configuration)
+    }
+}
+
+/// `/home/me/.quickai/remote/vision-chat.toml` is `vision-chat`; an id is itself.
+pub fn configuration_name(given: &str) -> String {
+    let path = Path::new(given);
+    if path.extension().is_some_and(|e| e == "toml") {
+        if let Some(stem) = path.file_stem() {
+            return stem.to_string_lossy().into_owned();
+        }
+    }
+    given.to_string()
+}
+
 /// How the last run ended, as `last.json` says it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Ended {
