@@ -54,10 +54,10 @@ prompts never leave your computer.
 
 ## Install
 
-> **QuickAI 0.1.0 is being prepared.** Linux (tar.gz and AppImage), Windows (zip) and macOS (one disk image for
-> Apple silicon and Intel Macs) builds will be on the [Releases](https://github.com/everybodyai/quickai/releases)
-> page, with packages for the AUR, Homebrew, Snap, Scoop, Chocolatey and the Microsoft Store to follow. To hear when it's out, sign up at
-> [everybodyai.dev](https://everybodyai.dev/quickai). Until then, [build it from source](#build-from-source).
+> Linux (tar.gz and AppImage), Windows (zip) and macOS (one disk image for Apple silicon and Intel Macs) builds are on
+> the [Releases](https://github.com/everybodyai/quickai/releases) page, with packages for the AUR, Homebrew, Snap,
+> Scoop, Chocolatey and the Microsoft Store to follow. To hear when they are out, sign up at
+> [everybodyai.dev](https://everybodyai.dev/quickai). You can also [build it from source](#build-from-source).
 
 Each package bundles QuickAI, llama.cpp's `llama-server` and the Bonsai 2 4B model, and runs as it is: nothing
 to install first. The Linux packages run on glibc 2.34 and newer (Ubuntu 22.04 and later); the Windows package
