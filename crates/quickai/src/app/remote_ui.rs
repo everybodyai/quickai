@@ -65,6 +65,7 @@ pub struct RemoteState {
     checking: Option<(String, Receiver<Checked>)>,
     checked: BTreeMap<String, Checked>,
     /// The runs on computers QuickAI set up, by the computer's id (WP4.33, `remote_run`).
+    #[cfg(feature = "remote-setup")]
     pub setup: BTreeMap<String, super::remote_run::SetupRun>,
     /// The runs that go on there are to be looked for: when the window starts, and when a computer is chosen.
     pub find_wanted: bool,
@@ -103,6 +104,7 @@ impl Default for RemoteState {
             keys: Vec::new(),
             checking: None,
             checked: BTreeMap::new(),
+            #[cfg(feature = "remote-setup")]
             setup: BTreeMap::new(),
             find_wanted: true,
         }
@@ -139,8 +141,12 @@ impl RemoteForm {
             ssh_port: "22".into(),
             engine_port: own.to_string(),
             // QuickAI sets a new computer up, and runs the selected configuration there (WP4.33): the port here is
-            // the same as its run's there
-            way: Way::SetUp,
+            // the same as its run's there; a window built without that attaches
+            way: if cfg!(feature = "remote-setup") {
+                Way::SetUp
+            } else {
+                Way::Attach
+            },
             ..RemoteForm::default()
         }
     }
@@ -251,9 +257,11 @@ impl App {
         self.runner_spec().filter(|r| r.way == Way::Attach)
     }
 
-    /// The computer QuickAI sets up and runs the selected configuration on, when that is where it runs (WP4.33).
+    /// The computer QuickAI sets up and runs the selected configuration on, when that is where it runs (WP4.33); never,
+    /// in a window built without them.
     pub(super) fn setup_in_use(&self) -> Option<&RemoteSpec> {
-        self.runner_spec().filter(|r| r.way == Way::SetUp)
+        self.runner_spec()
+            .filter(|r| r.way == Way::SetUp && cfg!(feature = "remote-setup"))
     }
 
     /// The name of the computer chosen in the status bar, when it is not this one.
@@ -274,7 +282,7 @@ impl App {
     /// Whether `spec` can be used with the engine in use: any engine on a computer QuickAI sets up, and on one where
     /// the window attaches, an engine that can attach (Ollama, ComfyUI).
     fn usable_with_engine(&self, spec: &RemoteSpec) -> bool {
-        spec.way == Way::SetUp || self.can_run_remote()
+        (spec.way == Way::SetUp && cfg!(feature = "remote-setup")) || self.can_run_remote()
     }
 
     /// The engine's port on `spec`: the one the person gave, else the engine's own.
@@ -457,6 +465,7 @@ impl App {
 
     /// Tests `spec`: the tunnel, and the engine in use answering through it, on a thread.
     fn check_remote(&mut self, spec: RemoteSpec, ctx: &egui::Context) {
+        #[cfg(feature = "remote-setup")]
         if spec.way == Way::SetUp {
             // reached, and QuickAI can run there: the engine is the configuration's, and is not asked for
             let ssh = self.remote.ssh.clone();
@@ -1024,7 +1033,9 @@ impl App {
         ));
         ui.add_space(10.0);
         let was = form.way;
-        way_choice(ui, &mut form.way);
+        if cfg!(feature = "remote-setup") {
+            way_choice(ui, &mut form.way);
+        }
         if form.way != was && !form.here_typed {
             // the port here follows what is there: the engine's port, or for a run QuickAI sets up, its own
             form.local_port = match form.way {

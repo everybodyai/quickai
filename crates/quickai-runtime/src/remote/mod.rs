@@ -17,10 +17,15 @@
 //! what it runs, copied there), `run` (the run started, asked after and stopped there, and its ports brought here)
 //! and `job` (those steps on a thread of their own, for the window).
 
+#[cfg(feature = "remote-setup")]
 pub mod alternatives;
+#[cfg(feature = "remote-setup")]
 pub mod deploy;
+#[cfg(feature = "remote-setup")]
 pub mod job;
+#[cfg(feature = "remote-setup")]
 pub mod probe;
+#[cfg(feature = "remote-setup")]
 pub mod run;
 pub mod ssh;
 

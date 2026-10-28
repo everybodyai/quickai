@@ -9,9 +9,14 @@ description = "QuickAI without a window: it finds, installs, fetches, starts, wa
 path = "src/lib.rs"
 
 [features]
+default = ["remote-setup"]
 # The fakes of the four things QuickAI talks to and the golden files, for the tests of the crates that use this one
 # (they are always there for this crate's own tests). Nothing that ships turns it on.
 testkit = []
+# Runs QuickAI sets up on another computer (WP4.33, docs/remote-runs.md section 5): what a computer is, the headless
+# program and the configuration copied there, the run started, followed and stopped, and the other ways for what it
+# lacks (`remote::{probe, deploy, run, job, alternatives}`). Without it, a computer is only one the window attaches to.
+remote-setup = []
 
 [dependencies]
 quickai-core = { path = "../quickai-core" }
