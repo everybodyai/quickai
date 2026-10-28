@@ -332,7 +332,6 @@ fn shape(style: &mut egui::Style) {
 
 // ---- frames -------------------------------------------------------------------------------------
 
-/// The frame of the page: the face of the window, and room round its group boxes.
 /// Makes the window of its own that is being drawn as tall as what it holds: `wanted` is its content with its margins
 /// and footer, kept between `least` and most of the screen (past that it scrolls). No empty room is left at its foot.
 /// The width stays the person's; a height they set by hand stays too, until what the window holds changes (the height
@@ -359,11 +358,32 @@ pub(super) fn fit_window_height(ctx: &egui::Context, wanted: f32, least: f32) {
     }
 }
 
-/// The vertical room a page frame's margins take.
-pub(super) fn page_frame_margin() -> f32 {
-    page_frame().total_margin().sum().y
+/// The page of a window of its own, in `frame`, under a footer `footer` tall: scrolled when it must be, and the window as
+/// tall as what `add` draws in it, the least `least` (`fit_window_height`).
+pub(super) fn fitted_page(
+    ui: &mut egui::Ui,
+    salt: &str,
+    frame: egui::Frame,
+    footer: f32,
+    least: f32,
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    let margin = frame.total_margin().sum().y;
+    let content = egui::CentralPanel::default()
+        .frame(frame)
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt(salt)
+                .auto_shrink([false, false])
+                .show(ui, add)
+                .content_size
+                .y
+        })
+        .inner;
+    fit_window_height(ui.ctx(), content + margin + footer, least);
 }
 
+/// The frame of the page: the face of the window, and room round its group boxes.
 pub(super) fn page_frame() -> egui::Frame {
     egui::Frame::new()
         .fill(palette().page)
@@ -415,6 +435,16 @@ pub(super) fn card_frame() -> egui::Frame {
         .stroke(Stroke::new(1.0, p.line))
         .corner_radius(CornerRadius::same(4))
         .inner_margin(Margin::symmetric(12, 8))
+}
+
+/// The frame of what is to be copied as it is (an address, a command, code): sunk into the page, in a thin outline.
+pub(super) fn well_frame(margin: Margin) -> egui::Frame {
+    let p = palette();
+    egui::Frame::new()
+        .fill(p.well)
+        .stroke(Stroke::new(1.0, p.line))
+        .corner_radius(CornerRadius::same(6))
+        .inner_margin(margin)
 }
 
 /// What an alert is about.
@@ -588,6 +618,12 @@ pub(super) fn button_sized(
         ui.add_enabled(enabled, egui::Button::new(text).min_size(least))
     })
     .inner
+}
+
+/// A dot `radius` round in the middle of a square `side` wide, in `color`: a state at a glance.
+pub(super) fn dot(ui: &mut egui::Ui, side: f32, radius: f32, color: Color32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+    ui.painter().circle_filled(rect.center(), radius, color);
 }
 
 /// The state of the server as the status bar says it: a dot in the colour of the state (one that pulses while the

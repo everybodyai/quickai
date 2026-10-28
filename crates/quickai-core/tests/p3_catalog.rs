@@ -1484,24 +1484,20 @@ fn p3_j08_the_list_the_application_ships_is_valid_complete_and_pinned() {
                 .map(str::to_string)
                 .unwrap_or_else(|| panic!("{key} is not in build/config.env"))
         };
-        {
-            let (id, prefix) = ("bonsai-2-4b", "BONSAI2_4B");
-            let m = r.catalog().model(id).unwrap();
-            assert!(m.bundled, "{id}");
-            let Run::Files(run) = &m.runs["llamacpp"] else {
-                panic!()
-            };
-            assert_eq!(run.files[0].path, pin(&format!("{prefix}_FILE")), "{id}");
-            assert_eq!(
-                run.files[0].sha256.as_deref(),
-                Some(pin(&format!("{prefix}_SHA256")).as_str()),
-                "{id}"
-            );
-            assert!(
-                pin(&format!("{prefix}_URL")).contains(&run.rev),
-                "{id}: the commit of config.env"
-            );
-        }
+        let m = r.catalog().model("bonsai-2-4b").unwrap();
+        assert!(m.bundled);
+        let Run::Files(run) = &m.runs["llamacpp"] else {
+            panic!()
+        };
+        assert_eq!(run.files[0].path, pin("BONSAI2_4B_FILE"));
+        assert_eq!(
+            run.files[0].sha256.as_deref(),
+            Some(pin("BONSAI2_4B_SHA256").as_str())
+        );
+        assert!(
+            pin("BONSAI2_4B_URL").contains(&run.rev),
+            "the commit of config.env"
+        );
     }
     // and nothing else claims to ship with them
     assert_eq!(models.iter().filter(|m| m.bundled).count(), 1);

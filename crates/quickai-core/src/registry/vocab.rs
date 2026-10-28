@@ -747,15 +747,15 @@ fn compile_sizes(
     classes
 }
 
-/// The curl examples of an API: the template must only name `api.base_url` and `api.model`, and the
-/// condition only what an engine's context has.
+/// The examples of an API, in curl, Python and JavaScript: each template must only name `api.base_url` and
+/// `api.model`, and the condition only what an engine's context has.
 fn compile_examples(
     merged: &MergedDoc,
     problems: &mut Vec<Diagnostic>,
     at: &DocPath,
     api: &ApiDef,
 ) -> Vec<CompiledExample> {
-    let curl_schema = Type::object([(
+    let code_schema = Type::object([(
         "api",
         Type::object([("base_url", Type::Str), ("model", Type::Str)]),
     )]);
@@ -772,7 +772,7 @@ fn compile_examples(
         // each language's text is a template over the same two values
         let mut code = |key: &str, text: &str| match Template::parse(text) {
             Ok(t) => {
-                let found = t.check(&curl_schema);
+                let found = t.check(&code_schema);
                 for e in &found {
                     error(at.clone().key(key), e.message.clone());
                 }
@@ -790,9 +790,6 @@ fn compile_examples(
             .javascript
             .as_deref()
             .and_then(|t| code("javascript", t));
-        let mut error = |path: DocPath, message: String| {
-            problems.push(merged.diagnostic(Severity::Error, &path, message));
-        };
         let when = match example.when.as_deref() {
             None => Some(None),
             Some(text) => match crate::expr::parse(text) {

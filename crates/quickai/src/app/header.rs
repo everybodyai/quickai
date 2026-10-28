@@ -158,7 +158,7 @@ mod tests {
             app.show_window(ui);
             // the windows of the main window (UI v2): Add a model, Connect an app, the guides
             app.show_add_model_window(ui.ctx());
-            app.show_connect_window(ui.ctx());
+            app.show_connect_popover(ui.ctx());
             app.show_guide_window(ui.ctx());
         });
         output.textures_delta.clear();
@@ -241,15 +241,22 @@ mod tests {
         into
     }
 
-    /// The green button (in either theme) on the row of `name`, at its right: Start, which is a picture.
-    fn green_beside(output: &egui::FullOutput, name: egui::Rect) -> Option<egui::Rect> {
+    /// What is filled with the accent, of the theme drawn (a context starts in dark): the green buttons.
+    fn greens(output: &egui::FullOutput) -> Vec<egui::Rect> {
         [
             theme::palette_of(true).accent,
             theme::palette_of(false).accent,
         ]
         .iter()
         .flat_map(|c| filled_with(output, *c))
-        .find(|r| (r.center().y - name.center().y).abs() < 12.0 && r.left() > name.right())
+        .collect()
+    }
+
+    /// The green button on the row of `name`, at its right: Start, which is a picture.
+    fn green_beside(output: &egui::FullOutput, name: egui::Rect) -> Option<egui::Rect> {
+        greens(output)
+            .into_iter()
+            .find(|r| (r.center().y - name.center().y).abs() < 12.0 && r.left() > name.right())
     }
 
     #[test]
@@ -350,26 +357,16 @@ mod tests {
         only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
         let output = settled(&mut app, &ctx, true);
         let found = rects(&output);
-        let green = filled_with(&output, theme::palette_of(true).accent);
-        // dark is what a context starts in; the colour of the button is the accent of the theme drawn now
-        let green: Vec<egui::Rect> = if green.is_empty() {
-            filled_with(&output, theme::palette_of(false).accent)
-        } else {
-            green
-        };
         // the one green button is Start: a play button, named when the pointer rests on it
+        let green = greens(&output);
         assert_eq!(green.len(), 1, "{green:?}");
         let start = &green[0];
-        // and Start is beside the model's name, at the right end of its row; Stop and Connect an app are not there while
-        // nothing runs (UI v2: there is no toolbar)
+        // and Start is beside the model's name, at the right end of its row (UI v2: there is no toolbar)
         let name = heading_of(&found, &app.models[0].display);
         assert!(
             (start.center().y - name.center().y).abs() < 12.0 && start.left() > name.right(),
             "{start:?} is not beside {name:?}"
         );
-        for text in ["Stop", "Connect an app"] {
-            assert!(!found.contains_key(text), "{text} while stopped");
-        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -409,14 +406,10 @@ mod tests {
         let title = *found
             .get("Add your first model")
             .unwrap_or_else(|| panic!("{:?}", found.keys()));
-        let green = [
-            theme::palette_of(true).accent,
-            theme::palette_of(false).accent,
-        ]
-        .iter()
-        .flat_map(|c| filled_with(&output, *c))
-        .filter(|r| r.bottom() < title.top())
-        .count();
+        let green = greens(&output)
+            .iter()
+            .filter(|r| r.bottom() < title.top())
+            .count();
         assert_eq!(
             green,
             0,
@@ -535,18 +528,17 @@ mod tests {
 
     #[test]
     fn p3_i25_a_note_is_cut_at_its_first_sentence_and_how_a_model_starts_is_a_word_of_its_row() {
-        use super::super::model_bar::first_sentence;
+        use super::super::shell::{first_sentence, split_mode};
         assert_eq!(first_sentence("A, b. C d."), "A, b.");
         assert_eq!(first_sentence("One sentence."), "One sentence.");
         assert_eq!(first_sentence("No stop at all"), "No stop at all");
         assert_eq!(first_sentence(""), "");
-        let (note, mode) =
-            super::super::model_bar::split_mode("A note. Starts as an embedding server.");
+        let (note, mode) = split_mode("A note. Starts as an embedding server.");
         assert_eq!(
             (note, mode.map(|m| m.text)),
             ("A note.", Some("embedding server".to_string()))
         );
-        let (note, mode) = super::super::model_bar::split_mode("Only a note.");
+        let (note, mode) = split_mode("Only a note.");
         assert_eq!((note, mode.is_none()), ("Only a note.", true));
 
         let dir = scratch("z25");
@@ -567,7 +559,8 @@ mod tests {
             "{:?}",
             found.keys()
         );
-        let (detail, hover) = app.row_facts(&app.models[0], false);
+        let detail = app.row_facts(&app.models[0], false, app.speed_basis());
+        let hover = app.row_hover(&app.models[0], false, app.speed_basis());
         assert!(
             detail.iter().any(|(word, _)| word == "embedding server"),
             "{detail:?}"
@@ -587,7 +580,7 @@ mod tests {
         app.models[0].note =
             "It is meant to start in the mode `rerank`, which this engine does not have."
                 .to_string();
-        let (detail, _) = app.row_facts(&app.models[0], false);
+        let detail = app.row_facts(&app.models[0], false, app.speed_basis());
         assert!(
             detail
                 .iter()
@@ -706,12 +699,12 @@ mod tests {
     }
 
     #[test]
-    fn the_menu_bar_has_four_menus_and_the_view_menu_is_gone() {
+    fn the_menu_bar_has_three_menus_and_the_view_and_server_menus_are_gone() {
         let dir = scratch("v2-menus");
         let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
         let found = rects(&settled(&mut app, &ctx, true));
-        let menus: Vec<egui::Rect> = ["File", "Models", "Server", "Help"]
+        let menus: Vec<egui::Rect> = ["File", "Models", "Help"]
             .iter()
             .map(|m| {
                 *found
@@ -724,7 +717,7 @@ mod tests {
             menus.windows(2).all(|p| p[0].right() < p[1].left()),
             "{menus:?}"
         );
-        assert!(!found.contains_key("View"));
+        assert!(!found.contains_key("View") && !found.contains_key("Server"));
         // nor what the View menu and the toolbar had
         for gone in ["Dark theme", "Settings", "Set up chat UI...", "Refresh"] {
             assert!(!found.contains_key(gone), "{gone} is still drawn");

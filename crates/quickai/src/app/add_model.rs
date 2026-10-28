@@ -267,8 +267,7 @@ impl App {
                         egui::RichText::new("May be too big for this computer").color(p.warn)
                     } else {
                         theme::muted(
-                            super::model_bar::first_sentence(&entry.description)
-                                .trim_end_matches('.'),
+                            super::shell::first_sentence(&entry.description).trim_end_matches('.'),
                         )
                     };
                     ui.add(egui::Label::new(about.small()).truncate());

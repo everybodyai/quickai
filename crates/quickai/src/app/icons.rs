@@ -357,6 +357,27 @@ pub(super) fn framed_icon_button(
     response
 }
 
+/// A copy button: a picture of two sheets, a tick for a moment once it has copied `text`. `salt` tells it from the
+/// other copy buttons of the window.
+pub(super) fn copy_button(ui: &mut egui::Ui, salt: &str, text: &str) {
+    let id = egui::Id::new(("copied", salt));
+    let now = ui.input(|i| i.time);
+    let copied_at: Option<f64> = ui.data(|d| d.get_temp(id));
+    let just = copied_at.is_some_and(|at| now - at < 1.5);
+    let icon = if just { Icon::Check } else { Icon::Copy };
+    let response = framed_icon_button(ui, theme::Role::Normal, true, icon, egui::vec2(28.0, 24.0))
+        .on_hover_text(if just { "Copied" } else { "Copy" });
+    if response.clicked() {
+        ui.ctx().copy_text(text.to_string());
+        ui.data_mut(|d| d.insert_temp(id, now));
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(1600));
+    } else if just {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(200));
+    }
+}
+
 /// The colour of the words of a button of `role`: what egui would draw them in, but the role's own for the roles that
 /// have one.
 fn text_color(role: theme::Role, enabled: bool, drawn: Color32) -> Color32 {

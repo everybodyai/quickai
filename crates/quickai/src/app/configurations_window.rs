@@ -291,22 +291,15 @@ impl App {
                     .response
                     .rect
                     .height();
-                let panel = egui::CentralPanel::default();
-                let margin = egui::Frame::central_panel(&ui.ctx().global_style())
-                    .total_margin()
-                    .sum()
-                    .y;
-                let content = panel
-                    .show(ui, |ui| {
-                        egui::ScrollArea::vertical()
-                            .id_salt("configurations_scroll")
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| self.show_configurations_body(ui))
-                            .content_size
-                            .y
-                    })
-                    .inner;
-                super::theme::fit_window_height(ui.ctx(), content + margin + footer, LEAST[1]);
+                let frame = egui::Frame::central_panel(&ui.ctx().global_style());
+                super::theme::fitted_page(
+                    ui,
+                    "configurations_scroll",
+                    frame,
+                    footer,
+                    LEAST[1],
+                    |ui| self.show_configurations_body(ui),
+                );
             }
             // the questions of the window are asked in it
             self.show_configuration_modals(ui.ctx(), true);

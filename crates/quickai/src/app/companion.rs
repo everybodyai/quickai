@@ -976,17 +976,9 @@ mod tests {
         // pointer rests on it), and the status bar says what the page is doing
         assert!(app
             .browser_chat()
-            .is_some_and(|(label, _, enabled)| label == "Open Chat UI" && enabled));
-        app.show_api_info = true;
-        // (a window is measured, unseen, the first frame it is open)
-        painted(&ctx, |ui| {
-            app.show_window(ui);
-            app.show_connect_window(ui.ctx());
-        });
-        let drawn = painted(&ctx, |ui| {
-            app.show_window(ui);
-            app.show_connect_window(ui.ctx());
-        });
+            .is_some_and(|chat| chat.label == "Open Chat UI" && chat.enabled));
+        painted(&ctx, |ui| app.show_window(ui));
+        let drawn = painted(&ctx, |ui| app.show_window(ui));
         assert!(
             drawn.contains(&format!("Open WebUI on port {port}")),
             "{drawn}"

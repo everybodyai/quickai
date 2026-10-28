@@ -35,6 +35,16 @@ impl GpuVendor {
         }
     }
 
+    /// How an engine document names the vendor (`nvidia`, `amd`, `intel`, `apple`).
+    pub fn key(&self) -> &'static str {
+        match self {
+            GpuVendor::Nvidia => "nvidia",
+            GpuVendor::Amd => "amd",
+            GpuVendor::Intel => "intel",
+            GpuVendor::Apple => "apple",
+        }
+    }
+
     /// The vendor an engine document names (`nvidia`, `amd`, `intel`, `apple`).
     pub fn from_key(key: &str) -> Option<GpuVendor> {
         match key {

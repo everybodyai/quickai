@@ -911,7 +911,7 @@ impl eframe::App for App {
         self.show_remotes_window(ui.ctx());
         self.show_model_details(ui.ctx());
         self.show_add_model_window(ui.ctx());
-        self.show_connect_window(ui.ctx());
+        self.show_connect_popover(ui.ctx());
         self.show_guide_window(ui.ctx());
         self.show_foreign_program_modal(ui.ctx());
         self.show_configuration_modals(ui.ctx(), false);

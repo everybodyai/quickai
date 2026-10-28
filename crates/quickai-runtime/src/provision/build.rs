@@ -136,22 +136,7 @@ pub fn choose(
         return Ok(chosen(build));
     }
 
-    let offered: Vec<Offered<'_>> = builds
-        .iter()
-        .map(|b| Offered {
-            tag: &b.tag,
-            asset_name: &b.asset_name,
-            tested: b.tested,
-            conflict: b.conflict,
-            size: b.size_bytes,
-        })
-        .collect();
-    let keys: Vec<String> = vendors
-        .iter()
-        .map(|v| v.label().to_ascii_lowercase())
-        .collect();
-    let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
-    match acquire::pick_build(engine, &offered, &keys) {
+    match pick_build(engine, &builds, vendors) {
         Some(at) => Ok(chosen(&builds[at])),
         None if builds.is_empty() => Err(
             "the list of builds is empty for this computer's system; name a build with --build".to_string(),
@@ -169,6 +154,27 @@ pub fn choose(
             }
         )),
     }
+}
+
+/// The build of `builds` that the rule of `acquire::pick_build` takes for a computer with the graphics cards `vendors`,
+/// by its place in the list: what this program installs, and what the window's Install takes.
+pub fn pick_build<'a>(
+    engine: &Engine,
+    builds: impl IntoIterator<Item = &'a Build>,
+    vendors: &[GpuVendor],
+) -> Option<usize> {
+    let offered: Vec<Offered<'_>> = builds
+        .into_iter()
+        .map(|b| Offered {
+            tag: &b.tag,
+            asset_name: &b.asset_name,
+            tested: b.tested,
+            conflict: b.conflict,
+            size: b.size_bytes,
+        })
+        .collect();
+    let keys: Vec<&str> = vendors.iter().map(GpuVendor::key).collect();
+    acquire::pick_build(engine, &offered, &keys)
 }
 
 fn chosen(build: &Build) -> Chosen {

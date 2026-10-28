@@ -301,18 +301,24 @@ pub fn open_with(
     }
 }
 
+/// What `explain` says of a login the computer refused (`login_fix` has the command for it).
+const LOGIN_REFUSED: &str = "The remote computer refused the login. QuickAI logs in with an SSH key (a password cannot be asked for here): add your public key to its ~/.ssh/authorized_keys, or name the key file.";
+
+/// What `explain` says of a key of the computer that changed (`login_fix` has the command for it).
+const KEY_CHANGED: &str = "The remote computer's key is not the one it had before. If it was reinstalled, remove its old key with: ssh-keygen -R <host>";
+
 /// What ssh's own words mean for a person: the usual failures in a sentence with what to do, anything else as it
 /// said it.
 pub fn explain(lines: &[String]) -> String {
     let all = lines.join("\n");
     let lower = all.to_lowercase();
     let known: [(&str, &str); 7] = [
-        ("permission denied", "The remote computer refused the login. QuickAI logs in with an SSH key (a password cannot be asked for here): add your public key to its ~/.ssh/authorized_keys, or name the key file."),
+        ("permission denied", LOGIN_REFUSED),
         ("could not resolve hostname", "That address was not found. Check the host name, or use the computer's IP address."),
         ("connection refused", "The remote computer refused the connection: its SSH server is not running, or listens on another port."),
         ("connection timed out", "The remote computer did not answer. Is it on, and on the same network (or VPN)?"),
         ("no route to host", "There is no way to the remote computer from here. Is it on, and on the same network (or VPN)?"),
-        ("host key verification failed", "The remote computer's key is not the one it had before. If it was reinstalled, remove its old key with: ssh-keygen -R <host>"),
+        ("host key verification failed", KEY_CHANGED),
         ("address already in use", "The port QuickAI chose here was taken at the last moment. Try again."),
     ];
     for (needle, sentence) in known {
@@ -356,19 +362,6 @@ pub fn identity(local_port: u16, path: &str, pointer: &str) -> Option<String> {
     json.pointer(pointer)?.as_str().map(str::to_string)
 }
 
-/// What a test of `spec` found for an engine that answers `path` with its identity at `pointer`: the tunnel opens, and
-/// the engine answers through it (what it says it is), or why not. `engine` names it in the sentence.
-pub fn check_with(
-    program: &Path,
-    spec: &RemoteSpec,
-    remote_port: u16,
-    engine: &str,
-    path: &str,
-    pointer: &str,
-) -> Result<String, String> {
-    check_steps(program, spec, remote_port, engine, path, pointer).into_result()
-}
-
 /// What a test of a computer found, step by step, for the window to show as a list: it was reached over SSH (or why
 /// not), and then the engine answered on its port there (what it says it is), or why not. The engine is not asked when
 /// the computer was not reached.
@@ -383,16 +376,10 @@ impl Checked {
     pub fn passed(&self) -> bool {
         self.reached.is_ok() && matches!(self.engine, Some(Ok(_)))
     }
-
-    /// The engine's identity, or the first step's reason it is not there.
-    pub fn into_result(self) -> Result<String, String> {
-        self.reached?;
-        self.engine
-            .unwrap_or_else(|| Err("The engine was not asked.".to_string()))
-    }
 }
 
-/// `check_with`, step by step.
+/// What a test of `spec` found, step by step, for an engine that answers `path` with its identity at `pointer`: the
+/// tunnel opens, and the engine answers through it (what it says it is), or why not. `engine` names it in the sentence.
 pub fn check_steps(
     program: &Path,
     spec: &RemoteSpec,
@@ -427,10 +414,10 @@ pub fn login_fix(spec: &RemoteSpec, why: &str) -> Option<String> {
     } else {
         format!("-p {} ", spec.ssh_port)
     };
-    if why.contains("refused the login") {
+    if why == LOGIN_REFUSED {
         return Some(format!("ssh-copy-id {port}{host}"));
     }
-    if why.contains("key is not the one it had before") {
+    if why == KEY_CHANGED {
         let bare = host.rsplit('@').next().unwrap_or(host);
         return Some(format!("ssh-keygen -R {bare}"));
     }
@@ -539,11 +526,7 @@ pub fn name_from_address(host: &str) -> String {
     } else {
         first
     };
-    let mut chars = word.chars();
-    match chars.next() {
-        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
-    }
+    crate::prims::hub::capitalize(word)
 }
 
 /// The sentence for a computer that was reached but has no such engine answering on the port.
@@ -671,18 +654,15 @@ mod tests {
                 identity(tunnel.local_port, "/api/version", "/version").as_deref(),
                 Some("0.35.1")
             );
-            assert_eq!(
-                check_with(
-                    &ssh,
-                    &spec,
-                    fake.port(),
-                    "Ollama",
-                    "/api/version",
-                    "/version"
-                )
-                .as_deref(),
-                Ok("0.35.1")
+            let found = check_steps(
+                &ssh,
+                &spec,
+                fake.port(),
+                "Ollama",
+                "/api/version",
+                "/version",
             );
+            assert_eq!(found.engine, Some(Ok("0.35.1".to_string())));
             // what answers, but not as the engine says it would, is not it
             assert_eq!(
                 identity(
@@ -744,10 +724,10 @@ mod tests {
             // reached, but nothing listens on the engine's port there
             let spec = RemoteSpec::new("Empty", "empty.local");
             let port = crate::testkit::free_port();
-            let empty = check_with(&ssh, &spec, port, "Ollama", "/api/version", "/version")
-                .err()
-                .unwrap();
-            assert!(empty.contains("no Ollama answers"), "{empty}");
+            let empty = check_steps(&ssh, &spec, port, "Ollama", "/api/version", "/version");
+            assert_eq!(empty.reached, Ok(()));
+            let why = empty.engine.and_then(Result::err).unwrap();
+            assert!(why.contains("no Ollama answers"), "{why}");
             // and what is not an address is never handed to ssh
             let bad = open("-oProxyCommand=x");
             assert!(bad.contains("not an address"), "{bad}");

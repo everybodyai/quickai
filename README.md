@@ -80,7 +80,7 @@ and press the play button; the **⋯** on its row in the list (or a right-click)
 and the row says its size, whether it should be fast here, and whether it is the one recommended for this computer.
 
 The line under the model's name says how it runs. **Change** chooses *Balanced*, *Long chats* or *Light*, or the
-numbers themselves under *Custom*, and where the models run.
+numbers themselves under *Custom*.
 
 To switch engines, use the menu at the top right (it says **llama.cpp**). An engine that is not installed yet has an
 **Install** button on its page; pulling a model starts Ollama by itself. Beside it are the light and dark theme, the

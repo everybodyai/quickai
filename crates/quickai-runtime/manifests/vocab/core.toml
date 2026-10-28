@@ -163,8 +163,9 @@ skip_roles = ["system"]
 parts = { type = "/type", text = "/text" }
 
 # What the API panel shows: the first example whose `when` holds, with this engine's address and the
-# name of the model (`${api.base_url}`, `${api.model}`), in curl and, when given, Python and JavaScript (a tab each). The image one waits for models that take
-# pictures (Phase 4); every model has text input today.
+# name of the model (`${api.base_url}`, `${api.model}`), in curl and, when given, Python and JavaScript
+# (a tab each). The image one waits for the panel to say what a model takes (Phase 4): `Text` holds
+# for every model and comes first, so it is not shown yet.
 [[api.examples]]
 label = "Text"
 when = "true"

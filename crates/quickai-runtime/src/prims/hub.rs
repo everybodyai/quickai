@@ -310,7 +310,8 @@ fn final_sentence(host: &str, words: &str, tally: &Tally) -> String {
     sentence
 }
 
-fn capitalize(text: &str) -> String {
+/// `text` with its first letter a capital.
+pub(crate) fn capitalize(text: &str) -> String {
     let mut chars = text.chars();
     match chars.next() {
         Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
