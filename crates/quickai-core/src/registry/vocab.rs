@@ -29,13 +29,15 @@ pub struct Api {
     pub vocab: String,
 }
 
-/// One curl example: shown when `when` holds (always, without one), `curl` a template over the
-/// `api` of the engine (`${api.base_url}`, `${api.model}`).
+/// One example: shown when `when` holds (always, without one), `curl` (and `python` and `javascript`, when given)
+/// a template over the `api` of the engine (`${api.base_url}`, `${api.model}`).
 #[derive(Clone, Debug)]
 pub struct CompiledExample {
     pub label: String,
     pub when: Option<Expr>,
     pub curl: Template,
+    pub python: Option<Template>,
+    pub javascript: Option<Template>,
 }
 
 /// What one vocabulary document defines, once checked.
@@ -767,18 +769,29 @@ fn compile_examples(
         let mut error = |path: DocPath, message: String| {
             problems.push(merged.diagnostic(Severity::Error, &path, message));
         };
-        let curl = match Template::parse(&example.curl) {
+        // each language's text is a template over the same two values
+        let mut code = |key: &str, text: &str| match Template::parse(text) {
             Ok(t) => {
                 let found = t.check(&curl_schema);
                 for e in &found {
-                    error(at.clone().key("curl"), e.message.clone());
+                    error(at.clone().key(key), e.message.clone());
                 }
                 found.is_empty().then_some(t)
             }
             Err(e) => {
-                error(at.clone().key("curl"), e.describe(&example.curl));
+                error(at.clone().key(key), e.describe(text));
                 None
             }
+        };
+        let curl = code("curl", &example.curl);
+        // a language that does not compile is left out (and said); the example stays with the others
+        let python = example.python.as_deref().and_then(|t| code("python", t));
+        let javascript = example
+            .javascript
+            .as_deref()
+            .and_then(|t| code("javascript", t));
+        let mut error = |path: DocPath, message: String| {
+            problems.push(merged.diagnostic(Severity::Error, &path, message));
         };
         let when = match example.when.as_deref() {
             None => Some(None),
@@ -815,6 +828,8 @@ fn compile_examples(
                 label: example.label.clone(),
                 when,
                 curl,
+                python,
+                javascript,
             });
         }
     }

@@ -31,6 +31,9 @@ pub struct Note {
 pub struct Example {
     pub label: String,
     pub curl: String,
+    /// The same request in Python and in JavaScript, when the vocabulary has them.
+    pub python: Option<String>,
+    pub javascript: Option<String>,
 }
 
 /// The model a client is told to name when none is selected.
@@ -95,10 +98,16 @@ pub fn api_panel(
             .into_iter()
             .collect(),
         );
-        let curl = example.curl.render(&api_context).ok()?.to_string();
+        let fill = |t: &crate::expr::Template| {
+            t.render(&api_context)
+                .ok()
+                .map(|v| v.to_string().trim_end_matches('\n').to_string())
+        };
         Some(Example {
             label: example.label.clone(),
-            curl: curl.trim_end_matches('\n').to_string(),
+            curl: fill(&example.curl)?,
+            python: example.python.as_ref().and_then(fill),
+            javascript: example.javascript.as_ref().and_then(fill),
         })
     });
     Some(ApiPanel {

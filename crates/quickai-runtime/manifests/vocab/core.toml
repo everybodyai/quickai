@@ -163,7 +163,7 @@ skip_roles = ["system"]
 parts = { type = "/type", text = "/text" }
 
 # What the API panel shows: the first example whose `when` holds, with this engine's address and the
-# name of the model (`${api.base_url}`, `${api.model}`). The image one waits for models that take
+# name of the model (`${api.base_url}`, `${api.model}`), in curl and, when given, Python and JavaScript (a tab each). The image one waits for models that take
 # pictures (Phase 4); every model has text input today.
 [[api.examples]]
 label = "Text"
@@ -173,6 +173,28 @@ curl ${api.base_url}/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"${api.model}","messages":[{"role":"user","content":"Hello"}]}'
 '''
+python = '''
+# pip install openai
+from openai import OpenAI
+
+client = OpenAI(base_url="${api.base_url}", api_key="any")
+reply = client.chat.completions.create(
+    model="${api.model}",
+    messages=[{"role": "user", "content": "Hello"}],
+)
+print(reply.choices[0].message.content)
+'''
+javascript = '''
+const reply = await fetch("${api.base_url}/chat/completions", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    model: "${api.model}",
+    messages: [{ role: "user", content: "Hello" }],
+  }),
+});
+console.log((await reply.json()).choices[0].message.content);
+'''
 
 [[api.examples]]
 label = "Image"
@@ -181,6 +203,37 @@ curl = '''
 curl ${api.base_url}/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"${api.model}","messages":[{"role":"user","content":[{"type":"text","text":"What is in this picture?"},{"type":"image_url","image_url":{"url":"data:image/png;base64,<BASE64>"}}]}]}'
+'''
+python = '''
+# pip install openai
+import base64
+from openai import OpenAI
+
+client = OpenAI(base_url="${api.base_url}", api_key="any")
+picture = base64.b64encode(open("picture.png", "rb").read()).decode()
+reply = client.chat.completions.create(
+    model="${api.model}",
+    messages=[{"role": "user", "content": [
+        {"type": "text", "text": "What is in this picture?"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64," + picture}},
+    ]}],
+)
+print(reply.choices[0].message.content)
+'''
+javascript = '''
+const picture = "<BASE64>"; // the picture, base64-encoded
+const reply = await fetch("${api.base_url}/chat/completions", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    model: "${api.model}",
+    messages: [{ role: "user", content: [
+      { type: "text", text: "What is in this picture?" },
+      { type: "image_url", image_url: { url: "data:image/png;base64," + picture } },
+    ] }],
+  }),
+});
+console.log((await reply.json()).choices[0].message.content);
 '''
 
 [[api]]

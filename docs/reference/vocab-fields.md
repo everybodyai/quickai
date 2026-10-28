@@ -117,13 +117,15 @@ A part of a content that is a list. The text parts are joined for the prompt; th
 
 ## `[[api.examples]]`
 
-One curl example for the API panel.
+One example for the API panel: a curl command, and the same request in Python and JavaScript when they are given (the panel has a tab for each).
 
 | Key | Value | Meaning |
 |---|---|---|
 | `label` | text | What the example shows (`Chat with an image`). Required. |
 | `when` | condition | Show it only while this holds (`has(model.modalities.input, 'image')`). |
 | `curl` | text | The command, as text. Required. |
+| `python` | text | The same request in Python, as text. |
+| `javascript` | text | The same request in JavaScript, as text. |
 
 ## What is checked
 
