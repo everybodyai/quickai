@@ -730,7 +730,8 @@ mod tests {
     }
 
     #[test]
-    fn p3_e25b_an_engine_that_is_not_installed_is_missing_and_one_that_ships_with_the_app_is_not() {
+    fn p3_e25b_an_engine_that_is_not_installed_is_missing_and_so_is_a_bundled_one_that_is_not_there(
+    ) {
         let dir = crate::testkit::scratch("e25b");
         let mut settings = Settings::default();
         settings.set_chosen_engine("ollama");
@@ -744,11 +745,31 @@ mod tests {
             app.engine_missing(),
             "Ollama is downloaded on request: Start cannot work yet"
         );
-        let llama = app_on(&crate::testkit::scratch("e25c"), Settings::default());
-        assert!(
-            !llama.engine_missing(),
-            "llama.cpp is tried, and says what it could not find"
+        // a build of QuickAI with no llama-server beside it (one built from the source): llama.cpp has builds to
+        // download, so its page installs one rather than Start failing on a path
+        let llama = app_on(
+            &crate::testkit::scratch("e25c"),
+            Settings {
+                llama_bin_override: Some("/nowhere/llama-server".into()),
+                ..Settings::default()
+            },
         );
+        assert!(
+            llama.engine_missing(),
+            "llama.cpp is not here: {:?}",
+            llama.binary
+        );
+        // and once it is there, it is not
+        let dir = crate::testkit::scratch("e25d");
+        let binary = crate::testkit::procs::write_script(&dir, "llama-server", "exit 0");
+        let llama = app_on(
+            &dir,
+            Settings {
+                llama_bin_override: Some(binary.display().to_string()),
+                ..Settings::default()
+            },
+        );
+        assert!(!llama.engine_missing(), "{:?}", llama.binary);
     }
 
     #[test]
