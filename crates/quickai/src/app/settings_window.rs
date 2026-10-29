@@ -1107,8 +1107,8 @@ mod tests {
 
     /// B22 (C189): the engine's Advanced settings end with the command line of the next Start, made as Start makes it:
     /// the projector a vision model was fetched with is on it, on a row of its own that says it is the model's, after
-    /// the settings' rows and before the person's own words; the variables are under it, the person's lines with the
-    /// document's; and llama.cpp takes lines of environment as the other engines do.
+    /// the settings' rows and before the person's own words; the variables are under it in full, the person's lines
+    /// with the document's; and llama.cpp takes lines of environment as the other engines do.
     #[test]
     fn p3_b22_the_settings_show_the_command_line_of_the_next_start_with_the_projector_on_it() {
         let dir = scratch("b22");
@@ -1163,8 +1163,27 @@ mod tests {
             at("--threads 4").top() > projector.top(),
             "the person's words last"
         );
-        // the variables, folded: QuickAI's library path and the person's two lines
-        at("Environment (3)");
+        // the variables in full, a row to each: the person's two lines, the secret not said, and QuickAI's library
+        // path, a line to each of its parts under its name
+        let environment = at("Environment");
+        assert!(environment.top() > at("--threads 4").top());
+        at("GGML_VK_VISIBLE_DEVICES=0");
+        at("HF_TOKEN=***");
+        let name = at("LD_LIBRARY_PATH=");
+        let was = at("$LD_LIBRARY_PATH");
+        let shown = display.0.borrow();
+        let dirs: Vec<egui::Rect> = texts(&shown.windows[&settings_viewport()].shapes)
+            .into_iter()
+            .filter(|(text, _)| text.starts_with('/') && text.ends_with(':'))
+            .map(|(_, rect)| rect)
+            .collect();
+        drop(shown);
+        assert!(
+            dirs.iter().any(|dir| name.bottom() <= dir.top()
+                && dir.bottom() <= was.top()
+                && dir.left() > name.left()),
+            "the directory on a line of its own, in full, between {name:?} and {was:?}: {dirs:?}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

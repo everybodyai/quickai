@@ -6,7 +6,9 @@
 use std::path::Path;
 
 use eframe::egui;
-use quickai_core::plan::{is_secret_name, EnvMode, RunPlan, SpawnPlan, Start, TRAFFIC_PROXY_KEY};
+use quickai_core::plan::{
+    is_secret_name, EnvMode, EnvOp, RunPlan, SpawnPlan, Start, TRAFFIC_PROXY_KEY,
+};
 use quickai_core::registry::Engine;
 use quickai_core::value::Value;
 
@@ -29,12 +31,10 @@ enum From {
     Model(String),
 }
 
-/// How a row is said: the program's (with what the program is), an argument's (with the names of the model's files), or a
-/// variable's.
+/// How a row is said: the program's (with what the program is), or an argument's (with the names of the model's files).
 enum Said<'a> {
     Program(&'a Names),
     Row(&'a From, &'a Names),
-    Plain(&'a From),
 }
 
 impl Row {
@@ -121,7 +121,7 @@ impl App {
         let plan = match self.plan_to_show() {
             Ok(plan) => plan,
             Err(said) => {
-                heading(ui);
+                heading(ui, "Command line");
                 ui.label(theme::muted(said));
                 return;
             }
@@ -135,7 +135,7 @@ impl App {
             Start::Spawn(spawn) => Some(spawn),
             Start::Attach(_) => None,
         }) else {
-            heading(ui);
+            heading(ui, "Command line");
             ui.label(theme::muted(format!(
                 "QuickAI starts no {server}: it uses the one that runs on port {}.",
                 self.port()
@@ -181,7 +181,7 @@ impl App {
                 }
             }
             Err(problems) => {
-                heading(ui);
+                heading(ui, "Command line");
                 ui.label(theme::muted(
                     problems
                         .first()
@@ -203,7 +203,7 @@ struct Names {
 }
 
 /// The program and its arguments, a row for each option, with a button that copies the line, and `notes` on when it
-/// is so under it; then the variables, folded.
+/// is so under it; then the variables in full, with a button that copies them.
 fn show_spawn(
     ui: &mut egui::Ui,
     engine: &Engine,
@@ -213,7 +213,7 @@ fn show_spawn(
     names: &Names,
 ) {
     ui.horizontal(|ui| {
-        heading(ui).on_hover_text(
+        heading(ui, "Command line").on_hover_text(
             "What Start runs, made the way Start makes it. Each row says what put it there.",
         );
         ui.label(theme::muted("what Start runs"));
@@ -234,34 +234,179 @@ fn show_spawn(
     for note in notes {
         ui.label(theme::muted(note));
     }
-    let variables: Vec<(String, From)> = spawn
+    let variables: Vec<Variable> = spawn
         .env
         .iter()
-        .map(|op| {
-            let value = match &op.mode {
-                EnvMode::Set { .. } if is_secret_name(&op.name) => "***".to_string(),
-                EnvMode::Set { value } => value.clone(),
-                EnvMode::Prepend { value, sep } => format!("{value}{sep}${}", op.name),
-            };
-            (format!("{}={value}", op.name), from(engine, &op.origin))
-        })
+        .map(|op| Variable::of(engine, op))
         .collect();
     if variables.is_empty() {
         return;
     }
-    ui.add_space(4.0);
-    egui::CollapsingHeader::new(format!("Environment ({})", variables.len()))
-        .id_salt(("command_line_env", salt))
-        .default_open(false)
-        .show(ui, |ui| {
-            let width = from_width(ui, variables.iter().map(|(_, from)| from));
-            theme::well_frame(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                for (text, from) in &variables {
-                    show_row(ui, std::slice::from_ref(text), &Said::Plain(from), width);
-                }
-            });
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        heading(ui, "Environment").on_hover_text(
+            "The variables Start sets for it, made the way Start makes them; the rest it has from QuickAI's. Each \
+             says what put it there.",
+        );
+        ui.label(theme::muted("what Start sets"));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let lines: Vec<String> = variables.iter().map(Variable::line).collect();
+            icons::copy_button(ui, &format!("command_line_env_{salt}"), &lines.join("\n"));
         });
+    });
+    let width = from_width(ui, variables.iter().map(|v| &v.from));
+    theme::well_frame(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        for variable in &variables {
+            show_variable(ui, variable, width);
+        }
+    });
+}
+
+/// A variable as the window says it: its name, its value in lines (a line to each directory of a list that goes in
+/// front of what the variable was, and that last), and what put it there. A secret's value is not said.
+struct Variable {
+    name: String,
+    lines: Vec<String>,
+    from: From,
+}
+
+impl Variable {
+    fn of(engine: &Engine, op: &EnvOp) -> Self {
+        let lines = match &op.mode {
+            EnvMode::Set { .. } if is_secret_name(&op.name) => vec!["***".to_string()],
+            EnvMode::Set { value } => vec![value.clone()],
+            EnvMode::Prepend { value, sep } => value
+                .split(sep.as_str())
+                .filter(|part| !part.is_empty())
+                .map(|part| format!("{part}{sep}"))
+                .chain(std::iter::once(format!("${}", op.name)))
+                .collect(),
+        };
+        Variable {
+            name: op.name.clone(),
+            lines,
+            from: from(engine, &op.origin),
+        }
+    }
+
+    /// As a line of a shell sets it.
+    fn line(&self) -> String {
+        format!("{}={}", self.name, self.lines.concat())
+    }
+}
+
+/// A variable in full, on as many lines as it takes: `NAME=value` on a row, or a list under its name a line to each of
+/// its parts, what it was last.
+fn show_variable(ui: &mut egui::Ui, variable: &Variable, from_width: f32) {
+    let p = theme::palette();
+    match variable.lines.as_slice() {
+        [value] => {
+            let line = format!("{}={value}", variable.name);
+            full_row(ui, &line, p.body, Some(&variable.from), from_width, 0.0);
+        }
+        lines => {
+            let name = format!("{}=", variable.name);
+            full_row(ui, &name, p.body, Some(&variable.from), from_width, 0.0);
+            let indent = ui.text_style_height(&egui::TextStyle::Monospace) * 1.5;
+            let (was, parts) = lines.split_last().expect("a list ends with what it was");
+            for part in parts {
+                full_row(ui, part, p.body, None, from_width, indent);
+            }
+            full_row(ui, was, p.muted, None, from_width, indent).on_hover_text(format!(
+                "What {} was: the list goes in front of it.",
+                variable.name
+            ));
+        }
+    }
+}
+
+/// A row that says all of `text` in the font of a command line, `indent` in from the left, on as many lines as it
+/// takes (a path broken after a `/`), and what put it there in the column on the right of its first line.
+fn full_row(
+    ui: &mut egui::Ui,
+    text: &str,
+    color: egui::Color32,
+    said: Option<&From>,
+    from_width: f32,
+    indent: f32,
+) -> egui::Response {
+    let height = ui.text_style_height(&egui::TextStyle::Monospace) + 2.0;
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), height),
+        egui::Layout::left_to_right(egui::Align::Min),
+        |ui| {
+            ui.add_space(indent);
+            let words_width = match said {
+                Some(_) => (ui.available_width() - from_width - 8.0).max(60.0),
+                None => ui.available_width(),
+            };
+            let font = egui::TextStyle::Monospace.resolve(ui.style());
+            let glyph = ui
+                .painter()
+                .layout_no_wrap("0".repeat(10), font, color)
+                .size()
+                .x
+                / 10.0;
+            let text = fit(text, ((words_width - 1.0) / glyph) as usize);
+            let response = ui
+                .allocate_ui_with_layout(
+                    egui::vec2(words_width, height),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        ui.set_width(words_width);
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(text).monospace().color(color))
+                                .wrap(),
+                        )
+                    },
+                )
+                .inner;
+            if let Some(from) = said {
+                let color = match from {
+                    From::Model(_) => theme::palette().accent_text,
+                    _ => theme::palette().muted,
+                };
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(ui.available_width(), height),
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(from.said()).small().color(color),
+                                )
+                                .truncate(),
+                            )
+                        },
+                    );
+                });
+            }
+            response
+        },
+    )
+    .inner
+}
+
+/// `text` in lines of at most `width` characters, each broken after the last `/` or space that fits, else after the
+/// last `-` (a name longer than the line), else where it fills the line.
+fn fit(text: &str, width: usize) -> String {
+    let width = width.max(8);
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::new();
+    let mut start = 0;
+    while chars.len() - start > width {
+        let line = &chars[start..start + width];
+        let after = |at: Option<usize>| at.filter(|at| *at > 0).map(|at| at + 1);
+        let cut = after(line.iter().rposition(|c| *c == '/' || *c == ' '))
+            .or_else(|| after(line.iter().rposition(|c| *c == '-')))
+            .unwrap_or(width);
+        out.extend(&chars[start..start + cut]);
+        out.push('\n');
+        start += cut;
+    }
+    out.extend(&chars[start..]);
+    out
 }
 
 /// One row: the words in the font of a command line, shortened at the end when they do not fit (a path is its file's
@@ -269,11 +414,10 @@ fn show_spawn(
 fn show_row(ui: &mut egui::Ui, words: &[String], said: &Said<'_>, from_width: f32) {
     let p = theme::palette();
     let (from, names, program) = match said {
-        Said::Program(names) => (&From::Document, Some(*names), true),
-        Said::Row(from, names) => (*from, Some(*names), false),
-        Said::Plain(from) => (*from, None, false),
+        Said::Program(names) => (&From::Document, *names, true),
+        Said::Row(from, names) => (*from, *names, false),
     };
-    let shown: Vec<String> = words.iter().map(|w| short(w, names)).collect();
+    let shown: Vec<String> = words.iter().map(|w| short(w, Some(names))).collect();
     let said = match said {
         Said::Program(names) => names.program.clone().unwrap_or_default(),
         _ => from.said(),
@@ -323,9 +467,9 @@ fn from_width<'a>(ui: &egui::Ui, froms: impl Iterator<Item = &'a From>) -> f32 {
         .min(FROM_WIDTH)
 }
 
-/// The name of the list, as a setting's name is said.
-fn heading(ui: &mut egui::Ui) -> egui::Response {
-    ui.label(egui::RichText::new("Command line").color(theme::palette().text))
+/// The name of a list, as a setting's name is said.
+fn heading(ui: &mut egui::Ui, name: &str) -> egui::Response {
+    ui.label(egui::RichText::new(name).color(theme::palette().text))
 }
 
 /// The arguments in rows: an option and the words after it that are not options, as long as the same thing put them
@@ -514,6 +658,17 @@ mod tests {
             "…/mmproj-f16.gguf",
             "a file fetched with the model by the name it came with"
         );
+        assert_eq!(
+            fit("/home/me/.quickai/llama-bin/b1-llama-bin-x64/llama-b1:", 30),
+            "/home/me/.quickai/llama-bin/\nb1-llama-bin-x64/llama-b1:",
+            "a path broken after a `/`"
+        );
+        assert_eq!(
+            fit("/opt/b1-bin-ubuntu-x64/", 16),
+            "/opt/\nb1-bin-ubuntu-\nx64/",
+            "a name longer than the line broken after a `-`"
+        );
+        assert_eq!(fit("A=0123456789abcdef", 8), "A=012345\n6789abcd\nef");
         assert_eq!(
             shell_line(&spawn(&[
                 ("--alias", "engine launch.spawn.args"),
