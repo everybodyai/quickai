@@ -839,7 +839,6 @@ impl App {
                     for (build, backend) in &installed {
                         let current = in_use.as_deref() == Some(build.binary_path.as_path())
                             || (in_use.is_none() && build.binary_path == default);
-                        let release = build.label.split('-').next().unwrap_or(&build.label);
                         let (name, rest) = if from_source {
                             (build.label.clone(), String::new())
                         } else {
@@ -851,7 +850,10 @@ impl App {
                                 in_use: current,
                                 usable: true,
                                 name: &name,
-                                tested: tested.as_deref() == Some(release),
+                                // the release the document was tested with is a part of the build's name
+                                tested: tested
+                                    .as_deref()
+                                    .is_some_and(|t| build.label.split('-').any(|part| part == t)),
                                 rest: &rest,
                                 detail: &hardware::format_bytes(build.size_bytes),
                                 hover: &build.label,
@@ -1331,9 +1333,24 @@ struct RowAsk {
 }
 
 /// What a row calls an installed build: the release it is of, with the backend its name says when it says one the
-/// document knows (`b11950 · Vulkan`), and the rest of its name, which the row says faintly after it.
+/// document knows (`b11950 · Vulkan`), and the rest of its name, which the row says faintly after it. The release is the
+/// first part of the name that looks like one (`b11889`, `v0.40.0`, `0.11.4`): a build installed from an archive's address
+/// is named after the archive (`llama-b9001-bin-ubuntu-vulkan-x64`). A name with none is said whole.
 pub(super) fn build_name(label: &str, backend: &str) -> (String, String) {
-    let (release, rest) = label.split_once('-').unwrap_or((label, ""));
+    let looks_like_a_release = |part: &&str| {
+        let mut chars = part.chars();
+        match (chars.next(), chars.next()) {
+            (Some(c), _) if c.is_ascii_digit() => true,
+            (Some('b' | 'v'), Some(d)) => d.is_ascii_digit(),
+            _ => false,
+        }
+    };
+    let Some(release) = label.split('-').find(looks_like_a_release) else {
+        return (label.to_string(), String::new());
+    };
+    let rest = label
+        .strip_prefix(release)
+        .map_or(label, |r| r.trim_start_matches('-'));
     let name = if backend == "default" {
         release.to_string()
     } else {
@@ -2075,6 +2092,39 @@ backends = [ { match = "gpu", label = "GPU" } ]
             ],
             unfinished: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_build_is_called_by_its_release_and_backend_whatever_its_name_begins_with() {
+        let said = |label: &str, backend: &str| build_name(label, backend);
+        assert_eq!(
+            said(
+                "b11889-llama-b11889-bin-ubuntu-openvino-2026.4.1-x64",
+                "default"
+            ),
+            (
+                "b11889".into(),
+                "llama-b11889-bin-ubuntu-openvino-2026.4.1-x64".into()
+            )
+        );
+        assert_eq!(
+            said("llama-b9001-bin-ubuntu-vulkan-x64", "Vulkan"),
+            (
+                "b9001 · Vulkan".into(),
+                "llama-b9001-bin-ubuntu-vulkan-x64".into()
+            ),
+            "a build from an archive's address"
+        );
+        assert_eq!(
+            said("v0.40.0-ollama-linux-amd64", "default"),
+            ("v0.40.0".into(), "ollama-linux-amd64".into())
+        );
+        assert_eq!(said("0.11.4", "default"), ("0.11.4".into(), String::new()));
+        assert_eq!(
+            said("my-own-build", "default"),
+            ("my-own-build".into(), String::new()),
+            "no release in it: said whole"
+        );
     }
 
     /// I31 (C190): the builds are one list, each by its release and the backend its name says, with its size; the one in
