@@ -43,7 +43,7 @@ impl App {
 
         egui::Panel::top("menu_bar")
             .frame(theme::bar_frame(egui::Margin::symmetric(6, 3)))
-            .show(ui, |ui| self.show_menu_bar(ui, active));
+            .show(ui, |ui| self.show_menu_bar(ui));
         egui::Panel::bottom("status_bar")
             .frame(theme::bar_frame(egui::Margin::symmetric(10, 3)))
             .show(ui, |ui| self.show_status_bar(ui, state));
@@ -118,7 +118,7 @@ impl App {
 
     // ---- the menu bar -------------------------------------------------------------------------------
 
-    fn show_menu_bar(&mut self, ui: &mut egui::Ui, active: bool) {
+    fn show_menu_bar(&mut self, ui: &mut egui::Ui) {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
                 if ui.button("Configurations…").clicked() {
@@ -147,12 +147,7 @@ impl App {
                     self.open_catalog();
                 }
                 ui.separator();
-                if ui
-                    .add_enabled(!active, egui::Button::new("Refresh the list"))
-                    .clicked()
-                {
-                    self.refresh_list(ui.ctx());
-                }
+                // the list is read again by the small picture at the end of its heading
                 if ui.button("Open the models folder").clicked() {
                     super::workbench::open_folder(&self.models_dir);
                 }
