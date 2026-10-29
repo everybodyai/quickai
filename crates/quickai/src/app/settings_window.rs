@@ -17,7 +17,7 @@ use quickai_core::form::{FormField, FormModel};
 use super::icons::{self, Icon};
 use super::runtime_manager::INSTALL_PYTHON_FIELD;
 use super::theme;
-use super::App;
+use super::{App, PendingDelete};
 use crate::hardware;
 
 /// What the window is called to the window manager: its title bar, and what a taskbar lists.
@@ -28,7 +28,7 @@ const OPENS_AT: [f32; 2] = [760.0, 600.0];
 const LEAST: [f32; 2] = [400.0, 320.0];
 
 /// Narrower than this, the sidebar is its pictures alone (and says each page's name when the pointer rests on it).
-const NARROW: f32 = 620.0;
+const NARROW: f32 = 560.0;
 const SIDEBAR_WIDE: f32 = 196.0;
 const SIDEBAR_NARROW: f32 = 52.0;
 
@@ -285,6 +285,9 @@ impl App {
                 self.show_listed_models_row(ui);
             } else {
                 self.show_models_folder(ui, form);
+                if self.runs_alone() {
+                    self.show_downloaded_models(ui);
+                }
             }
             // an engine with no conversation to show has nothing for the proxy to do
             if self.reads_traffic() {
@@ -409,7 +412,7 @@ impl App {
         let help = field.and_then(|f| f.help.clone());
         let mut choose = false;
         let mut open = false;
-        let _ = setting_row(ui, &title, Some(&desc), help.as_deref(), |ui| {
+        let _ = setting_row(ui, &title, None, help.as_deref(), |ui| {
             if ui.button("Open").on_hover_text("Open the folder").clicked() {
                 open = true;
             }
@@ -433,11 +436,13 @@ impl App {
                 self.apply_models_dir(dir);
             }
         }
-        ui.add_space(6.0);
+        ui.add_space(4.0);
         let edit = ui.add(
             egui::TextEdit::singleline(&mut self.models_dir_input)
                 .desired_width(ui.available_width()),
         );
+        // how many models it holds, under the box (the box is right under the name, as every box of the window is)
+        ui.label(theme::muted(desc));
         let typed = self.models_dir_input.trim().to_string();
         let edited = typed != self.models_dir.display().to_string();
         let entered = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -472,6 +477,90 @@ impl App {
         });
         if apply {
             self.apply_models_dir(PathBuf::from(typed));
+        }
+    }
+
+    /// The downloaded models, newest first, each with Delete in its ⋯ menu: only for an engine whose main window lists
+    /// none (ComfyUI says how many it has), where this is the one place a model is deleted. The other engines' are
+    /// deleted from the menu of their row in the main window.
+    fn show_downloaded_models(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette();
+        let mut downloaded: Vec<&crate::models::ModelEntry> = self
+            .models
+            .iter()
+            .filter(|m| !m.path.starts_with(&self.bundled_models_dir))
+            .collect();
+        if downloaded.is_empty() {
+            return;
+        }
+        // a model has no other notion of "latest" than its file's own time
+        downloaded.sort_by_key(|m| {
+            std::cmp::Reverse(std::fs::metadata(&m.path).and_then(|m| m.modified()).ok())
+        });
+        row_line(ui);
+        ui.label(
+            egui::RichText::new("Downloaded models")
+                .strong()
+                .color(p.text),
+        )
+        .on_hover_text("The models in the folder above, newest first. Bundled models aren't listed: they can't be deleted.");
+        let mut to_delete: Option<PendingDelete> = None;
+        egui::ScrollArea::vertical()
+            .id_salt("downloaded_models_scroll")
+            .auto_shrink([false, true])
+            .max_height(30.0 * DELETE_LIST_MAX_ROWS as f32)
+            .show(ui, |ui| {
+                for m in downloaded {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(ui.available_width(), 28.0),
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            let more = icons::icon_button(
+                                ui,
+                                Icon::More,
+                                egui::vec2(26.0, 24.0),
+                                true,
+                                false,
+                            )
+                            .on_hover_text("Delete it");
+                            egui::Popup::menu(&more)
+                                .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+                                .show(|ui| {
+                                    ui.set_min_width(150.0);
+                                    ui.set_max_width(170.0);
+                                    if icons::menu_item(ui, Icon::Trash, "Delete…", true, true)
+                                        .on_hover_text("Delete this model from disk")
+                                        .clicked()
+                                    {
+                                        to_delete = Some(PendingDelete::Model {
+                                            filename: m.filename.clone(),
+                                            path: m.path.clone(),
+                                        });
+                                    }
+                                });
+                            ui.label(
+                                egui::RichText::new(hardware::format_bytes(m.size_bytes))
+                                    .small()
+                                    .color(p.faint),
+                            );
+                            ui.with_layout(
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(&m.display).color(p.body),
+                                        )
+                                        .truncate(),
+                                    )
+                                    .on_hover_text(&m.filename);
+                                },
+                            );
+                        },
+                    );
+                }
+            });
+        if let Some(pending) = to_delete {
+            self.pending_delete = Some(pending);
         }
     }
 
@@ -1176,6 +1265,52 @@ mod tests {
         let page = where_is(&display, "Downloaded models folder").expect("the page");
         assert!(page.left() > 190.0, "beside the sidebar: {page:?}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// I32 (C190): an engine whose main window lists no models (ComfyUI says how many it has) has them listed on the
+    /// General page, each with Delete in its ⋯ menu, which asks in the window; an engine whose main window lists them
+    /// (llama.cpp) does not, its rows' own menus deleting them.
+    #[test]
+    fn p3_i32_the_models_are_listed_in_the_settings_only_for_an_engine_whose_window_lists_none() {
+        for (engine, listed) in [("comfyui", true), ("llamacpp", false)] {
+            let dir = scratch(&format!("i32-{engine}"));
+            let mut app = app_in(&dir, engine);
+            let folder = if engine == "comfyui" {
+                app.models_dir.join("diffusion_models")
+            } else {
+                app.models_dir.clone()
+            };
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::write(folder.join("zeta-model.gguf"), vec![0u8; 2048]).unwrap();
+            app.rescan_models();
+            assert!(
+                app.models.iter().any(|m| m.filename == "zeta-model.gguf"),
+                "{engine}"
+            );
+            let ctx = egui::Context::default();
+            let display = Display::attach(&ctx);
+            app.toggle_settings();
+            settle(&mut app, &ctx, &display);
+            assert_eq!(
+                where_is(&display, "Downloaded models").is_some(),
+                listed,
+                "{engine}"
+            );
+            if listed {
+                choose_in_menu_of_row(&mut app, &ctx, &display, "zeta-model.gguf", "Delete…");
+                frame(&mut app, &ctx, &display);
+                let inside = said(&display.0.borrow().windows[&settings_viewport()].shapes);
+                assert!(
+                    inside.contains("Delete model?") && inside.contains("zeta-model.gguf"),
+                    "{inside}"
+                );
+                assert!(
+                    folder.join("zeta-model.gguf").exists(),
+                    "not before the yes"
+                );
+            }
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 
     #[test]

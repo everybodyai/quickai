@@ -936,15 +936,6 @@ impl App {
                 if let Some(help) = &field.help {
                     label.on_hover_text(help);
                 }
-                ui.label(
-                    egui::RichText::new(
-                        "A program on this computer, or the address of a release's archive (.zip or .tar.gz) to download \
-                         and install.",
-                    )
-                    .small()
-                    .color(p.muted),
-                );
-                ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.runtime.input)
@@ -957,6 +948,15 @@ impl App {
                         }
                     }
                 });
+                // under the box, so that the box is right under its name
+                ui.label(
+                    egui::RichText::new(
+                        "A program on this computer, or the address of a release's archive (.zip or .tar.gz) to download \
+                         and install.",
+                    )
+                    .small()
+                    .color(p.muted),
+                );
                 ui.horizontal(|ui| {
                     let trimmed = self.runtime.input.trim().to_string();
                     let is_url = downloader::looks_like_url(&trimmed);
