@@ -1005,6 +1005,7 @@ Asked for on 2026-10-23 ("Lets stick to classic, but lets turn things around a b
 | I29 | 4.22 | ready | A choice of the Settings (a short box) is beside its label and not under it; a path, which wants the width of the window, is under its label. | `app/settings_window.rs` |
 | I30 | 4.37 | ready | **In a narrow window the sidebar of the Settings is its pictures** (C190): at 480 px wide no page's name is painted and the page has the room; at 760 the names are back and the page is beside them. | `app/settings_window.rs` |
 | I31 | 4.37 | ready | **The builds are one list** (C190): each by its release and the backend its name says, with its size and the rest of its name; the one in use says *In use* (once) and every other one has Use; a program of the person's that is no build is a row of its own, in use; the box for a path is behind *Use a program on disk…* and opens with the program in use in it. | `app/runtime_manager.rs` |
+| I32 | 4.37 | ready | **The models are listed in the Settings only for an engine whose window lists none** (C190): ComfyUI's General page lists its downloaded models, each with Delete in its ⋯ menu, which asks in the Settings window and deletes nothing before the yes; llama.cpp's has no such list (its rows' own menus delete). | `app/settings_window.rs` |
 
 ### N. llama.cpp must not change
 
@@ -1018,7 +1019,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 697 / 0 / 16 / 5 (total 718). The test kit has 29 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 698 / 0 / 16 / 5 (total 719). The test kit has 29 tests of its own and the Python fake
 22, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 

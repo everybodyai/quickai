@@ -620,19 +620,21 @@ impl App {
                 })
                 .0
             } else {
-                // words, lines or a path want the width of the page: under the name
+                // words, lines or a path want the width of the page: the box right under the name, and what it is for
+                // under the box
                 let name = ui.label(egui::RichText::new(&title).color(p.text));
                 if let Some(help) = help {
                     name.on_hover_text(help);
                 }
+                let reply = ui
+                    .add_enabled_ui(field.enabled, |ui| widgets::show(ui, field))
+                    .inner;
                 if let Some(desc) = &desc {
                     ui.add(
                         egui::Label::new(egui::RichText::new(desc).small().color(p.muted)).wrap(),
                     );
                 }
-                ui.add_space(4.0);
-                ui.add_enabled_ui(field.enabled, |ui| widgets::show(ui, field))
-                    .inner
+                reply
             };
             match reply {
                 Some(Reply::Set(value)) => edits.push(Edit {
