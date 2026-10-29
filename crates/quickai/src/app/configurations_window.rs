@@ -19,6 +19,8 @@ use quickai_core::profile::state::{carried, changes, Change};
 use quickai_core::profile::{label_of, Configuration};
 
 use super::configurations_ui::{modal_width, modified_color, NameFor, UNSAVED_MARK};
+use super::icons::{self, Icon};
+use super::theme::{self, Role};
 use super::App;
 use crate::configurations::{
     self, export_text, import, import_is_taken, Entry, OnTaken, Origin, DEFAULT_ID,
@@ -29,7 +31,7 @@ use crate::gpu::GpuVendor;
 pub(super) const CONFIGURATIONS_TITLE: &str = "QuickAI Configurations";
 
 /// The size the window opens at, and the least it can be made.
-const OPENS_AT: [f32; 2] = [580.0, 480.0];
+const OPENS_AT: [f32; 2] = [780.0, 700.0];
 const LEAST: [f32; 2] = [440.0, 240.0];
 
 /// Which window the configurations are: the id the display knows it by.
@@ -89,8 +91,6 @@ pub(super) enum Confirm {
     Delete(String),
     /// The person's Default is replaced by the built-in one.
     Reset,
-    /// Replace this configuration with what the window holds now.
-    Overwrite(String),
 }
 
 /// What a note offers to do about what it says: the one thing it names (getting a model, looking
@@ -217,27 +217,51 @@ impl App {
         }
     }
 
-    /// A note, and after it the button it has, if it has one.
+    /// A note: a sign of how much it matters, its words, and at the right the button it has, if it has one.
     fn show_note(&mut self, ui: &mut egui::Ui, note: &Note, configuration: &Configuration) {
-        let text = self.note_text(note);
+        let text = note.text(self.registry.vocabulary());
+        let color = level_color(note.level);
         let action = self.action_for(note, configuration);
-        ui.horizontal_wrapped(|ui| {
-            ui.label(
-                egui::RichText::new(text)
-                    .small()
-                    .color(level_color(note.level)),
-            );
+        ui.horizontal(|ui| {
+            let (square, _) = ui.allocate_exact_size(egui::vec2(15.0, 15.0), egui::Sense::hover());
+            if note.level != Level::Says {
+                icons::paint(ui.painter(), square, Icon::Warn, color);
+            }
+            // the words give the button its room, and wrap in what is left
+            let button = action.as_ref().map_or(0.0, |(_, label, _)| {
+                let font = egui::TextStyle::Button.resolve(ui.style());
+                let words = ui
+                    .painter()
+                    .layout_no_wrap(label.to_string(), font, color)
+                    .size()
+                    .x;
+                words + 2.0 * ui.spacing().button_padding.x + ui.spacing().item_spacing.x
+            });
+            let room = (ui.available_width() - button).max(80.0);
+            // as high as the button, so that a line of words is level with it
+            let layout = egui::Layout::left_to_right(egui::Align::Center);
+            ui.allocate_ui_with_layout(egui::vec2(room, 24.0), layout, |ui| {
+                ui.add(egui::Label::new(egui::RichText::new(text).small().color(color)).wrap());
+            });
             if let Some((action, label, disabled)) = action {
-                let response = ui.add_enabled(disabled.is_none(), egui::Button::new(label).small());
-                let response = match &disabled {
-                    Some(why) => response.on_disabled_hover_text(why),
-                    None => response,
-                };
-                if response.clicked() {
-                    self.configs.in_window = true;
-                    let ctx = ui.ctx().clone();
-                    self.run_note_action(action, &ctx);
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let response = theme::button_sized(
+                        ui,
+                        Role::Normal,
+                        disabled.is_none(),
+                        label,
+                        egui::vec2(0.0, 24.0),
+                    );
+                    let response = match &disabled {
+                        Some(why) => response.on_disabled_hover_text(why),
+                        None => response,
+                    };
+                    if response.clicked() {
+                        self.configs.in_window = true;
+                        let ctx = ui.ctx().clone();
+                        self.run_note_action(action, &ctx);
+                    }
+                });
             }
         });
     }
@@ -327,12 +351,11 @@ impl App {
         self.save_settings();
     }
 
-    /// What the window holds, in the order it is read: the commands that make one, then each
+    /// What the window holds, in the order it is read: the commands that make one, then a card for each
     /// configuration, then the files that could not be used.
     fn show_configurations_body(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            if ui
-                .button("New from this...")
+            if icons::labelled_button(ui, Role::Normal, true, Icon::Plus, "New from current", 28.0)
                 .on_hover_text("Save what you have set now as a new configuration, under a name.")
                 .clicked()
             {
@@ -340,8 +363,7 @@ impl App {
                 let name = self.suggested_name();
                 self.ask_for_a_name(NameFor::SaveAs, &name);
             }
-            if ui
-                .button("Import...")
+            if icons::labelled_button(ui, Role::Normal, true, Icon::Download, "Import...", 28.0)
                 .on_hover_text(
                     "Read a configuration someone gave you, and say what to take from it.",
                 )
@@ -352,137 +374,102 @@ impl App {
             }
         });
         if let Some(why) = &self.configs.error {
-            ui.label(
-                egui::RichText::new(why)
-                    .small()
-                    .color(super::theme::palette().bad),
-            );
+            ui.label(egui::RichText::new(why).small().color(theme::palette().bad));
         }
-        ui.add_space(4.0);
-        ui.separator();
-        ui.add_space(4.0);
+        ui.add_space(6.0);
 
         let entries = self.configuration_entries();
         let modified = self.configuration_modified();
         for entry in &entries {
-            self.show_configuration_row(ui, entry, modified);
-            ui.add_space(2.0);
+            self.show_configuration_card(ui, entry, modified);
         }
+        ui.add_space(4.0);
         if !self.configs.unusable.is_empty() {
-            ui.add_space(8.0);
-            ui.label(egui::RichText::new("Files that could not be used").strong())
-                .on_hover_text(
-                    "They are in your configurations folder. Fix them or remove them there.",
-                );
-            for bad in &self.configs.unusable.clone() {
-                ui.label(egui::RichText::new(&bad.file).small().weak());
-                ui.label(
-                    egui::RichText::new(&bad.why)
-                        .small()
-                        .color(super::theme::palette().bad),
-                );
-            }
+            let n = self.configs.unusable.len();
+            let heading = format!("{n} file{} couldn't be used", if n == 1 { "" } else { "s" });
+            egui::CollapsingHeader::new(theme::muted(heading))
+                .id_salt("configurations_unusable")
+                .show(ui, |ui| {
+                    ui.label(theme::muted(
+                        "They are in your configurations folder. Fix them or remove them there.",
+                    ));
+                    for bad in &self.configs.unusable {
+                        ui.label(egui::RichText::new(&bad.file).small().weak());
+                        ui.label(
+                            egui::RichText::new(&bad.why)
+                                .small()
+                                .color(theme::palette().bad),
+                        );
+                    }
+                });
         }
     }
 
-    /// One configuration: its line, and opened out the details and the commands.
-    fn show_configuration_row(&mut self, ui: &mut egui::Ui, entry: &Entry, modified: bool) {
+    /// One configuration, as a card: the badge of its engine, its name and what is said of it, a line of the
+    /// engine, the model and what goes with it, and at the right what can be done (Use; Revert and Save for the
+    /// one in use while it has changes; the rest in its menu). A click on the card opens it: what it sets and
+    /// its notes. The one in use has a green frame.
+    fn show_configuration_card(&mut self, ui: &mut egui::Ui, entry: &Entry, modified: bool) {
+        let p = theme::palette();
         let active = entry.id == self.configs.active;
-        let selected = self.configs.selected.as_deref() == Some(entry.id.as_str());
+        let open = self.configs.selected.as_deref() == Some(entry.id.as_str());
         let report = self
             .configs
             .reports
             .get(&entry.id)
             .cloned()
             .unwrap_or_default();
-        let engine_name = self
-            .registry
-            .engine(&entry.configuration.engine)
-            .map_or_else(
-                || entry.configuration.engine.clone(),
-                |e| e.doc.engine.name.clone(),
-            );
-        let summary = self.summary_of(&entry.configuration, &engine_name);
-        let notes = report
-            .notes
-            .iter()
-            .filter(|n| n.level != Level::Says)
-            .count();
-        ui.horizontal(|ui| {
-            let arrow = if selected { "v" } else { ">" };
-            if ui
-                .selectable_label(selected, format!("{arrow} {}", entry.name))
-                .on_hover_text(if active {
-                    "In use now"
-                } else {
-                    "Click for details"
-                })
-                .clicked()
-            {
-                self.configs.selected = if selected {
-                    None
-                } else {
-                    Some(entry.id.clone())
-                };
+        // the outline is coloured once the card knows whether the pointer is on it, and is as wide from the start
+        let mut card = egui::Frame::new()
+            .fill(p.card)
+            .stroke(egui::Stroke::new(1.0, p.line))
+            .corner_radius(8.0)
+            .inner_margin(egui::Margin {
+                left: 10,
+                right: 8,
+                top: 7,
+                bottom: 7,
+            })
+            .begin(ui);
+        let header = {
+            let ui = &mut card.content_ui;
+            ui.set_width(ui.available_width());
+            // the click of the card is under its buttons: a button that is pressed is not a click on the card
+            let header = ui
+                .scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt(("configuration_card", &entry.id))
+                        .sense(egui::Sense::click()),
+                    |ui| self.show_card_header(ui, entry, &report, active, modified),
+                )
+                .response;
+            if open {
+                self.show_card_details(ui, entry, &report);
             }
+            header
+        };
+        card.frame.stroke = egui::Stroke::new(
+            1.0,
             if active {
-                ui.label(
-                    egui::RichText::new("in use")
-                        .small()
-                        .color(super::theme::palette().ok),
-                );
-                if modified {
-                    ui.label(
-                        egui::RichText::new(format!("{UNSAVED_MARK} modified"))
-                            .small()
-                            .color(modified_color(ui.visuals().dark_mode)),
-                    )
-                    .on_hover_text("What the window holds is not what was saved.");
-                }
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(egui::RichText::new(entry.origin.label()).small().weak());
-                if notes > 0 {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{notes} note{}",
-                            if notes == 1 { "" } else { "s" }
-                        ))
-                        .small()
-                        .color(super::theme::palette().warn),
-                    );
-                }
-            });
-        });
-        ui.label(egui::RichText::new(summary).small().weak());
-        if !selected {
-            return;
+                p.accent
+            } else if open || header.contains_pointer() {
+                p.outline
+            } else {
+                p.line
+            },
+        );
+        card.end(ui);
+        if header
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            self.configs.selected = if open { None } else { Some(entry.id.clone()) };
         }
-        ui.indent(("configuration_details", &entry.id), |ui| {
-            self.show_configuration_details(ui, entry, &report, active, modified);
-        });
     }
 
-    /// `Ollama - qwen3-vl:8b - Open WebUI`: the engine, the model and what goes with it.
-    fn summary_of(&self, configuration: &Configuration, engine_name: &str) -> String {
-        let mut parts = vec![engine_name.to_string()];
-        if let Some(model) = configuration.models.first() {
-            parts.push(model.display().to_string());
-        }
-        for companion in self.registry.companions_of(&configuration.engine) {
-            let on = configuration
-                .values
-                .get(&quickai_core::profile::value_key(&companion.id, "enabled"))
-                .and_then(quickai_core::value::Value::as_bool)
-                .unwrap_or(false);
-            if on {
-                parts.push(companion.doc.engine.name.clone());
-            }
-        }
-        parts.join(" - ")
-    }
-
-    fn show_configuration_details(
+    /// The first rows of a card: the badge, the name and its tags over the line that says what it is, and at the
+    /// right its buttons and its menu. The name and the line give up their width to the buttons, and are cut.
+    fn show_card_header(
         &mut self,
         ui: &mut egui::Ui,
         entry: &Entry,
@@ -490,136 +477,289 @@ impl App {
         active: bool,
         modified: bool,
     ) {
+        let p = theme::palette();
         let c = &entry.configuration;
-        let made = made_line(c);
-        if !made.is_empty() {
-            ui.label(egui::RichText::new(made).small());
-        }
-        if let Some(note) = &c.meta.note {
-            ui.label(egui::RichText::new(note).small().italics());
-        }
-        // what choosing it would change
-        let differ = self.differences_from(entry);
-        if !active {
-            ui.label(
-                egui::RichText::new(match differ.len() {
-                    0 => "Nothing differs from what you have set now.".to_string(),
-                    1 => "1 setting differs from what you have set now.".to_string(),
-                    n => format!("{n} settings differ from what you have set now."),
-                })
-                .small(),
-            )
-            .on_hover_text(
-                differ
-                    .iter()
-                    .map(Change::describe)
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            );
-        }
-        // the commands
+        // a configuration the notes stop cannot be chosen, and the first of them says why
+        let stopped = report.stop().map(|n| n.text(self.registry.vocabulary()));
+        let notes = report
+            .notes
+            .iter()
+            .filter(|n| n.level != Level::Says)
+            .count();
+        let height = BADGE + 4.0;
+        let layout = egui::Layout::right_to_left(egui::Align::Center);
+        ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), height), layout, |ui| {
+            self.card_menu(ui, entry);
+            if active && modified {
+                self.card_save_and_revert(ui);
+            } else if !active && stopped.is_none() {
+                self.card_use(ui, entry);
+            }
+            let layout = egui::Layout::left_to_right(egui::Align::Center);
+            ui.with_layout(layout, |ui| {
+                self.engine_badge(ui, &c.engine);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    ui.horizontal(|ui| {
+                        // each tag with the order it gives way in when the name has no room: the notes first, then
+                        // where it is from, then In use (its frame says it too); Modified never does
+                        let mut tags: Vec<(u8, Option<Icon>, String, egui::Color32, egui::Color32)> =
+                            Vec::new();
+                        let warn = modified_color(ui.visuals().dark_mode);
+                        let warn_fill = p.card.lerp_to_gamma(warn, 0.16);
+                        if active {
+                            tags.push((3, Some(Icon::Check), "In use".into(), p.accent_text, p.accent_soft));
+                            if modified {
+                                tags.push((u8::MAX, None, format!("{UNSAVED_MARK} Modified"), warn, warn_fill));
+                            }
+                        }
+                        if entry.origin != Origin::Yours {
+                            let origin = entry.origin.label().to_string();
+                            tags.push((2, Some(Icon::Lock), origin, p.faint, egui::Color32::TRANSPARENT));
+                        }
+                        if notes > 0 && stopped.is_none() {
+                            tags.push((1, Some(Icon::Warn), notes.to_string(), warn, warn_fill));
+                        }
+                        let spacing = ui.spacing().item_spacing.x;
+                        let font = egui::TextStyle::Body.resolve(ui.style());
+                        let wanted = ui
+                            .painter()
+                            .layout_no_wrap(entry.name.clone(), font, p.text)
+                            .size()
+                            .x
+                            .min(90.0);
+                        let room = loop {
+                            let room = ui.available_width()
+                                - tags
+                                    .iter()
+                                    .map(|(_, icon, text, ..)| tag_width(ui, icon.is_some(), text) + spacing)
+                                    .sum::<f32>();
+                            let yields = tags
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, t)| t.0 != u8::MAX)
+                                .min_by_key(|(_, t)| t.0)
+                                .map(|(i, _)| i);
+                            match yields {
+                                Some(i) if room < wanted => {
+                                    tags.remove(i);
+                                }
+                                _ => break room,
+                            }
+                        };
+                        let name = egui::RichText::new(&entry.name)
+                            .strong()
+                            .color(if stopped.is_some() { p.faint } else { p.text });
+                        // the words are not for selecting: a click on them is a click on the card
+                        ui.allocate_ui(egui::vec2(room.max(40.0), 20.0), |ui| {
+                            ui.add(egui::Label::new(name).selectable(false).truncate());
+                        });
+                        for (_, icon, text, color, fill) in &tags {
+                            let shown = tag(ui, *icon, text, *color, *fill);
+                            if text.starts_with(UNSAVED_MARK) {
+                                shown.on_hover_text("What the window holds is not what was saved.");
+                            } else if icon == &Some(Icon::Warn) {
+                                shown.on_hover_text(format!(
+                                    "{notes} note{} about it on this computer: open it to read them.",
+                                    if notes == 1 { "" } else { "s" }
+                                ));
+                            }
+                        }
+                    });
+                    let line = stopped.clone().unwrap_or_else(|| self.summary_of(c));
+                    let color = if stopped.is_some() { p.faint } else { p.muted };
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(line).small().color(color))
+                            .selectable(false)
+                            .truncate(),
+                    );
+                });
+            });
+        });
+    }
+
+    /// *Use* of a card that is not the one in use: grey while something runs, with why; its hover says what
+    /// would change.
+    fn card_use(&mut self, ui: &mut egui::Ui, entry: &Entry) {
         let locked = self.engine_locked();
-        ui.horizontal_wrapped(|ui| {
-            let can_use = !active || modified;
-            // a configuration the notes stop cannot be chosen, and the first of them says why
-            let stopped = report.stop().map(|n| n.text(self.registry.vocabulary()));
-            let reason = if locked {
-                self.engine_locked_sentence()
-            } else if let Some(why) = &stopped {
-                why.clone()
-            } else {
-                "It is the one in use, and nothing was changed.".to_string()
-            };
-            if ui
-                .add_enabled(
-                    !locked && can_use && stopped.is_none(),
-                    egui::Button::new(if active { "Revert" } else { "Use" }),
-                )
-                .on_hover_text(if active {
-                    "Go back to what was saved."
-                } else {
-                    "Make this the configuration in use: its engine, model and settings become the window's. Nothing is started."
-                })
-                .on_disabled_hover_text(reason)
-                .clicked()
-            {
-                self.configs.in_window = true;
-                if active {
-                    self.configs.confirm = Some(Confirm::Revert(entry.id.clone()));
-                } else {
-                    self.request_choose(&entry.id);
-                    self.refresh_configurations();
+        let shown = theme::button_sized(ui, Role::Normal, !locked, "Use", egui::vec2(0.0, 26.0))
+            .on_disabled_hover_text(self.engine_locked_sentence());
+        let shown = shown.on_hover_ui(|ui| {
+            ui.set_max_width(320.0);
+            ui.label("Make this the configuration in use: its engine, model and settings become the window's. Nothing is started.");
+            let differ = self.differences_from(entry);
+            if !differ.is_empty() {
+                ui.add_space(4.0);
+                ui.label(theme::muted(match differ.len() {
+                    1 => "1 setting changes:".to_string(),
+                    n => format!("{n} settings change:"),
+                }));
+                for change in differ.iter().take(8) {
+                    ui.label(egui::RichText::new(change.describe()).small());
+                }
+                if differ.len() > 8 {
+                    ui.label(theme::muted(format!("and {} more", differ.len() - 8)));
                 }
             }
-            let save_label = if active { "Save" } else { "Save here" };
-            if ui
-                .add_enabled(!active || modified, egui::Button::new(save_label))
-                .on_hover_text(if active {
-                    "Save what you have set over this configuration."
-                } else {
-                    "Replace this configuration with what you have set now."
-                })
-                .clicked()
-            {
-                self.configs.in_window = true;
-                if active {
-                    let _ = self.save_active();
-                    self.refresh_configurations();
-                } else {
-                    self.configs.confirm = Some(Confirm::Overwrite(entry.id.clone()));
-                }
-            }
-            let yours = entry.origin == Origin::Yours;
-            if ui
-                .add_enabled(yours, egui::Button::new("Rename"))
-                .on_disabled_hover_text("Built in, or from the package: save it under another name instead.")
-                .clicked()
-            {
-                self.configs.in_window = true;
-                self.ask_for_a_name(NameFor::Rename(entry.id.clone()), &entry.name);
-            }
-            if ui.button("Duplicate").on_hover_text("A copy under a name of its own.").clicked() {
-                self.configs.in_window = true;
-                let suggestion = format!("{} copy", entry.name);
-                self.ask_for_a_name(NameFor::Duplicate(entry.id.clone()), &suggestion);
-            }
-            if ui
-                .button("Export...")
-                .on_hover_text("Write it to a file to give to someone else: no folder, program or secret goes in it.")
-                .clicked()
-            {
-                self.configs.in_window = true;
-                self.configs.export = Some(self.export_dialog_for(entry));
-            }
-            if entry.id == DEFAULT_ID {
-                if ui
-                    .add_enabled(yours, egui::Button::new("Reset to factory"))
-                    .on_hover_text("Put the Default that comes with QuickAI back.")
-                    .on_disabled_hover_text("It is the Default that comes with QuickAI already.")
+        });
+        if shown.clicked() {
+            self.configs.in_window = true;
+            self.request_choose(&entry.id);
+            self.refresh_configurations();
+        }
+    }
+
+    /// *Save* and *Revert* of the card of the one in use, while it has changes (laid out from the right: Save is
+    /// the last). Revert is grey while something runs, with why.
+    fn card_save_and_revert(&mut self, ui: &mut egui::Ui) {
+        if icons::labelled_button(ui, Role::Primary, true, Icon::Save, "Save", 26.0)
+            .on_hover_text("Save what you have set over this configuration.")
+            .clicked()
+        {
+            self.configs.in_window = true;
+            let _ = self.save_active();
+            self.refresh_configurations();
+        }
+        let locked = self.engine_locked();
+        if icons::labelled_button(ui, Role::Normal, !locked, Icon::Undo, "Revert", 26.0)
+            .on_hover_text("Go back to what was saved.")
+            .on_disabled_hover_text(self.engine_locked_sentence())
+            .clicked()
+        {
+            self.configs.in_window = true;
+            self.configs.confirm = Some(Confirm::Revert(self.configs.active.clone()));
+        }
+    }
+
+    /// The … of a card and its menu: Rename, Duplicate, Export, and Delete (Reset to factory, for the Default).
+    /// What is built in or comes with the package cannot be renamed or deleted, and says so.
+    fn card_menu(&mut self, ui: &mut egui::Ui, entry: &Entry) {
+        let yours = entry.origin == Origin::Yours;
+        let more = icons::icon_button(ui, Icon::More, egui::vec2(28.0, 26.0), true, false)
+            .on_hover_text("Rename, duplicate, export or delete it");
+        egui::Popup::menu(&more)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+            .show(|ui| {
+                ui.set_min_width(190.0);
+                if icons::menu_item(ui, Icon::Pencil, "Rename...", yours, false)
+                    .on_disabled_hover_text(
+                        "Built in, or from the package: duplicate it to have one of your own.",
+                    )
                     .clicked()
                 {
                     self.configs.in_window = true;
-                    self.configs.confirm = Some(Confirm::Reset);
+                    self.ask_for_a_name(NameFor::Rename(entry.id.clone()), &entry.name);
                 }
-            } else if ui
-                .add_enabled(yours, egui::Button::new("Delete"))
-                .on_disabled_hover_text("Built in, or from the package: it cannot be deleted.")
-                .clicked()
-            {
-                self.configs.in_window = true;
-                self.configs.confirm = Some(Confirm::Delete(entry.id.clone()));
-            }
+                if icons::menu_item(ui, Icon::Copy, "Duplicate...", true, false)
+                    .on_hover_text("A copy under a name of its own.")
+                    .clicked()
+                {
+                    self.configs.in_window = true;
+                    let suggestion = format!("{} copy", entry.name);
+                    self.ask_for_a_name(NameFor::Duplicate(entry.id.clone()), &suggestion);
+                }
+                if icons::menu_item(ui, Icon::Upload, "Export...", true, false)
+                    .on_hover_text("Write it to a file to give to someone else: no folder, program or secret goes in it.")
+                    .clicked()
+                {
+                    self.configs.in_window = true;
+                    self.configs.export = Some(self.export_dialog_for(entry));
+                }
+                ui.separator();
+                if entry.id == DEFAULT_ID {
+                    if icons::menu_item(ui, Icon::Undo, "Reset to factory...", yours, true)
+                        .on_hover_text("Put the Default that comes with QuickAI back.")
+                        .on_disabled_hover_text("It is the Default that comes with QuickAI already.")
+                        .clicked()
+                    {
+                        self.configs.in_window = true;
+                        self.configs.confirm = Some(Confirm::Reset);
+                    }
+                } else if icons::menu_item(ui, Icon::Trash, "Delete...", yours, true)
+                    .on_disabled_hover_text("Built in, or from the package: it cannot be deleted.")
+                    .clicked()
+                {
+                    self.configs.in_window = true;
+                    self.configs.confirm = Some(Confirm::Delete(entry.id.clone()));
+                }
+            });
+    }
+
+    /// What an opened card says under its first rows, in line with its name: the note of whoever made it, the
+    /// computer it was made on when that is another kind, what it sets as chips, and the notes about it here.
+    fn show_card_details(&mut self, ui: &mut egui::Ui, entry: &Entry, report: &Report) {
+        let p = theme::palette();
+        let c = &entry.configuration;
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.add_space(BADGE + ui.spacing().item_spacing.x);
+            ui.vertical(|ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 6.0;
+                if let Some(note) = &c.meta.note {
+                    ui.label(egui::RichText::new(note).italics().color(p.body));
+                }
+                if self.made_elsewhere(c) {
+                    ui.label(theme::muted(made_line(c)));
+                }
+                let chips = self.settings_chips(c);
+                if chips.is_empty() {
+                    ui.label(theme::muted("Every setting at its default."));
+                } else {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                        for (label, value) in &chips {
+                            setting_chip(ui, label, value);
+                        }
+                    });
+                }
+                for note in &report.notes {
+                    self.show_note(ui, note, c);
+                }
+            });
         });
-        // what it sets
-        let sets = self.sets_line(c);
-        ui.label(egui::RichText::new(format!("Sets: {sets}")).small());
-        if let Some(build) = &c.runtime.build {
-            ui.label(egui::RichText::new(format!("Program: {build}")).small());
+    }
+
+    /// `Ollama · qwen3-vl:8b · with Open WebUI`: the engine, the model (by its name in the recommended list when
+    /// it is one of it) and what goes with it.
+    fn summary_of(&self, configuration: &Configuration) -> String {
+        let engine = self.registry.engine(&configuration.engine).map_or_else(
+            || configuration.engine.clone(),
+            |e| e.doc.engine.name.clone(),
+        );
+        let mut parts = vec![engine];
+        parts.push(match configuration.models.first() {
+            Some(model) => self.model_name(model),
+            None => "any model".to_string(),
+        });
+        for companion in self.registry.companions_of(&configuration.engine) {
+            if companion_on(configuration, &companion.id) {
+                parts.push(format!("with {}", companion.doc.engine.name));
+            }
         }
-        // what a person should be told about it on this computer
-        for note in &report.notes {
-            self.show_note(ui, note, c);
+        parts.join(" · ")
+    }
+
+    /// What a person calls the model a configuration names: the name the file gives, else the name of the entry
+    /// of the recommended list, else the file or the name the engine knows.
+    fn model_name(&self, model: &quickai_core::profile::ModelPick) -> String {
+        if let (None, quickai_core::profile::ModelSource::Catalog { id, .. }) =
+            (&model.name, &model.source)
+        {
+            if let Some(listed) = self.registry.catalog().model(id) {
+                return listed.name.clone();
+            }
         }
+        model.display().to_string()
+    }
+
+    /// The configuration was made on another kind of computer than this one (another system, processor or GPU).
+    fn made_elsewhere(&self, c: &Configuration) -> bool {
+        let here = self.host().made_on();
+        c.meta
+            .made_on
+            .as_ref()
+            .is_some_and(|m| (&m.os, &m.arch, &m.gpu) != (&here.os, &here.arch, &here.gpu))
     }
 
     /// What differs between what the window holds and this configuration, for the engine it is for.
@@ -635,10 +775,24 @@ impl App {
         )
     }
 
-    fn sets_line(&self, c: &Configuration) -> String {
-        let mut parts = Vec::new();
+    /// What a configuration sets, as the chips of its card say it: a label and a value for each setting it carries
+    /// (a program that goes with the engine named before the label, unless the label names it; the hint of a label in
+    /// brackets left out), the program it was made with, and the live traffic proxy. That a program goes with the
+    /// engine is not one: the line of the card says it.
+    fn settings_chips(&self, c: &Configuration) -> Vec<(String, String)> {
+        let switches: Vec<String> = self
+            .registry
+            .companions_of(&c.engine)
+            .map(|companion| quickai_core::profile::value_key(&companion.id, "enabled"))
+            .collect();
+        let mut chips = Vec::new();
         for (key, field) in carried(&self.registry, &c.engine) {
-            // what goes with the engine is named, or its settings read as the engine's own
+            if switches.contains(&key) {
+                continue;
+            }
+            let Some(value) = c.values.get(&key) else {
+                continue;
+            };
             let owner = key.rsplit_once('.').map_or("", |(owner, _)| owner);
             let owner_name = (owner != c.engine)
                 .then(|| {
@@ -647,44 +801,41 @@ impl App {
                         .map(|e| e.doc.engine.name.clone())
                 })
                 .flatten();
-            if let Some(value) = c.values.get(&key) {
-                let text = match value {
-                    quickai_core::value::Value::Str(s) => {
-                        let first = s.lines().next().unwrap_or_default();
-                        if s.lines().count() > 1 || first.chars().count() > 30 {
-                            format!("{}...", first.chars().take(30).collect::<String>())
-                        } else {
-                            first.to_string()
-                        }
+            let text = match value {
+                quickai_core::value::Value::Str(s) => {
+                    let first = s.lines().next().unwrap_or_default();
+                    if s.lines().count() > 1 || first.chars().count() > 30 {
+                        format!("{}...", first.chars().take(30).collect::<String>())
+                    } else {
+                        first.to_string()
                     }
-                    other => quickai_core::profile::shown(other),
-                };
-                let label = label_of(field);
-                parts.push(match owner_name {
+                }
+                quickai_core::value::Value::Bool(on) => if *on { "on" } else { "off" }.to_string(),
+                other => quickai_core::profile::shown(other),
+            };
+            let full = label_of(field);
+            let label = full
+                .split_once(" (")
+                .map_or(full.as_str(), |(short, _)| short)
+                .to_string();
+            chips.push((
+                match owner_name {
                     // unless the label says whose it is already
                     Some(name) if !label.to_lowercase().contains(&name.to_lowercase()) => {
-                        format!("{name} {label} {text}")
+                        format!("{name} {label}")
                     }
-                    _ => format!("{label} {text}"),
-                });
-            }
+                    _ => label,
+                },
+                text,
+            ));
+        }
+        if let Some(build) = &c.runtime.build {
+            chips.push(("Program".to_string(), build.clone()));
         }
         if c.traffic_proxy == Some(true) {
-            parts.push("Live traffic proxy on".to_string());
+            chips.push(("Live traffic proxy".to_string(), "on".to_string()));
         }
-        if parts.is_empty() {
-            "everything at its default".to_string()
-        } else {
-            parts.join(", ")
-        }
-    }
-
-    pub(super) fn note_text(&self, note: &Note) -> String {
-        format!(
-            "{}  {}",
-            note.level.label(),
-            note.text(self.registry.vocabulary())
-        )
+        chips
     }
 
     // ---- exporting -----------------------------------------------------------------------------------
@@ -1122,7 +1273,7 @@ impl App {
 
     // ---- the questions of the window ---------------------------------------------------------------------
 
-    /// Delete, reset and overwrite ask before anything is done.
+    /// Revert, delete and reset ask before anything is done.
     pub(super) fn show_configuration_confirm(&mut self, ctx: &egui::Context) {
         let Some(confirm) = self.configs.confirm.clone() else {
             return;
@@ -1151,14 +1302,6 @@ impl App {
                 "Reset to factory?".to_string(),
                 "Your Default is replaced by the Default that comes with QuickAI. This can't be undone.".to_string(),
                 "Reset",
-            ),
-            Confirm::Overwrite(id) => (
-                "Replace this configuration?".to_string(),
-                format!(
-                    "\"{}\" is replaced by what you have set now: the engine, the model and the settings.",
-                    name_of(id)
-                ),
-                "Replace",
             ),
         };
         let (mut yes, mut cancel) = (false, false);
@@ -1218,14 +1361,6 @@ impl App {
             Confirm::Reset => configurations::reset_to_factory(&self.config_dirs, &self.registry)
                 .map(|()| "The Default is the one that comes with QuickAI again.".to_string())
                 .map_err(|e| e.to_string()),
-            Confirm::Overwrite(id) => {
-                let installed = self.installed_now();
-                let captured = self.captured_now(&installed);
-                let host = self.host();
-                configurations::save(&self.config_dirs, &self.registry, id, captured, &host)
-                    .map(|_| "Replaced with what you have set now.".to_string())
-                    .map_err(|e| e.to_string())
-            }
         };
         match done {
             Ok(said) => {
@@ -1320,6 +1455,132 @@ fn level_color(level: Level) -> egui::Color32 {
         Level::Asks => super::theme::palette().warn,
         Level::Warns => super::theme::palette().warn,
         Level::Says => super::theme::palette().muted,
+    }
+}
+
+/// The side of the badge of an engine on a card.
+const BADGE: f32 = 30.0;
+
+/// The program `companion` is switched on in `configuration`.
+fn companion_on(configuration: &Configuration, companion: &str) -> bool {
+    configuration
+        .values
+        .get(&quickai_core::profile::value_key(companion, "enabled"))
+        .and_then(quickai_core::value::Value::as_bool)
+        .unwrap_or(false)
+}
+
+impl App {
+    /// The badge of the engine a configuration is for: the first letter of its name on the engine's tint (by its
+    /// place in the selector, so that no two engines of this QuickAI share one), or in an outline for an engine it
+    /// does not have.
+    fn engine_badge(&self, ui: &mut egui::Ui, engine: &str) {
+        let p = theme::palette();
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(BADGE, BADGE), egui::Sense::hover());
+        if !ui.is_rect_visible(rect) {
+            return;
+        }
+        let name = self
+            .registry
+            .engine(engine)
+            .map_or(engine, |e| e.doc.engine.name.as_str());
+        let letter: String = name
+            .chars()
+            .find(|c| c.is_alphanumeric())
+            .map(|c| c.to_uppercase().collect())
+            .unwrap_or_default();
+        let (fill, color, stroke) = match self.registry.selectable().position(|e| e.id == engine) {
+            Some(place) => {
+                let (fill, color) = theme::tint(place);
+                (fill, color, egui::Stroke::NONE)
+            }
+            None => (
+                egui::Color32::TRANSPARENT,
+                p.faint,
+                egui::Stroke::new(1.0, p.outline),
+            ),
+        };
+        ui.painter()
+            .rect(rect, 7.0, fill, stroke, egui::StrokeKind::Inside);
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            letter,
+            egui::FontId::new(BADGE * 0.45, theme::semibold(ui)),
+            color,
+        );
+    }
+}
+
+/// How wide a tag of `text` is, with a picture or not.
+fn tag_width(ui: &egui::Ui, icon: bool, text: &str) -> f32 {
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let words = ui
+        .painter()
+        .layout_no_wrap(text.to_string(), font, egui::Color32::PLACEHOLDER)
+        .size()
+        .x;
+    words + 14.0 + if icon { 15.0 } else { 0.0 }
+}
+
+/// A short word after a name, in a pill of `color` on `fill`, with a picture before it when it has one: *In use*,
+/// *Modified*, where it is from, how many notes there are.
+fn tag(
+    ui: &mut egui::Ui,
+    icon: Option<Icon>,
+    text: &str,
+    color: egui::Color32,
+    fill: egui::Color32,
+) -> egui::Response {
+    let size = egui::vec2(tag_width(ui, icon.is_some(), text), 18.0);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
+    if ui.is_rect_visible(rect) {
+        ui.painter().rect_filled(rect, 9.0, fill);
+        let mut left = rect.left() + 7.0;
+        if let Some(icon) = icon {
+            let square = egui::Rect::from_min_size(
+                egui::pos2(left, rect.center().y - 6.0),
+                egui::vec2(12.0, 12.0),
+            );
+            icons::paint(ui.painter(), square, icon, color);
+            left += 15.0;
+        }
+        ui.painter().text(
+            egui::pos2(left, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            text,
+            egui::TextStyle::Small.resolve(ui.style()),
+            color,
+        );
+    }
+    response
+}
+
+/// A setting of a card: its label, and its value a little stronger, in a rounded chip.
+fn setting_chip(ui: &mut egui::Ui, label: &str, value: &str) {
+    let p = theme::palette();
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let strong = egui::FontId::new(font.size, theme::semibold(ui));
+    let label_galley = ui.painter().layout_no_wrap(label.to_string(), font, p.body);
+    let value_galley = ui
+        .painter()
+        .layout_no_wrap(value.to_string(), strong, p.text);
+    let gap = 5.0;
+    let size = egui::vec2(
+        label_galley.size().x + gap + value_galley.size().x + 18.0,
+        22.0,
+    );
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    if ui.is_rect_visible(rect) {
+        ui.painter().rect_filled(rect, 11.0, p.raised);
+        let left = rect.left() + 9.0;
+        let value_left = left + label_galley.size().x + gap;
+        let label_top = rect.center().y - label_galley.size().y / 2.0;
+        let value_top = rect.center().y - value_galley.size().y / 2.0;
+        ui.painter()
+            .galley(egui::pos2(left, label_top), label_galley, p.body);
+        ui.painter()
+            .galley(egui::pos2(value_left, value_top), value_galley, p.text);
     }
 }
 
@@ -1582,6 +1843,28 @@ mod tests {
         click(app, ctx, display, at);
     }
 
+    /// Clicks the … of the card of `name`: at the right of the card, level with the badge (the text painted just
+    /// before the name), which is in the middle of the card's first rows as the … is.
+    fn open_menu_of(app: &mut App, ctx: &egui::Context, display: &Display, name: &str) {
+        let width = display
+            .0
+            .borrow()
+            .windows
+            .get(&configurations_viewport())
+            .expect("drawn")
+            .size
+            .x;
+        let texts = painted(display).unwrap_or_default();
+        let at = texts
+            .iter()
+            .position(|(t, _)| t == name)
+            .unwrap_or_else(|| panic!("no `{name}` in {:?}", said(display)));
+        let level = texts[at - 1].1.center().y;
+        // the panel's margin, the card's and half the button
+        click(app, ctx, display, egui::pos2(width - 30.0, level));
+        settle(app, ctx, display);
+    }
+
     #[test]
     fn p3_a53_the_configurations_are_a_window_of_their_own_that_closes_any_way_and_writes() {
         let dir = scratch("a53");
@@ -1612,7 +1895,7 @@ mod tests {
             assert_eq!(window.size, egui::vec2(OPENS_AT[0], OPENS_AT[1]));
         }
         let said_now = said(&display);
-        for want in ["New from this...", "Import...", "Close"] {
+        for want in ["New from current", "Import...", "Close"] {
             assert!(said_now.iter().any(|t| t == want), "{want} in {said_now:?}");
         }
         // asked for again while it is open: it comes to the front, once
@@ -1660,79 +1943,88 @@ mod tests {
         app.open_configurations();
         settle(&mut app, &ctx, &display);
         let said_now = said(&display);
-        // each configuration with what it is and where it is from
+        // each configuration by its name, with a line of its engine, its model and what goes with it; only what is
+        // not the person's own says where it is from
+        for want in [
+            "Default",
+            "Vision",
+            "Ollama · qwen3-vl:8b · with Open WebUI",
+            "built in",
+            "Use",
+        ] {
+            assert!(said_now.iter().any(|t| t == want), "{want} in {said_now:?}");
+        }
         assert!(
-            said_now
-                .iter()
-                .any(|t| t.starts_with("> Default") || t == "v Default"),
+            said_now.iter().any(|t| t.starts_with("llama.cpp · ")),
             "{said_now:?}"
         );
-        assert!(said_now.iter().any(|t| t == "> Vision"), "{said_now:?}");
+        assert!(!said_now.iter().any(|t| t == "yours"), "{said_now:?}");
+        // the files that could not be used are counted, and say why when they are opened
         assert!(
-            said_now
-                .iter()
-                .any(|t| t == "llama.cpp - Bonsai 2 4B (ternary Q2_0)" || t == "llama.cpp"),
-            "{said_now:?}"
-        );
-        assert!(
-            said_now
-                .iter()
-                .any(|t| t == "Ollama - qwen3-vl:8b - Open WebUI"),
-            "{said_now:?}"
-        );
-        assert!(
-            said_now.iter().any(|t| t == "built in") && said_now.iter().any(|t| t == "yours"),
-            "{said_now:?}"
-        );
-        // the files that could not be used are listed with why
-        assert!(
-            said_now.iter().any(|t| t == "Files that could not be used"),
+            said_now.iter().any(|t| t == "1 file couldn't be used"),
             "{said_now:?}"
         );
         assert!(
-            said_now
+            !said_now
                 .iter()
                 .any(|t| t.contains("missing field `engine`")),
-            "{said_now:?}"
+            "folded: {said_now:?}"
         );
-        // opened out: the details and the commands
-        press(&mut app, &ctx, &display, "> Vision");
+        press(&mut app, &ctx, &display, "1 file couldn't be used");
         settle(&mut app, &ctx, &display);
+        assert!(
+            said(&display)
+                .iter()
+                .any(|t| t.contains("missing field `engine`")),
+            "{:?}",
+            said(&display)
+        );
+        // opened by a click on its name: the note, the computer it was made on (another kind: this one has no AMD
+        // GPU), what it sets as chips, and the notes about it here
+        press(&mut app, &ctx, &display, "Vision");
+        settle(&mut app, &ctx, &display);
+        assert_eq!(app.configs.selected.as_deref(), Some("vision"));
         let said_now = said(&display);
         for want in [
             "Made with QuickAI 0.1.0 on Linux x86_64 (AMD GPU, 32 GB)",
             "For pictures.",
-            "Use",
-            "Save here",
-            "Rename",
-            "Duplicate",
-            "Export...",
-            "Delete",
+            "Context size",
+            "16384",
+            "Port",
+            "11600",
         ] {
             assert!(said_now.iter().any(|t| t == want), "{want} in {said_now:?}");
         }
-        let sets = said_now
-            .iter()
-            .find(|t| t.starts_with("Sets: "))
-            .expect("what it sets");
+        // that Open WebUI goes with it is the line's to say, not a setting's
         assert!(
-            sets.contains("Context size 16384")
-                && sets.contains("Port 11600")
-                && sets.contains("Start Open WebUI with Ollama true"),
-            "{sets}"
+            !said_now.iter().any(|t| t.starts_with("Start Open WebUI")),
+            "{said_now:?}"
         );
+        let report = app
+            .configs
+            .reports
+            .get("vision")
+            .cloned()
+            .unwrap_or_default();
+        assert!(!report.notes.is_empty(), "notes about it here");
+        for note in &report.notes {
+            let text = note.text(app.registry.vocabulary());
+            assert!(said_now.contains(&text), "{text} in {said_now:?}");
+        }
+        // what is done less often is in its menu
+        open_menu_of(&mut app, &ctx, &display, "Vision");
+        let said_now = said(&display);
+        for want in ["Rename...", "Duplicate...", "Export...", "Delete..."] {
+            assert!(said_now.iter().any(|t| t == want), "{want} in {said_now:?}");
+        }
+        assert!(!said_now.iter().any(|t| t == "Save here"), "{said_now:?}");
+        // and the built-in Default's has Reset to factory where the others have Delete
+        click(&mut app, &ctx, &display, egui::pos2(4.0, 4.0));
+        open_menu_of(&mut app, &ctx, &display, "Default");
+        let said_now = said(&display);
         assert!(
-            said_now
-                .iter()
-                .any(|t| t.contains("Warns") || t.contains("Says")),
-            "the notes about it: {said_now:?}"
-        );
-        // a setting differs from what the window holds
-        assert!(
-            said_now
-                .iter()
-                .any(|t| t.ends_with("differ from what you have set now.")
-                    || t.ends_with("differs from what you have set now.")),
+            said_now.iter().any(|t| t == "Reset to factory...")
+                && !said_now.iter().any(|t| t == "Delete..."),
             "{said_now:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -1883,9 +2175,7 @@ mod tests {
         assert_eq!(app.configs.selected.as_deref(), Some("given"));
         assert!(app.registry.profile("given").is_some());
         assert!(
-            said(&display)
-                .iter()
-                .any(|t| t == "> Given chat" || t == "v Given chat"),
+            said(&display).iter().any(|t| t == "Given chat"),
             "{:?}",
             said(&display)
         );
@@ -1995,9 +2285,8 @@ mod tests {
         let display = Display::attach(&ctx);
         app.open_configurations();
         settle(&mut app, &ctx, &display);
-        press(&mut app, &ctx, &display, "> Vision");
-        settle(&mut app, &ctx, &display);
         let before = tree(&dir);
+        open_menu_of(&mut app, &ctx, &display, "Vision");
         press(&mut app, &ctx, &display, "Export...");
         settle(&mut app, &ctx, &display);
         let now = said(&display);
@@ -2056,6 +2345,7 @@ mod tests {
         let new: Vec<&String> = after.iter().filter(|f| !before.contains(f)).collect();
         assert_eq!(new, ["out/shared.toml"], "{new:?}");
         // a file that is there is replaced only when the person says so
+        open_menu_of(&mut app, &ctx, &display, "Vision");
         press(&mut app, &ctx, &display, "Export...");
         {
             let d = app.configs.export.as_mut().unwrap();
@@ -2084,6 +2374,7 @@ mod tests {
             .unwrap()
             .contains("Another note."));
         // a path that cannot be written is said in the dialog
+        open_menu_of(&mut app, &ctx, &display, "Vision");
         press(&mut app, &ctx, &display, "Export...");
         app.configs.export.as_mut().unwrap().path =
             dir.join("no/such/folder/x.toml").display().to_string();
@@ -2146,7 +2437,7 @@ mod tests {
             painted(display)
                 .unwrap_or_default()
                 .into_iter()
-                .find(|(t, _)| t.starts_with("> Configuration number 30"))
+                .find(|(t, _)| t.starts_with("Configuration number 30"))
                 .map(|(_, r)| r)
         };
         assert!(
@@ -2283,13 +2574,16 @@ mod tests {
         assert!(app.configuration_modified());
         app.open_configurations();
         settle(&mut app, &ctx, &display);
-        // the row of the one in use has Revert; it asks before anything is lost; and it says in words that it
-        // has changes that are not saved (a row that is in use and unchanged says only that it is in use)
+        // the card of the one in use has Revert and Save; Revert asks before anything is lost; and the card says in
+        // a word that it has changes that are not saved (one that is in use and unchanged says only that it is in use)
         let said_now = said(&display);
-        assert!(said_now.iter().any(|t| t == "Revert"), "{said_now:?}");
         assert!(
-            said_now.iter().any(|t| t == "• modified"),
-            "the row of the one in use says it is modified: {said_now:?}"
+            said_now.iter().any(|t| t == "Revert") && said_now.iter().any(|t| t == "Save"),
+            "{said_now:?}"
+        );
+        assert!(
+            said_now.iter().any(|t| t == "• Modified"),
+            "the card of the one in use says it is modified: {said_now:?}"
         );
         press(&mut app, &ctx, &display, "Revert");
         settle(&mut app, &ctx, &display);

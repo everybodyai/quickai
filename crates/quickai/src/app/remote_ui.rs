@@ -788,7 +788,7 @@ impl App {
             }
         }
         ui.separator();
-        if menu_item(ui, Icon::Gear, "Manage computers…").clicked() {
+        if icons::menu_item(ui, Icon::Gear, "Manage computers…", true, false).clicked() {
             self.open_computers();
         }
         if let Some(id) = chosen {
@@ -1685,32 +1685,6 @@ fn start_engine_help(ui: &mut egui::Ui, id: &str, name: &str, computer: &str) {
             .small(),
         );
     }
-}
-
-/// An item of a menu: its picture and words at the left, the width of the menu, lit when the pointer is on it.
-fn menu_item(ui: &mut egui::Ui, icon: Icon, text: &str) -> egui::Response {
-    let p = theme::palette();
-    let width = ui.available_width();
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
-    if ui.is_rect_visible(rect) {
-        if response.hovered() {
-            ui.painter().rect_filled(rect, 4.0, p.raised_hover);
-        }
-        let color = if response.hovered() { p.text } else { p.body };
-        let square = egui::Rect::from_min_size(
-            egui::pos2(rect.left() + 8.0, rect.center().y - 7.0),
-            egui::vec2(14.0, 14.0),
-        );
-        icons::paint(ui.painter(), square, icon, color);
-        ui.painter().text(
-            egui::pos2(square.right() + 10.0, rect.center().y),
-            egui::Align2::LEFT_CENTER,
-            text,
-            egui::TextStyle::Button.resolve(ui.style()),
-            color,
-        );
-    }
-    response
 }
 
 /// A note that is neither good nor bad news: why something cannot be done here.

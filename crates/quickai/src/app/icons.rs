@@ -48,6 +48,13 @@ pub(super) enum Icon {
     Headphones,
     Wrench,
     Bolt,
+    // what a configuration says of itself, and what can be done with it
+    Warn,
+    Lock,
+    Undo,
+    Save,
+    Trash,
+    Upload,
 }
 
 /// Draws `icon` in `rect` (it is drawn in the largest square that fits, in the middle) in `color`.
@@ -456,6 +463,61 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
             (12.5, 10.5),
             (13.5, 2.5),
         ]),
+        Icon::Warn => {
+            line(&[(12.0, 3.5), (21.5, 20.0), (2.5, 20.0), (12.0, 3.5)]);
+            line(&[(12.0, 9.5), (12.0, 14.0)]);
+            dot(12.0, 17.0, 1.1);
+        }
+        Icon::Lock => {
+            line(&[
+                (5.0, 11.0),
+                (19.0, 11.0),
+                (19.0, 21.0),
+                (5.0, 21.0),
+                (5.0, 11.0),
+            ]);
+            // the shackle: two sides and the half circle that joins them
+            let mut points = vec![(8.0, 11.0), (8.0, 7.0)];
+            for i in 0..=8 {
+                let a = (180.0 + i as f32 * 22.5).to_radians();
+                points.push((12.0 + 4.0 * a.cos(), 7.0 + 4.0 * a.sin()));
+            }
+            points.push((16.0, 11.0));
+            line(&points);
+        }
+        Icon::Undo => {
+            line(&[(9.0, 14.0), (4.0, 9.0), (9.0, 4.0)]);
+            // back along the top, round the right and home along the bottom
+            let mut points = vec![(4.0, 9.0)];
+            for i in 0..=8 {
+                let a = (-90.0 + i as f32 * 22.5).to_radians();
+                points.push((14.5 + 5.5 * a.cos(), 14.5 + 5.5 * a.sin()));
+            }
+            points.push((11.0, 20.0));
+            line(&points);
+        }
+        Icon::Save => {
+            line(&[
+                (3.0, 3.0),
+                (16.0, 3.0),
+                (21.0, 8.0),
+                (21.0, 21.0),
+                (3.0, 21.0),
+                (3.0, 3.0),
+            ]);
+            line(&[(7.0, 21.0), (7.0, 13.0), (17.0, 13.0), (17.0, 21.0)]);
+            line(&[(7.0, 3.0), (7.0, 8.0), (15.0, 8.0)]);
+        }
+        Icon::Trash => {
+            line(&[(3.0, 6.0), (21.0, 6.0)]);
+            line(&[(8.5, 6.0), (8.5, 3.5), (15.5, 3.5), (15.5, 6.0)]);
+            line(&[(5.5, 6.0), (6.5, 21.0), (17.5, 21.0), (18.5, 6.0)]);
+        }
+        Icon::Upload => {
+            line(&[(12.0, 15.0), (12.0, 4.0)]);
+            line(&[(7.0, 8.5), (12.0, 3.5), (17.0, 8.5)]);
+            line(&[(5.0, 20.0), (19.0, 20.0)]);
+        }
     }
 }
 
@@ -558,6 +620,51 @@ pub(super) fn framed_icon_button(
         paint(ui.painter(), square, icon, color);
     }
     response
+}
+
+/// An item of a menu: its picture and words at the left, the width of the menu, lit when the pointer is on it. One that is
+/// not `enabled` is greyed (and says why on hover, when it is asked to); a `danger` one is in the colour of what ends something.
+pub(super) fn menu_item(
+    ui: &mut egui::Ui,
+    icon: Icon,
+    text: &str,
+    enabled: bool,
+    danger: bool,
+) -> egui::Response {
+    ui.add_enabled_ui(enabled, |ui| {
+        let p = theme::palette();
+        let width = ui.available_width();
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
+        if ui.is_rect_visible(rect) {
+            if response.hovered() && enabled {
+                ui.painter().rect_filled(rect, 4.0, p.raised_hover);
+            }
+            let color = if !enabled {
+                p.faint
+            } else if danger {
+                p.bad
+            } else if response.hovered() {
+                p.text
+            } else {
+                p.body
+            };
+            let square = Rect::from_min_size(
+                Pos2::new(rect.left() + 8.0, rect.center().y - 7.0),
+                egui::vec2(14.0, 14.0),
+            );
+            paint(ui.painter(), square, icon, color);
+            ui.painter().text(
+                Pos2::new(square.right() + 10.0, rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                text,
+                egui::TextStyle::Button.resolve(ui.style()),
+                color,
+            );
+        }
+        response
+    })
+    .inner
 }
 
 /// A copy button: a picture of two sheets, a tick for a moment once it has copied `text`. `salt` tells it from the

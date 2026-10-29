@@ -111,6 +111,60 @@ const LIGHT_PALETTE: Palette = Palette {
     bad: Color32::from_rgb(179, 38, 30),
 };
 
+/// The tints that tell things of one kind apart at a glance (the engines of the configurations), each a fill and
+/// the colour of what is drawn on it: blue, grey, violet, teal and orange, in turn.
+const DARK_TINTS: [(Color32, Color32); 5] = [
+    (
+        Color32::from_rgb(34, 52, 78),
+        Color32::from_rgb(143, 186, 255),
+    ),
+    (
+        Color32::from_rgb(58, 60, 65),
+        Color32::from_rgb(241, 242, 244),
+    ),
+    (
+        Color32::from_rgb(54, 42, 78),
+        Color32::from_rgb(199, 168, 255),
+    ),
+    (
+        Color32::from_rgb(28, 58, 54),
+        Color32::from_rgb(126, 214, 192),
+    ),
+    (
+        Color32::from_rgb(66, 48, 28),
+        Color32::from_rgb(240, 186, 116),
+    ),
+];
+
+const LIGHT_TINTS: [(Color32, Color32); 5] = [
+    (
+        Color32::from_rgb(219, 231, 250),
+        Color32::from_rgb(28, 78, 158),
+    ),
+    (
+        Color32::from_rgb(230, 230, 230),
+        Color32::from_rgb(40, 40, 44),
+    ),
+    (
+        Color32::from_rgb(234, 226, 250),
+        Color32::from_rgb(88, 50, 160),
+    ),
+    (
+        Color32::from_rgb(218, 241, 235),
+        Color32::from_rgb(18, 108, 88),
+    ),
+    (
+        Color32::from_rgb(250, 234, 214),
+        Color32::from_rgb(138, 78, 8),
+    ),
+];
+
+/// The tint of the `index`-th thing of a kind, in the theme that is drawn now: they come round again after five.
+pub(super) fn tint(index: usize) -> (Color32, Color32) {
+    let tints = if is_dark() { &DARK_TINTS } else { &LIGHT_TINTS };
+    tints[index % tints.len()]
+}
+
 /// The colours of the theme that is drawn now.
 pub(super) fn palette() -> &'static Palette {
     if DARK.load(Ordering::Relaxed) {
