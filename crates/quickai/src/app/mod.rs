@@ -28,6 +28,7 @@ mod add_model;
 mod api_info;
 mod catalog_view;
 mod chat;
+mod command_line;
 mod companion;
 mod configurations_ui;
 mod configurations_window;

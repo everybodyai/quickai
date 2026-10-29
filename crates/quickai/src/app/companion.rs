@@ -352,7 +352,7 @@ impl App {
 
     /// The plan for the companion's run: its own document and values, beside the engine that is running (its
     /// port is the one the companion's templates call `${parent.port}`).
-    fn companion_plan(&self) -> Result<RunPlan, Vec<quickai_core::diag::Diagnostic>> {
+    pub(super) fn companion_plan(&self) -> Result<RunPlan, Vec<quickai_core::diag::Diagnostic>> {
         let slot = self.companion_slot().ok_or_else(Vec::new)?;
         let selection: Selection =
             launch::selection_from_values(&slot.engine, None, slot.values.map(), false);
@@ -588,6 +588,10 @@ impl App {
                             .show(ui, |ui| app.show_fields(ui, &others, None));
                     }
                 });
+                // what it is started with, beside the engine as it is set now
+                if self.companion_enabled() {
+                    self.show_companion_command_line(ui);
+                }
             });
         });
     }

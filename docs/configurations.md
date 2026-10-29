@@ -140,7 +140,7 @@ What the four shipped documents say is held by a golden test (A08):
 
 | Engine | `yes` | `review` | `never` |
 |---|---|---|---|
-| llama.cpp | port, context size, GPU layers | extra command-line arguments | models folder, program |
+| llama.cpp | port, context size, GPU layers | extra command-line arguments, extra environment (C189) | models folder, program |
 | Ollama | mode, port, context size, GPU | extra environment, *use Ollama's own store* | model store, program |
 | ComfyUI | mode, port, GPU, memory | extra arguments, extra environment, internet access, the page's Download button | present the GPU as (names this computer's card), models folder, output folder, Python, launcher |
 | Open WebUI | box, port | internet access | Python, extra environment (§9), launcher |
@@ -388,6 +388,10 @@ closing it any way writes what was changed). Since C188 each configuration is a 
 - **A click on the card** (not on its buttons) opens it under its first rows: the note of whoever made it, the computer it was made on when that is another kind than this one (another system, processor or GPU), what it
   sets as chips (the label without the hint in brackets, a program that goes with the engine named before it; the switch that turns that program on is the line's to say, not a chip), the program it was made with, and the
   notes with a warning sign and their button at the right. One with nothing set says *Every setting at its default.* Nothing is open when the window opens.
+  Since C189 the chips begin with what goes with the model on its command line, which a configuration does not carry (it follows the model, §4): each
+  file fetched with it by the part's label and the file's name (*Projector mmproj-Qwen3VL-2B-Instruct-F16.gguf*), from the record beside the weights when
+  the model is here and from its entry of the recommended list when it is not, and *Started as* with the label of the mode it is started in (*embedding
+  server*). The whole command line is at the foot of the engine's *Advanced* settings ([implementation-plan.md](implementation-plan.md), C189).
 - **Left out** since C188: the arrows before the names, *yours* on every row, *N settings differ from what you have set now* (the hover of Use lists them), the line of the computer it was made on for one made on this kind, and
   **Save here** (it replaced another configuration with what the window holds: *+ New from current* and then *Delete* do it, and it read too much like Save). The files that could not be used fold under
   *N file(s) couldn't be used*, with the reason when opened.

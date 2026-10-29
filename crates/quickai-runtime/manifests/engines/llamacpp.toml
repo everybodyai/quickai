@@ -229,6 +229,19 @@ bind.arg_split = true           # a shell-like split with quotes; nothing is add
 share_note = "Command-line words, passed to llama-server as they are written."
 ui = { section = "advanced", order = 90, hint = "e.g. --threads 8 --flash-attn on" }
 
+# Every engine takes lines of environment (C189). llama-server reads most of its options from a variable as well as
+# from a flag (L2), and the graphics libraries it is built on read only variables.
+[[field]]
+id = "extra_env"
+label = "Extra environment (KEY=VALUE per line)"
+help = '''
+Variables for llama-server, one KEY=VALUE per line; a line that starts with # is a comment. Most of its options can be given this way as well as on the command line: LLAMA_ARG_THREADS=8 is --threads 8 (when both are given, the command line wins). The graphics libraries take only variables, e.g. GGML_VK_VISIBLE_DEVICES=0 to use the first GPU alone with a Vulkan build. LD_LIBRARY_PATH is QuickAI's: it points at the build's own libraries.'''
+type = "kv_lines"
+default = ""
+bind.env_lines = { protect = ["LD_LIBRARY_PATH"] }
+share_note = "Lines of environment, set for llama-server as they are written."
+ui = { section = "advanced", order = 91, hint = "e.g. LLAMA_ARG_THREADS=8" }
+
 [[field]]
 id = "bin_override"
 label = "llama-server binary"

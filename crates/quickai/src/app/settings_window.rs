@@ -195,6 +195,7 @@ impl App {
                     .map(|s| s.fields.iter().filter(|f| f.visible).cloned().collect())
                     .unwrap_or_default();
                 self.show_fields(ui, &advanced, Some(&engine_name));
+                self.show_command_line(ui);
             });
         });
 
@@ -740,6 +741,68 @@ mod tests {
         let out = frame(&mut app, &ctx, &display);
         assert!(display.0.borrow().windows.is_empty());
         assert!(!out.viewport_output.contains_key(&settings_viewport()));
+    }
+
+    /// B22 (C189): the engine's Advanced settings end with the command line of the next Start, made as Start makes it:
+    /// the projector a vision model was fetched with is on it, on a row of its own that says it is the model's, after
+    /// the settings' rows and before the person's own words; the variables are under it, the person's lines with the
+    /// document's; and llama.cpp takes lines of environment as the other engines do.
+    #[test]
+    fn p3_b22_the_settings_show_the_command_line_of_the_next_start_with_the_projector_on_it() {
+        let dir = scratch("b22");
+        let models = dir.join("models");
+        std::fs::create_dir_all(&models).unwrap();
+        std::fs::write(models.join("tiny-vl-Q4_K_M.gguf"), "GGUF").unwrap();
+        std::fs::write(models.join("me--tiny-vl-GGUF--mmproj-f16.gguf"), "GGUF").unwrap();
+        std::fs::write(
+            models.join("tiny-vl-Q4_K_M.gguf.bundle.json"),
+            r#"{ "version": 1, "bundle": "vision", "source": "https://huggingface.co/me/tiny-vl-GGUF",
+                 "parts": [ { "kind": "mmproj", "label": "projector", "file": "me--tiny-vl-GGUF--mmproj-f16.gguf", "name": "mmproj-f16.gguf" } ] }"#,
+        )
+        .unwrap();
+        let mut app = app_in(&dir, "llamacpp");
+        app.binary = dir.join("llama-server");
+        std::fs::write(&app.binary, "").unwrap();
+        app.rescan_models();
+        app.values.set("extra_args", "--threads 4");
+        app.values
+            .set("extra_env", "GGML_VK_VISIBLE_DEVICES=0\nHF_TOKEN=abc");
+        let ctx = egui::Context::default();
+        let display = Display::attach(&ctx);
+        display.open_windows_at(egui::vec2(1000.0, 1600.0));
+        app.toggle_settings();
+        app.advanced_section_wanted = true;
+        settle(&mut app, &ctx, &display);
+
+        let at = |text: &str| {
+            where_is(&display, text).unwrap_or_else(|| {
+                let shown = display.0.borrow();
+                panic!(
+                    "{text:?} in {}",
+                    said(&shown.windows[&settings_viewport()].shapes)
+                )
+            })
+        };
+        at("Extra environment (KEY=VALUE per line):");
+        at("Command line:");
+        let projector = at("--mmproj …/me--tiny-vl-GGUF--mmproj-f16.gguf");
+        let said_by = at("the model's projector");
+        assert!(
+            (projector.center().y - said_by.center().y).abs() < 4.0,
+            "on the projector's row: {projector:?} {said_by:?}"
+        );
+        assert!(at("--model …/tiny-vl-Q4_K_M.gguf").top() < projector.top());
+        assert!(
+            at("Context size").top() < projector.top(),
+            "the settings' rows first"
+        );
+        assert!(
+            at("--threads 4").top() > projector.top(),
+            "the person's words last"
+        );
+        // the variables, folded: QuickAI's library path and the person's two lines
+        at("Environment (3)");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
