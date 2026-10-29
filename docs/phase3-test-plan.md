@@ -502,6 +502,8 @@ and Delete takes what nothing else uses. Everything here is configurable by a do
 | B19 | 4.9 | ready | Deleting a model deletes its record and the projector nothing else uses, keeps one another model uses and says so, and the modal says the projector goes with it. | `app/engine.rs` |
 | B20 | 4.9 | ready | A bundle that comes in part (the projector fails) still lists the weights, says what was not fetched in the log, and says nothing of a pair. | `app/engine.rs` |
 | B21 | 4.9 | manual | The real thing end to end: a real bundle (`ggml-org/SmolVLM-256M-Instruct-GGUF`, no pipeline tag, a projector beside the weights) is looked up on the real hub, fetched by the button of its row, listed as the weights alone, and started by a real `llama-server` with `--mmproj`, which then says it takes pictures (`/props`, `modalities.vision`). About 365 MB and a real `llama-server` (`QUICKAI_REAL_LLAMA`). Run before a release and when the projector seems not to be used. | `app/engine.rs` |
+| B22 | 4.36 | ready | **The settings show the command line of the next Start** (C189): with a vision model and its projector selected, the engine's *Advanced* settings end with *Command line*, a row for each option made as Start makes it; the projector's row says *the model's projector*, after the rows of the settings and before the person's own words; the variables are folded under it, the person's lines with the document's library path; llama.cpp has *Extra environment (KEY=VALUE per line)*. | `app/settings_window.rs` |
+| B23 | 4.36 | ready | **A card names what goes with its model on the command line** (C189): the projector of a vision model of the list by its file's name before it is here, the one its record names once it is, *Started as embedding server* for an embedding model of the list, nothing for a model the engine keeps itself; on the opened card, first among the chips. | `app/configurations_window.rs` |
 
 ### J. The recommended models (WP4.10)
 
@@ -1014,7 +1016,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 693 / 0 / 16 / 5 (total 714). The test kit has 29 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 695 / 0 / 16 / 5 (total 716). The test kit has 29 tests of its own and the Python fake
 22, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 

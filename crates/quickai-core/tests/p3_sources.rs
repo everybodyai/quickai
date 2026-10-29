@@ -1018,7 +1018,13 @@ fn p3_y11_a_need_that_is_not_one_is_refused() {
         .iter()
         .any(|e| e.contains("at most 16")));
     // a program with no lines of environment cannot be given a variable
-    let found = refused(&document("llamacpp", "[[needs]]\nenv = \"X\"\n"));
+    let given = person("given");
+    let r = quiet_registry(&[(
+        given.as_str(),
+        &document("quiet", "[[needs]]\nenv = \"X\"\n"),
+    )]);
+    assert!(r.profile("given").is_none(), "it was used");
+    let found = errors(&r);
     assert!(
         found
             .iter()
@@ -1287,8 +1293,18 @@ fn p3_y21_what_is_wrong_in_the_file_is_named_with_its_place() {
     )
     .expect_err("three");
     assert!(found.len() >= 3, "{found:?}");
-    // llama.cpp takes no lines of environment
-    let found = env_of("[env.llamacpp]\nA = \"x\"\n", "llamacpp").expect_err("no lines");
+    // a program with no field for lines takes none
+    let r = quiet_registry(&[]);
+    let found: Vec<String> = Environment::read(
+        "[env.quiet]\nA = \"x\"\n",
+        "environment file server.toml",
+        r.engine_map(),
+        "quiet",
+    )
+    .expect_err("no lines")
+    .iter()
+    .map(ToString::to_string)
+    .collect();
     assert!(
         found
             .iter()
@@ -1381,9 +1397,10 @@ fn p3_y22_the_words_of_the_command_line_are_read_as_what_they_are_for() {
             .expect_err(spec);
         assert!(wrong.contains(why), "{spec}: {wrong}");
     }
+    let quiet = quiet_registry(&[]);
     let wrong = Environment::default()
-        .add_env_line(engines, "llamacpp", "A=1", "--env")
-        .expect_err("llama.cpp takes no lines");
+        .add_env_line(quiet.engine_map(), "quiet", "A=1", "--env")
+        .expect_err("Quiet takes no lines");
     assert!(wrong.contains("takes no lines of environment"), "{wrong}");
 
     // a file and where
@@ -1591,14 +1608,15 @@ fn p3_y24_what_is_said_here_goes_over_what_the_configuration_gave() {
     // a program with no field for lines is named
     let mut wrong = Environment::default();
     wrong.env.insert(
-        "llamacpp".into(),
+        "quiet".into(),
         vec![quickai_core::profile::environment::EnvLine {
             name: "A".into(),
             value: "1".into(),
         }],
     );
+    let quiet = quiet_registry(&[]);
     let why = wrong
-        .apply_to(engines, &mut BTreeMap::new())
+        .apply_to(quiet.engine_map(), &mut BTreeMap::new())
         .expect_err("no lines");
     assert!(why.contains("takes no lines of environment"), "{why}");
 }
@@ -1820,11 +1838,61 @@ why = "Somewhere with 40 GB free."
         text.contains("(this configuration fetches no file)"),
         "{text}"
     );
+    // every engine takes lines of environment (C189): llama.cpp's are offered, with what is not to be set from here
+    assert!(text.contains("\n[env.llamacpp]\n"), "{text}");
+    assert!(text.contains("LD_LIBRARY_PATH"), "{text}");
+    toml::from_str::<toml::Table>(&text).expect("TOML");
+    // a program with no field for them has no section
+    let given = person("given");
+    let r = quiet_registry(&[(given.as_str(), &document("quiet", ""))]);
+    let quiet = &r.profile("given").expect("read").configuration;
+    let text = template(r.engine_map(), quiet, &[]);
     assert!(
         !text.contains("[env."),
-        "llama.cpp takes no lines of environment:\n{text}"
+        "Quiet takes no lines of environment:\n{text}"
     );
-    toml::from_str::<toml::Table>(&text).expect("TOML");
+}
+
+/// An engine that is only a document and takes no lines of environment: every engine the application ships takes
+/// them (C189), so what is said of one that does not is said of this one.
+const QUIET: &str = r#"schema = 1
+kind = "engine"
+id = "quiet"
+requires = { primitives = ["spawn@1", "locate.setting@1"] }
+
+[engine]
+name = "Quiet"
+order = 60
+
+[locate]
+strategies = [ { use = "setting", field = "bin" } ]
+
+[launch]
+strategies = ["spawn"]
+
+[launch.spawn]
+program = "${runtime.binary}"
+args = []
+
+[[field]]
+id = "port"
+type = "port"
+default = 9200
+bind.port = "public"
+
+[[field]]
+id = "bin"
+type = "runtime_path"
+"#;
+
+/// The shipped documents with `QUIET` beside them, and `more` of the person's.
+fn quiet_registry(more: &[(&str, &str)]) -> Registry {
+    let quiet = "/home/u/.config/quickai/engines/quiet.toml";
+    let mut user: Vec<(&str, &str)> = vec![(quiet, QUIET)];
+    user.extend_from_slice(more);
+    let r = common::shipped_registry(&user);
+    assert!(r.engine("quiet").is_some(), "{:?}", errors(&r));
+    r
 }
 
 const ECHO: &str = r#"schema = 1

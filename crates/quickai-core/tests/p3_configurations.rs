@@ -524,6 +524,7 @@ comfyui.python never
 llamacpp.bin_override never
 llamacpp.ctx_size yes
 llamacpp.extra_args review
+llamacpp.extra_env review
 llamacpp.last_model -
 llamacpp.models_dir never
 llamacpp.n_gpu_layers yes

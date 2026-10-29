@@ -65,7 +65,7 @@ impl App {
 
     /// The plan for a run of `selection` on this machine, with the program the window has found. The
     /// data directory is the one the window works in (a test's own, never the real home's).
-    fn plan_run(
+    pub(super) fn plan_run(
         &self,
         selection: &quickai_core::plan::Selection,
         internal_port: Option<u16>,
@@ -84,20 +84,29 @@ impl App {
         &mut self,
         model: Option<&ModelEntry>,
     ) -> quickai_core::plan::Selection {
-        let mut selection = launch::selection_from_values(
+        let (selection, notes) = self.selection_for(model);
+        for note in notes {
+            self.push_log(note);
+        }
+        selection
+    }
+
+    /// The same selection, with the sentences of what could not be attached instead of saying them: what the
+    /// settings show of the next Start is made as Start makes it (`command_line.rs`).
+    pub(super) fn selection_for(
+        &self,
+        model: Option<&ModelEntry>,
+    ) -> (quickai_core::plan::Selection, Vec<String>) {
+        let selection = launch::selection_from_values(
             &self.engine,
             model.map(ModelEntry::info),
             &self.run_values(),
             self.traffic_proxy_on(),
         );
-        if let (Some(model), Some(engine)) = (model, self.engine_doc()) {
-            let (attached, notes) = launch::attach_record(selection, model, engine);
-            selection = attached;
-            for note in notes {
-                self.push_log(note);
-            }
+        match (model, self.engine_doc()) {
+            (Some(model), Some(engine)) => launch::attach_record(selection, model, engine),
+            _ => (selection, Vec::new()),
         }
-        selection
     }
 
     /// What the Start button does: start the engine with the model the picker has selected.

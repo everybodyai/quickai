@@ -702,16 +702,19 @@ impl App {
                 if self.made_elsewhere(c) {
                     ui.label(theme::muted(made_line(c)));
                 }
+                // what goes with the model first: it is on the command line as the settings are
+                let goes_with = self.model_chips(c);
                 let chips = self.settings_chips(c);
-                if chips.is_empty() {
-                    ui.label(theme::muted("Every setting at its default."));
-                } else {
+                if !goes_with.is_empty() || !chips.is_empty() {
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
-                        for (label, value) in &chips {
+                        for (label, value) in goes_with.iter().chain(&chips) {
                             setting_chip(ui, label, value);
                         }
                     });
+                }
+                if chips.is_empty() {
+                    ui.label(theme::muted("Every setting at its default."));
                 }
                 for note in &report.notes {
                     self.show_note(ui, note, c);
@@ -751,6 +754,81 @@ impl App {
             }
         }
         model.display().to_string()
+    }
+
+    /// What goes with the model on its command line (C189): each file fetched with it (a projector), by its name, and the
+    /// mode it is started in. From the record beside its weights when the model is here, else from the entry of the
+    /// recommended list it is; nothing for a model the engine keeps itself.
+    fn model_chips(&self, c: &Configuration) -> Vec<(String, String)> {
+        use quickai_core::profile::ModelSource;
+        use quickai_core::registry::catalog::Run;
+        let (Some(engine), Some(model)) = (self.registry.engine(&c.engine), c.models.first())
+        else {
+            return Vec::new();
+        };
+        let file = match &model.source {
+            ModelSource::File { name } => Some(name.as_str()),
+            ModelSource::Catalog { file, .. } => file.as_deref(),
+            ModelSource::Named { .. } => None,
+        };
+        // the models listed are the engine's in use
+        let here = file
+            .filter(|_| c.engine == self.engine)
+            .and_then(|f| self.models.iter().find(|m| m.filename == f));
+        let (files, mode): (Vec<(String, String)>, Option<String>) = match (here, &model.source) {
+            (Some(here), _) => (
+                here.companions
+                    .iter()
+                    .map(|f| (f.kind.clone(), f.name.clone()))
+                    .collect(),
+                here.mode.clone(),
+            ),
+            (None, ModelSource::Catalog { id, .. }) => match self
+                .registry
+                .catalog()
+                .model(id)
+                .and_then(|m| m.runs.get(&c.engine))
+            {
+                Some(Run::Files(run)) => (
+                    run.companions
+                        .iter()
+                        .map(|(kind, f)| {
+                            let name = f.path.rsplit('/').next().unwrap_or(&f.path);
+                            (
+                                kind.clone(),
+                                f.store_as.clone().unwrap_or_else(|| name.to_string()),
+                            )
+                        })
+                        .collect(),
+                    run.mode.clone(),
+                ),
+                _ => (Vec::new(), None),
+            },
+            _ => (Vec::new(), None),
+        };
+        let mut chips: Vec<(String, String)> = files
+            .into_iter()
+            .map(|(kind, name)| {
+                let label = quickai_core::models::bundles(engine)
+                    .iter()
+                    .flat_map(|b| b.parts.iter())
+                    .find(|part| part.kind == kind)
+                    .map_or(kind, |part| part.label.clone());
+                let mut letters = label.chars();
+                let label = letters.next().map_or_else(String::new, |first| {
+                    first.to_uppercase().chain(letters).collect()
+                });
+                (label, name)
+            })
+            .collect();
+        if let Some(mode) = mode {
+            let label = quickai_core::models::modes(engine)
+                .iter()
+                .find(|m| m.id == mode)
+                .map_or(mode, |m| m.label.clone());
+            chips.push(("Started as".to_string(), label));
+        }
+        chips
     }
 
     /// The configuration was made on another kind of computer than this one (another system, processor or GPU).
@@ -2036,6 +2114,7 @@ mod tests {
                 include_str!("configurations_window.rs"),
             ),
             ("configurations_ui.rs", include_str!("configurations_ui.rs")),
+            ("command_line.rs", include_str!("command_line.rs")),
             (
                 "configurations.rs",
                 include_str!("../../../quickai-runtime/src/configurations.rs"),
@@ -2064,6 +2143,91 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// B23 (C189): a card says what goes with its model on the command line: the projector of a vision model of the
+    /// list by its name before it is here, the one its record names once it is, and the mode a model of the list is
+    /// started in; a model the engine keeps itself has none.
+    #[test]
+    fn p3_b23_a_card_names_the_projector_and_the_mode_that_go_with_its_model() {
+        let dir = scratch("b23");
+        let profile = |id: &str, name: &str, model: &str| {
+            format!(
+                "schema = 1\nkind = \"profile\"\nid = \"{id}\"\nname = \"{name}\"\nengine = \"llamacpp\"\n[[model]]\n{model}\n"
+            )
+        };
+        put(
+            &dir,
+            "profiles/pictures.toml",
+            &profile(
+                "pictures",
+                "Pictures",
+                "catalog = \"qwen3-vl-2b\"\nfile = \"Qwen3VL-2B-Instruct-Q4_K_M.gguf\"",
+            ),
+        );
+        put(
+            &dir,
+            "profiles/vectors.toml",
+            &profile(
+                "vectors",
+                "Vectors",
+                "catalog = \"bge-small-en-v1.5\"\nfile = \"bge-small-en-v1.5-q8_0.gguf\"",
+            ),
+        );
+        put(
+            &dir,
+            "profiles/here.toml",
+            &profile("here", "Here", "file = \"tiny-vl-Q4_K_M.gguf\""),
+        );
+        put(&dir, "profiles/vision.toml", vision_text());
+        let models = dir.join("models");
+        std::fs::create_dir_all(&models).unwrap();
+        std::fs::write(models.join("tiny-vl-Q4_K_M.gguf"), "GGUF").unwrap();
+        std::fs::write(models.join("me--tiny-vl-GGUF--mmproj-f16.gguf"), "GGUF").unwrap();
+        std::fs::write(
+            models.join("tiny-vl-Q4_K_M.gguf.bundle.json"),
+            r#"{ "version": 1, "bundle": "vision", "source": "https://huggingface.co/me/tiny-vl-GGUF",
+                 "parts": [ { "kind": "mmproj", "label": "projector", "file": "me--tiny-vl-GGUF--mmproj-f16.gguf", "name": "mmproj-f16.gguf" } ] }"#,
+        )
+        .unwrap();
+        let mut app = app_in(&dir, "llamacpp");
+        app.rescan_models();
+        let chips = |app: &App, id: &str| {
+            let entry = app
+                .configuration_entries()
+                .into_iter()
+                .find(|e| e.configuration.id == id)
+                .unwrap_or_else(|| panic!("{id} is read"));
+            app.model_chips(&entry.configuration)
+        };
+        let pair = |a: &str, b: &str| vec![(a.to_string(), b.to_string())];
+        assert_eq!(
+            chips(&app, "pictures"),
+            pair("Projector", "mmproj-Qwen3VL-2B-Instruct-F16.gguf"),
+            "the list's, before it is here"
+        );
+        assert_eq!(
+            chips(&app, "here"),
+            pair("Projector", "mmproj-f16.gguf"),
+            "the record's, by the name it came with"
+        );
+        assert_eq!(
+            chips(&app, "vectors"),
+            pair("Started as", "embedding server")
+        );
+        assert!(chips(&app, "vision").is_empty(), "a model the engine keeps");
+
+        // and it is on the card, first, when the card is opened
+        let ctx = egui::Context::default();
+        let display = Display::attach(&ctx);
+        app.open_configurations();
+        app.configs.selected = Some("pictures".to_string());
+        settle(&mut app, &ctx, &display);
+        let said_now = said(&display);
+        for want in ["Projector", "mmproj-Qwen3VL-2B-Instruct-F16.gguf"] {
+            assert!(said_now.iter().any(|t| t == want), "{want} in {said_now:?}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn tree(dir: &Path) -> Vec<String> {
