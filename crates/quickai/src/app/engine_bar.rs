@@ -1,8 +1,8 @@
 //! Choosing the engine and getting it, from the main window: the engines as a menu at the right of the menu bar,
 //! each saying whether it is ready, and, for an engine that is downloaded on
 //! request and is not here yet, a page with one button that installs the build its document offers first for this
-//! machine. Settings keeps the engine's row and its Advanced section, where
-//! another version or a program of the person's own is chosen.
+//! machine. Settings keep the page of the engine's program, where another version or a program of the person's own is
+//! chosen.
 
 use std::path::Path;
 
@@ -246,8 +246,8 @@ impl App {
             let mut links: Vec<(String, String)> = vec![(
                 "Choose a version...".to_string(),
                 format!(
-                    "Settings, Advanced: {name}: every build on offer, the ones installed, and a box for a {name} \
-                     you already have."
+                    "Settings, Program: every build on offer, the ones installed, and a {name} you already \
+                     have."
                 ),
             )];
             if self.can_run_remote() {

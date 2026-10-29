@@ -95,8 +95,7 @@ impl App {
                 builds = ui
                     .small_button("Choose another build...")
                     .on_hover_text(
-                        "Settings, Advanced: llama.cpp: the builds on offer for this computer, and a box for a \
-                         llama-server of your own.",
+                        "Settings, Program: the builds on offer for this computer, and a llama-server of your own.",
                     )
                     .clicked();
             });

@@ -391,7 +391,7 @@ closing it any way writes what was changed). Since C188 each configuration is a 
   Since C189 the chips begin with what goes with the model on its command line, which a configuration does not carry (it follows the model, §4): each
   file fetched with it by the part's label and the file's name (*Projector mmproj-Qwen3VL-2B-Instruct-F16.gguf*), from the record beside the weights when
   the model is here and from its entry of the recommended list when it is not, and *Started as* with the label of the mode it is started in (*embedding
-  server*). The whole command line is at the foot of the engine's *Advanced* settings ([implementation-plan.md](implementation-plan.md), C189).
+  server*). The whole command line is on the page *Starting it* of the Settings ([implementation-plan.md](implementation-plan.md), C189, C190).
 - **Left out** since C188: the arrows before the names, *yours* on every row, *N settings differ from what you have set now* (the hover of Use lists them), the line of the computer it was made on for one made on this kind, and
   **Save here** (it replaced another configuration with what the window holds: *+ New from current* and then *Delete* do it, and it read too much like Save). The files that could not be used fold under
   *N file(s) couldn't be used*, with the reason when opened.

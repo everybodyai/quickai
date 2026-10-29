@@ -196,12 +196,14 @@ pub struct App {
     show_configurations: bool,
     /// It was asked for while open: it comes to the front once.
     raise_configurations: bool,
-    /// The person pressed the chat button that sets the companion up: its section is open the next time it
-    /// is drawn, whatever it was.
+    /// The person pressed the chat button that sets the companion up: the Settings show its page the next time
+    /// they are drawn, whatever page they were on.
     companion_section_wanted: bool,
-    /// The page's "Choose a version..." was pressed: the engine's Advanced section of Settings is open the next time
-    /// it is drawn, whatever it was.
+    /// The page's "Choose a version..." (or *Manage engines...*) was pressed: the Settings show the page of the
+    /// program's builds the next time they are drawn.
     advanced_section_wanted: bool,
+    /// The page of the Settings that is shown (C190): the one last chosen, while the application runs.
+    settings_page: settings_window::SettingsPage,
     /// The delete that waits for an answer was asked for in the main window (the list of models, the page): its
     /// question is asked there, and not in Settings.
     delete_asked_in_window: bool,
@@ -440,6 +442,7 @@ impl App {
             raise_configurations: false,
             companion_section_wanted: false,
             advanced_section_wanted: false,
+            settings_page: settings_window::SettingsPage::default(),
             delete_asked_in_window: false,
             restart_with_selected: false,
             chat: chat::Chat::default(),
@@ -644,8 +647,21 @@ impl App {
                     .engine_doc()
                     .and_then(|e| e.doc.fields.iter().find(|f| f.id == id))
                     .and_then(|f| f.ui.section.clone());
-                // the fields of a companion are all in its section of the Settings
-                if self.in_companion || section.as_deref().unwrap_or("advanced") != "primary" {
+                // the fields of a companion are all on its page of the Settings; the engine's are on the page of its program,
+                // of how it is started or the first one (C190)
+                if self.in_companion {
+                    self.companion_section_wanted = true;
+                    self.open_settings();
+                } else if section.as_deref().unwrap_or("advanced") != "primary" {
+                    let program = self
+                        .form()
+                        .and_then(|f| f.field(id).cloned())
+                        .is_some_and(|f| settings_window::is_program_field(&f));
+                    self.settings_page = match section.as_deref().unwrap_or("advanced") {
+                        "advanced" if program => settings_window::SettingsPage::Program,
+                        "advanced" => settings_window::SettingsPage::Start,
+                        _ => settings_window::SettingsPage::General,
+                    };
                     self.open_settings();
                 } else {
                     self.change_open = true;

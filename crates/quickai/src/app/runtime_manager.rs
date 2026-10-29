@@ -16,7 +16,9 @@ use quickai_core::acquire;
 use quickai_core::form::FormField;
 use quickai_core::registry::Engine;
 
-use super::settings_window::{list_scroll_height, DELETE_LIST_MAX_ROWS};
+use super::configurations_window::tag;
+use super::icons::{self, Icon};
+use super::settings_window::{group, row_line, DELETE_LIST_MAX_ROWS};
 use super::{App, PendingDelete};
 use crate::downloader;
 use crate::gpu;
@@ -26,6 +28,10 @@ use crate::launch;
 use crate::prims::feed::{self, Build, BuildLookupEvent, LookupSpec};
 use crate::prims::install::{self, InstallSpec, InstalledBuild, Unfinished};
 
+/// The field of an engine's settings that names the Python its install is made with: what the install reads, and what
+/// the Settings show on the page of the program.
+pub(super) const INSTALL_PYTHON_FIELD: &str = "python";
+
 /// What the manager remembers between frames.
 #[derive(Default)]
 pub struct RuntimeManager {
@@ -33,6 +39,8 @@ pub struct RuntimeManager {
     pub input: String,
     /// The list of builds is open.
     pub show_lookup: bool,
+    /// The box for a program of the person's (or the address of an archive) is open: *Use a program on disk…*.
+    pub show_path: bool,
     /// A look-up has just ended: the frames to come bring its list into view (in a window that scrolls it is
     /// otherwise under the fold, with only the sentence that says how many there are showing). More than one
     /// frame, because a list that is as tall as its rows is that tall a frame after they came.
@@ -126,8 +134,6 @@ pub struct RuntimeTexts {
     pub browse_help: String,
     pub apply_url_help: String,
     pub apply_path_help: String,
-    pub installed_label: String,
-    pub installed_help: String,
     pub delete_build_help: String,
     pub lookup_label: String,
     pub lookup_help: String,
@@ -199,14 +205,6 @@ impl RuntimeTexts {
             apply_path_help: format!(
                 "Point at an already-downloaded {server} executable on \
                  disk, or leave blank to reset to the {default_kind} one."
-            ),
-            installed_label: "Installed builds".to_string(),
-            installed_help: format!(
-                "{server} builds downloaded via \"{lookup}\" in an earlier run, most recently \
-                 installed first — still listed here even once that list (which only \
-                 ever shows a handful of the most recent GitHub releases) \
-                 no longer includes them. \"Use\" switches to one \
-                 instantly, with no re-download."
             ),
             delete_build_help: "Delete this installed build".to_string(),
             lookup_help: format!(
@@ -340,7 +338,7 @@ impl App {
         let summary = acquire::install_summary_with(engine, &self.host_facts, ticked)?;
         let named = self
             .values
-            .text("python")
+            .text(INSTALL_PYTHON_FIELD)
             .is_some_and(|p| !p.trim().is_empty());
         Some(
             match acquire::own_python_sentence(engine).filter(|_| !named) {
@@ -362,7 +360,7 @@ impl App {
         // the Python the person chose for an install that makes an environment
         let python = self
             .values
-            .text("python")
+            .text(INSTALL_PYTHON_FIELD)
             .map(str::trim)
             .filter(|p| !p.is_empty())
             .map(PathBuf::from);
@@ -771,142 +769,244 @@ impl App {
             return;
         };
         self.refresh_disk(ui.ctx());
-        let label = ui.label(format!("{}:", field.label));
-        if let Some(help) = &field.help {
-            label.on_hover_text(help);
-        }
-        ui.horizontal(|ui| {
-            ui.add(
-                egui::TextEdit::singleline(&mut self.runtime.input)
-                    .desired_width(ui.available_width() - 30.0)
-                    .hint_text(field.hint.clone().unwrap_or_default()),
-            );
-            if ui.button("...").on_hover_text(&texts.browse_help).clicked() {
-                if let Some(path) = rfd::FileDialog::new().pick_file() {
-                    self.runtime.input = path.display().to_string();
-                }
-            }
-        });
         let install_spec = self.install_spec();
         // a build that is a release's source has no file of a kind for a graphics card to be told by
         let from_source = self
             .runtime_engine()
             .is_some_and(acquire::builds_from_source);
-        ui.horizontal(|ui| {
-            let trimmed = self.runtime.input.trim().to_string();
-            let is_url = downloader::looks_like_url(&trimmed);
-            let apply_label = if is_url { "Download" } else { "Apply" };
-            let apply_hover = if is_url {
-                &texts.apply_url_help
-            } else {
-                &texts.apply_path_help
-            };
-            if ui
-                .add_enabled(
-                    self.runtime.install.is_none(),
-                    egui::Button::new(apply_label),
-                )
-                .on_hover_text(apply_hover)
-                .clicked()
-            {
-                if trimmed.is_empty() {
-                    self.use_default_binary();
-                } else if is_url {
-                    self.settings_error = None;
-                    if let Some(spec) = install_spec.clone() {
-                        let label = acquire::label_from_url(&trimmed, &spec.fallback_label);
-                        let ctx_clone = ui.ctx().clone();
-                        self.runtime.cancel = Some(spec.cancel.clone());
-                        self.runtime.setup_failure = None;
-                        self.runtime.install = Some(install::spawn_install(
-                            spec,
-                            trimmed,
-                            label,
-                            super::calm_wake(ctx_clone),
-                        ));
-                    }
-                } else {
-                    let candidate = PathBuf::from(&trimmed);
-                    if candidate.is_file() {
-                        self.binary = candidate.clone();
-                        self.set_bin_override(Some(candidate));
-                        self.missing_binary_warned = false;
-                        self.settings_error = None;
-                    } else {
-                        self.settings_error = Some(format!("No file at {trimmed}"));
-                    }
-                    self.save_settings();
-                }
-            }
-            if ui.button("Reset to default").clicked() {
-                self.use_default_binary();
-            }
-        });
+        let lookup_spec = self
+            .runtime_engine()
+            .and_then(|e| LookupSpec::from_engine(e, &self.host_facts));
+        let tested = self
+            .runtime_engine()
+            .and_then(acquire::tested_tag)
+            .map(str::to_string);
 
-        // what the last scan of the disk read: the frame does not look at the disk itself
+        // one list (C190): the program of the engine's own, the builds installed (what the last scan of the disk read: the
+        // frame does not look at the disk itself), and a program of the person's, the one in use marked; under it, the ways
+        // to another
         let installed: Vec<(InstalledBuild, String)> = self.runtime.disk.builds.clone();
-        if install_spec.is_some() && !self.runtime.disk.known {
-            ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new("Looking at what is installed...")
-                    .small()
-                    .color(super::theme::palette().muted),
-            );
-        }
-        if !installed.is_empty() {
-            ui.add_space(8.0);
-            ui.label(egui::RichText::new(&texts.installed_label).strong())
-                .on_hover_text(&texts.installed_help);
-            let mut to_select: Option<PathBuf> = None;
-            let mut to_delete: Option<PendingDelete> = None;
+        let in_use = self.bin_override();
+        let default = launch::default_binary_in(
+            &self.registry,
+            &self.engine,
+            self.data_dir_override.as_deref(),
+        );
+        let default_is_a_build = installed.iter().any(|(b, _)| b.binary_path == default);
+        let yours = in_use
+            .clone()
+            .filter(|p| *p != default && !installed.iter().any(|(b, _)| b.binary_path == *p));
+        let idle = self.runtime.install.is_none();
+        let deleting = self.runtime.delete.is_some();
+        let mut to_select: Option<PathBuf> = None;
+        let mut to_delete: Option<PendingDelete> = None;
+        let mut use_default = false;
+        let mut lookup = false;
+        let mut path_box = false;
+        group(ui, |ui| {
+            if install_spec.is_some() && !self.runtime.disk.known {
+                ui.label(
+                    egui::RichText::new("Looking at what is installed...")
+                        .small()
+                        .color(super::theme::palette().muted),
+                );
+                row_line(ui);
+            }
+            if !default_is_a_build {
+                let note = default_note(&texts, &default);
+                let asked = build_row(
+                    ui,
+                    BuildRow {
+                        // a program that is not there yet is not in use, and there is nothing to use
+                        in_use: in_use.is_none() && default.is_file(),
+                        usable: default.is_file(),
+                        name: &texts.default_choice,
+                        tested: false,
+                        rest: &note,
+                        detail: "",
+                        hover: &default.display().to_string(),
+                        delete: None,
+                    },
+                );
+                use_default |= asked.use_it;
+                row_line(ui);
+            }
             egui::ScrollArea::vertical()
                 .id_salt("installed_builds_scroll")
                 .auto_shrink([false, true])
-                .max_height(list_scroll_height(ui, DELETE_LIST_MAX_ROWS))
+                .max_height(BUILD_ROW * DELETE_LIST_MAX_ROWS as f32 + 4.0)
                 .show(ui, |ui| {
                     for (build, backend) in &installed {
-                        let is_current =
-                            self.bin_override().as_deref() == Some(build.binary_path.as_path());
-                        ui.horizontal(|ui| {
-                            if ui.selectable_label(is_current, "Use").clicked() && !is_current {
-                                to_select = Some(build.binary_path.clone());
-                            }
-                            if ui
-                                .add_enabled(
-                                    self.runtime.delete.is_none(),
-                                    egui::Button::new("🗑").small(),
-                                )
-                                .on_hover_text(&texts.delete_build_help)
-                                .clicked()
-                            {
-                                to_delete = Some(PendingDelete::Build {
-                                    label: build.label.clone(),
-                                    install_dir: build.install_dir.clone(),
-                                });
-                            }
-                            if from_source {
-                                ui.label(format!(
-                                    "{} ({})",
-                                    build.label,
-                                    hardware::format_bytes(build.size_bytes)
-                                ));
-                            } else {
-                                ui.label(format!(
-                                    "{} ({backend}, {})",
-                                    build.label,
-                                    hardware::format_bytes(build.size_bytes)
-                                ));
-                            }
-                        });
+                        let current = in_use.as_deref() == Some(build.binary_path.as_path())
+                            || (in_use.is_none() && build.binary_path == default);
+                        let release = build.label.split('-').next().unwrap_or(&build.label);
+                        let (name, rest) = if from_source {
+                            (build.label.clone(), String::new())
+                        } else {
+                            build_name(&build.label, backend)
+                        };
+                        let asked = build_row(
+                            ui,
+                            BuildRow {
+                                in_use: current,
+                                usable: true,
+                                name: &name,
+                                tested: tested.as_deref() == Some(release),
+                                rest: &rest,
+                                detail: &hardware::format_bytes(build.size_bytes),
+                                hover: &build.label,
+                                delete: Some((!deleting, texts.delete_build_help.as_str())),
+                            },
+                        );
+                        if asked.use_it {
+                            to_select = Some(build.binary_path.clone());
+                        }
+                        if asked.delete {
+                            to_delete = Some(PendingDelete::Build {
+                                label: build.label.clone(),
+                                install_dir: build.install_dir.clone(),
+                            });
+                        }
+                        row_line(ui);
                     }
                 });
-            if let Some(path) = to_select {
-                self.use_binary(path);
+            if let Some(path) = &yours {
+                build_row(
+                    ui,
+                    BuildRow {
+                        in_use: true,
+                        usable: true,
+                        name: "Your program",
+                        tested: false,
+                        rest: &path.display().to_string(),
+                        detail: "",
+                        hover: &path.display().to_string(),
+                        delete: None,
+                    },
+                );
+                row_line(ui);
             }
-            if let Some(pending) = to_delete {
-                self.delete_of_companion = self.in_companion;
-                self.pending_delete = Some(pending);
+            // the two ways to another program, on two lines when a narrow window has no room for them on one
+            ui.horizontal_wrapped(|ui| {
+                if lookup_spec.is_some()
+                    && link(ui, Icon::Download, &texts.lookup_label, idle)
+                        .on_hover_text(&texts.lookup_help)
+                        .clicked()
+                {
+                    lookup = true;
+                }
+                ui.add_space(10.0);
+                if link(ui, Icon::Folder, "Use a program on disk…", true)
+                    .on_hover_text(field.help.clone().unwrap_or_default())
+                    .clicked()
+                {
+                    path_box = true;
+                }
+            });
+        });
+        if use_default {
+            self.use_default_binary();
+        }
+        if let Some(path) = to_select {
+            self.use_binary(path);
+        }
+        if let Some(pending) = to_delete {
+            self.delete_of_companion = self.in_companion;
+            self.pending_delete = Some(pending);
+        }
+        if lookup {
+            if let Some(spec) = lookup_spec.clone() {
+                self.start_build_lookup(spec, &texts, ui.ctx());
             }
+        }
+        if path_box {
+            self.runtime.show_path = !self.runtime.show_path;
+            self.runtime.input = self
+                .bin_override()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+        }
+
+        // a program of the person's, or the address of a release to fetch: a box that opens from the link above
+        if self.runtime.show_path {
+            ui.add_space(10.0);
+            group(ui, |ui| {
+                let p = super::theme::palette();
+                let label = ui.label(egui::RichText::new(&field.label).color(p.text));
+                if let Some(help) = &field.help {
+                    label.on_hover_text(help);
+                }
+                ui.label(
+                    egui::RichText::new(
+                        "A program on this computer, or the address of a release's archive (.zip or .tar.gz) to download \
+                         and install.",
+                    )
+                    .small()
+                    .color(p.muted),
+                );
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.runtime.input)
+                            .desired_width(ui.available_width() - 34.0)
+                            .hint_text(field.hint.clone().unwrap_or_default()),
+                    );
+                    if ui.button("...").on_hover_text(&texts.browse_help).clicked() {
+                        if let Some(path) = rfd::FileDialog::new().pick_file() {
+                            self.runtime.input = path.display().to_string();
+                        }
+                    }
+                });
+                ui.horizontal(|ui| {
+                    let trimmed = self.runtime.input.trim().to_string();
+                    let is_url = downloader::looks_like_url(&trimmed);
+                    let apply_label = if is_url { "Download" } else { "Apply" };
+                    let apply_hover = if is_url {
+                        &texts.apply_url_help
+                    } else {
+                        &texts.apply_path_help
+                    };
+                    if ui
+                        .add_enabled(idle, egui::Button::new(apply_label))
+                        .on_hover_text(apply_hover)
+                        .clicked()
+                    {
+                        if trimmed.is_empty() {
+                            self.use_default_binary();
+                            self.runtime.show_path = false;
+                        } else if is_url {
+                            self.settings_error = None;
+                            if let Some(spec) = install_spec.clone() {
+                                let label = acquire::label_from_url(&trimmed, &spec.fallback_label);
+                                let ctx_clone = ui.ctx().clone();
+                                self.runtime.cancel = Some(spec.cancel.clone());
+                                self.runtime.setup_failure = None;
+                                self.runtime.install = Some(install::spawn_install(
+                                    spec,
+                                    trimmed,
+                                    label,
+                                    super::calm_wake(ctx_clone),
+                                ));
+                            }
+                        } else {
+                            let candidate = PathBuf::from(&trimmed);
+                            if candidate.is_file() {
+                                self.binary = candidate.clone();
+                                self.set_bin_override(Some(candidate));
+                                self.missing_binary_warned = false;
+                                self.settings_error = None;
+                                self.runtime.show_path = false;
+                            } else {
+                                self.settings_error = Some(format!("No file at {trimmed}"));
+                            }
+                            self.save_settings();
+                        }
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.runtime.show_path = false;
+                    }
+                });
+            });
         }
 
         // installs that stopped before they were whole (the one that is going now is not one of them)
@@ -976,36 +1076,9 @@ impl App {
             }
         }
 
-        let lookup_spec = self
-            .runtime_engine()
-            .and_then(|e| LookupSpec::from_engine(e, &self.host_facts));
         if lookup_spec.is_none() {
             return;
         }
-        ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(
-                    self.runtime.install.is_none(),
-                    egui::Button::new(&texts.lookup_label),
-                )
-                .on_hover_text(&texts.lookup_help)
-                .clicked()
-            {
-                if let Some(spec) = lookup_spec.clone() {
-                    self.start_build_lookup(spec, &texts, ui.ctx());
-                }
-            }
-            if self.runtime.show_lookup
-                && ui
-                    .add(egui::Button::new("X").small())
-                    .on_hover_text(&texts.close_list_help)
-                    .clicked()
-            {
-                self.runtime.show_lookup = false;
-            }
-        });
-
         self.show_install_options(ui);
         let ticked = self.chosen_options();
         let ticked: Vec<&str> = ticked.iter().map(String::as_str).collect();
@@ -1065,12 +1138,21 @@ impl App {
             self.runtime.scroll_to_results = 0;
         }
         if self.runtime.show_lookup {
-            ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new(&self.runtime.lookup_status)
-                    .small()
-                    .color(super::theme::palette().muted),
-            );
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(&self.runtime.lookup_status)
+                        .small()
+                        .color(super::theme::palette().muted),
+                );
+                if ui
+                    .add(egui::Button::new("X").small())
+                    .on_hover_text(&texts.close_list_help)
+                    .clicked()
+                {
+                    self.runtime.show_lookup = false;
+                }
+            });
             if self.runtime.lookup_results.len() > 4 {
                 ui.horizontal(|ui| {
                     ui.label(&texts.filter_label);
@@ -1238,6 +1320,166 @@ impl App {
     }
 }
 
+/// The height of a row of the list of builds, for the list to scroll after a few.
+const BUILD_ROW: f32 = 47.0;
+
+/// What a row of the list of builds was asked: to be used, or to be deleted.
+#[derive(Default)]
+struct RowAsk {
+    use_it: bool,
+    delete: bool,
+}
+
+/// What a row calls an installed build: the release it is of, with the backend its name says when it says one the
+/// document knows (`b11950 · Vulkan`), and the rest of its name, which the row says faintly after it.
+pub(super) fn build_name(label: &str, backend: &str) -> (String, String) {
+    let (release, rest) = label.split_once('-').unwrap_or((label, ""));
+    let name = if backend == "default" {
+        release.to_string()
+    } else {
+        format!("{release} · {backend}")
+    };
+    (name, rest.to_string())
+}
+
+/// A row of the list of builds.
+struct BuildRow<'a> {
+    /// It is the one Start runs.
+    in_use: bool,
+    /// It is there to be used: a program that is not installed yet has no Use.
+    usable: bool,
+    name: &'a str,
+    /// It is the release the document was tested with.
+    tested: bool,
+    /// Said faintly after the name, cut to what room there is: the rest of the build's name, where a program is.
+    rest: &'a str,
+    /// Said on the right: the size of a build.
+    detail: &'a str,
+    hover: &'a str,
+    /// It can be deleted from its ⋯ menu (enabled or not, with what the item says on hover); `None`: it has no menu.
+    delete: Option<(bool, &'a str)>,
+}
+
+/// A row of the list of builds: a ring (filled for the one in use), its name, *tested*, the rest of its name; on the right
+/// its size, *In use* or a grey Use, and its ⋯ menu.
+fn build_row(ui: &mut egui::Ui, row: BuildRow<'_>) -> RowAsk {
+    let p = super::theme::palette();
+    let mut asked = RowAsk::default();
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), 28.0),
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| {
+            if let Some((can, help)) = row.delete {
+                let more = icons::icon_button(ui, Icon::More, egui::vec2(26.0, 24.0), true, false)
+                    .on_hover_text("Delete it");
+                egui::Popup::menu(&more)
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+                    .show(|ui| {
+                        ui.set_min_width(150.0);
+                        ui.set_max_width(170.0);
+                        if icons::menu_item(ui, Icon::Trash, "Delete…", can, true)
+                            .on_hover_text(help)
+                            .clicked()
+                        {
+                            asked.delete = true;
+                        }
+                    });
+            }
+            if row.in_use {
+                tag(
+                    ui,
+                    Some(Icon::Check),
+                    "In use",
+                    p.accent_text,
+                    p.accent_soft,
+                );
+            } else if row.usable
+                && super::theme::button_sized(
+                    ui,
+                    super::theme::Role::Normal,
+                    true,
+                    "Use",
+                    egui::vec2(44.0, 24.0),
+                )
+                .clicked()
+            {
+                asked.use_it = true;
+            }
+            if !row.detail.is_empty() {
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(row.detail).small().color(p.faint));
+            }
+            ui.add_space(6.0);
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                let (ring, _) =
+                    ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                let color = if row.in_use { p.accent_text } else { p.outline };
+                ui.painter()
+                    .circle_stroke(ring.center(), 7.0, egui::Stroke::new(1.5, color));
+                if row.in_use {
+                    ui.painter().circle_filled(ring.center(), 3.5, color);
+                }
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(row.name).color(p.text))
+                    .on_hover_text(row.hover);
+                if row.tested {
+                    ui.label(egui::RichText::new("tested").small().color(p.accent_text))
+                        .on_hover_text("The release QuickAI was tested with.");
+                }
+                if !row.rest.is_empty() {
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(row.rest).small().color(p.faint))
+                            .truncate(),
+                    )
+                    .on_hover_text(row.hover);
+                }
+            });
+        },
+    );
+    asked
+}
+
+/// A button that is words in the green of text and a picture before them, with no frame: a way to something else under a
+/// list (*Look up builds*, *Use a program on disk…*).
+fn link(ui: &mut egui::Ui, icon: Icon, text: &str, enabled: bool) -> egui::Response {
+    let p = super::theme::palette();
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_string(), font, egui::Color32::PLACEHOLDER);
+    let size = egui::vec2(galley.size().x + 22.0, 24.0);
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(size, sense);
+    if ui.is_rect_visible(rect) {
+        let color = if !enabled {
+            p.faint
+        } else if response.hovered() {
+            p.text
+        } else {
+            p.accent_text
+        };
+        icons::paint(
+            ui.painter(),
+            egui::Rect::from_min_size(
+                egui::pos2(rect.left(), rect.center().y - 7.5),
+                egui::vec2(15.0, 15.0),
+            ),
+            icon,
+            color,
+        );
+        ui.painter().galley(
+            egui::pos2(rect.left() + 21.0, rect.center().y - galley.size().y / 2.0),
+            galley,
+            color,
+        );
+    }
+    response
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1263,8 +1505,6 @@ mod tests {
         assert_eq!(t.browse_help, want("browse_help"));
         assert_eq!(t.apply_url_help, want("apply_url_help"));
         assert_eq!(t.apply_path_help, want("apply_path_help"));
-        assert_eq!(t.installed_label, want("installed_label"));
-        assert_eq!(t.installed_help, want("installed_help"));
         assert_eq!(t.delete_build_help, want("delete_build_help"));
         assert_eq!(t.lookup_label, want("lookup_label"));
         assert_eq!(t.lookup_help, want("lookup_help"));
@@ -1291,8 +1531,6 @@ mod tests {
             ("browse_help", &t.browse_help),
             ("apply_url_help", &t.apply_url_help),
             ("apply_path_help", &t.apply_path_help),
-            ("installed_label", &t.installed_label),
-            ("installed_help", &t.installed_help),
             ("delete_build_help", &t.delete_build_help),
             ("lookup_label", &t.lookup_label),
             ("lookup_help", &t.lookup_help),
@@ -1818,6 +2056,78 @@ backends = [ { match = "gpu", label = "GPU" } ]
         }
     }
 
+    /// A reader of the disk that finds two builds of llama.cpp: one of a backend the document knows, one whose name says
+    /// none.
+    fn two_builds_reader(spec: &InstallSpec) -> Scan {
+        let build = |label: &str, size: u64| {
+            let dir = spec.root.join(label);
+            InstalledBuild {
+                label: label.into(),
+                binary_path: dir.join("llama-server"),
+                install_dir: dir,
+                size_bytes: size,
+            }
+        };
+        Scan {
+            builds: vec![
+                build("b2-llama-b2-bin-ubuntu-vulkan-x64", 41_000_000),
+                build("b1-llama-b1-bin-ubuntu-x64", 16_000_000),
+            ],
+            unfinished: Vec::new(),
+        }
+    }
+
+    /// I31 (C190): the builds are one list, each by its release and the backend its name says, with its size; the one in
+    /// use says so and every other one has Use; a program of the person's that is none of them is a row of its own, in
+    /// use; and the box for a program of the person's is behind a link.
+    #[test]
+    fn p3_i31_the_builds_are_one_list_with_the_one_in_use_marked_and_the_box_behind_a_link() {
+        let dir = scratch("i31");
+        let mut app = app_for(&dir, "llamacpp");
+        let field = manager_field(&app);
+        app.runtime.disk.reader = Some(two_builds_reader);
+        let ctx = egui::Context::default();
+        wait_until(Duration::from_secs(10), "the scan to be taken in", || {
+            painted(&ctx, |ui| app.show_runtime_manager(ui, &field));
+            app.runtime.disk.known
+        });
+        let vulkan = app.runtime.disk.builds[0].0.binary_path.clone();
+        app.use_binary(vulkan);
+        let texts = painted(&ctx, |ui| app.show_runtime_manager(ui, &field));
+        for want in ["b2 · Vulkan", "b1", "39.1 MB", "15.3 MB", "In use", "Use"] {
+            assert!(texts.iter().any(|t| t == want), "{want} in {texts:?}");
+        }
+        assert_eq!(
+            texts.iter().filter(|t| *t == "In use").count(),
+            1,
+            "{texts:?}"
+        );
+        // the rest of a build's name, faintly after it
+        assert!(said(&texts, "llama-b2-bin-ubuntu-vulkan-x64"), "{texts:?}");
+        // no box for a path until it is asked for
+        assert!(said(&texts, "Use a program on disk…"), "{texts:?}");
+        assert!(!said(&texts, "llama-server binary"), "{texts:?}");
+
+        // a program of the person's is a row of its own, the one in use
+        let mine = dir.join("my-llama-server");
+        std::fs::write(&mine, "").unwrap();
+        app.use_binary(mine);
+        let texts = painted(&ctx, |ui| app.show_runtime_manager(ui, &field));
+        assert!(texts.iter().any(|t| t == "Your program"), "{texts:?}");
+        assert_eq!(
+            texts.iter().filter(|t| *t == "In use").count(),
+            1,
+            "{texts:?}"
+        );
+
+        // the link opens the box, with the program in use in it
+        app.runtime.show_path = true;
+        let texts = painted(&ctx, |ui| app.show_runtime_manager(ui, &field));
+        assert!(said(&texts, "llama-server binary"), "{texts:?}");
+        assert!(said(&texts, "my-llama-server"), "{texts:?}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn p3_f65_a_frame_never_waits_for_the_disk_and_looks_again_when_something_changed() {
         let dir = scratch("f65");
@@ -1852,8 +2162,9 @@ backends = [ { match = "gpu", label = "GPU" } ]
             app.runtime.disk.known
         });
         let texts = painted(&ctx, |ui| app.show_runtime_manager(ui, &field));
-        assert!(said(&texts, "Installed builds"), "{texts:?}");
-        assert!(said(&texts, "v1 (5.0 GB)"), "{texts:?}");
+        // the build is a row of the list: its name, and its size on the right
+        assert!(texts.iter().any(|t| t == "v1"), "{texts:?}");
+        assert!(said(&texts, "5.0 GB"), "{texts:?}");
         assert!(said(&texts, "Unfinished installs"), "{texts:?}");
         assert!(said(&texts, "v2 (3 of 7 steps done, 7.0 GB)"), "{texts:?}");
         assert!(!said(&texts, "Looking at what is installed"));
@@ -1907,8 +2218,8 @@ backends = [ { match = "gpu", label = "GPU" } ]
         );
         assert!(said(&texts, "Continue"), "{texts:?}");
         assert!(
-            !said(&texts, "Installed builds"),
-            "it is not a build: {texts:?}"
+            !texts.iter().any(|t| t == "v0.39.0"),
+            "it is not a row of the builds: {texts:?}"
         );
 
         // going on is asked for the release of that label, from the document alone, with its pin

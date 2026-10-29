@@ -11,6 +11,7 @@ use quickai_core::registry::Engine;
 use quickai_core::value::Value;
 
 use super::icons;
+use super::runtime_manager::build_name;
 use super::theme;
 use super::App;
 
@@ -26,6 +27,20 @@ enum From {
     Setting(String),
     /// What goes with the model: a file fetched with it (`projector`) or the mode it is started in.
     Model(String),
+}
+
+/// How a row is said: the program's (with what the program is), an argument's (with the names of the model's files), or a
+/// variable's.
+enum Said<'a> {
+    Program(&'a Names),
+    Row(&'a From, &'a Names),
+    Plain(&'a From),
+}
+
+impl Row {
+    fn said_with<'a>(&'a self, names: &'a Names) -> Said<'a> {
+        Said::Row(&self.from, names)
+    }
 }
 
 impl From {
@@ -70,6 +85,29 @@ impl App {
         })
     }
 
+    /// The names of the plan's files and program as the window says them: the selected model's files by the names they
+    /// came with, and the program by the build it is of when it is one of those installed.
+    fn names_of(&self, spawn: &SpawnPlan) -> Names {
+        let files = self
+            .models
+            .get(self.selected)
+            .map(|m| {
+                m.companions
+                    .iter()
+                    .map(|c| (c.path.display().to_string(), c.name.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let program = self
+            .runtime
+            .disk
+            .builds
+            .iter()
+            .find(|(b, _)| b.binary_path.display().to_string() == spawn.program.value)
+            .map(|(b, backend)| build_name(&b.label, backend).0);
+        Names { files, program }
+    }
+
     /// The command line of the next Start and its environment, under the engine's settings.
     pub(super) fn show_command_line(&self, ui: &mut egui::Ui) {
         ui.add_space(10.0);
@@ -83,7 +121,7 @@ impl App {
         let plan = match self.plan_to_show() {
             Ok(plan) => plan,
             Err(said) => {
-                ui.label("Command line:");
+                heading(ui);
                 ui.label(theme::muted(said));
                 return;
             }
@@ -97,7 +135,7 @@ impl App {
             Start::Spawn(spawn) => Some(spawn),
             Start::Attach(_) => None,
         }) else {
-            ui.label("Command line:");
+            heading(ui);
             ui.label(theme::muted(format!(
                 "QuickAI starts no {server}: it uses the one that runs on port {}.",
                 self.port()
@@ -118,7 +156,7 @@ impl App {
                 self.port()
             ));
         }
-        show_spawn(ui, engine, spawn, "engine", &notes);
+        show_spawn(ui, engine, spawn, "engine", &notes, &self.names_of(spawn));
     }
 
     /// The same for the program that goes with the engine, under its settings.
@@ -139,11 +177,11 @@ impl App {
                         Start::Attach(_) => None,
                     })
                 {
-                    show_spawn(ui, engine, spawn, "companion", &[]);
+                    show_spawn(ui, engine, spawn, "companion", &[], &Names::default());
                 }
             }
             Err(problems) => {
-                ui.label("Command line:");
+                heading(ui);
                 ui.label(theme::muted(
                     problems
                         .first()
@@ -154,13 +192,31 @@ impl App {
     }
 }
 
+/// What the window knows of the words of a plan that the plan does not say: the name each file fetched with the model
+/// came with (a projector is kept under its repository's name, and said by its own), and what the program is (the build
+/// it is of).
+#[derive(Default)]
+struct Names {
+    /// (where it is, the name it came with).
+    files: Vec<(String, String)>,
+    program: Option<String>,
+}
+
 /// The program and its arguments, a row for each option, with a button that copies the line, and `notes` on when it
 /// is so under it; then the variables, folded.
-fn show_spawn(ui: &mut egui::Ui, engine: &Engine, spawn: &SpawnPlan, salt: &str, notes: &[String]) {
+fn show_spawn(
+    ui: &mut egui::Ui,
+    engine: &Engine,
+    spawn: &SpawnPlan,
+    salt: &str,
+    notes: &[String],
+    names: &Names,
+) {
     ui.horizontal(|ui| {
-        ui.label("Command line:").on_hover_text(
+        heading(ui).on_hover_text(
             "What Start runs, made the way Start makes it. Each row says what put it there.",
         );
+        ui.label(theme::muted("what Start runs"));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             icons::copy_button(ui, &format!("command_line_{salt}"), &shell_line(spawn));
         });
@@ -170,9 +226,9 @@ fn show_spawn(ui: &mut egui::Ui, engine: &Engine, spawn: &SpawnPlan, salt: &str,
     let width = from_width(ui, rows.iter().map(|r| &r.from));
     theme::well_frame(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
         ui.set_width(ui.available_width());
-        show_row(ui, &program, &From::Document, true, width);
+        show_row(ui, &program, &Said::Program(names), width);
         for row in &rows {
-            show_row(ui, &row.words, &row.from, false, width);
+            show_row(ui, &row.words, &row.said_with(names), width);
         }
     });
     for note in notes {
@@ -202,7 +258,7 @@ fn show_spawn(ui: &mut egui::Ui, engine: &Engine, spawn: &SpawnPlan, salt: &str,
             theme::well_frame(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 for (text, from) in &variables {
-                    show_row(ui, std::slice::from_ref(text), from, false, width);
+                    show_row(ui, std::slice::from_ref(text), &Said::Plain(from), width);
                 }
             });
         });
@@ -210,10 +266,18 @@ fn show_spawn(ui: &mut egui::Ui, engine: &Engine, spawn: &SpawnPlan, salt: &str,
 
 /// One row: the words in the font of a command line, shortened at the end when they do not fit (a path is its file's
 /// name), and what put them there in the column on the right. All of it is on the row's hover.
-fn show_row(ui: &mut egui::Ui, words: &[String], from: &From, program: bool, from_width: f32) {
+fn show_row(ui: &mut egui::Ui, words: &[String], said: &Said<'_>, from_width: f32) {
     let p = theme::palette();
-    let shown: Vec<String> = words.iter().map(|w| short(w)).collect();
-    let said = if program { String::new() } else { from.said() };
+    let (from, names, program) = match said {
+        Said::Program(names) => (&From::Document, Some(*names), true),
+        Said::Row(from, names) => (*from, Some(*names), false),
+        Said::Plain(from) => (*from, None, false),
+    };
+    let shown: Vec<String> = words.iter().map(|w| short(w, names)).collect();
+    let said = match said {
+        Said::Program(names) => names.program.clone().unwrap_or_default(),
+        _ => from.said(),
+    };
     let color = match from {
         From::Model(_) => p.accent_text,
         _ => p.muted,
@@ -257,6 +321,11 @@ fn from_width<'a>(ui: &egui::Ui, froms: impl Iterator<Item = &'a From>) -> f32 {
         })
         .fold(0.0, f32::max)
         .min(FROM_WIDTH)
+}
+
+/// The name of the list, as a setting's name is said.
+fn heading(ui: &mut egui::Ui) -> egui::Response {
+    ui.label(egui::RichText::new("Command line").color(theme::palette().text))
 }
 
 /// The arguments in rows: an option and the words after it that are not options, as long as the same thing put them
@@ -331,8 +400,12 @@ fn sentence(said: &str) -> String {
     out
 }
 
-/// A path is said by its file's name; anything else as it is.
-fn short(word: &str) -> String {
+/// A path is said by its file's name, or by the name the file came with when it was fetched with the model; anything else
+/// as it is.
+fn short(word: &str, names: Option<&Names>) -> String {
+    if let Some((_, name)) = names.and_then(|n| n.files.iter().find(|(path, _)| path == word)) {
+        return format!("…/{name}");
+    }
     let path = Path::new(word);
     match path.file_name() {
         Some(name) if path.is_absolute() && path.parent().is_some() => {
@@ -430,8 +503,17 @@ mod tests {
                 ),
             ]
         );
-        assert_eq!(short("/m/p.gguf"), "…/p.gguf");
-        assert_eq!(short("8080"), "8080");
+        assert_eq!(short("/m/p.gguf", None), "…/p.gguf");
+        assert_eq!(short("8080", None), "8080");
+        let names = Names {
+            files: vec![("/m/me--r--mmproj-f16.gguf".into(), "mmproj-f16.gguf".into())],
+            program: None,
+        };
+        assert_eq!(
+            short("/m/me--r--mmproj-f16.gguf", Some(&names)),
+            "…/mmproj-f16.gguf",
+            "a file fetched with the model by the name it came with"
+        );
         assert_eq!(
             shell_line(&spawn(&[
                 ("--alias", "engine launch.spawn.args"),

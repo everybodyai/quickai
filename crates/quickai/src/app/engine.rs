@@ -983,6 +983,12 @@ mod tests {
                 app.named.notice = (state == ServerState::Idle).then(|| "a notice".to_string());
                 draw_everything(&mut app, &ctx, state);
             }
+            // every page of the Settings (C190)
+            for page in app.settings_pages() {
+                app.show_settings = true;
+                app.settings_page = page.page;
+                draw_everything(&mut app, &ctx, ServerState::Idle);
+            }
             // and with the models gone, or a removal waiting for a yes
             app.models.clear();
             draw_everything(&mut app, &ctx, ServerState::Idle);
