@@ -610,6 +610,53 @@ pub(super) fn chip(ui: &mut egui::Ui, text: &str, tone: Option<Tone>) -> egui::R
     response
 }
 
+/// A switch: a setting that is on or off, which a click turns over (C190). On is the soft green of a tag, with a knob in
+/// the green of text, and never the green of the main button: the suites find that button by its colour, and only one
+/// thing on the screen may have it. The response is clicked when it was turned over.
+pub(super) fn switch(ui: &mut egui::Ui, on: &mut bool, enabled: bool) -> egui::Response {
+    let p = palette();
+    let size = egui::vec2(36.0, 20.0);
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, mut response) = ui.allocate_exact_size(size, sense);
+    if response.clicked() {
+        *on = !*on;
+        response.mark_changed();
+    }
+    if ui.is_rect_visible(rect) {
+        let how_far = ui.ctx().animate_bool_responsive(response.id, *on);
+        let (fill, stroke, knob) = if *on {
+            (
+                p.accent_soft,
+                p.accent_text.gamma_multiply(0.55),
+                p.accent_text,
+            )
+        } else {
+            (p.raised, p.outline, p.muted)
+        };
+        let fade = |c: Color32| if enabled { c } else { c.gamma_multiply(0.5) };
+        let fill = if response.hovered() && enabled {
+            fill.lerp_to_gamma(p.text, 0.06)
+        } else {
+            fill
+        };
+        ui.painter().rect(
+            rect,
+            CornerRadius::same(10),
+            fade(fill),
+            Stroke::new(1.0, fade(stroke)),
+            egui::StrokeKind::Inside,
+        );
+        let x = egui::lerp((rect.left() + 10.0)..=(rect.right() - 10.0), how_far);
+        ui.painter()
+            .circle_filled(egui::pos2(x, rect.center().y), 7.0, fade(knob));
+    }
+    response
+}
+
 /// What a button is for.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Role {

@@ -55,6 +55,9 @@ pub(super) enum Icon {
     Save,
     Trash,
     Upload,
+    // the pages of the Settings: the program's builds, and how it is started
+    Package,
+    Terminal,
 }
 
 /// Draws `icon` in `rect` (it is drawn in the largest square that fits, in the middle) in `color`.
@@ -517,6 +520,30 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
             line(&[(12.0, 15.0), (12.0, 4.0)]);
             line(&[(7.0, 8.5), (12.0, 3.5), (17.0, 8.5)]);
             line(&[(5.0, 20.0), (19.0, 20.0)]);
+        }
+        Icon::Package => {
+            line(&[
+                (12.0, 3.0),
+                (20.0, 7.5),
+                (20.0, 16.5),
+                (12.0, 21.0),
+                (4.0, 16.5),
+                (4.0, 7.5),
+                (12.0, 3.0),
+            ]);
+            line(&[(4.0, 7.5), (12.0, 12.0), (20.0, 7.5)]);
+            line(&[(12.0, 12.0), (12.0, 21.0)]);
+        }
+        Icon::Terminal => {
+            line(&[
+                (3.0, 5.0),
+                (21.0, 5.0),
+                (21.0, 19.0),
+                (3.0, 19.0),
+                (3.0, 5.0),
+            ]);
+            line(&[(7.0, 9.5), (10.0, 12.0), (7.0, 14.5)]);
+            line(&[(12.5, 15.0), (17.0, 15.0)]);
         }
     }
 }

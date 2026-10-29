@@ -25,8 +25,6 @@
   "runtime.filter_help": "Narrow the list below by tag, filename, or backend (CUDA/Vulkan/SYCL/ROCm/CPU) — matched against what's already listed, no extra lookup.",
   "runtime.filter_hint": "e.g. vulkan, rocm, b110...",
   "runtime.filter_label": "Filter:",
-  "runtime.installed_help": "llama-server builds downloaded via \"Look up llama.cpp builds\" in an earlier run, most recently installed first — still listed here even once that list (which only ever shows a handful of the most recent GitHub releases) no longer includes them. \"Use\" switches to one instantly, with no re-download.",
-  "runtime.installed_label": "Installed builds",
   "runtime.log_delete_failed": "Could not delete build {label}: {e}",
   "runtime.log_deleted": "Deleted llama-server build: {label}",
   "runtime.log_install_failed": "llama-server install failed: {msg}",

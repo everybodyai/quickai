@@ -18,6 +18,7 @@ impl App {
         if self.show_settings {
             self.close_settings();
         } else {
+            self.settings_opening();
             self.show_settings = true;
         }
     }

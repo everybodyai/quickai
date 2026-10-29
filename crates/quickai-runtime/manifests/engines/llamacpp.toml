@@ -155,7 +155,7 @@ action = "focus_field:port"
 
 [[diagnostic]]
 when = { log_matches = "(?i)unknown model architecture" }
-hint = "This llama.cpp build is older than the model. Choose a newer build in Settings, Advanced."
+hint = "This llama.cpp build is older than the model. Choose a newer build in Settings, Program."
 action = "open:settings"
 
 [[diagnostic]]

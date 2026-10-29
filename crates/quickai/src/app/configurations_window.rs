@@ -1552,7 +1552,7 @@ impl App {
     /// The badge of the engine a configuration is for: the first letter of its name on the engine's tint (by its
     /// place in the selector, so that no two engines of this QuickAI share one), or in an outline for an engine it
     /// does not have.
-    fn engine_badge(&self, ui: &mut egui::Ui, engine: &str) {
+    pub(super) fn engine_badge(&self, ui: &mut egui::Ui, engine: &str) {
         let p = theme::palette();
         let (rect, _) = ui.allocate_exact_size(egui::vec2(BADGE, BADGE), egui::Sense::hover());
         if !ui.is_rect_visible(rect) {
@@ -1591,7 +1591,7 @@ impl App {
 }
 
 /// How wide a tag of `text` is, with a picture or not.
-fn tag_width(ui: &egui::Ui, icon: bool, text: &str) -> f32 {
+pub(super) fn tag_width(ui: &egui::Ui, icon: bool, text: &str) -> f32 {
     let font = egui::TextStyle::Small.resolve(ui.style());
     let words = ui
         .painter()
@@ -1603,7 +1603,7 @@ fn tag_width(ui: &egui::Ui, icon: bool, text: &str) -> f32 {
 
 /// A short word after a name, in a pill of `color` on `fill`, with a picture before it when it has one: *In use*,
 /// *Modified*, where it is from, how many notes there are.
-fn tag(
+pub(super) fn tag(
     ui: &mut egui::Ui,
     icon: Option<Icon>,
     text: &str,

@@ -23,10 +23,15 @@
 use std::path::PathBuf;
 
 use eframe::egui;
+use quickai_core::doc::engine::FieldType;
 use quickai_core::form::{Edit, FormField};
 use quickai_core::plan::{HostFacts, Parent, RunPlan, Selection};
+use quickai_core::value::Value;
 
 use super::runtime_manager::RuntimeManager;
+use super::settings_window::{
+    group, is_program_field, page_head, row_line, setting_row, switch_row,
+};
 use super::values::FieldValues;
 use super::widgets::{self, Reply};
 use super::App;
@@ -507,12 +512,14 @@ impl App {
         }
     }
 
-    /// The companion's section of the Settings: whether it starts with the engine, its port and network, its
-    /// builds, and what is less used.
-    pub(super) fn show_companion_settings(&mut self, ui: &mut egui::Ui) {
+    /// The page of the program that goes with the engine in the Settings (Open WebUI beside Ollama, C190): what it is,
+    /// whether it starts with the engine and its own settings, the builds of it, the rest of its settings, and the command
+    /// line it is started with while it is wanted.
+    pub(super) fn show_companion_page(&mut self, ui: &mut egui::Ui) {
         let Some(name) = self.companion_name() else {
             return;
         };
+        let p = super::theme::palette();
         let (summary, license, homepage) = {
             let info = &self.companion_doc().map(|e| &e.doc.engine);
             (
@@ -521,123 +528,109 @@ impl App {
                 info.and_then(|i| i.homepage.clone()),
             )
         };
-        let installed = self.companion_installed();
-        let enabled = self.companion_enabled();
-        ui.add_space(6.0);
-        // open while it is the thing to do: it is wanted and not there yet, or the person pressed the button that
-        // sets it up
-        let header = egui::CollapsingHeader::new(format!("Chat UI: {name}"))
-            .id_salt("companion_settings")
-            .default_open(enabled && !installed);
-        let header = if std::mem::take(&mut self.companion_section_wanted) {
-            header.open(Some(true))
-        } else {
-            header
+        page_head(ui, &name, (!summary.is_empty()).then_some(summary.as_str()));
+        let line = match (license, homepage) {
+            (Some(license), Some(home)) => Some(format!("License: {license} · {home}")),
+            (Some(license), None) => Some(format!("License: {license}")),
+            (None, Some(home)) => Some(home),
+            (None, None) => None,
         };
-        super::theme::card(ui, |ui| {
-            header.show(ui, |ui| {
-                if !summary.is_empty() {
-                    ui.label(
-                        egui::RichText::new(summary)
-                            .small()
-                            .color(super::theme::palette().muted),
-                    );
-                }
-                let line = match (license, homepage) {
-                    (Some(license), Some(home)) => Some(format!("License: {license} · {home}")),
-                    (Some(license), None) => Some(format!("License: {license}")),
-                    (None, Some(home)) => Some(home),
-                    (None, None) => None,
-                };
-                if let Some(line) = line {
-                    ui.label(
-                        egui::RichText::new(line)
-                            .small()
-                            .color(super::theme::palette().muted),
-                    );
-                }
-                ui.add_space(4.0);
-                self.as_companion(|app| {
-                    let form = app.form();
-                    let section = |id: &str| -> Vec<FormField> {
-                        form.as_ref()
-                            .and_then(|f| f.section(id))
-                            .map(|s| s.fields.iter().filter(|f| f.visible).cloned().collect())
-                            .unwrap_or_default()
-                    };
-                    app.show_fields(ui, &section("primary"), None);
-                    ui.add_space(8.0);
-                    // the manager of its builds is the field that is the program: where it is, and how to get it
-                    let advanced = section("advanced");
-                    for field in advanced
-                        .iter()
-                        .filter(|f| f.widget.as_deref() == Some("runtime_manager"))
-                    {
-                        app.show_runtime_manager(ui, field);
-                    }
-                    let others: Vec<FormField> = advanced
-                        .iter()
-                        .filter(|f| f.widget.as_deref() != Some("runtime_manager"))
-                        .cloned()
-                        .collect();
-                    if !others.is_empty() {
-                        ui.add_space(8.0);
-                        egui::CollapsingHeader::new("More")
-                            .id_salt("companion_more")
-                            .default_open(false)
-                            .show(ui, |ui| app.show_fields(ui, &others, None));
-                    }
-                });
-                // what it is started with, beside the engine as it is set now
-                if self.companion_enabled() {
-                    self.show_companion_command_line(ui);
-                }
-            });
+        if let Some(line) = line {
+            ui.label(egui::RichText::new(line).small().color(p.faint));
+            ui.add_space(8.0);
+        }
+        self.as_companion(|app| {
+            let form = app.form();
+            let section = |id: &str| -> Vec<FormField> {
+                form.as_ref()
+                    .and_then(|f| f.section(id))
+                    .map(|s| s.fields.iter().filter(|f| f.visible).cloned().collect())
+                    .unwrap_or_default()
+            };
+            let primary = section("primary");
+            if !primary.is_empty() {
+                group(ui, |ui| app.show_fields(ui, &primary, None));
+            }
+            // the program itself: the manager of its builds, and the Python its install is made with
+            let (program, others): (Vec<FormField>, Vec<FormField>) =
+                section("advanced").into_iter().partition(is_program_field);
+            let (manager, install): (Vec<FormField>, Vec<FormField>) = program
+                .into_iter()
+                .partition(|f| f.widget.as_deref() == Some("runtime_manager"));
+            ui.add_space(14.0);
+            sub_head(ui, "Program");
+            for field in &manager {
+                app.show_runtime_manager(ui, field);
+            }
+            if !install.is_empty() {
+                ui.add_space(10.0);
+                group(ui, |ui| app.show_fields(ui, &install, None));
+            }
+            if !others.is_empty() {
+                ui.add_space(14.0);
+                sub_head(ui, "Starting it");
+                group(ui, |ui| app.show_fields(ui, &others, None));
+            }
         });
+        // what it is started with, beside the engine as it is set now
+        if self.companion_enabled() {
+            self.show_companion_command_line(ui);
+        }
     }
 
-    /// Draws fields of the engine whose values the window holds, one after the other, and applies what the
-    /// person did to them. `owner` is the name to say of a field that only a spawn can set while the program
-    /// that was running was not started here (`None`: there is nothing to say).
+    /// Draws fields of the engine whose values the window holds, a row each with a line between two (C190): a switch or a
+    /// choice at the right of its name, a box under its name for words, a number or a path; and applies what the person
+    /// did to them. `owner` is the name to say of a field that only a spawn can set while the program that was running
+    /// was not started here (`None`: there is nothing to say).
     pub(super) fn show_fields(
         &mut self,
         ui: &mut egui::Ui,
         fields: &[FormField],
         owner: Option<&str>,
     ) {
+        let p = super::theme::palette();
         let mut edits: Vec<Edit> = Vec::new();
         let mut actions = Vec::new();
         for (i, field) in fields.iter().enumerate() {
             if i > 0 {
-                ui.add_space(8.0);
+                row_line(ui);
             }
             if field.widget.as_deref() == Some("runtime_manager") {
                 self.show_runtime_manager(ui, field);
                 continue;
             }
-            // a checkbox and a button carry their own label
-            let own_label = field.ty == quickai_core::doc::engine::FieldType::Bool
-                || field.widget.as_deref() == Some("button");
-            // a choice is a short box: it is beside its label, where a path or a text, which want the width of the window,
-            // are under theirs
-            let beside = field.ty == quickai_core::doc::engine::FieldType::Choice && !own_label;
-            let draw_label = |ui: &mut egui::Ui| {
-                let label = ui.label(format!("{}:", field.label));
-                if let Some(help) = &field.help {
-                    label.on_hover_text(help);
-                }
-            };
-            let reply = if beside {
-                ui.horizontal(|ui| {
-                    draw_label(ui);
+            let (title, desc) = field_words(field);
+            let help = field.help.as_deref();
+            let reply = if field.widget.as_deref() == Some("button") {
+                // a button carries its own words
+                ui.add_enabled_ui(field.enabled, |ui| widgets::show(ui, field))
+                    .inner
+            } else if field.ty == FieldType::Bool {
+                let mut on = field.value.truthy();
+                switch_row(ui, &title, desc.as_deref(), help, &mut on, field.enabled)
+                    .then_some(Reply::Set(Value::Bool(on)))
+            } else if matches!(
+                field.ty,
+                FieldType::Choice | FieldType::Port | FieldType::Int | FieldType::Float
+            ) {
+                // a short control: beside the name
+                setting_row(ui, &title, desc.as_deref(), help, |ui| {
                     ui.add_enabled_ui(field.enabled, |ui| widgets::show(ui, field))
                         .inner
                 })
-                .inner
+                .0
             } else {
-                if !own_label {
-                    draw_label(ui);
+                // words, lines or a path want the width of the page: under the name
+                let name = ui.label(egui::RichText::new(&title).color(p.text));
+                if let Some(help) = help {
+                    name.on_hover_text(help);
                 }
+                if let Some(desc) = &desc {
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(desc).small().color(p.muted)).wrap(),
+                    );
+                }
+                ui.add_space(4.0);
                 ui.add_enabled_ui(field.enabled, |ui| widgets::show(ui, field))
                     .inner
             };
@@ -657,7 +650,7 @@ impl App {
                     ui.label(
                         egui::RichText::new(format!("(Owned by the running {owner}.)"))
                             .small()
-                            .color(super::theme::palette().muted),
+                            .color(p.muted),
                     );
                 }
             }
@@ -687,6 +680,51 @@ impl App {
         ui.add_space(6.0);
         self.as_companion(|app| app.show_crash_panel(ui, ServerState::Crashed, &server));
     }
+}
+
+/// What a row says of a field: its name without the hint in brackets (`Extra environment`), and what it does in a few
+/// words: the first sentence of its help, else the hint in brackets (`KEY=VALUE per line`).
+pub(super) fn field_words(field: &FormField) -> (String, Option<String>) {
+    let (name, bracket) = match field.label.split_once(" (") {
+        Some((name, rest)) => (
+            name.to_string(),
+            Some(rest.trim_end_matches(')').to_string()),
+        ),
+        None => (field.label.clone(), None),
+    };
+    let first = field
+        .help
+        .as_deref()
+        .map(first_sentence)
+        .filter(|s| !s.is_empty());
+    (name, first.or(bracket))
+}
+
+/// The first sentence of a text: up to the first full stop that ends one (not the one of `e.g.`), on its first line.
+fn first_sentence(text: &str) -> String {
+    let line = text.trim().lines().next().unwrap_or_default();
+    let mut from = 0;
+    while let Some(at) = line[from..].find(". ") {
+        let end = from + at;
+        let before = &line[..end];
+        if before.ends_with("e.g") || before.ends_with("i.e") {
+            from = end + 2;
+            continue;
+        }
+        return line[..=end].to_string();
+    }
+    line.to_string()
+}
+
+/// A heading in a page, over a group of its settings.
+fn sub_head(ui: &mut egui::Ui, text: &str) {
+    ui.label(
+        egui::RichText::new(text.to_uppercase())
+            .small()
+            .strong()
+            .color(super::theme::palette().faint),
+    );
+    ui.add_space(4.0);
 }
 
 #[cfg(test)]

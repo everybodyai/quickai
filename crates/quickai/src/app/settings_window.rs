@@ -1,5 +1,8 @@
-//! The Settings window: the downloaded-models folder and list, live traffic, and the
-//! "Advanced: llama.cpp" block (binary override, installed builds, build look-up, extra arguments).
+//! The Settings window (C190): a sidebar of pages with the engine in use at its head, and the page that is chosen
+//! beside it. **General** has the models folder and live traffic; **Program** the builds of the engine's program;
+//! **Starting it** what the program is given besides what QuickAI gives it, and the command line that makes; the
+//! program that goes with the engine (Open WebUI beside Ollama) has a page of its own; **Other computers** has the
+//! switch of WP4.33. Each setting is a row: its name and what it does on the left, its control on the right.
 //!
 //! It is a window of its own, not a panel drawn over the main one: it can be put beside the main window,
 //! made any size, and left open while the main window is used. (It is an immediate viewport: the frame
@@ -11,17 +14,37 @@ use eframe::egui;
 
 use quickai_core::form::{FormField, FormModel};
 
-use super::{App, PendingDelete};
+use super::icons::{self, Icon};
+use super::runtime_manager::INSTALL_PYTHON_FIELD;
+use super::theme;
+use super::App;
 use crate::hardware;
 
 /// What the window is called to the window manager: its title bar, and what a taskbar lists.
 pub(super) const SETTINGS_TITLE: &str = "QuickAI Settings";
 
-/// The size the window opens at, and the least it can be made. Its height then follows what it holds
-/// (`theme::fit_window_height`): as tall as an engine's Advanced section, open, and no taller than the rest when it
-/// is closed.
-const OPENS_AT: [f32; 2] = [500.0, 420.0];
-const LEAST: [f32; 2] = [400.0, 200.0];
+/// The size the window opens at, and the least it can be made. A page that is taller than the window scrolls.
+const OPENS_AT: [f32; 2] = [760.0, 600.0];
+const LEAST: [f32; 2] = [400.0, 320.0];
+
+/// Narrower than this, the sidebar is its pictures alone (and says each page's name when the pointer rests on it).
+const NARROW: f32 = 620.0;
+const SIDEBAR_WIDE: f32 = 196.0;
+const SIDEBAR_NARROW: f32 = 52.0;
+
+/// The margin of a group of settings, and so how far the line between two rows reaches past them.
+const GROUP_MARGIN: i8 = 14;
+
+/// The pages of the window, in the order of the sidebar.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub(super) enum SettingsPage {
+    #[default]
+    General,
+    Program,
+    Start,
+    Companion,
+    Computers,
+}
 
 /// Which window the Settings are: the id the display knows it by.
 pub(super) fn settings_viewport() -> egui::ViewportId {
@@ -39,6 +62,22 @@ impl App {
         if std::mem::take(&mut self.raise_settings) {
             ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);
         }
+        // the page that what opened the window asked for: the builds ("Manage engines...", "Choose a version..."), or the
+        // program that goes with the engine ("Set up chat UI...")
+        if std::mem::take(&mut self.advanced_section_wanted) {
+            self.settings_page = SettingsPage::Program;
+        }
+        if std::mem::take(&mut self.companion_section_wanted) && self.companion_name().is_some() {
+            self.settings_page = SettingsPage::Companion;
+        }
+        // a page this engine has not (no program goes with it) is the first one
+        if !self
+            .settings_pages()
+            .iter()
+            .any(|nav| nav.page == self.settings_page)
+        {
+            self.settings_page = SettingsPage::General;
+        }
         let form = self.form();
         let mut close = false;
         let builder = crate::with_app_icon(
@@ -51,14 +90,23 @@ impl App {
         ctx.show_viewport_immediate(id, builder, |ui, class| {
             if class == egui::ViewportClass::EmbeddedWindow {
                 // A context that cannot open a window (a test draws on one with no display) shows it inside
-                // the main window, as a window that is as tall as what is in it, up to the window it is in,
-                // with its Close button under it.
-                let room = (ui.ctx().content_rect().height() - 120.0).max(200.0);
+                // the main window: the pages in a row over the page, and its Close button under it.
+                ui.horizontal_wrapped(|ui| {
+                    for nav in self.settings_pages() {
+                        if ui
+                            .selectable_label(self.settings_page == nav.page, &nav.label)
+                            .clicked()
+                        {
+                            self.settings_page = nav.page;
+                        }
+                    }
+                });
+                let room = (ui.ctx().content_rect().height() - 150.0).max(200.0);
                 egui::ScrollArea::vertical()
                     .id_salt("settings_scroll")
                     .max_height(room)
                     .auto_shrink([false, true])
-                    .show(ui, |ui| self.show_settings_body(ui, &form));
+                    .show(ui, |ui| self.show_settings_page(ui, &form));
                 ui.add_space(10.0);
                 if ui.button("Close").clicked() {
                     close = true;
@@ -68,25 +116,34 @@ impl App {
                 if ui.input(|input| input.viewport().close_requested()) {
                     close = true;
                 }
-                let footer = egui::Panel::bottom("settings_footer")
+                egui::Panel::bottom("settings_footer").show(ui, |ui| {
+                    ui.add_space(6.0);
+                    if ui.button("Close").clicked() {
+                        close = true;
+                    }
+                    ui.add_space(6.0);
+                });
+                let narrow = ui.available_width() < NARROW;
+                egui::Panel::left("settings_sidebar")
+                    .exact_size(if narrow { SIDEBAR_NARROW } else { SIDEBAR_WIDE })
+                    .resizable(false)
+                    .frame(theme::bar_frame(egui::Margin::symmetric(8, 12)))
+                    .show(ui, |ui| self.show_settings_sidebar(ui, narrow));
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::new().fill(theme::palette().page).inner_margin(
+                        egui::Margin {
+                            left: 18,
+                            right: 14,
+                            top: 14,
+                            bottom: 10,
+                        },
+                    ))
                     .show(ui, |ui| {
-                        ui.add_space(6.0);
-                        if ui.button("Close").clicked() {
-                            close = true;
-                        }
-                        ui.add_space(6.0);
-                    })
-                    .response
-                    .rect
-                    .height();
-                super::theme::fitted_page(
-                    ui,
-                    "settings_scroll",
-                    super::theme::page_frame(),
-                    footer,
-                    LEAST[1],
-                    |ui| self.show_settings_body(ui, &form),
-                );
+                        egui::ScrollArea::vertical()
+                            .id_salt(("settings_page", self.settings_page))
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| self.show_settings_page(ui, &form));
+                    });
             }
             // every delete button of the window asks its question in the window, where it was pressed
             if !self.delete_asked_in_window {
@@ -101,8 +158,19 @@ impl App {
     /// Opens the Settings, or brings them to the front when they are open already (a window of their
     /// own can be behind the main one).
     pub(super) fn open_settings(&mut self) {
+        if !self.show_settings {
+            self.settings_opening();
+        }
         self.raise_settings = self.show_settings;
         self.show_settings = true;
+    }
+
+    /// What the window opens on: the page it was on last, or the program that goes with the engine when it is wanted
+    /// and not there yet (the thing to do).
+    pub(super) fn settings_opening(&mut self) {
+        if self.companion_enabled() && !self.companion_installed() {
+            self.companion_section_wanted = true;
+        }
     }
 
     /// Closes the Settings and writes down what was changed in them, however they were closed: by their
@@ -122,210 +190,297 @@ impl App {
         self.save_settings();
     }
 
-    /// What the window holds, in the order it is read, each part on a card as the main window's are: the engine, the
-    /// models and the traffic proxy; what goes with the engine; its Advanced section; and what went wrong.
-    fn show_settings_body(&mut self, ui: &mut egui::Ui, form: &Option<FormModel>) {
-        super::theme::card(ui, |ui| {
-            self.show_engine_row(ui);
-
-            if self.lists_models() {
-                self.show_named_models_list(ui);
-            } else {
-                self.show_models_folder(ui, form);
-            }
-
-            let active = self.session.is_active();
-            let server = self.server_name();
-            // an engine with no conversation to show has nothing for the proxy to do
-            if self.reads_traffic() {
-                ui.add_space(6.0);
-                ui.add_enabled_ui(!active, |ui| {
-                    if ui
-                        .checkbox(
-                            &mut self.enable_traffic_proxy,
-                            "Show live conversation traffic",
-                        )
-                        .on_hover_text(format!(
-                            "Adds a small local proxy in front of {server} so the \"Live \
-                 traffic\" tab can show chat/completion requests and replies live, \
-                 from any client — the built-in chat UI or an external app connected \
-                 with Connect an app. Off by default: clients then connect straight to \
-                 {server}, with no extra hop or overhead. Takes effect the next \
-                 time you click Start."
-                        ))
-                        .changed()
-                    {
-                        self.save_settings();
-                    }
-                });
-                if active {
-                    ui.label(
-                        egui::RichText::new(
-                            "(Stop the server to change this — it applies on the next Start.)",
-                        )
-                        .small()
-                        .color(super::theme::palette().muted),
-                    );
-                }
-            }
-        });
-
-        // the program that goes with the engine, when one does (Open WebUI beside Ollama)
-        self.show_companion_settings(ui);
-
-        ui.add_space(6.0);
-        let engine_name = self
-            .registry
-            .engine(&self.engine)
-            .map(|e| e.doc.engine.name.clone())
-            .unwrap_or_default();
-        // open when the page asked for it ("Choose a version...")
-        let header =
-            egui::CollapsingHeader::new(format!("Advanced: {engine_name}")).default_open(false);
-        let header = if std::mem::take(&mut self.advanced_section_wanted) {
-            header.open(Some(true))
-        } else {
-            header
-        };
-        super::theme::card(ui, |ui| {
-            header.show(ui, |ui| {
-                let advanced: Vec<FormField> = form
-                    .as_ref()
-                    .and_then(|f| f.section("advanced"))
-                    .map(|s| s.fields.iter().filter(|f| f.visible).cloned().collect())
-                    .unwrap_or_default();
-                self.show_fields(ui, &advanced, Some(&engine_name));
-                self.show_command_line(ui);
-            });
-        });
-
-        // QuickAI's setting up of other computers (WP4.33), when it is built in
-        if cfg!(feature = "remote-setup") {
-            ui.add_space(6.0);
-            super::theme::card(ui, |ui| {
-                let mut on = self.remote_setup_on();
-                if ui
-                    .checkbox(&mut on, "Set up other computers and run configurations there")
-                    .on_hover_text(
-                        "With it, a computer you add can be one QuickAI sets up: it copies its headless program \
-                         there and runs the configuration you select, and the status bar switches between the runs. \
-                         Off, the computers you add are ones you run an engine on yourself. Switching it off stops \
-                         nothing: a run there goes on until it is stopped.",
-                    )
-                    .changed()
-                {
-                    self.set_remote_setup(on);
-                }
-            });
+    /// The pages of the sidebar for the engine in use: the program that goes with it has one when there is one, and other
+    /// computers when this build sets them up.
+    pub(super) fn settings_pages(&self) -> Vec<NavItem> {
+        let mut pages = vec![
+            NavItem::new(SettingsPage::General, Icon::Sliders, "General"),
+            NavItem {
+                count: (self.runtime.disk.known && !self.runtime.disk.builds.is_empty())
+                    .then_some(self.runtime.disk.builds.len()),
+                ..NavItem::new(SettingsPage::Program, Icon::Package, "Program")
+            },
+            NavItem::new(SettingsPage::Start, Icon::Terminal, "Starting it"),
+        ];
+        if let Some(name) = self.companion_name() {
+            pages.push(NavItem::new(SettingsPage::Companion, Icon::Chat, &name));
         }
+        if cfg!(feature = "remote-setup") {
+            pages.push(NavItem::new(
+                SettingsPage::Computers,
+                Icon::Computer,
+                "Other computers",
+            ));
+        }
+        pages
+    }
 
-        if let Some(msg) = &self.settings_error {
-            ui.add_space(6.0);
-            ui.colored_label(super::theme::palette().bad, msg);
+    /// The sidebar: whose settings these are, and the pages.
+    fn show_settings_sidebar(&mut self, ui: &mut egui::Ui, narrow: bool) {
+        let p = theme::palette();
+        // the count of the builds is the disk's, read on a thread of its own whatever page is shown
+        self.refresh_disk(ui.ctx());
+        let engine = self.engine.clone();
+        ui.horizontal(|ui| {
+            ui.add_space(if narrow { 3.0 } else { 6.0 });
+            self.engine_badge(ui, &engine);
+            if !narrow {
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    ui.label(
+                        egui::RichText::new(self.engine_name())
+                            .strong()
+                            .color(p.text),
+                    );
+                    ui.label(
+                        egui::RichText::new("the engine in use")
+                            .small()
+                            .color(p.faint),
+                    );
+                });
+            }
+        })
+        .response
+        .on_hover_text(
+            "These are the settings of the engine in use. Switch engines in the menu bar.",
+        );
+        ui.add_space(8.0);
+        let line = ui.cursor().top();
+        let wide = ui.max_rect();
+        ui.painter().hline(
+            (wide.left() - 8.0)..=(wide.right() + 8.0),
+            line,
+            egui::Stroke::new(1.0, p.line),
+        );
+        ui.add_space(8.0);
+        for nav in self.settings_pages() {
+            let chosen = self.settings_page == nav.page;
+            if nav_item(ui, &nav, chosen, narrow).clicked() {
+                self.settings_page = nav.page;
+            }
+            ui.add_space(2.0);
         }
     }
 
-    /// The folder the downloaded models are in, with the two buttons that change it on the row of its label, and
-    /// the models that were downloaded into it, newest first.
-    fn show_models_folder(&mut self, ui: &mut egui::Ui, form: &Option<FormModel>) {
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if let Some(field) = form.as_ref().and_then(|f| f.field("models_dir")) {
-                let label = ui.label(format!("{}:", field.label));
-                if let Some(help) = &field.help {
-                    label.on_hover_text(help);
-                }
+    /// The page that is chosen, and under it what went wrong in it.
+    fn show_settings_page(&mut self, ui: &mut egui::Ui, form: &Option<FormModel>) {
+        match self.settings_page {
+            SettingsPage::General => self.show_general_page(ui, form),
+            SettingsPage::Program => self.show_program_page(ui, form),
+            SettingsPage::Start => self.show_start_page(ui, form),
+            SettingsPage::Companion => self.show_companion_page(ui),
+            SettingsPage::Computers => self.show_computers_page(ui),
+        }
+        if let Some(msg) = &self.settings_error {
+            ui.add_space(8.0);
+            ui.colored_label(theme::palette().bad, msg);
+        }
+    }
+
+    /// General: where the models are, and the live traffic.
+    fn show_general_page(&mut self, ui: &mut egui::Ui, form: &Option<FormModel>) {
+        page_head(ui, "General", None);
+        group(ui, |ui| {
+            if self.lists_models() {
+                self.show_listed_models_row(ui);
+            } else {
+                self.show_models_folder(ui, form);
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // a download writes into the folder it began in: the folder changes when it is done
-                let idle = self.download.is_none();
-                let busy = "Wait for the download to finish: it is written into the folder in use.";
-                if ui
-                    .add_enabled(idle, egui::Button::new("Reset to default"))
-                    .on_disabled_hover_text(busy)
-                    .clicked()
-                {
-                    let default_dir = self.default_models_dir();
-                    let _ = std::fs::create_dir_all(&default_dir);
-                    self.use_models_dir(default_dir, false);
-                }
+            // an engine with no conversation to show has nothing for the proxy to do
+            if self.reads_traffic() {
+                row_line(ui);
+                self.show_live_traffic_row(ui);
+            }
+        });
+    }
+
+    /// Program: the builds of the engine's program, and the Python an install is made with when it has one.
+    fn show_program_page(&mut self, ui: &mut egui::Ui, form: &Option<FormModel>) {
+        let name = self.engine_name();
+        page_head(
+            ui,
+            "Program",
+            Some(&format!("The build of {name} that Start runs.")),
+        );
+        let (program, _) = advanced_fields(form);
+        let (manager, install): (Vec<FormField>, Vec<FormField>) = program
+            .into_iter()
+            .partition(|f| f.widget.as_deref() == Some("runtime_manager"));
+        for field in &manager {
+            self.show_runtime_manager(ui, field);
+        }
+        if !install.is_empty() {
+            ui.add_space(10.0);
+            group(ui, |ui| self.show_fields(ui, &install, Some(&name)));
+        }
+    }
+
+    /// Starting it: what the program is given besides what QuickAI gives it, and the command line that makes.
+    fn show_start_page(&mut self, ui: &mut egui::Ui, form: &Option<FormModel>) {
+        let name = self.engine_name();
+        page_head(ui, &format!("Starting {}", self.server_name()), None);
+        let (_, others) = advanced_fields(form);
+        if !others.is_empty() {
+            group(ui, |ui| self.show_fields(ui, &others, Some(&name)));
+        }
+        self.show_command_line(ui);
+    }
+
+    /// Other computers: whether QuickAI sets them up (WP4.33).
+    fn show_computers_page(&mut self, ui: &mut egui::Ui) {
+        page_head(ui, "Other computers", None);
+        group(ui, |ui| {
+            let mut on = self.remote_setup_on();
+            let turned = switch_row(
+                ui,
+                "Set up other computers and run configurations there",
+                Some(
+                    "QuickAI copies its headless program to a computer you add and runs the configuration you \
+                     select there; the status bar switches between the runs.",
+                ),
+                Some(
+                    "Off, the computers you add are ones you run an engine on yourself. Switching it off stops \
+                     nothing: a run there goes on until it is stopped.",
+                ),
+                &mut on,
+                true,
+            );
+            if turned {
+                self.set_remote_setup(on);
+            }
+        });
+    }
+
+    /// The live traffic, on or off: a switch that is grey while the server runs, and says so.
+    fn show_live_traffic_row(&mut self, ui: &mut egui::Ui) {
+        let active = self.session.is_active();
+        let server = self.server_name();
+        let desc = if active {
+            format!("Stop {server} to change this: it applies at the next Start.")
+        } else {
+            format!("A Live tab with each request and reply, through a small proxy in front of {server}.")
+        };
+        let hover = format!(
+            "Adds a small local proxy in front of {server} so the \"Live traffic\" tab can show chat/completion \
+             requests and replies live, from any client — the built-in chat UI or an external app connected with Connect \
+             an app. Off by default: clients then connect straight to {server}, with no extra hop or overhead. Takes \
+             effect the next time you click Start."
+        );
+        let mut on = self.enable_traffic_proxy;
+        let turned = switch_row(
+            ui,
+            "Show live conversation traffic",
+            Some(&desc),
+            Some(&hover),
+            &mut on,
+            !active,
+        );
+        if turned {
+            self.enable_traffic_proxy = on;
+            self.save_settings();
+        }
+    }
+
+    /// The folder the downloaded models are in: how many there are, the buttons that change it and open it, and the
+    /// path, which can be typed (Apply then appears). Deleting a model is its own menu's, in the main window.
+    fn show_models_folder(&mut self, ui: &mut egui::Ui, form: &Option<FormModel>) {
+        let field = form.as_ref().and_then(|f| f.field("models_dir"));
+        let title = field.map_or_else(|| "Models folder".to_string(), |f| f.label.clone());
+        let downloaded: Vec<&crate::models::ModelEntry> = self
+            .models
+            .iter()
+            .filter(|m| !m.path.starts_with(&self.bundled_models_dir))
+            .collect();
+        let size: u64 = downloaded.iter().map(|m| m.size_bytes).sum();
+        let desc = match downloaded.len() {
+            0 => "No models in it yet. Downloads go here.".to_string(),
+            1 => format!(
+                "1 model, {}. Downloads go here.",
+                hardware::format_bytes(size)
+            ),
+            n => format!(
+                "{n} models, {}. Downloads go here.",
+                hardware::format_bytes(size)
+            ),
+        };
+        // a download writes into the folder it began in: the folder changes when it is done
+        let idle = self.download.is_none();
+        let busy = "Wait for the download to finish: it is written into the folder in use.";
+        let help = field.and_then(|f| f.help.clone());
+        let mut choose = false;
+        let mut open = false;
+        let _ = setting_row(ui, &title, Some(&desc), help.as_deref(), |ui| {
+            if ui.button("Open").on_hover_text("Open the folder").clicked() {
+                open = true;
+            }
+            if ui
+                .add_enabled(idle, egui::Button::new("Change…"))
+                .on_hover_text("Choose another folder for the models")
+                .on_disabled_hover_text(busy)
+                .clicked()
+            {
+                choose = true;
+            }
+        });
+        if open {
+            super::workbench::open_folder(&self.models_dir);
+        }
+        if choose {
+            if let Some(dir) = rfd::FileDialog::new()
+                .set_directory(&self.models_dir)
+                .pick_folder()
+            {
+                self.apply_models_dir(dir);
+            }
+        }
+        ui.add_space(6.0);
+        let edit = ui.add(
+            egui::TextEdit::singleline(&mut self.models_dir_input)
+                .desired_width(ui.available_width()),
+        );
+        let typed = self.models_dir_input.trim().to_string();
+        let edited = typed != self.models_dir.display().to_string();
+        let entered = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let mut apply = edited && entered && idle;
+        if !edited && self.models_dir_override.is_none() {
+            return;
+        }
+        ui.horizontal(|ui| {
+            if edited {
                 if ui
                     .add_enabled(idle, egui::Button::new("Apply"))
                     .on_hover_text("Use this folder from now on and re-scan it for models.")
                     .on_disabled_hover_text(busy)
                     .clicked()
                 {
-                    let candidate = PathBuf::from(self.models_dir_input.trim());
-                    if std::fs::create_dir_all(&candidate).is_ok() {
-                        self.use_models_dir(candidate, true);
-                    } else {
-                        self.settings_error = Some(format!(
-                            "Could not create/use {}",
-                            self.models_dir_input.trim()
-                        ));
-                    }
+                    apply = true;
                 }
-            });
-        });
-        ui.add(
-            egui::TextEdit::singleline(&mut self.models_dir_input)
-                .desired_width(ui.available_width()),
-        );
-
-        let mut downloaded_model_indices: Vec<usize> = self
-            .models
-            .iter()
-            .enumerate()
-            .filter(|(_, m)| !m.path.starts_with(&self.bundled_models_dir))
-            .map(|(i, _)| i)
-            .collect();
-        // Most-recently-downloaded first — a model has no other
-        // notion of "latest", so this uses the file's own mtime.
-        downloaded_model_indices.sort_by_key(|&i| {
-            std::cmp::Reverse(
-                std::fs::metadata(&self.models[i].path)
-                    .and_then(|m| m.modified())
-                    .ok(),
-            )
-        });
-        if !downloaded_model_indices.is_empty() {
-            ui.add_space(8.0);
-            ui.label(egui::RichText::new("Downloaded models").strong())
-                .on_hover_text(
-                    "Models fetched via the \"Get\" box, \"Look up online\", or \
-         dropped into the folder above by hand, newest first. Bundled \
-         models aren't listed here — they can't be deleted.",
-                );
-            let mut to_delete: Option<PendingDelete> = None;
-            egui::ScrollArea::vertical()
-                .id_salt("downloaded_models_scroll")
-                .auto_shrink([false, true])
-                .max_height(list_scroll_height(ui, DELETE_LIST_MAX_ROWS))
-                .show(ui, |ui| {
-                    for &i in &downloaded_model_indices {
-                        let m = &self.models[i];
-                        ui.horizontal(|ui| {
-                            if ui
-                                .add(egui::Button::new("🗑").small())
-                                .on_hover_text("Delete this model from disk")
-                                .clicked()
-                            {
-                                to_delete = Some(PendingDelete::Model {
-                                    filename: m.filename.clone(),
-                                    path: m.path.clone(),
-                                });
-                            }
-                            ui.label(format!(
-                                "{} ({})",
-                                m.display,
-                                hardware::format_bytes(m.size_bytes)
-                            ));
-                        });
-                    }
-                });
-            if let Some(pending) = to_delete {
-                self.pending_delete = Some(pending);
+                if ui.button("Cancel").clicked() {
+                    self.models_dir_input = self.models_dir.display().to_string();
+                }
+            } else if self.models_dir_override.is_some()
+                && ui
+                    .add_enabled(idle, egui::Button::new("Reset to default"))
+                    .on_hover_text("Use QuickAI's own folder for the models again.")
+                    .on_disabled_hover_text(busy)
+                    .clicked()
+            {
+                let default_dir = self.default_models_dir();
+                let _ = std::fs::create_dir_all(&default_dir);
+                self.use_models_dir(default_dir, false);
             }
+        });
+        if apply {
+            self.apply_models_dir(PathBuf::from(typed));
+        }
+    }
+
+    /// Uses a folder the person gave for the models, made when it is not there; one that cannot be made is said.
+    fn apply_models_dir(&mut self, candidate: PathBuf) {
+        if std::fs::create_dir_all(&candidate).is_ok() {
+            self.use_models_dir(candidate, true);
+        } else {
+            self.settings_error = Some(format!("Could not create/use {}", candidate.display()));
         }
     }
 }
@@ -348,124 +503,238 @@ impl App {
         self.save_settings();
         self.settings_error = None;
     }
-}
 
-impl App {
-    /// The row that says which engine runs the models and lets the person change it. It is locked
-    /// while something that belongs to the engine in use is going on.
-    fn show_engine_row(&mut self, ui: &mut egui::Ui) {
-        let mut engines: Vec<(String, String)> = self
-            .registry
-            .selectable()
-            .map(|e| (e.id.clone(), e.doc.engine.name.clone()))
-            .collect();
-        // llama.cpp comes first: it is the engine of a first run
-        engines.sort_by_key(|(id, _)| id != crate::settings::DEFAULT_ENGINE);
-        let locked = self.engine_locked();
-        let current = self.engine_name();
-        let mut chosen: Option<String> = None;
-        ui.horizontal(|ui| {
-            ui.label("Engine:").on_hover_text(
-                "Which program runs the models: llama.cpp, which comes with QuickAI, or Ollama, \
-                 which QuickAI downloads only when you ask. Each keeps its own settings.",
-            );
-            ui.add_enabled_ui(!locked, |ui| {
-                egui::ComboBox::from_id_salt("engine_combo")
-                    .selected_text(current)
-                    .show_ui(ui, |ui| {
-                        for (id, name) in &engines {
-                            if ui.selectable_label(*id == self.engine, name).clicked() {
-                                chosen = Some(id.clone());
-                            }
-                        }
-                    });
-            });
-        });
-        if locked {
-            let why = if self.session.is_active() {
-                "(Stop the server to change this.)"
-            } else {
-                "(Wait for what is being fetched to finish to change this.)"
-            };
-            ui.label(
-                egui::RichText::new(why)
-                    .small()
-                    .color(super::theme::palette().muted),
-            );
-        }
-        if let Some(id) = chosen {
-            self.switch_engine(&id);
-        }
-    }
-
-    /// The models the engine lists, each with the button that removes it (after a question).
-    fn show_named_models_list(&mut self, ui: &mut egui::Ui) {
+    /// The models an engine that keeps its own lists: how many and how big. Removing one is its menu's, in the main
+    /// window's list, as it is for a downloaded file.
+    fn show_listed_models_row(&mut self, ui: &mut egui::Ui) {
         let name = self.engine_name();
         let server = self.server_name();
-        ui.add_space(4.0);
-        ui.label(egui::RichText::new("Models").strong())
-            .on_hover_text(format!(
-                "The models {name} has, as {server} listed them. Removing one asks first, and \
-                 needs {server} running: it does the removing."
-            ));
-        let mut to_delete: Option<PendingDelete> = None;
-        if self.models.is_empty() {
-            ui.label(
-                egui::RichText::new(format!("{name} has not listed any models yet."))
-                    .small()
-                    .color(super::theme::palette().muted),
-            );
-        }
-        let running = self.endpoint().is_some();
-        egui::ScrollArea::vertical()
-            .id_salt("listed_models_scroll")
-            .auto_shrink([false, true])
-            .max_height(list_scroll_height(ui, DELETE_LIST_MAX_ROWS))
-            .show(ui, |ui| {
-                for m in &self.models {
-                    ui.horizontal(|ui| {
-                        let loaded = self.is_loaded_model(&m.filename);
-                        let tip = if loaded {
-                            format!("{} is loaded: stop {server} to remove it.", m.display)
-                        } else if !running {
-                            format!("Start {server} to remove a model: it does the removing.")
-                        } else {
-                            format!("Remove this model from {name}")
-                        };
-                        if ui
-                            .add_enabled(running && !loaded, egui::Button::new("🗑").small())
-                            .on_hover_text(tip)
-                            .clicked()
-                        {
-                            to_delete = Some(PendingDelete::Listed {
-                                name: m.filename.clone(),
-                            });
-                        }
-                        ui.label(format!(
-                            "{} ({})",
-                            m.display,
-                            hardware::format_bytes(m.size_bytes)
-                        ));
-                    });
-                }
-            });
-        if let Some(pending) = to_delete {
-            self.pending_delete = Some(pending);
+        let size: u64 = self.models.iter().map(|m| m.size_bytes).sum();
+        let desc = match self.models.len() {
+            0 => format!("{name} has not listed any models yet."),
+            1 => format!(
+                "1 model, {}, as {server} listed it. Remove it from its ⋯ menu in the model list.",
+                hardware::format_bytes(size)
+            ),
+            n => format!(
+                "{n} models, {}, as {server} listed them. Remove one from its ⋯ menu in the model list.",
+                hardware::format_bytes(size)
+            ),
+        };
+        let _ = setting_row(ui, "Models", Some(&desc), None, |_| ());
+    }
+}
+
+/// A page of the sidebar: which, its picture, its name, and a count beside the name (the builds installed).
+pub(super) struct NavItem {
+    pub page: SettingsPage,
+    pub icon: Icon,
+    pub label: String,
+    pub count: Option<usize>,
+}
+
+impl NavItem {
+    fn new(page: SettingsPage, icon: Icon, label: &str) -> NavItem {
+        NavItem {
+            page,
+            icon,
+            label: label.to_string(),
+            count: None,
         }
     }
 }
 
-/// How many rows the "Downloaded models"/"Installed builds" delete lists
-/// (Settings) show before scrolling, so a long download history doesn't
-/// push the rest of the window down.
-pub(super) const DELETE_LIST_MAX_ROWS: usize = 4;
-
-/// Height for a `ScrollArea` that shows exactly `rows` list rows — each
-/// row is a `ui.horizontal` containing an interactive widget, so its
-/// height is governed by `interact_size.y` plus the spacing between rows.
-pub(super) fn list_scroll_height(ui: &egui::Ui, rows: usize) -> f32 {
-    (ui.spacing().interact_size.y + ui.spacing().item_spacing.y) * rows as f32
+/// A page in the sidebar: its picture and its name (its picture alone when the sidebar is narrow), on the grey of what is
+/// chosen.
+fn nav_item(ui: &mut egui::Ui, nav: &NavItem, chosen: bool, narrow: bool) -> egui::Response {
+    let p = theme::palette();
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 34.0), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        if chosen || response.hovered() {
+            let fill = if chosen {
+                p.raised
+            } else {
+                p.raised.gamma_multiply(0.5)
+            };
+            ui.painter().rect_filled(rect, 6.0, fill);
+        }
+        let icon_left = if narrow {
+            rect.center().x - 8.0
+        } else {
+            rect.left() + 10.0
+        };
+        icons::paint(
+            ui.painter(),
+            egui::Rect::from_min_size(
+                egui::pos2(icon_left, rect.center().y - 8.0),
+                egui::vec2(16.0, 16.0),
+            ),
+            nav.icon,
+            if chosen { p.text } else { p.muted },
+        );
+        if !narrow {
+            let font = egui::FontId::new(
+                egui::TextStyle::Body.resolve(ui.style()).size,
+                if chosen {
+                    theme::semibold(ui)
+                } else {
+                    egui::FontFamily::Proportional
+                },
+            );
+            ui.painter().text(
+                egui::pos2(rect.left() + 36.0, rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                &nav.label,
+                font,
+                if chosen { p.text } else { p.body },
+            );
+            if let Some(count) = nav.count {
+                ui.painter().text(
+                    egui::pos2(rect.right() - 10.0, rect.center().y),
+                    egui::Align2::RIGHT_CENTER,
+                    count.to_string(),
+                    egui::TextStyle::Small.resolve(ui.style()),
+                    p.faint,
+                );
+            }
+        }
+    }
+    if narrow {
+        response.on_hover_text(&nav.label)
+    } else {
+        response
+    }
 }
+
+/// The head of a page: its title, and a line under it when it has one.
+pub(super) fn page_head(ui: &mut egui::Ui, title: &str, lead: Option<&str>) {
+    let p = theme::palette();
+    ui.label(
+        egui::RichText::new(title)
+            .size(18.0)
+            .family(theme::semibold(ui))
+            .color(p.text),
+    );
+    if let Some(lead) = lead {
+        ui.label(egui::RichText::new(lead).small().color(p.muted));
+    }
+    ui.add_space(8.0);
+}
+
+/// Settings that belong together, in a box; `row_line` goes between two of them.
+pub(super) fn group<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    theme::card_frame()
+        .corner_radius(egui::CornerRadius::same(8))
+        .inner_margin(egui::Margin::symmetric(GROUP_MARGIN, 10))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add(ui)
+        })
+        .inner
+}
+
+/// The line between two rows of a group, from one side of its box to the other.
+pub(super) fn row_line(ui: &mut egui::Ui) {
+    ui.add_space(8.0);
+    let y = ui.cursor().top();
+    let room = ui.max_rect();
+    let margin = f32::from(GROUP_MARGIN);
+    ui.painter().hline(
+        (room.left() - margin)..=(room.right() + margin),
+        y,
+        egui::Stroke::new(1.0, theme::palette().line),
+    );
+    ui.add_space(9.0);
+}
+
+/// A setting on a row: its name, and what it does in small words under it, on the left; `control` on the right, drawn
+/// from the right edge. `hover` is said when the pointer rests on the name. What comes back is what `control` gave, and
+/// the name's response: a click on the name of a switch turns it over, as a click on the words of a tick box did.
+pub(super) fn setting_row<R>(
+    ui: &mut egui::Ui,
+    title: &str,
+    desc: Option<&str>,
+    hover: Option<&str>,
+    control: impl FnOnce(&mut egui::Ui) -> R,
+) -> (R, egui::Response) {
+    let p = theme::palette();
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let reply = control(ui);
+            ui.add_space(12.0);
+            let name = ui
+                .with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    let name = ui.add(
+                        egui::Label::new(egui::RichText::new(title).color(p.text))
+                            .sense(egui::Sense::click()),
+                    );
+                    let name = match hover {
+                        Some(hover) => name.on_hover_text(hover),
+                        None => name,
+                    };
+                    if let Some(desc) = desc {
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(desc).small().color(p.muted))
+                                .wrap(),
+                        );
+                    }
+                    name
+                })
+                .inner;
+            (reply, name)
+        })
+        .inner
+    })
+    .inner
+}
+
+/// A setting that is on or off, on a row: a switch at the right, which a click on its name turns over too. `true` when
+/// it was turned over (`on` is then what it is now).
+pub(super) fn switch_row(
+    ui: &mut egui::Ui,
+    title: &str,
+    desc: Option<&str>,
+    hover: Option<&str>,
+    on: &mut bool,
+    enabled: bool,
+) -> bool {
+    let (switched, name) = setting_row(ui, title, desc, hover, |ui| {
+        theme::switch(ui, on, enabled).changed()
+    });
+    if !switched && enabled && name.clicked() {
+        *on = !*on;
+        return true;
+    }
+    switched
+}
+
+/// The fields of the engine's Advanced section, shown, as the Program page has them (the manager of its builds and the
+/// Python an install is made with) and as Starting it has them (the rest).
+fn advanced_fields(form: &Option<FormModel>) -> (Vec<FormField>, Vec<FormField>) {
+    form.as_ref()
+        .and_then(|f| f.section("advanced"))
+        .map(|s| {
+            s.fields
+                .iter()
+                .filter(|f| f.visible)
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+        .into_iter()
+        .partition(is_program_field)
+}
+
+/// Whether a field is about the program itself: the manager of its builds, or the Python its install is made with.
+pub(super) fn is_program_field(field: &FormField) -> bool {
+    field.widget.as_deref() == Some("runtime_manager") || field.id == INSTALL_PYTHON_FIELD
+}
+
+/// How many rows the list of installed builds shows before it scrolls, so a long history of installs doesn't push the
+/// rest of the page down.
+pub(super) const DELETE_LIST_MAX_ROWS: usize = 4;
 
 #[cfg(test)]
 mod tests {
@@ -479,7 +748,7 @@ mod tests {
     use super::super::runtime_manager::Scan;
     use super::*;
     use crate::config::{build_registry, ConfigDirs};
-    use crate::prims::install::InstallSpec;
+    use crate::prims::install::{InstallSpec, InstalledBuild};
     use crate::settings::Settings;
     use crate::testkit::{scratch, wait_until};
 
@@ -709,24 +978,28 @@ mod tests {
                     && window.builder.resizable != Some(false),
                 "the window manager's own title bar, and a size the person can change"
             );
-            // a size to open at; its height then follows what it holds (`theme::fit_window_height`)
+            // a size to open at, wide enough for its sidebar and a page beside it (C190)
             let size = window.builder.inner_size.expect("a size to open at");
-            assert!(size.x >= 400.0 && size.y >= 300.0, "{size:?}");
-            // ...and what is in it is there, and in no other window
+            assert_eq!(size, egui::vec2(760.0, 600.0));
+            // ...and what is in it is there, and in no other window: the pages, and the first of them
             let inside = said(&window.shapes);
             for text in [
-                "Engine:",
-                "Downloaded models folder:",
+                "General",
+                "Program",
+                "Starting it",
+                "Downloaded models folder",
                 "Show live conversation traffic",
                 "Close",
             ] {
                 assert!(inside.contains(text), "{text:?} in the window: {inside}");
             }
+            // the engine is chosen in the menu bar, not here (it had a row of its own)
+            assert!(!inside.contains("Engine:"), "{inside}");
             let main = said(&out.shapes);
             for text in [
                 "Show live conversation traffic",
-                "Engine:",
-                "Reset to default",
+                "Starting it",
+                "Downloaded models folder",
             ] {
                 assert!(!main.contains(text), "{text:?} in the main window: {main}");
             }
@@ -771,7 +1044,7 @@ mod tests {
         let display = Display::attach(&ctx);
         display.open_windows_at(egui::vec2(1000.0, 1600.0));
         app.toggle_settings();
-        app.advanced_section_wanted = true;
+        app.settings_page = SettingsPage::Start;
         settle(&mut app, &ctx, &display);
 
         let at = |text: &str| {
@@ -783,9 +1056,10 @@ mod tests {
                 )
             })
         };
-        at("Extra environment (KEY=VALUE per line):");
-        at("Command line:");
-        let projector = at("--mmproj …/me--tiny-vl-GGUF--mmproj-f16.gguf");
+        at("Extra environment");
+        at("Command line");
+        // the projector by the name it came with, not the one it is kept under
+        let projector = at("--mmproj …/mmproj-f16.gguf");
         let said_by = at("the model's projector");
         assert!(
             (projector.center().y - said_by.center().y).abs() < 4.0,
@@ -805,40 +1079,51 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// I28 (C190): the window is a sidebar of pages beside the page that is chosen, on groups as the main window's
+    /// boxes are; the models folder has its buttons on the row of its name and its box under them, and only what can be
+    /// done: Reset to default with a folder of the person's, Apply once the box says another.
     #[test]
-    fn p3_i28_the_models_folder_has_its_buttons_on_the_row_of_its_label_and_the_window_is_on_cards()
-    {
+    fn p3_i28_the_models_folder_has_its_buttons_on_the_row_of_its_name_and_the_window_is_pages_in_a_sidebar(
+    ) {
         let dir = scratch("i28");
         let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
         let display = Display::attach(&ctx);
         app.toggle_settings();
         settle(&mut app, &ctx, &display);
-        let label =
-            where_is(&display, "Downloaded models folder:").expect("the label of the folder");
-        let apply = where_is(&display, "Apply").expect("a button that applies it");
-        let reset = where_is(&display, "Reset to default").expect("a button that resets it");
-        // at the end of the label's row, one beside the other: the box is under the three
-        for button in [apply, reset] {
+        let label = where_is(&display, "Downloaded models folder").expect("the name of the folder");
+        let change = where_is(&display, "Change…").expect("a button that changes it");
+        let open = where_is(&display, "Open").expect("a button that opens it");
+        // at the end of the name's row, one beside the other
+        for button in [change, open] {
             assert!(
-                (button.center().y - label.center().y).abs() < 8.0,
+                (button.center().y - label.center().y).abs() < 10.0,
                 "{button:?} is not on the row of {label:?}"
             );
         }
         assert!(
-            label.right() < apply.left() && apply.right() < reset.left(),
-            "{label:?} {apply:?} {reset:?}"
+            label.right() < change.left() && change.right() < open.left(),
+            "{label:?} {change:?} {open:?}"
         );
-        // the window has no caption of its own over its first row (it said `App`)
+        // the folder is QuickAI's own: nothing to reset, and nothing typed to apply
+        assert!(where_is(&display, "Reset to default").is_none());
+        assert!(where_is(&display, "Apply").is_none());
+        // the pages are in a sidebar on the left of the page, the one shown marked
+        let general = texts(&display.0.borrow().windows[&settings_viewport()].shapes)
+            .into_iter()
+            .filter(|(text, _)| text == "General")
+            .map(|(_, rect)| rect)
+            .collect::<Vec<_>>();
+        let program = where_is(&display, "Program").expect("the page of the program");
+        assert!(
+            general.iter().any(|r| r.right() < label.left()) && program.right() < label.left(),
+            "the sidebar is on the left: {general:?} {program:?} {label:?}"
+        );
+        assert_eq!(app.settings_page, SettingsPage::General);
         {
             let shown = display.0.borrow();
             let window = &shown.windows[&settings_viewport()];
-            assert!(
-                !texts(&window.shapes).iter().any(|(text, _)| text == "App"),
-                "the caption is still there"
-            );
-            // and what is in it is on cards, as the main window's are: the one of the engine and the folder and the one of the
-            // Advanced section
+            // the settings are on a group, as the main window's are on its boxes
             fn cards(shape: &egui::epaint::Shape, into: &mut Vec<egui::Rect>) {
                 match shape {
                     egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| cards(s, into)),
@@ -855,18 +1140,41 @@ mod tests {
             for clipped in &window.shapes {
                 cards(&clipped.shape, &mut found);
             }
-            assert!(found.len() >= 2, "{found:?}");
-            let engine = where_is(&display, "Engine:").expect("the engine row");
-            let advanced = where_is(&display, "Advanced: llama.cpp").expect("the Advanced section");
             assert!(
-                found.iter().any(|c| c.contains(engine.center()))
-                    && found.iter().any(|c| c.contains(advanced.center()))
-                    && !found
-                        .iter()
-                        .any(|c| c.contains(engine.center()) && c.contains(advanced.center())),
-                "the engine and the Advanced section are not on cards of their own: {found:?}"
+                found.iter().any(|c| c.contains(label.center())),
+                "the folder is not on a group: {found:?}"
             );
         }
+        // the page of the program, chosen in the sidebar, is the one shown
+        click_in_settings(&mut app, &ctx, &display, program.center());
+        settle(&mut app, &ctx, &display);
+        assert_eq!(app.settings_page, SettingsPage::Program);
+        assert!(where_is(&display, "The build of llama.cpp that Start runs.").is_some());
+        assert!(where_is(&display, "Downloaded models folder").is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// I30 (C190): in a window narrower than a sidebar and a page want, the sidebar is the pages' pictures alone (each
+    /// says its name when the pointer rests on it), and the page keeps the room; wide again, the names are back.
+    #[test]
+    fn p3_i30_in_a_narrow_window_the_sidebar_is_its_pictures_and_the_page_keeps_the_room() {
+        let dir = scratch("i30");
+        let mut app = app_in(&dir, "llamacpp");
+        let ctx = egui::Context::default();
+        let display = Display::attach(&ctx);
+        display.open_windows_at(egui::vec2(480.0, 600.0));
+        app.toggle_settings();
+        settle(&mut app, &ctx, &display);
+        for name in ["Program", "Starting it", "the engine in use"] {
+            assert!(where_is(&display, name).is_none(), "{name} is painted");
+        }
+        let page = where_is(&display, "Downloaded models folder").expect("the page");
+        assert!(page.left() < 100.0, "the page has the room: {page:?}");
+        display.open_windows_at(egui::vec2(760.0, 600.0));
+        settle(&mut app, &ctx, &display);
+        assert!(where_is(&display, "Starting it").is_some());
+        let page = where_is(&display, "Downloaded models folder").expect("the page");
+        assert!(page.left() > 190.0, "beside the sidebar: {page:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -878,20 +1186,20 @@ mod tests {
         let display = Display::attach(&ctx);
         app.toggle_settings();
         settle(&mut app, &ctx, &display);
-        let advanced = where_is(&display, "Advanced: Ollama").expect("the Advanced section");
-        click_in_settings(&mut app, &ctx, &display, advanced.center());
+        let page = where_is(&display, "Starting it").expect("the page of how it is started");
+        click_in_settings(&mut app, &ctx, &display, page.center());
         settle(&mut app, &ctx, &display);
         let label =
-            where_is(&display, "When Ollama is already running:").expect("the choice's label");
+            where_is(&display, "When Ollama is already running").expect("the choice's name");
         let shown = where_is(&display, "auto").expect("what the choice shows");
         assert!(
-            (shown.center().y - label.center().y).abs() < 8.0 && shown.left() > label.right(),
+            (shown.center().y - label.center().y).abs() < 10.0 && shown.left() > label.right(),
             "{shown:?} is not beside {label:?}"
         );
-        // a path wants the width of the window, and is under its label
-        let path = where_is(&display, "ollama binary:").expect("the label of the binary");
-        let engine_row = where_is(&display, "Look up Ollama builds").expect("the button under it");
-        assert!(path.top() > label.bottom() && engine_row.top() > path.bottom());
+        // a path wants the width of the window, and is under its name
+        let path = where_is(&display, "Model store").expect("the name of the store");
+        let browse = where_is(&display, "Browse…").expect("the box's button");
+        assert!(path.top() > label.bottom() && browse.top() > path.bottom());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -938,38 +1246,63 @@ mod tests {
         }
     }
 
+    /// A reader of the disk that finds one build of llama.cpp.
+    fn one_build_reader(spec: &InstallSpec) -> Scan {
+        let dir = spec.root.join("b1-llama-b1-bin-ubuntu-vulkan-x64");
+        Scan {
+            builds: vec![InstalledBuild {
+                label: "b1-llama-b1-bin-ubuntu-vulkan-x64".into(),
+                binary_path: dir.join("llama-server"),
+                install_dir: dir,
+                size_bytes: 1_000_000,
+            }],
+            unfinished: Vec::new(),
+        }
+    }
+
+    /// The ⋯ of the row of the list of builds that `name` is on, at the right of the window's group, is clicked, and then
+    /// what its menu says `item`.
+    fn choose_in_menu_of_row(
+        app: &mut App,
+        ctx: &egui::Context,
+        display: &Display,
+        name: &str,
+        item: &str,
+    ) {
+        let row = where_is(display, name).unwrap_or_else(|| panic!("the row of {name}"));
+        let width = display.0.borrow().windows[&settings_viewport()].size.x;
+        click_in_settings(app, ctx, display, egui::pos2(width - 41.0, row.center().y));
+        let item = where_is(display, item).unwrap_or_else(|| panic!("{item} in the menu"));
+        click_in_settings(app, ctx, display, item.center());
+    }
+
     #[test]
     fn p3_f87_a_delete_asked_in_the_settings_is_asked_in_their_window_and_goes_with_it() {
         let dir = scratch("f87");
-        let models = dir.join("models");
-        std::fs::create_dir_all(&models).unwrap();
-        std::fs::File::create(models.join("zeta-model.gguf"))
-            .unwrap()
-            .set_len(1_000_000)
-            .unwrap();
         let mut app = app_in(&dir, "llamacpp");
-        assert!(app.models.iter().any(|m| m.filename == "zeta-model.gguf"));
+        app.runtime.disk.reader = Some(one_build_reader);
         let ctx = egui::Context::default();
         let display = Display::attach(&ctx);
         app.toggle_settings();
+        app.settings_page = SettingsPage::Program;
+        wait_until(Duration::from_secs(10), "the build to be listed", || {
+            frame(&mut app, &ctx, &display);
+            where_is(&display, "b1 · Vulkan").is_some()
+        });
         settle(&mut app, &ctx, &display);
 
-        // the trash can of the model is pressed in the window...
-        let bin = where_is(&display, "🗑").expect("a trash can for a downloaded model");
-        click_in_settings(&mut app, &ctx, &display, bin.center());
+        // Delete is chosen in the ⋯ menu of the build, in the window...
+        choose_in_menu_of_row(&mut app, &ctx, &display, "b1 · Vulkan", "Delete…");
         assert!(app.pending_delete.is_some(), "the question is waiting");
         // ...and the question is in that window, not in the main one
         let out = frame(&mut app, &ctx, &display);
         let inside = said(&display.0.borrow().windows[&settings_viewport()].shapes);
         assert!(
-            inside.contains("Delete model?") && inside.contains("zeta-model.gguf"),
+            inside.contains("Delete llama-server build?")
+                && inside.contains("b1-llama-b1-bin-ubuntu-vulkan-x64"),
             "{inside}"
         );
-        assert!(!said(&out.shapes).contains("Delete model?"));
-        assert!(
-            models.join("zeta-model.gguf").exists(),
-            "nothing is deleted before the yes"
-        );
+        assert!(!said(&out.shapes).contains("Delete llama-server build?"));
 
         // the window is closed with the question open: nobody is left to answer it, and it is not asked again
         display.press_close_button(settings_viewport());
@@ -978,8 +1311,7 @@ mod tests {
         app.toggle_settings();
         frame(&mut app, &ctx, &display);
         let inside = said(&display.0.borrow().windows[&settings_viewport()].shapes);
-        assert!(!inside.contains("Delete model?"), "{inside}");
-        assert!(models.join("zeta-model.gguf").exists());
+        assert!(!inside.contains("Delete llama-server build?"), "{inside}");
     }
 
     #[test]
@@ -1042,9 +1374,9 @@ mod tests {
             close.min.y > 620.0 - 60.0 && close.max.y <= 620.0,
             "{close:?}"
         );
-        // the last thing the window says is above it, and not under it
-        let advanced = where_is(&display, "Advanced: llama.cpp").expect("the Advanced section");
-        assert!(advanced.max.y < close.min.y, "{advanced:?} {close:?}");
+        // what the page says is above it, and not under it
+        let live = where_is(&display, "Show live conversation traffic").expect("the last row");
+        assert!(live.max.y < close.min.y, "{live:?} {close:?}");
     }
 
     static SCANS: AtomicUsize = AtomicUsize::new(0);
@@ -1077,12 +1409,13 @@ mod tests {
             });
         };
 
-        // opened, with the Advanced section open, the disk is read once and not again while the window goes on
+        // opened, the disk is read once (the sidebar counts the builds, whatever page is shown) and not again while the
+        // window goes on, the page of the builds chosen or not
         app.toggle_settings();
-        settle(&mut app, &ctx, &display);
-        let header = where_is(&display, "Advanced: ComfyUI").expect("the Advanced section");
-        click_in_settings(&mut app, &ctx, &display, header.center());
         scans_after(&mut app, 1, "the first scan");
+        settle(&mut app, &ctx, &display);
+        let page = where_is(&display, "Program").expect("the page of the builds");
+        click_in_settings(&mut app, &ctx, &display, page.center());
         settle(&mut app, &ctx, &display);
         assert_eq!(scans(), 1, "no scan without a reason");
 
@@ -1169,13 +1502,15 @@ mod tests {
             app.toggle_settings();
             settle(&mut app, &ctx, &display);
             let inside = in_settings(&display);
+            // a page of its own in the sidebar, and no word of it in the window of another engine
+            assert_eq!(inside.contains("Open WebUI"), offered, "{engine}: {inside}");
             assert_eq!(
-                inside.contains("Chat UI: Open WebUI"),
+                app.settings_pages()
+                    .iter()
+                    .any(|nav| nav.page == SettingsPage::Companion),
                 offered,
-                "{engine}: {inside}"
+                "{engine}"
             );
-            // the engine row offers the engines, and the companion is not one of them
-            assert!(!inside.contains("Open WebUI") || offered, "{engine}");
             assert_eq!(app.companion.is_some(), offered, "{engine}");
         }
         // and the section, opened, says what it is and what it asks
@@ -1186,8 +1521,8 @@ mod tests {
         tall_enough_for_what_it_holds(&display);
         app.toggle_settings();
         settle(&mut app, &ctx, &display);
-        let header = where_is(&display, "Chat UI: Open WebUI").expect("the section");
-        click_in_settings(&mut app, &ctx, &display, header.center());
+        let page = where_is(&display, "Open WebUI").expect("its page");
+        click_in_settings(&mut app, &ctx, &display, page.center());
         settle(&mut app, &ctx, &display);
         let inside = in_settings(&display);
         for text in [
@@ -1195,8 +1530,8 @@ mod tests {
             "License: Open WebUI License",
             "openwebui.org",
             "Start Open WebUI with Ollama",
-            "Port:",
-            "Open WebUI's internet access:",
+            "Port",
+            "Open WebUI's internet access",
             "Look up Open WebUI builds",
             "Installs a Python environment with",
             "Open WebUI and what it needs",
@@ -1205,8 +1540,10 @@ mod tests {
             assert!(inside.contains(&text), "{text:?} in: {inside}");
         }
         assert!(
-            inside.contains("Open WebUI launcher:") && !inside.contains("Installed builds"),
-            "its manager is the manager of an engine: the box for the program, and no builds yet: {inside}"
+            inside.contains("Use a program on disk…")
+                && inside.contains("not installed yet")
+                && !inside.contains("In use"),
+            "its manager is the manager of an engine, and no build is there yet: {inside}"
         );
     }
 
@@ -1271,15 +1608,16 @@ mod tests {
         let display = Display::attach(&ctx);
         app.toggle_settings();
         settle(&mut app, &ctx, &display);
-        let header = where_is(&display, "Chat UI: Open WebUI").expect("the section");
-        click_in_settings(&mut app, &ctx, &display, header.center());
+        let page = where_is(&display, "Open WebUI").expect("its page");
+        click_in_settings(&mut app, &ctx, &display, page.center());
         settle(&mut app, &ctx, &display);
         assert!(!app.companion_enabled());
 
-        let label = where_is(&display, "Start Open WebUI with Ollama").expect("the box");
+        // its switch is turned over by a click on its name, as a tick box was by a click on its words
+        let label = where_is(&display, "Start Open WebUI with Ollama").expect("the switch's name");
         click_in_settings(&mut app, &ctx, &display, label.center());
         settle(&mut app, &ctx, &display);
-        assert!(app.companion_enabled(), "the box is ticked");
+        assert!(app.companion_enabled(), "the switch is on");
         assert_eq!(
             app.values.map(),
             &ollama_before,
@@ -1319,21 +1657,23 @@ mod tests {
         let display = Display::attach(&ctx);
         tall_enough_for_what_it_holds(&display);
         app.toggle_settings();
-        // wanted and there: the section is closed; open it
+        // wanted and there: the window opens where it was; its page is chosen
         settle(&mut app, &ctx, &display);
-        let header = where_is(&display, "Chat UI: Open WebUI").expect("the section");
-        click_in_settings(&mut app, &ctx, &display, header.center());
+        let page = where_is(&display, "Open WebUI").expect("its page");
+        click_in_settings(&mut app, &ctx, &display, page.center());
         // the disk is read by a thread of its own, and the frame takes the answer in
         wait_until(Duration::from_secs(10), "the builds to be listed", || {
             frame_polled(&mut app, &ctx, &display);
             in_settings(&display).contains("0.11.4")
         });
         let inside = in_settings(&display);
-        assert!(inside.contains("Installed builds"), "{inside}");
+        assert!(
+            inside.contains("In use"),
+            "its one build is the one in use: {inside}"
+        );
 
-        // the trash can of its build is pressed: the question is about Open WebUI's build
-        let bin = where_is(&display, "🗑").expect("a trash can for the build");
-        click_in_settings(&mut app, &ctx, &display, bin.center());
+        // Delete is chosen in the ⋯ menu of its build: the question is about Open WebUI's build
+        choose_in_menu_of_row(&mut app, &ctx, &display, "0.11.4", "Delete…");
         assert!(app.pending_delete.is_some() && app.delete_of_companion);
         frame(&mut app, &ctx, &display);
         let inside = in_settings(&display);
