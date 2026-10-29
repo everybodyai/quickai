@@ -351,9 +351,6 @@ impl App {
             self.refresh_configurations();
         }
         self.show_configurations = true;
-        self.configs
-            .selected
-            .get_or_insert_with(|| self.configs.active.clone());
     }
 
     /// Reads again what the window shows of the disk and of this computer: the notes about each

@@ -122,7 +122,7 @@ impl App {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
                 if ui.button("Configurations…").clicked() {
-                    self.show_configurations = true;
+                    self.open_configurations();
                     self.raise_configurations = true;
                 }
                 if ui.button("Settings…").clicked() {

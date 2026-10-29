@@ -99,7 +99,7 @@ Every key is on the generated page [reference/profile-fields.md](reference/profi
 usual four. The application has `default` inside it; a package may ship more in `<exe>/config/profiles/`; a file of the person's with the same id replaces it
 (Save writes `replace = true` when a layer below has the id, so the two are never merged), and deleting that file brings the built-in one back. `QUICKAI_SAFE=1`
 ignores the person's layer, which is also the way out of a configuration that makes QuickAI misbehave (in safe mode Save and import say so and write nothing).
-The dropdown says where each one comes from: *built in*, *from this package*, *yours*.
+The dropdown says where each one comes from: *built in*, *from this package*, *yours*; the window marks only what is not the person's own (C188).
 
 **The Default** is `manifests/profiles/default.toml`: the engine llama.cpp, no model (the application chooses, as it does on a first run), no values (every
 field at its default). It can be saved over like any other, and **Reset to factory** puts the built-in one back.
@@ -196,8 +196,7 @@ said to be modified for what this computer lacks (A75).
 | **Apply** | sets the engine, every field of the engine and its companions that the configuration lists, **and returns every other such field to its default** (otherwise two configurations would bleed into each other and "the same runtime" would depend on what was chosen before); the model is picked if it is here (or cannot be told); the build is chosen if it is installed; the traffic proxy is set. It does not touch folders, program paths, other engines' values, the theme, or the consents. The new state is made whole before anything is stored |
 | **Save** | writes the active configuration from the working state, whole or not at all (a temporary file, then a rename) |
 | **Save as...** | asks a name (an empty one, and one in use in any case, are refused in the box), writes a new configuration, makes it active. The one left behind stays as it was saved |
-| **Revert** | asks (*Go back to what was saved?*, in the window where it was pressed), then applies the saved configuration again; it is a button of the section while there are changes, and of the row of the one in use in the window |
-| **Save here** | on a row that is not in use: asks, then replaces that configuration with what the window holds |
+| **Revert** | asks (*Go back to what was saved?*, in the window where it was pressed), then applies the saved configuration again; it is a button of the section while there are changes, and of the card of the one in use in the window |
 | **Rename**, **Duplicate**, **Delete** | rename changes `name` only; duplicate asks a name; a built-in or a package's configuration cannot be renamed or deleted (save it under another name); deleting the one in use asks, and then the Default is the one in use and **the window keeps what it holds** (applying the Default would change what a person runs because they deleted a file) |
 | **Reset to factory** | on the Default of the person's, after a question: removes their file, and the built-in one is the Default again |
 
@@ -350,32 +349,51 @@ The window can be as narrow as 520: the dropdown gives up its width and then the
 apart and inside the outline from 520 to 1400, with the tabs on and off). A name that is longer than the dropdown is cut at its width with an ellipsis (a name is 60 characters at the most; egui's dropdown grows to the length of its text unless it is told to
 cut it, and the first version pushed the badge and the buttons out of the row at 520: found by looking at a name of 57 characters), and the hover has the whole name. The Live tab, a window on the traffic and not on the run, has no section.
 
-**The window** *QuickAI Configurations*: a viewport of its own, like the Settings (C87: 580x640 to open at, the window manager's title bar, **Close** at the foot with the last thing that was done, asked for again it comes to the front,
-closing it any way writes what was changed):
+**The window** *QuickAI Configurations*: a viewport of its own, like the Settings (C87: 780x700 to open at since C188, the window manager's title bar, **Close** at the foot with the last thing that was done, asked for again it comes to the front,
+closing it any way writes what was changed). Since C188 each configuration is a card (the user's choice of four mockups, `mockups/configurations/` beside the repositories):
 
 ```
- [ New from this... ]  [ Import... ]
- ------------------------------------------------------------------------------
- > Default                                                        in use   built in
-   llama.cpp
- v Vision chat                                          2 notes            yours
-   Ollama - qwen3-vl:8b - Open WebUI
-     Made with QuickAI 0.1.0 on Linux x86_64 (AMD GPU, 32 GB)
-     Qwen3-VL 8B on Ollama, 16K context, with Open WebUI beside it.
-     6 settings differ from what you have set now.
-     [ Use ] [ Save here ] [ Rename ] [ Duplicate ] [ Export... ] [ Delete ]
-     Sets: Context size 16384, Extra environment ..., Open WebUI Port 3000
-     Program: v0.40.0-ollama-linux-amd64
-     Warns  Made with v0.40.0-ollama-linux-amd64, which is not installed here, and no build of this program is.   [ Look up builds ]
-     Warns  Open WebUI is switched on and is not installed here.                               [ Set up ]
-     Says   Ollama is not running, so it cannot be told whether qwen3-vl:8b is here. Start Ollama to see.
- Files that could not be used
-   /home/u/.config/quickai/profiles/broken.toml    missing field `engine`
+ [ + New from current ]  [ Import... ]
+ +- green: the one in use ------------------------------------------------------------+
+ | [L] Coding helper  (In use) (• Modified) (! 1)              [ Revert ] [ Save ]  ... |
+ |     llama.cpp · Qwen2.5-Coder 7B Instruct                                           |
+ +-------------------------------------------------------------------------------------+
+ | [L] Default  (built in)                                                  [ Use ]  ... |
+ |     llama.cpp · any model                                                           |
+ +-------------------------------------------------------------------------------------+
+ | [O] Vision chat  (! 3)                                                   [ Use ]  ... |
+ |     Ollama · qwen3-vl:8b · with Open WebUI                                          |
+ |     Qwen3-VL 8B on Ollama, 16K context, with Open WebUI beside it.                  |
+ |     Made with QuickAI 0.1.0 on Linux x86_64 (AMD GPU, 32 GB)                         |
+ |     (Context size 16384) (Extra environment OLLAMA_FLASH_ATTENTION=1)                |
+ |     (Open WebUI Port 3000) (Program v0.40.0-ollama-linux-amd64)                      |
+ |     !  Made with v0.40.0-ollama-linux-amd64, which is not installed here, ...  [ Look up builds ] |
+ |     !  Open WebUI is switched on and is not installed here.                  [ Set up ] |
+ +-------------------------------------------------------------------------------------+
+ | [W] Studio dictation                                                             ... |  (grey)
+ |     It is for whispercpp, which this QuickAI does not have.                          |
+ +-------------------------------------------------------------------------------------+
+ > 1 file couldn't be used
  [ Close ]                                  Imported "Shared chat".
 ```
 
+- **The badge** is the first letter of the engine's name on a tint of its own (by the engine's place in the selector, so no two of this QuickAI share one: `theme::tint`); an engine this QuickAI does not have is an outline.
+- **The tags** after the name: *In use*, *• Modified* while what the window holds is not what was saved, *built in* or *from this package* (the person's own say nothing: most are), and how many notes warn about it here. When the name has
+  no room for them (a narrow window, Revert and Save beside them) they give way one by one: the count of the notes, then where it is from, then *In use* (the green frame says it too); *Modified* never does.
+- **The line** under the name: the engine, the model by its name in the recommended list when it is one of it (`Qwen2.5-Coder 7B Instruct`, not the file), else the name the file gives or the engine's own, *any model* when it names
+  none, and *with* each program that goes with the engine and is switched on. One that the notes stop has the first of them instead, and is grey with no Use.
+- **At the right**: *Use* (grey with the Engine row's sentence while something runs; its hover says what using it does and lists what would change, the first eight); on the one in use, while it has changes, *Revert* and *Save*
+  (the only green button of the window: the suites find the main button by its colour); then the **...** menu: *Rename...*, *Duplicate...*, *Export...* and *Delete...* (*Reset to factory...* for the Default); what is
+  built in or from the package cannot be renamed or deleted, and says why on hover.
+- **A click on the card** (not on its buttons) opens it under its first rows: the note of whoever made it, the computer it was made on when that is another kind than this one (another system, processor or GPU), what it
+  sets as chips (the label without the hint in brackets, a program that goes with the engine named before it; the switch that turns that program on is the line's to say, not a chip), the program it was made with, and the
+  notes with a warning sign and their button at the right. One with nothing set says *Every setting at its default.* Nothing is open when the window opens.
+- **Left out** since C188: the arrows before the names, *yours* on every row, *N settings differ from what you have set now* (the hover of Use lists them), the line of the computer it was made on for one made on this kind, and
+  **Save here** (it replaced another configuration with what the window holds: *+ New from current* and then *Delete* do it, and it read too much like Save). The files that could not be used fold under
+  *N file(s) couldn't be used*, with the reason when opened.
+
 The list, the details, the notes and the import and export dialogs are built from the store, the checks and the form model: no word of an engine is in the code. *Use* is grey with the reason on hover when the notes stop it
-or something is running; the buttons on a note are grey, with the reason, when the configuration is for another engine than the one in use. The cases look at every view (`look-at-every-view`): the dropdown open in each state, the list scrolled to its end with many configurations and long names, each dialog, a narrow window (440 px: A57).
+or something is running; the buttons on a note are grey, with the reason, when the configuration is for another engine than the one in use. The cases look at every view (`look-at-every-view`): the dropdown open in each state, the list scrolled to its end with many configurations and long names, each dialog, a narrow window (440 px: A57); the cards were also looked at in both themes at 780 and 500 wide.
 
 ## 11. From the command line
 
