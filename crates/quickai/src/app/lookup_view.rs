@@ -289,9 +289,15 @@ impl App {
                     });
                 }
                 let sections = arrange(&entries, &types, size.as_deref());
+                // in Add a model made as big as the main window, the rest of its height but the line under them
+                let room = if self.add_model_open && self.add_model_max {
+                    (ui.available_height() - 40.0).max(260.0)
+                } else {
+                    260.0
+                };
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, true])
-                    .max_height(260.0)
+                    .max_height(room)
                     .show(ui, |ui| {
                         if sections.is_empty() {
                             ui.label(

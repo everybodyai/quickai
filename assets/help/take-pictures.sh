@@ -128,7 +128,7 @@ EOF
     cut engine-menu engine-menu 560 0 420 230
     cut change change 220 40 760 360
     cut computer-menu computer-menu 560 540 420 140
-    cut add-model add-model 139 60 702 408
+    cut add-model add-model 139 60 702 447
     cut settings settings 0 0 760 600
     cut port-taken port-taken 255 268 470 145
     cut connect connect 228 40 748 395

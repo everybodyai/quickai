@@ -771,6 +771,118 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// I38 (C192): Add a model's button beside its × makes it all the main window has between its bars, and a double click
+    /// on its title makes it small again, at the width it had.
+    #[test]
+    fn p3_i38_add_a_model_can_be_as_big_as_the_main_window_and_small_again() {
+        let dir = scratch("i38");
+        let mut app = app_in(&dir, "llamacpp");
+        only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
+        let ctx = egui::Context::default();
+        app.open_add_model();
+        settled(&mut app, &ctx, true);
+        let area = |ctx: &egui::Context, id: &str| {
+            ctx.memory(|m| m.area_rect(egui::Id::new(id)))
+                .expect("the window is drawn")
+        };
+        let small = area(&ctx, "add_model");
+        assert!(
+            small.width() < 700.0 && small.height() < app.room.height() - 40.0,
+            "{small:?} in {:?}",
+            app.room
+        );
+        let (button, _) = super::super::add_model::size_button_place(&ctx, small);
+        click(&mut app, &ctx, button.center());
+        assert!(app.add_model_max, "the button makes it big");
+        settled(&mut app, &ctx, true);
+        let big = area(&ctx, "add_model_max");
+        assert!(
+            (big.left() - (app.room.left() + 8.0)).abs() < 1.0
+                && (big.right() - (app.room.right() - 8.0)).abs() < 1.0
+                && (big.top() - (app.room.top() + 8.0)).abs() < 1.0
+                && (big.bottom() - (app.room.bottom() - 8.0)).abs() < 1.0,
+            "{big:?} in {:?}",
+            app.room
+        );
+        // a double click on the title: two clicks a few frames apart
+        let (_, title) = super::super::add_model::size_button_place(&ctx, big);
+        click(&mut app, &ctx, title.center());
+        click(&mut app, &ctx, title.center());
+        assert!(
+            !app.add_model_max,
+            "a double click on the title makes it small"
+        );
+        settled(&mut app, &ctx, true);
+        let again = area(&ctx, "add_model");
+        assert!(
+            (again.width() - small.width()).abs() < 1.0,
+            "{again:?} {small:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// I39 (C192): under what Add a model suggests is the site its box searches, for a person to look there and bring back
+    /// a link: Hugging Face's page of GGUF models for llama.cpp, ollama.com's search for Ollama (whose box takes a name).
+    #[test]
+    fn p3_i39_add_a_model_leads_to_the_site_its_box_searches() {
+        let dir = scratch("i39");
+        let mut app = app_in(&dir, "llamacpp");
+        only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
+        let ctx = egui::Context::default();
+        app.open_add_model();
+        let found = rects(&settled(&mut app, &ctx, true));
+        assert!(
+            found.contains_key("Hugging Face")
+                && found.contains_key("and paste its link in the box."),
+            "{:?}",
+            found.keys()
+        );
+        assert_eq!(
+            app.browse_page(),
+            Some((
+                "Hugging Face".to_string(),
+                "https://huggingface.co/models?library=gguf&sort=trending".to_string()
+            ))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let ollama = app_in(&dir, "ollama");
+        let (site, address) = ollama.browse_page().expect("Ollama looks models up");
+        assert_eq!(site, "ollama.com");
+        assert!(
+            address.starts_with("https://ollama.com/search"),
+            "{address}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// I40 (C192): the Help menu is Help and About; the rest is in Help's window (Getting started, the keys, the
+    /// documentation online, the privacy policy), and the website in About.
+    #[test]
+    fn p3_i40_the_help_menu_is_help_and_about() {
+        let dir = scratch("i40");
+        let mut app = app_in(&dir, "llamacpp");
+        only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
+        let ctx = egui::Context::default();
+        let found = rects(&settled(&mut app, &ctx, true));
+        click(&mut app, &ctx, found["Help"].center());
+        let found = rects(&settled(&mut app, &ctx, true));
+        assert!(
+            found.contains_key("Help…") && found.contains_key("About QuickAI"),
+            "{:?}",
+            found.keys()
+        );
+        for gone in [
+            "Getting started",
+            "Keyboard shortcuts",
+            "Online documentation",
+            "Privacy policy",
+            "QuickAI on the web",
+        ] {
+            assert!(!found.contains_key(gone), "{gone}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn getting_started_ticks_its_steps_as_they_are_done() {
         let dir = scratch("v2-steps");

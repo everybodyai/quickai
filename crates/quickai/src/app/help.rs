@@ -229,7 +229,7 @@ const PAGES: &[Page] = &[
         lead: "Which model fits this computer, and how to get it.",
         picture: Some(Picture {
             name: "add-model",
-            marks: &[(2, 650.0, 228.0), (3, 285.0, 79.0), (4, 640.0, 79.0)],
+            marks: &[(2, 650.0, 228.0), (3, 285.0, 79.0), (4, 640.0, 79.0), (5, 395.0, 420.0)],
             ring: Some([661.0, 216.0, 24.0, 24.0]),
         }),
         steps: &[
@@ -245,6 +245,10 @@ const PAGES: &[Page] = &[
                  box shows the most popular.",
             ),
             step("Paste a link to a .gguf file to download it, or press the folder {folder} to add a file you have."),
+            step(
+                "Or find one yourself: **Hugging Face** under the list opens its page of models in the browser. Paste \
+                 the link of the one you choose in the box.",
+            ),
             step("**Recommended…** in the Models menu has the whole list QuickAI checked, by kind and size.")
                 .does(Deed::Recommended),
         ],
@@ -670,11 +674,8 @@ impl App {
         ]
     }
 
-    /// Opens Help on `page` (on the page it was on when there is none), or brings it to the front.
-    pub(super) fn open_help(&mut self, page: Option<HelpPage>) {
-        if let Some(page) = page {
-            self.help_go(page);
-        }
+    /// Opens Help on the page it was on, or brings it to the front.
+    pub(super) fn open_help(&mut self) {
         self.help.raise = self.help.open;
         self.help.open = true;
     }
@@ -1881,8 +1882,9 @@ mod tests {
         app.help.open = false;
         frame(&mut app, &ctx, key(egui::Key::F1), |_| ());
         assert!(app.help.open, "F1 opens Help");
-        // the Help menu's items open it on their page
-        app.open_help(Some(HelpPage::Shortcuts));
+        // open already, the Help menu brings it to the front, on the page it is on
+        app.help_go(HelpPage::Shortcuts);
+        app.open_help();
         assert_eq!(app.help.page, HelpPage::Shortcuts);
         assert!(app.help.raise, "open already: it comes to the front");
         let _ = std::fs::remove_dir_all(&dir);

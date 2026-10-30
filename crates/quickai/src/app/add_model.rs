@@ -7,6 +7,8 @@
 
 use eframe::egui;
 use quickai_core::lookup::present::{Entry, Offer};
+use quickai_core::lookup::{huggingface, ollama_library};
+use quickai_core::registry::engine::LookupKind;
 
 use super::icons::{self, Icon};
 use super::theme;
@@ -64,19 +66,43 @@ impl App {
             return;
         }
         let mut open = true;
+        let max = self.add_model_max;
         let width = (ctx.content_rect().width() - 80.0).clamp(420.0, 700.0);
-        egui::Window::new("Add a model")
-            .id(egui::Id::new("add_model"))
+        let window = egui::Window::new("Add a model")
             .open(&mut open)
-            .collapsible(false)
+            .collapsible(false);
+        let window = if max {
+            // all the main window has between its bars, as a window of another name: the width it had is kept for when
+            // it is made small again
+            let room = if self.room.is_positive() {
+                self.room
+            } else {
+                ctx.content_rect()
+            };
+            window
+                .id(egui::Id::new("add_model_max"))
+                .fixed_rect(room.shrink(8.0))
+        } else {
             // as tall as what it holds (a long list of results scrolls in its own room)
-            .resizable([true, false])
-            .default_width(width)
-            .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 60.0))
-            .show(ctx, |ui| {
+            window
+                .id(egui::Id::new("add_model"))
+                .resizable([true, false])
+                .default_width(width)
+                .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 60.0))
+        };
+        let shown = window.show(ctx, |ui| {
+            if max {
+                // as tall as the room even with only the suggestions in it
+                ui.set_min_height(ui.available_height());
+            } else {
                 ui.set_min_width(width - 24.0);
-                self.show_add_model_body(ui);
-            });
+            }
+            self.show_add_model_body(ui);
+        });
+        if shown.is_some_and(|shown| size_button(ctx, &shown.response, max)) {
+            self.add_model_max = !max;
+            self.focus_add_box = true;
+        }
         self.add_model_open = open;
     }
 
@@ -187,6 +213,47 @@ impl App {
         } else {
             self.show_suggestions(ui);
         }
+        // the site the box searches, for whoever would rather look there and bring back a link (or a name)
+        if let Some((site, address)) = self.browse_page() {
+            ui.add_space(6.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(theme::muted("Or find one yourself on"));
+                if ui.link(&site).on_hover_text(&address).clicked() {
+                    let _ = webbrowser::open(&address);
+                }
+                ui.label(theme::muted(if named {
+                    "and type its name in the box."
+                } else {
+                    "and paste its link in the box."
+                }));
+            });
+        }
+    }
+
+    /// The page of the site the box searches where a person looks for a model themselves (Hugging Face; ollama.com
+    /// for Ollama), for the words looked up last while their results are shown: its name and its address. `None` for an
+    /// engine that looks nothing up.
+    pub(super) fn browse_page(&self) -> Option<(String, String)> {
+        let lookup = quickai_core::models::lookups(self.engine_doc()?).first()?;
+        let words = if self.lookup.open {
+            self.lookup.words.as_str()
+        } else {
+            ""
+        };
+        Some(match &lookup.kind {
+            LookupKind::HuggingFace { site, .. } => (
+                "Hugging Face".to_string(),
+                huggingface::page_url(site, words),
+            ),
+            LookupKind::OllamaLibrary { site, .. } => (
+                site.split_once("://")
+                    .map_or(site.as_str(), |(_, host)| host)
+                    .trim_end_matches('/')
+                    .to_string(),
+                ollama_library::search_url(site, words),
+            ),
+        })
     }
 
     /// What Enter in the box does for an engine that pulls models by name: a name with a tag, or a reference to Hugging
@@ -316,6 +383,84 @@ impl App {
             self.fetch_offer(&fetch, ui.ctx());
         }
     }
+}
+
+/// The button beside the × of the title bar of `window` that makes it as big as the main window, or `max`, small again
+/// (a double click on the title does the same); whether it was used. It is on the window's own layer, drawn as egui
+/// draws the ×.
+fn size_button(ctx: &egui::Context, window: &egui::Response, max: bool) -> bool {
+    let (button, title) = size_button_place(ctx, window.rect);
+    let ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("add_model_size"),
+        egui::UiBuilder::new()
+            .layer_id(window.layer_id)
+            .max_rect(title.union(button)),
+    );
+    let twice = ui
+        .interact(title, ui.id().with("title"), egui::Sense::click())
+        .double_clicked();
+    let button = ui
+        .interact(button, ui.id().with("button"), egui::Sense::click())
+        .on_hover_text(if max {
+            "Make it small again"
+        } else {
+            "Make it as big as the window"
+        });
+    let visuals = ui.style().interact(&button);
+    let stroke = visuals.fg_stroke;
+    let r = button.rect.shrink(2.0).expand(visuals.expansion);
+    let painter = ui.painter();
+    if max {
+        // two windows, one behind the other
+        let front = egui::Rect::from_min_max(
+            r.left_top() + egui::vec2(0.0, 3.0),
+            r.right_bottom() - egui::vec2(3.0, 0.0),
+        );
+        painter.rect_stroke(front, 0.0, stroke, egui::StrokeKind::Middle);
+        painter.line(
+            vec![
+                egui::pos2(r.left() + 3.0, front.top()),
+                r.left_top() + egui::vec2(3.0, 0.0),
+                r.right_top(),
+                r.right_bottom() - egui::vec2(0.0, 3.0),
+                egui::pos2(front.right(), r.bottom() - 3.0),
+            ],
+            stroke,
+        );
+    } else {
+        painter.rect_stroke(r, 0.0, stroke, egui::StrokeKind::Middle);
+    }
+    twice || button.clicked()
+}
+
+/// Where the button of `size_button` is in a window whose outer rectangle is `outer`, and the title round it: egui's title
+/// bar has its × in a square as high as a heading inside the window's margin; the button is one square and a space to
+/// the left of it, as big as the ×.
+pub(super) fn size_button_place(
+    ctx: &egui::Context,
+    outer: egui::Rect,
+) -> (egui::Rect, egui::Rect) {
+    let style = ctx.global_style();
+    let margin = style.spacing.window_margin;
+    let edge = style.visuals.window_stroke().width;
+    let side = ctx.fonts_mut(|f| f.row_height(&egui::TextStyle::Heading.resolve(&style)));
+    let close = egui::Rect::from_min_size(
+        egui::pos2(
+            outer.right() - edge - margin.rightf() - side,
+            outer.top() + edge + margin.topf(),
+        ),
+        egui::Vec2::splat(side),
+    );
+    let square = close.translate(egui::vec2(-(side + style.spacing.item_spacing.x), 0.0));
+    let title = egui::Rect::from_x_y_ranges(
+        outer.left() + edge..=square.left(),
+        outer.top()..=close.bottom() + margin.bottomf(),
+    );
+    (
+        square.shrink((side - style.spacing.icon_width) / 2.0),
+        title,
+    )
 }
 
 /// Whether what is typed in the box of an engine that pulls by name is a model to pull rather than words to look up:
