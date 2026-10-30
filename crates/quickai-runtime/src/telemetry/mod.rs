@@ -331,13 +331,13 @@ impl Telemetry {
         self.shared.as_ref().and_then(|s| s.lock().chosen)
     }
 
-    /// The highest level the caps allow (All when there are none), and the caps.
+    /// The highest level the caps allow (Errors and crashes when there are none), and the caps.
     pub fn cap(&self) -> Level {
         self.caps()
             .iter()
             .map(|c| c.level)
             .min()
-            .unwrap_or(Level::All)
+            .unwrap_or(Level::Error)
     }
 
     pub fn caps(&self) -> Vec<Cap> {
@@ -375,13 +375,6 @@ impl Telemetry {
     /// Seconds since 1970, by telemetry's clock.
     pub fn now(&self) -> u64 {
         self.shared.as_ref().map_or(0, |s| (s.clock)())
-    }
-
-    /// Minutes since this start.
-    pub fn minutes_open(&self) -> u64 {
-        self.shared
-            .as_ref()
-            .map_or(0, |s| (s.clock)().saturating_sub(s.started) / 60)
     }
 
     /// How many sessions before this one ended without closing.

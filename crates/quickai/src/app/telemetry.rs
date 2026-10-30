@@ -1,6 +1,6 @@
 //! Telemetry in the window (WP4.42, docs/reports-and-community.md): the notice of the first start, Settings → Privacy,
 //! the telemetry log, the crash report offered at Off, Help → Report a problem, and the events the window records:
-//! the windows opened, the features used, a run's start, its readiness or its engine's exit, a stall.
+//! an engine's exit, a failed download, a stall, and what a crash report says of the moment.
 //!
 //! The level is the person's, held under the caps of the build, the package and the environment; at Off, and until
 //! the notice is answered, `Telemetry::record` keeps nothing and nothing is sent (the runtime's `telemetry` module).
@@ -35,16 +35,13 @@ pub(super) struct TelemetryUi {
     pub message: Option<(bool, String)>,
     /// The delete button asks once more.
     pub confirm_delete: bool,
-    seen_windows: Vec<&'static str>,
     seen_state: Option<ServerState>,
-    seen_features: Vec<&'static str>,
-    chatted: bool,
     run: Option<RunWatch>,
     /// How the engine ended, as the log said last.
     last_exit: Option<String>,
 }
 
-/// A run being watched, for its events.
+/// A run being watched, for `error.engine_exit`.
 struct RunWatch {
     started: u64,
     engine: String,
@@ -84,8 +81,8 @@ const LONGEST_ADDRESS: usize = 6000;
 
 impl App {
     /// Telemetry for this start: the level from the settings under the caps of the package (`package_config`, the
-    /// package's configuration folder) and the environment; the panic hook; `session.start`; the sender; and what to
-    /// ask (the notice, a crash report at Off).
+    /// package's configuration folder) and the environment; the panic hook; the sender; and what to ask (the notice,
+    /// a crash report at Off).
     pub(super) fn start_telemetry(&mut self, package_config: Option<&Path>) {
         let chosen = self.stored.telemetry_level();
         let telemetry = Telemetry::start(Setup {
@@ -102,13 +99,9 @@ impl App {
         self.telemetry.spawn_sender();
     }
 
-    /// What follows the start of telemetry, without the sender: the first event, and what to ask.
+    /// What follows the start of telemetry, without the sender: what to ask.
     pub(super) fn after_telemetry_start(&mut self, chosen: Option<Level>) {
         let t = self.telemetry.clone();
-        t.record(
-            t.event("session.start")
-                .with("first_run", self.models.is_empty()),
-        );
         let cap = t.cap();
         let answered_now = self.stored.telemetry_asked() >= u64::from(schema::CONSENT_VERSION);
         self.tel.notice = cap > Level::Off
@@ -147,7 +140,7 @@ impl App {
         }
     }
 
-    /// The windows of `schema::WINDOWS` that are open.
+    /// The windows of `schema::WINDOWS` that are open, for a crash report.
     fn open_windows(&self) -> Vec<&'static str> {
         let open = [
             ("add_model", self.add_model_open),
@@ -166,37 +159,11 @@ impl App {
             .collect()
     }
 
-    /// The features of `schema::FEATURES` in use.
-    fn features_in_use(&self) -> Vec<&'static str> {
-        let used = [
-            ("live_traffic", self.enable_traffic_proxy),
-            ("keep_chats", self.chat.keep),
-            ("open_webui", self.companion_enabled()),
-            ("remote_run", self.runner_name().is_some()),
-            ("chat", self.tel.chatted),
-        ];
-        used.into_iter()
-            .filter(|(_, on)| *on)
-            .map(|(f, _)| f)
-            .collect()
-    }
-
     /// A line of the engine's log: how it ended, when it says.
     pub(super) fn note_log_line(&mut self, line: &str) {
         if line.contains("exited unexpectedly") {
             self.tel.last_exit = measure::exit_status(line).or(Some("unknown".to_string()));
         }
-    }
-
-    /// A message was sent in the chat (counted once a start).
-    pub(super) fn note_chat_sent(&mut self) {
-        self.tel.chatted = true;
-    }
-
-    /// A feature used once (an import, an export).
-    pub(super) fn note_feature(&mut self, feature: &'static str) {
-        let t = &self.telemetry;
-        t.record(t.event("feature.use").with("feature", feature));
     }
 
     /// What changed since the last frame, as events; and what a crash report would say of this moment.
@@ -206,19 +173,6 @@ impl App {
             return;
         }
         let t = self.telemetry.clone();
-        let windows = self.open_windows();
-        for window in &windows {
-            if !self.tel.seen_windows.contains(window) {
-                t.record(t.event("window.open").with("window", *window));
-            }
-        }
-        let features = self.features_in_use();
-        for feature in &features {
-            if !self.tel.seen_features.contains(feature) {
-                t.record(t.event("feature.use").with("feature", *feature));
-            }
-        }
-        self.tel.seen_features = features;
         let state = self.session.state();
         if self.tel.seen_state != Some(state) {
             self.note_run_state(state);
@@ -233,48 +187,28 @@ impl App {
         if let Ok(mut context) = t.context().try_lock() {
             context.engine = Some(self.engine.clone());
             context.engine_state = Some(state_id(state));
-            context.open_windows = windows.clone();
+            context.open_windows = self.open_windows();
         }
-        self.tel.seen_windows = windows;
     }
 
-    /// The events of a run: its start, its readiness, its engine's exit.
+    /// A run's engine, model and build from its start, and whether it was serving, for `error.engine_exit`.
     fn note_run_state(&mut self, state: ServerState) {
         let t = self.telemetry.clone();
         let now = t.now();
         if matches!(state, ServerState::Starting | ServerState::Running) && self.tel.run.is_none() {
-            let run = RunWatch {
+            self.tel.last_exit = None;
+            self.tel.run = Some(RunWatch {
                 started: now,
                 engine: self.engine.clone(),
                 model: self.telemetry_model(),
                 build: self.telemetry_build(),
                 ready: false,
-            };
-            let place = if self.runner_name().is_some() {
-                "remote"
-            } else {
-                "local"
-            };
-            t.record(
-                t.event("run.start")
-                    .with("engine", run.engine.as_str())
-                    .with("build", run.build.as_str())
-                    .with("model", run.model.as_str())
-                    .with("where", place),
-            );
-            self.tel.last_exit = None;
-            self.tel.run = Some(run);
+            });
         }
         match state {
             ServerState::Running => {
-                if let Some(run) = self.tel.run.as_mut().filter(|r| !r.ready) {
+                if let Some(run) = self.tel.run.as_mut() {
                     run.ready = true;
-                    t.record(
-                        t.event("run.ready")
-                            .with("engine", run.engine.as_str())
-                            .with("model", run.model.as_str())
-                            .with("seconds", now.saturating_sub(run.started)),
-                    );
                 }
             }
             ServerState::Crashed => {
@@ -340,33 +274,6 @@ impl App {
             .map(|m| m.id.clone())
     }
 
-    /// How a downloaded model was added, and the name telemetry may give it: from the recommended list, from a look-up
-    /// of Hugging Face (`place` is where the window fetched it from), or from a link.
-    pub(super) fn download_how(&self, file: &str, place: Option<&str>) -> (&'static str, String) {
-        let catalog = self.catalog_id_of(file);
-        let size = std::fs::metadata(self.models_dir.join(file))
-            .map(|m| m.len())
-            .unwrap_or(0);
-        let huggingface = place.and_then(|p| p.strip_prefix("huggingface:"));
-        let how = match (&catalog, huggingface) {
-            (Some(_), _) => "recommended",
-            (None, Some(_)) => "lookup",
-            (None, None) => "link",
-        };
-        let model = measure::model_name(&measure::ModelFacts {
-            catalog: catalog.as_deref(),
-            huggingface,
-            size,
-        });
-        (how, model)
-    }
-
-    /// A model was added (`model.add`).
-    pub(super) fn note_model_added(&mut self, (how, model): (&'static str, String)) {
-        let t = &self.telemetry;
-        t.record(t.event("model.add").with("how", how).with("model", model));
-    }
-
     /// A download failed (`error.download`): the site and the reason, never the file or the address.
     pub(super) fn note_download_failed(&mut self, message: &str, place: Option<&str>) {
         let source = if place.is_some_and(|p| p.starts_with("huggingface:")) {
@@ -403,14 +310,9 @@ impl App {
         }
     }
 
-    /// The window is closing: `session.end`, the last batch, and the session's marker taken away.
+    /// The window is closing: the last batch, and the session's marker taken away.
     pub(super) fn telemetry_closing(&mut self) {
-        let t = self.telemetry.clone();
-        t.record(
-            t.event("session.end")
-                .with("minutes_open", measure::minutes_bucket(t.minutes_open())),
-        );
-        t.end_session();
+        self.telemetry.end_session();
     }
 
     /// Starts a request to the server on a thread; its answer is read by `poll_telemetry_job`.
@@ -469,9 +371,8 @@ impl App {
             ui.label(egui::RichText::new("Help make QuickAI better?").strong().color(p.text));
             ui.label(
                 egui::RichText::new(
-                    "QuickAI can send EverybodyAI reports of crashes and errors and, if you like, counts of what it did, \
-                     with a rough description of this computer. Never your chats, files or searches. Nothing is sent \
-                     until you choose.",
+                    "QuickAI can send EverybodyAI reports of crashes and errors, with a rough description of this \
+                     computer. Never your chats, files or searches. Nothing is sent until you choose.",
                 )
                 .color(p.muted),
             );

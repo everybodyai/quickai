@@ -839,7 +839,6 @@ impl App {
         match outcome {
             Some(Ok(filename)) => {
                 self.push_log(format!("Download complete: {filename}"));
-                let how = self.download_how(&filename, source.as_ref().map(|s| s.place.as_str()));
                 // Add a model has done what it was opened for: the page shows the model, picked (UI v2). ComfyUI's
                 // results are on its page, where several files are fetched one after the other: they stay
                 if !self.runs_alone() {
@@ -884,7 +883,6 @@ impl App {
                 }
                 self.refresh_recommendation();
                 self.save_settings();
-                self.note_model_added(how);
             }
             Some(Err(msg)) if msg == crate::jobs::CANCELLED => {
                 self.push_log(format!("Download of {} cancelled.", job.label));

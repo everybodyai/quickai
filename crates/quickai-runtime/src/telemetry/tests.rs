@@ -57,9 +57,14 @@ impl World {
 }
 
 fn some_events(t: &Telemetry) {
-    t.record(t.event("session.start").with("first_run", false));
+    t.record(t.event("session.unclean_exit"));
     t.record(t.event("error.stall").with("seconds", "5-10"));
-    t.record(t.event("window.open").with("window", "settings"));
+    t.record(
+        t.event("error.download")
+            .with("what", "model")
+            .with("source", "huggingface")
+            .with("reason", "network"),
+    );
 }
 
 #[test]
@@ -90,16 +95,14 @@ fn each_level_queues_its_own_events_and_those_below_only() {
     assert!(names(&t).is_empty());
     t.set_chosen(Level::Error);
     some_events(&t);
-    assert_eq!(names(&t), vec!["error.stall"]);
-    t.set_chosen(Level::All);
-    some_events(&t);
     assert_eq!(
         names(&t),
-        vec!["error.stall", "session.start", "error.stall", "window.open"]
+        vec!["session.unclean_exit", "error.stall", "error.download"]
     );
     // a lower level drops what it no longer allows
-    t.set_chosen(Level::Error);
-    assert_eq!(names(&t), vec!["error.stall", "error.stall"]);
+    t.set_chosen(Level::Crash);
+    assert!(names(&t).is_empty());
+    some_events(&t);
     t.set_chosen(Level::Off);
     assert!(names(&t).is_empty());
 }
@@ -108,7 +111,7 @@ fn each_level_queues_its_own_events_and_those_below_only() {
 fn a_cap_holds_the_level_down_whatever_was_chosen() {
     let w = World::new("caps");
     let t = w.start(
-        Some(Level::All),
+        Some(Level::Error),
         vec![Cap {
             level: Level::Crash,
             by: CapBy::Package,
@@ -131,7 +134,7 @@ fn a_cap_holds_the_level_down_whatever_was_chosen() {
 #[test]
 fn the_first_batch_waits_two_minutes_then_goes_with_the_install_id_and_is_logged() {
     let w = World::new("first");
-    let t = w.start(Some(Level::All), vec![]);
+    let t = w.start(Some(Level::Error), vec![]);
     some_events(&t);
     assert_eq!(
         t.send_due(false, SEND_TIMEOUT),
@@ -155,7 +158,7 @@ fn the_first_batch_waits_two_minutes_then_goes_with_the_install_id_and_is_logged
         "what is sent passes the schema"
     );
     assert_eq!(batch.events.len(), 3);
-    assert_eq!(batch.common.level, "all");
+    assert_eq!(batch.common.level, "error");
     assert_eq!(batch.common.memory_gb, 32);
     assert_eq!(
         received[0].install.as_deref(),
@@ -187,11 +190,11 @@ fn the_first_batch_waits_two_minutes_then_goes_with_the_install_id_and_is_logged
 #[test]
 fn after_a_batch_the_next_waits_for_a_hundred_events_or_six_hours() {
     let w = World::new("due");
-    let t = w.start(Some(Level::All), vec![]);
+    let t = w.start(Some(Level::Error), vec![]);
     w.pass(FIRST_SEND_AFTER);
     some_events(&t);
     assert_eq!(t.send_due(false, SEND_TIMEOUT), Some(Answer::Sent));
-    t.record(t.event("window.open").with("window", "help"));
+    t.record(t.event("error.stall").with("seconds", "5-10"));
     w.pass(600);
     assert_eq!(
         t.send_due(false, SEND_TIMEOUT),
@@ -199,14 +202,14 @@ fn after_a_batch_the_next_waits_for_a_hundred_events_or_six_hours() {
         "one event, ten minutes later"
     );
     for _ in 0..BATCH_WHEN {
-        t.record(t.event("window.open").with("window", "help"));
+        t.record(t.event("error.stall").with("seconds", "5-10"));
     }
     assert_eq!(
         t.send_due(false, SEND_TIMEOUT),
         Some(Answer::Sent),
         "a hundred wait"
     );
-    t.record(t.event("window.open").with("window", "about"));
+    t.record(t.event("error.stall").with("seconds", "10-30"));
     w.pass(BATCH_EVERY);
     assert_eq!(
         t.send_due(false, SEND_TIMEOUT),
@@ -219,7 +222,7 @@ fn after_a_batch_the_next_waits_for_a_hundred_events_or_six_hours() {
 #[test]
 fn a_refused_batch_is_dropped_and_a_blocked_or_retired_install_stops_sending() {
     let w = World::new("answers");
-    let t = w.start(Some(Level::All), vec![]);
+    let t = w.start(Some(Level::Error), vec![]);
     w.pass(FIRST_SEND_AFTER);
     some_events(&t);
     w.api.reply(Reply::status(400));
@@ -251,7 +254,7 @@ fn a_refused_batch_is_dropped_and_a_blocked_or_retired_install_stops_sending() {
 #[test]
 fn a_failure_waits_an_hour_then_six_then_a_day_and_what_waited_three_days_goes() {
     let w = World::new("waits");
-    let t = w.start(Some(Level::All), vec![]);
+    let t = w.start(Some(Level::Error), vec![]);
     w.pass(FIRST_SEND_AFTER);
     some_events(&t);
     for wait in WAITS {
@@ -277,7 +280,7 @@ fn a_failure_waits_an_hour_then_six_then_a_day_and_what_waited_three_days_goes()
 #[test]
 fn too_many_waits_what_the_server_says_and_a_success_resets_the_waits() {
     let w = World::new("retry-after");
-    let t = w.start(Some(Level::All), vec![]);
+    let t = w.start(Some(Level::Error), vec![]);
     w.pass(FIRST_SEND_AFTER);
     some_events(&t);
     w.api.reply(Reply {
@@ -299,23 +302,23 @@ fn too_many_waits_what_the_server_says_and_a_success_resets_the_waits() {
 #[test]
 fn the_queue_and_the_state_survive_a_restart() {
     let w = World::new("restart");
-    let t = w.start(Some(Level::All), vec![]);
+    let t = w.start(Some(Level::Error), vec![]);
     some_events(&t);
     drop(t);
-    let t = w.start(Some(Level::All), vec![]);
+    let t = w.start(Some(Level::Error), vec![]);
     assert_eq!(t.queued().len(), 3);
     // a level set lower while the app was closed drops what it does not allow
-    let t = w.start(Some(Level::Error), vec![]);
-    assert_eq!(t.queued().len(), 1);
+    let t = w.start(Some(Level::Crash), vec![]);
+    assert!(t.queued().is_empty());
 }
 
 #[test]
 fn closing_sends_what_waits_even_in_the_first_two_minutes_and_takes_the_marker_away() {
     let w = World::new("closing");
-    let t = w.start(Some(Level::All), vec![]);
+    let t = w.start(Some(Level::Error), vec![]);
     let marker = w.dir.join(format!("running-{}.json", std::process::id()));
     assert!(marker.exists());
-    t.record(t.event("session.end").with("minutes_open", "<5"));
+    t.record(t.event("error.stall").with("seconds", "5-10"));
     t.end_session();
     assert_eq!(w.batches("/v1/events").len(), 1);
     assert!(!marker.exists());
@@ -433,7 +436,7 @@ fn turned_off_for_good_a_crash_cannot_be_sent_even_when_asked() {
 #[test]
 fn deleting_what_is_held_asks_the_server_then_forgets_the_install_id_and_the_queue() {
     let w = World::new("delete");
-    let t = w.start(Some(Level::All), vec![]);
+    let t = w.start(Some(Level::Error), vec![]);
     assert!(t.delete_held().is_err(), "nothing was ever sent");
     w.pass(FIRST_SEND_AFTER);
     some_events(&t);
@@ -472,7 +475,7 @@ fn deleting_what_is_held_asks_the_server_then_forgets_the_install_id_and_the_que
 #[test]
 fn the_preview_is_the_next_batch_and_an_inert_telemetry_does_nothing() {
     let w = World::new("preview");
-    let t = w.start(Some(Level::All), vec![]);
+    let t = w.start(Some(Level::Error), vec![]);
     some_events(&t);
     let preview: serde_json::Value = serde_json::from_str(&t.preview()).unwrap();
     assert_eq!(preview["events"].as_array().map(Vec::len), Some(3));
@@ -481,7 +484,7 @@ fn the_preview_is_the_next_batch_and_an_inert_telemetry_does_nothing() {
         "(made when the first report is sent)"
     );
     let inert = Telemetry::inert();
-    inert.record(inert.event("session.start"));
+    inert.record(inert.event("error.stall").with("seconds", "5-10"));
     assert_eq!(inert.level(), Level::Off);
     assert!(inert.queued().is_empty());
     assert_eq!(inert.send_due(true, SEND_TIMEOUT), None);
@@ -490,9 +493,9 @@ fn the_preview_is_the_next_batch_and_an_inert_telemetry_does_nothing() {
 #[test]
 fn the_queue_keeps_its_last_megabyte() {
     let w = World::new("cap");
-    let t = w.start(Some(Level::All), vec![]);
+    let t = w.start(Some(Level::Error), vec![]);
     for _ in 0..12_000 {
-        t.record(t.event("window.open").with("window", "recommended"));
+        t.record(t.event("error.stall").with("seconds", "10-30"));
     }
     let size = std::fs::metadata(w.dir.join("queue.jsonl")).unwrap().len() as usize;
     assert!(size <= QUEUE_MOST_BYTES, "{size} bytes");
@@ -500,7 +503,7 @@ fn the_queue_keeps_its_last_megabyte() {
     assert!(kept < 12_000 && kept > 8_000, "{kept} kept");
     // what is on disk is what is held
     drop(t);
-    assert_eq!(w.start(Some(Level::All), vec![]).queued().len(), kept);
+    assert_eq!(w.start(Some(Level::Error), vec![]).queued().len(), kept);
 }
 
 #[test]
@@ -515,7 +518,7 @@ fn random_ids_are_uuids_and_differ() {
 #[test]
 fn the_panic_hook_writes_a_clean_report_and_sends_nothing() {
     let w = World::new("hook");
-    let t = w.start(Some(Level::All), vec![]);
+    let t = w.start(Some(Level::Error), vec![]);
     t.context().lock().unwrap().engine = Some("llamacpp".into());
     t.install_panic_hook(Cleaner::new(Some("/home/grace"), None, None, &[]));
     let _ = std::thread::Builder::new()

@@ -2,7 +2,7 @@
 
 _Generated from the schema in `crates/quickai-core/src/telemetry/schema.rs` by `quickai config docs telemetry`; `quickai --telemetry` prints the same as JSON. Do not edit by hand._
 
-This is everything QuickAI can send EverybodyAI. Nothing is sent until you choose a telemetry level, and a level sends only the events of its own level and those below it: **Crashes only** sends `crash` events, **Errors and crashes** adds `error` events, **All** adds the rest. Text is cleaned before it is sent: a home folder, user and computer names, addresses, email addresses and anything that looks like a password or a token are replaced. See [the privacy policy](https://quickai.everybodyai.dev/privacy).
+This is everything QuickAI can send EverybodyAI. Nothing is sent until you choose a telemetry level, and a level sends only the events of its own level and those below it: **Crashes only** sends `crash` events, **Errors and crashes** adds `error` events. Text is cleaned before it is sent: a home folder, user and computer names, addresses, email addresses and anything that looks like a password or a token are replaced. See [the privacy policy](https://quickai.everybodyai.dev/privacy).
 
 ## Sent with every batch
 
@@ -21,7 +21,7 @@ This is everything QuickAI can send EverybodyAI. Nothing is sent until you choos
 | `memory_gb` | one of: 8, 16, 32, 64, 128 | system metadata | the memory, rounded to 8, 16, 32, 64 or 128 GB and more |
 | `gpus` | any of: nvidia, amd, intel, apple | system metadata | the makers of the graphics adapters |
 | `language` | short text, cleaned | system metadata | the system's language, without its region |
-| `level` | one of: off, crash, error, all | system metadata | the telemetry level in force |
+| `level` | one of: off, crash, error | system metadata | the telemetry level in force |
 
 The server adds the country the request came from, as two letters, and never stores the address.
 
@@ -80,67 +80,3 @@ The window stopped answering for five seconds or more. Purpose: health: to find 
 The last session ended without closing (a crash of the system's graphics, a forced kill, a power cut). Sent at the next start; never asked about. Purpose: health: to find and fix what breaks.
 
 No fields.
-
-## All: events of level `all`
-
-### `session.start`
-
-QuickAI started. Purpose: feature insight: what is used, and what to build or recommend.
-
-| Field | Shape | Kind | What it is |
-|---|---|---|---|
-| `first_run` | yes or no | feature use | whether it is the first start, with no model yet |
-
-### `session.end`
-
-QuickAI was closed. Purpose: feature insight: what is used, and what to build or recommend.
-
-| Field | Shape | Kind | What it is |
-|---|---|---|---|
-| `minutes_open` | one of: <5, 5-30, 30-60, 60-180, 180+ | measurement | how long it was open |
-
-### `window.open`
-
-A window was opened. Purpose: feature insight: what is used, and what to build or recommend.
-
-| Field | Shape | Kind | What it is |
-|---|---|---|---|
-| `window` | one of: add_model, recommended, details, settings, configurations, help, about, telemetry_log, report_problem | feature use | which |
-
-### `feature.use`
-
-A feature was used or switched on. Purpose: feature insight: what is used, and what to build or recommend.
-
-| Field | Shape | Kind | What it is |
-|---|---|---|---|
-| `feature` | one of: live_traffic, keep_chats, remote_run, open_webui, configuration_import, configuration_export, chat | feature use | which |
-
-### `model.add`
-
-A model was added. Purpose: feature insight: what is used, and what to build or recommend.
-
-| Field | Shape | Kind | What it is |
-|---|---|---|---|
-| `how` | one of: recommended, lookup, link, import, pull | feature use | how it was added |
-| `model` | a name (letters, digits and ._:/+@-) | public name | `catalog:<id>` for a model of the recommended list, `hf:<owner>/<repo>` for one found through a look-up, otherwise `other:<size in GB>` |
-
-### `run.start`
-
-Start was pressed. Purpose: feature insight: what is used, and what to build or recommend.
-
-| Field | Shape | Kind | What it is |
-|---|---|---|---|
-| `engine` | a name (letters, digits and ._:/+@-) | public name | the engine (llamacpp, ollama, comfyui) |
-| `build` | a name (letters, digits and ._:/+@-) | public name | the label of the engine's build (`b11889-vulkan`), `bundled`, or `custom` for a program of the person's own |
-| `model` | a name (letters, digits and ._:/+@-) | public name | `catalog:<id>` for a model of the recommended list, `hf:<owner>/<repo>` for one found through a look-up, otherwise `other:<size in GB>` |
-| `where` | one of: local, remote | feature use | this computer or another |
-
-### `run.ready`
-
-The engine answered after Start, with its model loaded. Purpose: performance: to know how fast things are.
-
-| Field | Shape | Kind | What it is |
-|---|---|---|---|
-| `engine` | a name (letters, digits and ._:/+@-) | public name | the engine (llamacpp, ollama, comfyui) |
-| `model` | a name (letters, digits and ._:/+@-) | public name | `catalog:<id>` for a model of the recommended list, `hf:<owner>/<repo>` for one found through a look-up, otherwise `other:<size in GB>` |
-| `seconds` | whole seconds | measurement | how long that took |

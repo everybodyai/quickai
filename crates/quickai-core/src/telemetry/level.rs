@@ -1,19 +1,19 @@
-//! The four telemetry levels (VS Code's `telemetry.telemetryLevel`), and the level in force once the caps a package,
-//! an organization or the environment set are applied.
+//! The telemetry levels (VS Code's `telemetry.telemetryLevel`, without its All: the user, 2026-10-30, "remove 'all'
+//! from telemetry - its not needed"), and the level in force once the caps a package, an organization or the
+//! environment set are applied.
 
-/// What QuickAI sends, from nothing to everything. The order is the order of what they allow: a level allows the
+/// What QuickAI sends, from nothing to errors and crashes. The order is the order of what they allow: a level allows the
 /// events of its own level and of every level below it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Level {
     Off,
     Crash,
     Error,
-    All,
 }
 
 impl Level {
     /// The levels as the notice and Settings list them, the most first.
-    pub const SHOWN: [Level; 4] = [Level::All, Level::Error, Level::Crash, Level::Off];
+    pub const SHOWN: [Level; 3] = [Level::Error, Level::Crash, Level::Off];
 
     /// The id kept in the settings and sent with every batch.
     pub fn id(self) -> &'static str {
@@ -21,17 +21,16 @@ impl Level {
             Level::Off => "off",
             Level::Crash => "crash",
             Level::Error => "error",
-            Level::All => "all",
         }
     }
 
-    /// The level an id names (as `id` writes it, any case; `crashes` and `errors` are taken too).
+    /// The level an id names (as `id` writes it, any case; `crashes` and `errors` are taken too). `all`, the level
+    /// there was, is the most there is now: Errors and crashes.
     pub fn parse(text: &str) -> Option<Level> {
         match text.trim().to_ascii_lowercase().as_str() {
             "off" | "none" => Some(Level::Off),
             "crash" | "crashes" => Some(Level::Crash),
-            "error" | "errors" => Some(Level::Error),
-            "all" => Some(Level::All),
+            "error" | "errors" | "all" => Some(Level::Error),
             _ => None,
         }
     }
@@ -42,7 +41,6 @@ impl Level {
             Level::Off => "Off",
             Level::Crash => "Crashes only",
             Level::Error => "Errors and crashes",
-            Level::All => "All",
         }
     }
 
@@ -54,10 +52,6 @@ impl Level {
             Level::Error => {
                 "Crash reports, and reports of what failed: an engine that stopped, a download or an install that \
                  failed, a window that stopped answering."
-            }
-            Level::All => {
-                "Crash and error reports, and counts of what the app did: which engine ran, whether a model started, \
-                 which windows were opened."
             }
         }
     }
@@ -74,7 +68,7 @@ pub fn in_force(chosen: Option<Level>, caps: &[Level]) -> Level {
         .fold(chosen.unwrap_or(Level::Off), |level, cap| level.min(*cap))
 }
 
-/// The cap the environment sets: `QUICKAI_TELEMETRY=off|crash|error|all`, and `DO_NOT_TRACK` set to anything but
+/// The cap the environment sets: `QUICKAI_TELEMETRY=off|crash|error`, and `DO_NOT_TRACK` set to anything but
 /// empty or `0`, which means off. A value that names no level is ignored. The values are passed in: this crate reads
 /// no environment.
 pub fn env_cap(quickai_telemetry: Option<&str>, do_not_track: Option<&str>) -> Option<Level> {
@@ -94,10 +88,8 @@ mod tests {
 
     #[test]
     fn a_level_allows_its_own_events_and_those_below() {
-        assert!(Level::All.allows(Level::All));
-        assert!(Level::All.allows(Level::Crash));
+        assert!(Level::Error.allows(Level::Error));
         assert!(Level::Error.allows(Level::Crash));
-        assert!(!Level::Error.allows(Level::All));
         assert!(!Level::Crash.allows(Level::Error));
         for level in Level::SHOWN {
             assert!(!Level::Off.allows(level));
@@ -108,13 +100,13 @@ mod tests {
     #[test]
     fn not_answered_is_off_and_every_cap_holds() {
         assert_eq!(in_force(None, &[]), Level::Off);
-        assert_eq!(in_force(Some(Level::All), &[]), Level::All);
-        assert_eq!(in_force(Some(Level::All), &[Level::Error]), Level::Error);
+        assert_eq!(in_force(Some(Level::Error), &[]), Level::Error);
+        assert_eq!(in_force(Some(Level::Error), &[Level::Crash]), Level::Crash);
         assert_eq!(
-            in_force(Some(Level::All), &[Level::Error, Level::Crash]),
-            Level::Crash
+            in_force(Some(Level::Error), &[Level::Crash, Level::Off]),
+            Level::Off
         );
-        assert_eq!(in_force(Some(Level::Crash), &[Level::All]), Level::Crash);
+        assert_eq!(in_force(Some(Level::Crash), &[Level::Error]), Level::Crash);
     }
 
     #[test]
@@ -123,7 +115,7 @@ mod tests {
         assert_eq!(env_cap(Some("crash"), None), Some(Level::Crash));
         assert_eq!(env_cap(Some("OFF"), None), Some(Level::Off));
         assert_eq!(env_cap(Some("loud"), None), None);
-        assert_eq!(env_cap(Some("all"), Some("1")), Some(Level::Off));
+        assert_eq!(env_cap(Some("error"), Some("1")), Some(Level::Off));
         assert_eq!(env_cap(None, Some("true")), Some(Level::Off));
         assert_eq!(env_cap(None, Some("0")), None);
         assert_eq!(env_cap(None, Some("")), None);
@@ -135,6 +127,11 @@ mod tests {
             assert_eq!(Level::parse(level.id()), Some(level));
         }
         assert_eq!(Level::parse("errors"), Some(Level::Error));
+        assert_eq!(
+            Level::parse("all"),
+            Some(Level::Error),
+            "the level there was"
+        );
         assert_eq!(Level::parse("sometimes"), None);
     }
 }

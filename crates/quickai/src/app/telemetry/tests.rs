@@ -142,7 +142,6 @@ fn rp_w01_the_notice_asks_once_and_a_button_chooses_the_level() {
     let found = texts(&mut app, &ctx);
     for text in [
         "Help make QuickAI better?",
-        "All",
         "Errors and crashes",
         "Crashes only",
         "Off",
@@ -189,16 +188,16 @@ fn rp_w02_turned_off_for_good_nothing_is_asked_and_a_lower_cap_offers_only_what_
         &dir,
         Settings::default(),
         vec![Cap {
-            level: Level::Error,
+            level: Level::Crash,
             by: CapBy::Package,
         }],
         &api.url,
     );
     let ctx = egui::Context::default();
     let found = texts(&mut capped, &ctx);
-    assert!(found.contains_key("Errors and crashes"));
+    assert!(found.contains_key("Crashes only"));
     assert!(
-        !found.contains_key("All"),
+        !found.contains_key("Errors and crashes"),
         "a level above the cap is not offered: {:?}",
         found.keys()
     );
@@ -209,12 +208,12 @@ fn rp_w02_turned_off_for_good_nothing_is_asked_and_a_lower_cap_offers_only_what_
 fn rp_w03_a_yes_given_to_less_is_asked_again_and_an_off_is_not() {
     let dir = scratch("again");
     let api = FakeApi::start();
-    // a yes given before what is collected grew
+    // a yes given before what is collected grew, to the level All there was: Errors and crashes now
     let file = dir.join("older.json");
     std::fs::write(&file, r#"{"port":8080,"ctx_size":4096,"n_gpu_layers":999,"values":{"app.telemetry_level":"all","app.telemetry_asked":0}}"#)
         .unwrap();
     let older = Settings::load_from(&file);
-    assert_eq!(older.telemetry_level(), Some(Level::All));
+    assert_eq!(older.telemetry_level(), Some(Level::Error));
     assert!(app_with(&dir, older, vec![], &api.url).tel.notice);
     let mut off = Settings::default();
     off.set_telemetry_level(Level::Off);
@@ -254,15 +253,15 @@ fn rp_w04_the_privacy_page_is_in_the_settings_with_the_levels_and_the_install_id
 }
 
 #[test]
-fn rp_w05_the_window_records_the_windows_opened_a_run_and_how_its_engine_ended() {
+fn rp_w05_the_window_records_how_an_engine_ended_and_what_a_crash_would_say_and_nothing_of_use() {
     let dir = scratch("events");
     let api = FakeApi::start();
     let mut settings = Settings::default();
-    settings.set_telemetry_level(Level::All);
+    settings.set_telemetry_level(Level::Error);
     let mut app = app_with(&dir, settings, vec![], &api.url);
-    assert_eq!(names(&app), vec!["session.start"]);
+    assert!(names(&app).is_empty(), "nothing is sent of a start");
     app.show_about = true;
-    app.telemetry_frame();
+    app.enable_traffic_proxy = true;
     app.telemetry_frame();
     app.note_run_state(ServerState::Starting);
     app.note_run_state(ServerState::Running);
@@ -270,34 +269,19 @@ fn rp_w05_the_window_records_the_windows_opened_a_run_and_how_its_engine_ended()
     app.note_run_state(ServerState::Crashed);
     assert_eq!(
         names(&app),
-        vec![
-            "session.start",
-            "window.open",
-            "run.start",
-            "run.ready",
-            "error.engine_exit"
-        ],
-        "a window counted once, while it stays open"
+        vec!["error.engine_exit"],
+        "no window, feature or run is counted"
     );
-    let queued = app.telemetry.queued();
-    assert_eq!(queued[1].fields["window"], "about");
-    assert_eq!(queued[2].fields["engine"], "llamacpp");
-    assert_eq!(queued[2].fields["where"], "local");
-    let exit = &queued[4];
+    let exit = &app.telemetry.queued()[0];
+    assert_eq!(exit.fields["engine"], "llamacpp");
     assert_eq!(exit.fields["status"], "signal 9");
     assert_eq!(exit.fields["phase"], "serving");
-    for event in &queued {
-        assert_eq!(schema::check(event), Ok(()), "{event:?}");
-    }
-    // a feature on, counted once
-    app.enable_traffic_proxy = true;
-    app.telemetry_frame();
-    app.telemetry_frame();
+    assert_eq!(schema::check(exit), Ok(()), "{exit:?}");
+    // what a crash report would say of the moment
     assert_eq!(
-        names(&app).iter().filter(|n| *n == "feature.use").count(),
-        1
+        app.telemetry.context().lock().unwrap().open_windows,
+        vec!["about"]
     );
-    // closing says how long it was open
     app.telemetry_closing();
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -450,13 +434,13 @@ fn rp_w10_a_window_of_a_test_records_nothing() {
 }
 
 #[test]
-fn rp_w11_a_model_added_from_a_link_or_a_look_up_is_named_as_the_schema_allows() {
+fn rp_w11_a_small_model_from_a_link_is_named_as_the_schema_allows() {
     // found by the GUI suite (TC-NET-006): a model of less than 2 GB was `other:<2`, which is not a name, and the
     // debug build stopped on it
     let dir = scratch("added");
     let api = FakeApi::start();
     let mut settings = Settings::default();
-    settings.set_telemetry_level(Level::All);
+    settings.set_telemetry_level(Level::Error);
     settings.models_dir_override = Some(dir.join("models").display().to_string());
     let mut app = app_with(&dir, settings, vec![], &api.url);
     std::fs::create_dir_all(dir.join("models")).unwrap();
@@ -464,21 +448,22 @@ fn rp_w11_a_model_added_from_a_link_or_a_look_up_is_named_as_the_schema_allows()
         .unwrap()
         .set_len(1 << 20)
         .unwrap();
-    let link = app.download_how("one-request.gguf", None);
-    assert_eq!(link, ("link", "other:0-2".to_string()));
-    app.note_model_added(link);
-    let lookup = app.download_how("one-request.gguf", Some("huggingface:someone/tiny-GGUF"));
-    assert_eq!(lookup, ("lookup", "hf:someone/tiny-GGUF".to_string()));
-    app.note_model_added(lookup);
+    app.models = app.scan_models();
+    app.selected = app
+        .models
+        .iter()
+        .position(|m| m.filename == "one-request.gguf")
+        .expect("the model is listed");
+    assert_eq!(app.telemetry_model(), "other:0-2");
+    app.note_run_state(ServerState::Starting);
+    app.note_run_state(ServerState::Crashed);
     app.note_download_failed(
         "HTTP 404 from the hub",
         Some("huggingface:someone/tiny-GGUF"),
     );
     let queued = app.telemetry.queued();
-    assert_eq!(
-        names(&app),
-        vec!["session.start", "model.add", "model.add", "error.download"]
-    );
+    assert_eq!(names(&app), vec!["error.engine_exit", "error.download"]);
+    assert_eq!(queued[0].fields["model"], "other:0-2");
     for event in &queued {
         assert_eq!(schema::check(event), Ok(()), "{event:?}");
     }
