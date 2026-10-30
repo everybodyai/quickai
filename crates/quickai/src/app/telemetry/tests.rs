@@ -448,3 +448,39 @@ fn rp_w10_a_window_of_a_test_records_nothing() {
     assert!(!dir.join("data").join("telemetry").exists());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn rp_w11_a_model_added_from_a_link_or_a_look_up_is_named_as_the_schema_allows() {
+    // found by the GUI suite (TC-NET-006): a model of less than 2 GB was `other:<2`, which is not a name, and the
+    // debug build stopped on it
+    let dir = scratch("added");
+    let api = FakeApi::start();
+    let mut settings = Settings::default();
+    settings.set_telemetry_level(Level::All);
+    settings.models_dir_override = Some(dir.join("models").display().to_string());
+    let mut app = app_with(&dir, settings, vec![], &api.url);
+    std::fs::create_dir_all(dir.join("models")).unwrap();
+    std::fs::File::create(dir.join("models").join("one-request.gguf"))
+        .unwrap()
+        .set_len(1 << 20)
+        .unwrap();
+    let link = app.download_how("one-request.gguf", None);
+    assert_eq!(link, ("link", "other:0-2".to_string()));
+    app.note_model_added(link);
+    let lookup = app.download_how("one-request.gguf", Some("huggingface:someone/tiny-GGUF"));
+    assert_eq!(lookup, ("lookup", "hf:someone/tiny-GGUF".to_string()));
+    app.note_model_added(lookup);
+    app.note_download_failed(
+        "HTTP 404 from the hub",
+        Some("huggingface:someone/tiny-GGUF"),
+    );
+    let queued = app.telemetry.queued();
+    assert_eq!(
+        names(&app),
+        vec!["session.start", "model.add", "model.add", "error.download"]
+    );
+    for event in &queued {
+        assert_eq!(schema::check(event), Ok(()), "{event:?}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

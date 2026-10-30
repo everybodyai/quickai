@@ -262,7 +262,7 @@ A model is named as:
 - `hf:<owner>/<repo>` when `model-sources.json` says it came from a Hugging Face look-up (a public search result);
 - `ollama:<name>` when it is in Ollama's public library.
 
-Anything else is `other`, with a size bucket (`<2 GB`, `2-5`, `5-10`, `10-20`, `20+`). A file a person made or renamed
+Anything else is `other`, with a size bucket in GB (`0-2`, `2-5`, `5-10`, `10-20`, `20+`). A file a person made or renamed
 is never named.
 
 ### 6.4 The hardware class
