@@ -8,7 +8,7 @@ schema = 1
 kind = "catalog"
 id = "chat"
 title = "Chat"
-verified = "2026-10-07"
+verified = "2026-10-30"
 
 [[model]]
 id = "lfm2.5-350m"
@@ -70,30 +70,6 @@ files = [
   { file = "MiniCPM5-1B-Q4_K_M.gguf", size = 688065920, sha256 = "81b64d05a23b17b34c475f42b3e72fbde62d4b92cc34541f7a8031d0752deafa", best = true },
   { file = "MiniCPM5-1B-Q8_0.gguf", size = 1153529216, sha256 = "0dc7638539067268774c275a14a6ec9c7e01f7eeb2cff606c8590361fa527e4c" },
 ]
-
-[[model]]
-id = "llama-3.2-1b"
-name = "Llama 3.2 1B Instruct"
-by = "Meta"
-type = "chat"
-note = "Meta's smallest Llama 3.2: a 1B assistant that runs almost anywhere. Officially supports eight languages and has a 128K-token context."
-tagline = "Meta's smallest assistant; runs almost anywhere."
-license = "Llama 3.2 Community License"
-params = "1.2B"
-context = 131072
-features = ["tiny"]
-
-[model.run.llamacpp]
-repo = "unsloth/Llama-3.2-1B-Instruct-GGUF"
-rev = "b69aef112e9f895e6f98d7ae0949f72ff09aa401"
-files = [
-  { file = "Llama-3.2-1B-Instruct-Q4_K_M.gguf", size = 807694368, sha256 = "3f5a22426976ab26cfe84dba63c1d08391717abb1af893e10f1b2968d862dcc1", best = true },
-  { file = "Llama-3.2-1B-Instruct-Q8_0.gguf", size = 1321082528, sha256 = "3f87a880027e7b9ea8e0da9e4009584336f352af444a0e6e5c20721ac4c7ffd1" },
-]
-
-[model.run.ollama]
-ref = "llama3.2:1b"
-size = 1321098329
 
 [[model]]
 id = "qwen3.5-0.8b"
@@ -223,29 +199,6 @@ ref = "granite4.2:3b"
 size = 2244023965
 
 [[model]]
-id = "llama-3.2-3b"
-name = "Llama 3.2 3B Instruct"
-by = "Meta"
-type = "chat"
-note = "Meta's 3B Llama 3.2: a well-known small assistant with a 128K-token context and eight officially supported languages."
-tagline = "A well-known small assistant."
-license = "Llama 3.2 Community License"
-params = "3.2B"
-context = 131072
-
-[model.run.llamacpp]
-repo = "unsloth/Llama-3.2-3B-Instruct-GGUF"
-rev = "e7d0997e49c9cb00d88b4c1a6a16aa894b0bbc31"
-files = [
-  { file = "Llama-3.2-3B-Instruct-Q4_K_M.gguf", size = 2019377600, sha256 = "6c99cc00ae910f6a532a80022cb4bc1939094527a089c29294b841c0bd87f74d", best = true },
-  { file = "Llama-3.2-3B-Instruct-Q8_0.gguf", size = 3421898816, sha256 = "f34112a11b7dad74ab517dedf6dcf00d624c9adac2dc0c72c719ca0478554ef2" },
-]
-
-[model.run.ollama]
-ref = "llama3.2:3b"
-size = 2019393189
-
-[[model]]
 id = "smollm3-3b"
 name = "SmolLM3 3B"
 by = "Hugging Face"
@@ -291,74 +244,6 @@ mmproj = { file = "Ministral-3-3B-Instruct-2512-BF16-mmproj.gguf", size = 841501
 [model.run.ollama]
 ref = "ministral-3:3b"
 size = 2953840808
-
-[[model]]
-id = "falcon-h1-3b"
-name = "Falcon-H1 3B Instruct"
-by = "TII"
-type = "chat"
-note = "A 3B model from the Technology Innovation Institute that mixes Transformer and Mamba layers, with a 128K-token context and several languages."
-tagline = "A small hybrid assistant with a long context."
-license = "Falcon LLM License"
-params = "3.1B"
-context = 131072
-features = ["multilingual", "long context"]
-
-[model.run.llamacpp]
-repo = "tiiuae/Falcon-H1-3B-Instruct-GGUF"
-rev = "18cc9812739f6040f795ddf9d92c9da9a8551572"
-files = [
-  { file = "Falcon-H1-3B-Instruct-Q4_K_M.gguf", size = 1888612384, sha256 = "1926265eab19b0e47f0c2739e499a18e388373a616d71a218b924d5b95bdf702", best = true },
-  { file = "Falcon-H1-3B-Instruct-Q8_0.gguf", size = 3351951232, sha256 = "2b69da4470f067d38faf05e838bdb2cde099dbc7c812507e538e83132d3a0f2f" },
-]
-
-[[model]]
-id = "phi-4-mini"
-name = "Phi-4-mini Instruct"
-by = "Microsoft"
-type = "chat"
-note = "Microsoft's 3.8B model with stronger multilingual support, reasoning and mathematics than earlier Phi models, a 128K-token context and the MIT licence."
-tagline = "Microsoft's small assistant, good at maths."
-license = "MIT"
-params = "3.8B"
-context = 131072
-features = ["multilingual", "long context"]
-
-[model.run.llamacpp]
-repo = "unsloth/Phi-4-mini-instruct-GGUF"
-rev = "78eb92a46fc37e6b524df991ed9aca9bc6aa7b80"
-files = [
-  { file = "Phi-4-mini-instruct-Q4_K_M.gguf", size = 2491874272, sha256 = "88c00229914083cd112853aab84ed51b87bdf6b9ce42f532d8c85c7c63b1730a", best = true },
-  { file = "Phi-4-mini-instruct.Q8_0.gguf", size = 4084611040, sha256 = "26188c6050d525376a88b04514c236c5e28a36730f1e936f2a00314212b7ba42" },
-]
-
-[model.run.ollama]
-ref = "phi4-mini:3.8b"
-size = 2491876774
-
-[[model]]
-id = "qwen3-4b-instruct-2507"
-name = "Qwen3 4B Instruct 2507"
-by = "Alibaba (Qwen)"
-type = "chat"
-note = "The July 2025 update of Qwen3 4B without a thinking phase: direct answers and a 262K-token context."
-tagline = "Direct answers, without a thinking phase."
-license = "Apache-2.0"
-params = "4B"
-context = 262144
-features = ["multilingual", "long context"]
-
-[model.run.llamacpp]
-repo = "unsloth/Qwen3-4B-Instruct-2507-GGUF"
-rev = "a06e946bb6b655725eafa393f4a9745d460374c9"
-files = [
-  { file = "Qwen3-4B-Instruct-2507-Q4_K_M.gguf", size = 2497281120, sha256 = "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597", best = true },
-  { file = "Qwen3-4B-Instruct-2507-Q8_0.gguf", size = 4280405600, sha256 = "391c1e410fd9f4cf2de2b510273b56a84c19ce18f4fa3bfb3774031dac4ef068" },
-]
-
-[model.run.ollama]
-ref = "qwen3:4b-instruct-2507-q4_K_M"
-size = 2497293803
 
 [[model]]
 id = "qwen3.5-4b"
@@ -416,29 +301,6 @@ mmproj = { file = "gemma-4-E4B-it-mmproj.gguf", size = 991552256, sha256 = "7498
 [model.run.ollama]
 ref = "gemma4:e4b"
 size = 6583656505
-
-[[model]]
-id = "llama-3.1-8b"
-name = "Llama 3.1 8B Instruct"
-by = "Meta"
-type = "chat"
-note = "Meta's 8B Llama 3.1, a long-standing reference for local use, with a 128K-token context."
-tagline = "A long-standing reference for local use."
-license = "Llama 3.1 Community License"
-params = "8B"
-context = 131072
-features = ["long context"]
-
-[model.run.llamacpp]
-repo = "unsloth/Llama-3.1-8B-Instruct-GGUF"
-rev = "600b0020115fd6b17f0752848fe7b5a1be686bcd"
-files = [
-  { file = "Llama-3.1-8B-Instruct-Q4_K_M.gguf", size = 4920739200, sha256 = "b3bdbf23b47d7e6bb791c99b206deb169cd5a96362a9e3399028df2faacdc506" },
-]
-
-[model.run.ollama]
-ref = "llama3.1:8b"
-size = 4920753328
 
 [[model]]
 id = "olmo-3-7b-instruct"
@@ -539,6 +401,29 @@ ref = "lfm2.5:8b"
 size = 5156075525
 
 [[model]]
+id = "nemotron-3.5-bolt-e4b"
+name = "Nemotron 3.5 Bolt E4B"
+by = "NVIDIA"
+type = "chat"
+note = "NVIDIA's further training of Gemma 4 E4B for assistants that run on a computer of one's own: better at following instructions, at using tools over several turns and at keeping to what it is given, with a reasoning mode to turn on and a 64K-token context. Text only. NVIDIA publishes the one size it measured."
+tagline = "Gemma 4 E4B, tuned by NVIDIA for assistants."
+license = "OpenMDW License 1.1"
+params = "7.5B"
+context = 65536
+features = ["tools"]
+
+[model.run.llamacpp]
+repo = "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-4GB"
+rev = "1db54d5b12533ff1bcaa8e42cf4c667988a1f1be"
+files = [
+  { file = "Nemotron-3.5-Bolt-E4B-Q4_K_M.gguf", size = 6180446208, sha256 = "c8af2b8aea10a690a1d9491db744a9446660173cb38fc489612b556615a69612" },
+]
+
+[model.run.ollama]
+ref = "nemotron-3.5-bolt:e4b"
+size = 7908813050
+
+[[model]]
 id = "qwen3.5-9b"
 name = "Qwen3.5 9B"
 by = "Alibaba (Qwen)"
@@ -621,31 +506,31 @@ ref = "ministral-3:14b"
 size = 9082537546
 
 [[model]]
-id = "mistral-small-3.2-24b"
-name = "Mistral Small 3.2 24B"
-by = "Mistral AI"
+id = "gemma-4-26b-a4b"
+name = "Gemma 4 26B A4B"
+by = "Google"
 type = "chat"
-note = "A 24B model with better function calling and instruction following than 3.1, that also reads pictures. For a computer with 32 GB of memory. Apache 2.0."
-tagline = "A strong assistant for 32 GB of memory."
+note = "The Gemma 4 mixture of experts: it uses about 4 billion of its 26 billion parameters for each word, so it answers about as fast as a 4B model. Reads text and pictures, with a 256K-token context and more than 140 languages. For a computer with 24 to 32 GB of memory. Apache 2.0."
+tagline = "A big Gemma that answers fast."
 license = "Apache-2.0"
-params = "23.6B"
-context = 131072
+params = "25.2B"
+context = 262144
 input = ["text", "image"]
-features = ["tools"]
+features = ["multilingual", "long context"]
 
 [model.run.llamacpp]
-repo = "unsloth/Mistral-Small-3.2-24B-Instruct-2506-GGUF"
-rev = "b750ec2299225e492f1bd27cab88a0a595fa848f"
+repo = "google/gemma-4-26B-A4B-it-qat-q4_0-gguf"
+rev = "d1c082be9cf3c8a514acf63b8761f4b41935842e"
 files = [
-  { file = "Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf", size = 14333922848, sha256 = "a3cc56310807ed0d145eaf9f018ccda9ae7ad8edb41ec870aa2454b0d4700b3c" },
+  { file = "gemma-4-26B_q4_0-it.gguf", size = 14439363584, sha256 = "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d", label = "Q4_0 (QAT)" },
 ]
 
 [model.run.llamacpp.companions]
-mmproj = { file = "mmproj-F16.gguf", size = 878053568, sha256 = "d6af684ae9136398eaa0b59ea9e0b0b850bb6ac5084f1e8c5cb8f85251825eaf" }
+mmproj = { file = "gemma-4-26B-it-mmproj.gguf", size = 1194828160, sha256 = "a359953a076b877db30c31dbbb4c6d93b4a6e017ee5db5784247e4d4c0dd4f3b" }
 
 [model.run.ollama]
-ref = "mistral-small3.2:24b"
-size = 15177384862
+ref = "gemma4:26b"
+size = 18731025629
 
 [[model]]
 id = "bonsai-2-4b"

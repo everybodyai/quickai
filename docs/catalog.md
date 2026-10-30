@@ -25,7 +25,7 @@ Best for this computer (30.6 GB of memory)
  Also good:  Gemma 4 E4B  Reads text, pictures and audio.                 (eye)(ear)(globe) [5.7 GB] Other sizes
  All 53 models that do this
 [ Or search all 77 models                                              ] [Browse all 77]
-Nothing is downloaded until you click. The list was checked on 2026-10-07.
+Nothing is downloaded until you click. The list was checked on 2026-10-30.
 ```
 
 - **The tasks are the vocabulary's** (`[[task]]` of `vocab/core.toml`: Chat, Write code, Solve problems, Read pictures, Read scans, Translate,
@@ -53,7 +53,7 @@ Nothing is downloaded until you click. The list was checked on 2026-10-07.
 ```
 Recommended models                                                                        x
 < What do you want to do?
-78 models that run with llama.cpp. The list was checked on 2026-10-07. Nothing is downloaded until you click a size.
+73 models that run with llama.cpp. The list was checked on 2026-10-30. Nothing is downloaded until you click a size.
 This computer has 31.0 GB of memory: sizes that would not fit are greyed.
 Search: [ a name, a maker, or what you need: image, code, thinking...        ] Size: Any  Small (< 4 GB)  Medium (4-15 GB)  Large (15 GB+)
  * Start here (14)  | Qwen3.5 4B   Alibaba (Qwen) · 4.2B · Apache-2.0 · 262.1K context    (v Installed)
@@ -95,22 +95,32 @@ What was fetched is **named as the list names it** in the model picker (`Qwen3.5
 
 ## 2. The list
 
-Eight documents, one for each category, in `crates/quickai-runtime/manifests/catalog/` (compiled into the application). They are **generated** by
+One document for each category, in `crates/quickai-runtime/manifests/catalog/` (compiled into the application). They are **generated** by
 `scripts/catalog.py` from picks (section 5), so that every commit, size, SHA-256 and pull size is read from the real site and none is typed.
 
 | Page | Models | What is in it |
 |---|---|---|
-| Chat | 27 | Assistants from 230 MB to 14 GB: LFM2.5, Qwen3.5 (0.8B to 9B), Gemma 4 (E2B, E4B, 12B), Granite 4.2, Ministral 3, Llama 3.2 and 3.1, Phi-4-mini, SmolLM3, MiniCPM5, Falcon-H1, Olmo 3, Mistral Small 3.2, and Bonsai 2 4B, the ternary model that ships with QuickAI and starts with its thinking off |
-| Reasoning | 10 | Models that think before they answer: LFM2.5 Thinking, Qwen3 4B Thinking, Phi-4-mini Reasoning, Nemotron 3 Nano, Ministral 3 Reasoning, DeepSeek-R1-0528 (Qwen3 8B), Olmo 3 Think, gpt-oss 20B, Magistral Small |
-| Code | 7 | Qwen2.5-Coder (0.5B, 1.5B, 7B, 14B), Seed-Coder 8B, Devstral Small, Qwen3-Coder 30B-A3B (the one large model, for a big computer) |
-| Vision | 9 | SmolVLM2, LFM2.5-VL (450M, 1.6B, 3B), MiniCPM-V 4.6, Qwen3-VL (2B, 4B, 8B) |
-| Documents | 6 | OCR and document models: Granite Docling, GLM-OCR, LightOnOCR, HunyuanOCR, Granite Vision, DeepSeek-OCR |
-| Audio | 5 | Models that listen: Qwen3-ASR (0.6B, 1.7B), Granite Speech, Voxtral Mini, Ultravox (Gemma 4 E2B and E4B on the Chat page hear too) |
-| Translation | 4 | Hy-MT2 (1.8B, 7B) and TranslateGemma (4B, 12B; Ollama only) |
-| Embedding | 12 | EmbeddingGemma, BGE (small, M3), Nomic Embed (v1.5, v2 MoE), mxbai-embed-large, LFM2.5 Embedding, Qwen3 Embedding (0.6B, 4B, 8B), all-MiniLM, and a reranker (Qwen3 Reranker 0.6B) |
+| Chat | 22 | Assistants from 230 MB to 13 GB: LFM2.5 (350M, 1.2B, 8B-A1B), Qwen3.5 (0.8B to 9B), Gemma 4 (E2B, E4B, 12B, 26B A4B), Granite 4.2, Ministral 3, MiniCPM5, SmolLM3, Olmo 3, Nemotron 3.5 Bolt E4B, and Bonsai 2 4B, the ternary model that ships with QuickAI and starts with its thinking off |
+| Reasoning | 12 | Models that think before they answer: LFM2.5 (1.2B Thinking, 2.6B, 24B-A2B), Nanbeige4.2 3B, K2 Horizon (3.7B, 7B), Ling 3.0 Tiny, Ministral 3 Reasoning, Ornith 1.5 9B, gpt-oss 20B, Qwen3.8 27B (the one large model, for 32 GB) |
+| Code | 7 | Qwen2.5-Coder (0.5B, 1.5B, 7B: completion as one types), MiMo-V2.6 Distill 9B, Mellum2.1 Thinking, Devstral Small 2, Qwen3.6 35B-A3B (large, for 32 GB) |
+| Vision | 6 | LFM2.5-VL (450M, 1.6B, 3B), MiniCPM-V 4.7 (1B, and 35B-A3B, large), Qwen3-VL 8B. Qwen3.5 and Gemma 4 on the Chat page read pictures too, and the task *Read pictures* finds them |
+| Documents | 7 | OCR and document models: Granite Docling, MiniCPM-OCR, OvisOCR2, LightOnOCR-2, PaddleOCR-VL, GLM-OCR, Granite Vision |
+| Audio | 5 | Models that listen: Qwen3-ASR (0.6B, 1.7B), Granite Speech 5.0, Voxtral Mini, Ultravox (Gemma 4 E2B and E4B on the Chat page hear too) |
+| Translation | 6 | Hy-MT2 (1.8B, 7B), Index-Translate (2B, 9B) and TranslateGemma (4B, 12B; Ollama only) |
+| Embedding | 11 | EmbeddingGemma (300M, 2), BGE small, Nomic Embed v1.5, LFM2.5 Embedding, Qwen3 Embedding (0.6B, 4B, 8B), Harrier OSS v1 0.6B, all-MiniLM, and a reranker (Qwen3 Reranker 0.6B) |
 
-77 are offered by llama.cpp (as files from Hugging Face) and 50 by Ollama (as a name to pull), 47 by both. By the size of their smallest button, 56 are small, 23 medium
-and 1 large: the list is about small and medium models, as asked, and the large ones are for a later page. The 14 models "Start here" shows are one or two for each need.
+Nine documents with Video's (section 3 of [comfyui.md](comfyui.md)): 77 models. 73 are offered by llama.cpp (as files from Hugging Face) and 37 by Ollama (as a name to pull), 34 by
+both. By the size of their smallest button, 49 are small, 25 medium and 3 large: the list is about small and medium models, with one large model on the
+pages where the large ones are clearly better (Reasoning, Code, Vision). The 17 models "Start here" shows are one or two for each need.
+
+**How it was refreshed on 2026-10-30.** Each page's models were weighed against what had come out since the last list, on independent results where there were
+some (Artificial Analysis's test of small models run with llama.cpp, 2026-08-24, for Reasoning; the Open ASR Leaderboard for Audio; MTEB for Embedding;
+OmniDocBench v1.6 for Documents) and on the makers' own cards otherwise. A model went when a newer one of its size did clearly better (Llama 3.2 and 3.1,
+Phi-4-mini, Falcon-H1, Qwen3 2507, Mistral Small 3.2, Qwen3 4B Thinking, Phi-4-mini Reasoning, Nemotron 3 Nano, DeepSeek-R1-0528 (Qwen3 8B), Olmo 3 Think,
+Magistral Small, Seed-Coder, Qwen2.5-Coder 14B, Qwen3-Coder 30B-A3B, Devstral Small 2507, SmolVLM2, MiniCPM-V 4.6, Qwen3-VL 2B and 4B, HunyuanOCR,
+DeepSeek-OCR, LightOnOCR 1B, BGE-M3, mxbai-embed-large, Nomic Embed v2 MoE, Granite Speech 4.1). A model whose results are only its maker's was added
+beside the one it may replace, not in its place (Index-Translate beside Hy-MT2). Left out for now: LFM3 and NVIDIA's Dory (architectures llama.cpp b11889
+does not read), Jina v5 embeddings (CC BY-NC 4.0), and models whose only GGUF files are from little-known uploaders.
 
 **What a model must have to be in it** (checked by tests, J08): a maker, a licence and a note; a commit and a SHA-256 on every file; a projector in the list
 for every model that reads pictures or listens, with the bundle that fetches it; its mode when it is an embedding model; an architecture that the llama.cpp

@@ -7,7 +7,7 @@ schema = 1
 kind = "catalog"
 id = "video"
 title = "Video"
-verified = "2026-10-08"
+verified = "2026-10-30"
 
 [[model]]
 id = "ltx-video-2b-distilled"

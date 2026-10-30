@@ -3274,7 +3274,7 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
             .catalog
             .entries
             .iter()
-            .find(|e| e.name == "Qwen2.5-Coder 7B Instruct")
+            .find(|e| e.name == "Mellum2.1 Thinking")
             .unwrap()
             .clone();
         let main = quickai_core::lookup::picks::main_offer(&coder).unwrap();
