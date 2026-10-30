@@ -951,7 +951,8 @@ mod tests {
             app.show_catalog_window(ui.ctx());
             app.show_add_model_window(ui.ctx());
             app.show_connect_popover(ui.ctx());
-            app.show_guide_window(ui.ctx());
+            app.show_help_window(ui.ctx());
+            app.show_help_marks(ui.ctx());
         });
         output.textures_delta.clear();
     }
@@ -977,16 +978,20 @@ mod tests {
                 // the windows and panels of UI v2, open in every state
                 app.change_open = true;
                 app.add_model_open = true;
-                app.guide = Some(super::super::guide::Guide::GettingStarted);
+                app.help.open = true;
                 app.missing_binary_warned = state == ServerState::Starting;
                 app.run_reached_running = state == ServerState::Crashed;
                 app.named.notice = (state == ServerState::Idle).then(|| "a notice".to_string());
                 draw_everything(&mut app, &ctx, state);
             }
-            // every page of the Settings (C190)
+            // every page of the Settings (C190), and of Help (C191)
             for page in app.settings_pages() {
                 app.show_settings = true;
                 app.settings_page = page.page;
+                draw_everything(&mut app, &ctx, ServerState::Idle);
+            }
+            for page in super::super::help::every_page() {
+                app.help.page = page;
                 draw_everything(&mut app, &ctx, ServerState::Idle);
             }
             // and with the models gone, or a removal waiting for a yes

@@ -156,6 +156,7 @@ pub(super) fn connect_button(ui: &mut egui::Ui, size: egui::Vec2, hover: &str) -
     let plug =
         icons::framed_icon_button(ui, Role::Normal, true, Icon::Plug, size).on_hover_text(hover);
     ui.data_mut(|d| d.insert_temp(anchor_id(), plug.rect));
+    super::help::mark_spot(ui, super::help::Spot::Plug, plug.rect);
     plug.clicked()
 }
 

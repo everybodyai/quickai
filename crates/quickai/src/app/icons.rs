@@ -58,6 +58,8 @@ pub(super) enum Icon {
     // the pages of the Settings: the program's builds, and how it is started
     Package,
     Terminal,
+    Keyboard,
+    Route,
 }
 
 /// Draws `icon` in `rect` (it is drawn in the largest square that fits, in the middle) in `color`.
@@ -544,6 +546,38 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
             ]);
             line(&[(7.0, 9.5), (10.0, 12.0), (7.0, 14.5)]);
             line(&[(12.5, 15.0), (17.0, 15.0)]);
+        }
+        Icon::Keyboard => {
+            line(&[
+                (2.0, 6.0),
+                (22.0, 6.0),
+                (22.0, 18.0),
+                (2.0, 18.0),
+                (2.0, 6.0),
+            ]);
+            for x in [6.0, 10.0, 14.0, 18.0] {
+                dot(x, 10.0, 1.1);
+            }
+            line(&[(7.0, 14.5), (17.0, 14.5)]);
+        }
+        Icon::Route => {
+            // a way from one point to another, with a turn and back
+            ring(6.0, 19.0, 2.2);
+            ring(18.0, 5.0, 2.2);
+            line(&[
+                (8.2, 19.0),
+                (15.0, 19.0),
+                (17.5, 18.0),
+                (18.5, 15.5),
+                (17.5, 13.0),
+                (15.0, 12.0),
+                (9.0, 12.0),
+                (6.5, 11.0),
+                (5.5, 8.5),
+                (6.5, 6.0),
+                (9.0, 5.0),
+                (15.8, 5.0),
+            ]);
         }
     }
 }

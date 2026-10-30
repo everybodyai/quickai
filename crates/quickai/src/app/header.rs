@@ -163,10 +163,10 @@ mod tests {
         };
         let mut output = ctx.run_ui(raw, |ui| {
             app.show_window(ui);
-            // the windows of the main window (UI v2): Add a model, Connect an app, the guides
+            // the windows of the main window (UI v2): Add a model, Connect an app, Help
             app.show_add_model_window(ui.ctx());
             app.show_connect_popover(ui.ctx());
-            app.show_guide_window(ui.ctx());
+            app.show_help_window(ui.ctx());
         });
         output.textures_delta.clear();
         output
