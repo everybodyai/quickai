@@ -811,8 +811,8 @@ deletion.
 **Download from the app.** `GET /v1/me` returns every row and object of the install as one JSON file, saved where the
 person chooses.
 
-**Where the data is.** Choose an EU location for D1 and R2 where Cloudflare offers one (R2 has an EU jurisdiction; check
-D1's current options), so that the policy can say where the data lives.
+**Where the data is.** ~~Choose an EU location for D1 and R2.~~ Set aside by the user on 2026-10-30: "ignore the eu
+rule, the data is stored elsewhere". The policy names Cloudflare and no location.
 
 ## 13. The policy and the other documents
 
@@ -1064,7 +1064,7 @@ implementation plan, decisions C195 to C197. What differs from the sections abov
 ## 22. Built on the server (2026-10-30)
 
 The user, the same day: "prepare the apis and deploy that - I also need a page to administer the data". Built and
-deployed: 4.42.3 (the API) and 4.42.6 (the admin), in a new repository `services` (local; not on GitHub yet, see below),
+deployed: 4.42.3 (the API) and 4.42.6 (the admin), in a new public repository, [everybodyai/services](https://github.com/everybodyai/services),
 on its branch `main`.
 
 - **`api.everybodyai.dev`** (Worker `everybodyai-api`): `POST /v1/events`, `POST /v1/crash`, `GET` and `DELETE /v1/me`,
@@ -1076,8 +1076,9 @@ on its branch `main`.
   `npm run sync:schema`. The server's rules repeat `Shape::accepts`, and refuse any unknown key too. A test sends an
   example of every event and field in the list.
 - **Crash bodies are in D1, not R2**: R2 is not enabled on the account, and a report is at most 256 KiB, well under
-  D1's 2 MB a row. Deletion is then one statement per table. The database `telemetry` is created in the EU
-  jurisdiction (§12, "where the data is"), and PRIVACY.md says so.
+  D1's 2 MB a row. Deletion is then one statement per table. No EU location: the user set that rule aside ("ignore the
+  eu rule, the data is stored elsewhere"), and PRIVACY.md names no location. (The database `telemetry` was first made
+  with D1's EU jurisdiction; it was made again without it the same day.)
 - **Crash groups** are keyed by QuickAI's first three frames (the functions, not the lines, so a crash keeps its group
   across versions), or by the location and the message without its numbers. A group marked fixed in a version opens
   again when the crash comes from that version or a later one.
@@ -1094,7 +1095,7 @@ on its branch `main`.
 - **Tests**: 36 Worker tests in workerd (vitest), among them each refusal, the version tags, 429, deletion against
   every table with an `install_id` column (read from the database the migration made), the nightly fold and
   retention, the admin's sign-in, CSRF refusal, escaping and each change.
-- **Left**: the repository on GitHub as `everybodyai/services` (public, decision 10); Cloudflare Access for the admin;
+- **Left**: Cloudflare Access for the admin;
   Workers Paid (decision 8); the app reading `GET /v1/status`; the community (4.42.8 to 4.42.12); the public page of
   numbers (4.42.13); the function lists of a release for checking a backtrace (§7.5).
 

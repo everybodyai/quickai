@@ -210,10 +210,10 @@ does link your reports together, so the data is pseudonymous, not anonymous. Set
 install id** replaces it. Don't post it in public: it is how you ask EverybodyAI for your data.
 
 **Where it goes and how long it is kept.** To EverybodyAI's server, `api.everybodyai.dev`, which runs on Cloudflare
-(Workers and a D1 database kept in the European Union) under Cloudflare's data processing terms. The server records the
-country your request came from (two letters), not your address, and logs nothing of a request. Reports are kept in full
-for 90 days, and counts per engine and model for 13 months; after that only totals with no install id remain. Crash
-reports are kept for 180 days.
+(Workers and a D1 database) under Cloudflare's data processing terms. The server records the country your request came
+from (two letters), not your address, and logs nothing of a request. Reports are kept in full for 90 days, and counts per
+engine and model for 13 months; after that only totals with no install id remain. Crash reports are kept for 180 days.
+The server's code is public: <https://github.com/everybodyai/services>.
 
 **Your choices.** Settings → Privacy → **Show what is sent** shows what was sent, what waits, and everything that can be
 sent. **Download what EverybodyAI holds** saves all of it to a file in `~/.quickai/telemetry`; **Delete what EverybodyAI
