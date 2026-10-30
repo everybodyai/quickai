@@ -95,7 +95,10 @@ EOF
     click 815 16; shoot engine-menu; click 600 400 0.6
     click 551 100; shoot change; click 551 100 0.6
     click 905 664; shoot computer-menu; click 600 400 0.6
-    click 110 59 2.5; shoot add-model; click 816 85 0.8
+    # Add a model is a window of its own (C194): with no window manager on this screen it opens at the corner, over the main
+    # window, and Escape closes it
+    click 110 59 2.5; shoot add-model 0,0 720x480
+    xdotool windowfocus --sync "$(xdotool search --name "^Add a model$" | head -1)" key Escape; sleep 0.8
     click 959 16 4; shoot settings 0,0 760x600; click 35 573 1
 
     # a program that holds the port: Start asks what to do
@@ -128,7 +131,7 @@ EOF
     cut engine-menu engine-menu 560 0 420 230
     cut change change 220 40 760 360
     cut computer-menu computer-menu 560 540 420 140
-    cut add-model add-model 139 60 702 447
+    cut add-model add-model 0 0 720 396
     cut settings settings 0 0 760 600
     cut port-taken port-taken 255 268 470 145
     cut connect connect 228 40 748 395

@@ -42,16 +42,12 @@ impl App {
         }
         self.take_shortcuts(ui.ctx(), state, active);
 
-        let menu_bar = egui::Panel::top("menu_bar")
+        egui::Panel::top("menu_bar")
             .frame(theme::bar_frame(egui::Margin::symmetric(6, 3)))
             .show(ui, |ui| self.show_menu_bar(ui));
-        let status_bar = egui::Panel::bottom("status_bar")
+        egui::Panel::bottom("status_bar")
             .frame(theme::bar_frame(egui::Margin::symmetric(10, 3)))
             .show(ui, |ui| self.show_status_bar(ui, state));
-        self.room = egui::Rect::from_x_y_ranges(
-            ui.ctx().content_rect().x_range(),
-            menu_bar.response.rect.bottom()..=status_bar.response.rect.top(),
-        );
         // a computer QuickAI sets up, chosen in the status bar: the page of its run (WP4.33)
         let remote_view = self.setup_in_use().is_some();
         if self.runs_alone() && !remote_view {
@@ -171,6 +167,8 @@ impl App {
                     self.open_help();
                 }
                 if ui.button("About QuickAI").clicked() {
+                    // open already, somewhere behind the main window: it comes to the front
+                    self.raise_about = self.show_about;
                     self.show_about = true;
                 }
             });
@@ -565,6 +563,7 @@ impl App {
                 }
             }
             RowAction::Details => {
+                self.raise_details = self.details_of.is_some();
                 self.details_of = self.models.get(index).map(|m| m.filename.clone());
             }
             RowAction::CopyName => {

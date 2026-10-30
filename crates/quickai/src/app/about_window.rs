@@ -2,15 +2,23 @@
 
 use eframe::egui;
 
+use super::theme;
 use super::App;
+
+/// The title of the window, which is one of its own (C194).
+const ABOUT_TITLE: &str = "About QuickAI";
+
+/// Which window About is: the id the display knows it by.
+pub(super) fn about_viewport() -> egui::ViewportId {
+    egui::ViewportId::from_hash_of("quickai_about")
+}
 
 impl App {
     pub(super) fn show_about_window(&mut self, ctx: &egui::Context) {
         if !self.show_about {
             return;
         }
-        let mut open = true;
-        let mut close_clicked = false;
+        let mut close = false;
         // the program that goes with the engine, if one does (Open WebUI beside Ollama): downloaded on request too
         let companion = self.companion_doc().map(|c| {
             (
@@ -46,19 +54,13 @@ impl App {
                     ),
                 )
             });
-        // what is read scrolls, and the window's title, margins and Close button are 112 px: with less than a window
-        // of 592 to put it in, the text gets what is left (so that Close is in view)
-        let scroll = (ctx.content_rect().height() - 112.0).clamp(160.0, 480.0);
-        egui::Window::new("About QuickAI")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(true)
-            .default_width(520.0)
-            .max_height(600.0)
-            .show(ctx, |ui| {
-                egui::ScrollArea::vertical()
-                    .max_height(scroll)
-                    .show(ui, |ui| {
+        let id = about_viewport();
+        if std::mem::take(&mut self.raise_about) {
+            ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);
+        }
+        let builder = theme::own_window(ABOUT_TITLE, [560.0, 600.0], [400.0, 300.0]);
+        ctx.show_viewport_immediate(id, builder, |ui, class| {
+            let text = |ui: &mut egui::Ui| {
                         // paragraphs, close together: it is text, and the sections have the space between them
                         ui.spacing_mut().item_spacing.y = 2.0;
                         ui.horizontal(|ui| {
@@ -157,15 +159,41 @@ impl App {
                              THIRD_PARTY_LICENSES.md next to this app.",
                             )
                             .small()
-                            .color(super::theme::palette().muted),
+                            .color(theme::palette().muted),
                         );
-                    });
-
+            };
+            if class == egui::ViewportClass::EmbeddedWindow {
+                // a context that cannot open a window (a test's) shows it inside the main one: what is read scrolls, and
+                // the window's title, margins and Close button are 112 px; with less than a window of 592 to put it in, the
+                // text gets what is left (so that Close is in view)
+                let scroll = (ui.ctx().content_rect().height() - 112.0).clamp(160.0, 480.0);
+                egui::ScrollArea::vertical().max_height(scroll).show(ui, text);
                 ui.add_space(10.0);
                 if ui.button("Close").clicked() {
-                    close_clicked = true;
+                    close = true;
                 }
-            });
-        self.show_about = open && !close_clicked;
+            } else {
+                if ui.input(|i| i.viewport().close_requested()) {
+                    close = true;
+                }
+                egui::Panel::bottom("about_footer")
+                    .frame(theme::page_frame())
+                    .show(ui, |ui| {
+                        if ui.button("Close").clicked() {
+                            close = true;
+                        }
+                    });
+                egui::CentralPanel::default()
+                    .frame(theme::page_frame())
+                    .show(ui, |ui| {
+                        egui::ScrollArea::vertical()
+                            .auto_shrink([false, false])
+                            .show(ui, text);
+                    });
+            }
+        });
+        if close {
+            self.show_about = false;
+        }
     }
 }

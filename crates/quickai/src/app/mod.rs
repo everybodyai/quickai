@@ -222,10 +222,11 @@ pub struct App {
     logo: Option<egui::TextureHandle>,
     /// *Add a model* is open (a window; a first run has it on the page instead).
     add_model_open: bool,
-    /// *Add a model* is as big as the main window (`room`), not the size of what it holds.
-    add_model_max: bool,
-    /// What the main window has between its menu bar and its status bar, as the last frame drew them.
-    room: egui::Rect,
+    /// *Add a model* was asked for again while open: it comes to the front.
+    raise_add_model: bool,
+    /// The same for the window of a model's details, and for About.
+    raise_details: bool,
+    raise_about: bool,
     /// The box of *Add a model* is to be given the keyboard on the next frame.
     focus_add_box: bool,
     /// Help: a window of its own, its page, and what it shows in the main window (`help.rs`).
@@ -455,8 +456,9 @@ impl App {
             remote: remote_ui::RemoteState::default(),
             logo: None,
             add_model_open: false,
-            add_model_max: false,
-            room: egui::Rect::NOTHING,
+            raise_add_model: false,
+            raise_details: false,
+            raise_about: false,
             focus_add_box: false,
             help: help::HelpState::default(),
             change_open: false,

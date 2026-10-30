@@ -870,13 +870,7 @@ impl App {
             ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);
         }
         let mut close = false;
-        let builder = crate::with_app_icon(
-            egui::ViewportBuilder::default()
-                .with_title(COMPUTERS_TITLE)
-                .with_app_id(crate::APP_ID)
-                .with_inner_size([540.0, 360.0])
-                .with_min_inner_size(LEAST),
-        );
+        let builder = theme::own_window(COMPUTERS_TITLE, [540.0, 360.0], LEAST);
         ctx.show_viewport_immediate(id, builder, |ui, class| {
             if class == egui::ViewportClass::EmbeddedWindow {
                 // a context that cannot open a window (a test draws on one with no display) shows it inside the main

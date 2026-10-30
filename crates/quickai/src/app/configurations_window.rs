@@ -276,13 +276,7 @@ impl App {
             ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);
         }
         let mut close = false;
-        let builder = crate::with_app_icon(
-            egui::ViewportBuilder::default()
-                .with_title(CONFIGURATIONS_TITLE)
-                .with_app_id(crate::APP_ID)
-                .with_inner_size(OPENS_AT)
-                .with_min_inner_size(LEAST),
-        );
+        let builder = theme::own_window(CONFIGURATIONS_TITLE, OPENS_AT, LEAST);
         ctx.show_viewport_immediate(id, builder, |ui, class| {
             if class == egui::ViewportClass::EmbeddedWindow {
                 let room = (ui.ctx().content_rect().height() - 120.0).max(200.0);

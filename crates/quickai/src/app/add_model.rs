@@ -2,8 +2,8 @@
 //! Search, Look up online, Recommended). Words search online, a link downloads that file, a path (or the folder
 //! beside the box) adds a file of this computer, and for Ollama a name with a tag (`qwen3:4b`) or a Hugging Face
 //! reference is pulled; Enter in the empty box lists the models most downloaded online. With the box empty, the models of the recommended list that suit this computer are under it,
-//! each with one button. It is a window opened from the head of the list (and the Models menu, and Ctrl+K), and the
-//! whole page of a first run, where there is nothing else to do.
+//! each with one button. It is a window of its own opened from the head of the list (and the Models menu, and Ctrl+K), and
+//! the whole page of a first run, where there is nothing else to do.
 
 use eframe::egui;
 use quickai_core::lookup::present::{Entry, Offer};
@@ -21,6 +21,17 @@ const SUGGESTED: usize = 4;
 /// The kinds of models the box suggests, in the order it suggests them: the ones the chat can talk to.
 const CHAT_KINDS: [&str; 4] = ["chat", "vision", "reasoning", "code"];
 
+/// The title of the window, and the size it opens at: the box and the models it suggests, with room for a few results
+/// (C194: a window of its own, made bigger with the window manager's own buttons and edges).
+pub(super) const ADD_MODEL_TITLE: &str = "Add a model";
+const OPENS_AT: [f32; 2] = [720.0, 480.0];
+const LEAST: [f32; 2] = [440.0, 300.0];
+
+/// Which window *Add a model* is: the id the display knows it by.
+pub(super) fn add_model_viewport() -> egui::ViewportId {
+    egui::ViewportId::from_hash_of("quickai_add_model")
+}
+
 /// The id of the box, so that it can be given the keyboard.
 fn box_id() -> egui::Id {
     egui::Id::new("add_model_box")
@@ -31,6 +42,8 @@ impl App {
     /// keyboard there.
     pub(super) fn open_add_model(&mut self) {
         if !self.models.is_empty() {
+            // open already, somewhere behind the main window: it comes to the front
+            self.raise_add_model = self.add_model_open;
             self.add_model_open = true;
         }
         self.focus_add_box = true;
@@ -51,7 +64,8 @@ impl App {
         }
     }
 
-    /// The window of *Add a model*, while it is open.
+    /// *Add a model*, while it is open: a window of its own (C194), as big as the person makes it with the window manager's
+    /// own buttons and edges (a list of results fills it).
     pub(super) fn show_add_model_window(&mut self, ctx: &egui::Context) {
         if !self.add_model_open {
             return;
@@ -61,49 +75,26 @@ impl App {
             self.add_model_open = false;
             return;
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.add_model_open = false;
-            return;
+        let id = add_model_viewport();
+        if std::mem::take(&mut self.raise_add_model) {
+            ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);
         }
-        let mut open = true;
-        let max = self.add_model_max;
-        let width = (ctx.content_rect().width() - 80.0).clamp(420.0, 700.0);
-        let window = egui::Window::new("Add a model")
-            .open(&mut open)
-            .collapsible(false);
-        let window = if max {
-            // all the main window has between its bars, as a window of another name: the width it had is kept for when
-            // it is made small again
-            let room = if self.room.is_positive() {
-                self.room
-            } else {
-                ctx.content_rect()
-            };
-            window
-                .id(egui::Id::new("add_model_max"))
-                .fixed_rect(room.shrink(8.0))
-        } else {
-            // as tall as what it holds (a long list of results scrolls in its own room)
-            window
-                .id(egui::Id::new("add_model"))
-                .resizable([true, false])
-                .default_width(width)
-                .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 60.0))
-        };
-        let shown = window.show(ctx, |ui| {
-            if max {
-                // as tall as the room even with only the suggestions in it
-                ui.set_min_height(ui.available_height());
-            } else {
-                ui.set_min_width(width - 24.0);
+        let mut close = false;
+        let builder = theme::own_window(ADD_MODEL_TITLE, OPENS_AT, LEAST);
+        ctx.show_viewport_immediate(id, builder, |ui, class| {
+            // Escape closes it, and so does the window manager's close button
+            if ui.input(|i| i.key_pressed(egui::Key::Escape))
+                || (class != egui::ViewportClass::EmbeddedWindow
+                    && ui.input(|i| i.viewport().close_requested()))
+            {
+                close = true;
+                return;
             }
-            self.show_add_model_body(ui);
+            theme::own_window_page(ui, class, |ui| self.show_add_model_body(ui));
         });
-        if shown.is_some_and(|shown| size_button(ctx, &shown.response, max)) {
-            self.add_model_max = !max;
-            self.focus_add_box = true;
+        if close {
+            self.add_model_open = false;
         }
-        self.add_model_open = open;
     }
 
     /// The box, what is being fetched, and under it the results of a search or the suggestions.
@@ -383,84 +374,6 @@ impl App {
             self.fetch_offer(&fetch, ui.ctx());
         }
     }
-}
-
-/// The button beside the × of the title bar of `window` that makes it as big as the main window, or `max`, small again
-/// (a double click on the title does the same); whether it was used. It is on the window's own layer, drawn as egui
-/// draws the ×.
-fn size_button(ctx: &egui::Context, window: &egui::Response, max: bool) -> bool {
-    let (button, title) = size_button_place(ctx, window.rect);
-    let ui = egui::Ui::new(
-        ctx.clone(),
-        egui::Id::new("add_model_size"),
-        egui::UiBuilder::new()
-            .layer_id(window.layer_id)
-            .max_rect(title.union(button)),
-    );
-    let twice = ui
-        .interact(title, ui.id().with("title"), egui::Sense::click())
-        .double_clicked();
-    let button = ui
-        .interact(button, ui.id().with("button"), egui::Sense::click())
-        .on_hover_text(if max {
-            "Make it small again"
-        } else {
-            "Make it as big as the window"
-        });
-    let visuals = ui.style().interact(&button);
-    let stroke = visuals.fg_stroke;
-    let r = button.rect.shrink(2.0).expand(visuals.expansion);
-    let painter = ui.painter();
-    if max {
-        // two windows, one behind the other
-        let front = egui::Rect::from_min_max(
-            r.left_top() + egui::vec2(0.0, 3.0),
-            r.right_bottom() - egui::vec2(3.0, 0.0),
-        );
-        painter.rect_stroke(front, 0.0, stroke, egui::StrokeKind::Middle);
-        painter.line(
-            vec![
-                egui::pos2(r.left() + 3.0, front.top()),
-                r.left_top() + egui::vec2(3.0, 0.0),
-                r.right_top(),
-                r.right_bottom() - egui::vec2(0.0, 3.0),
-                egui::pos2(front.right(), r.bottom() - 3.0),
-            ],
-            stroke,
-        );
-    } else {
-        painter.rect_stroke(r, 0.0, stroke, egui::StrokeKind::Middle);
-    }
-    twice || button.clicked()
-}
-
-/// Where the button of `size_button` is in a window whose outer rectangle is `outer`, and the title round it: egui's title
-/// bar has its × in a square as high as a heading inside the window's margin; the button is one square and a space to
-/// the left of it, as big as the ×.
-pub(super) fn size_button_place(
-    ctx: &egui::Context,
-    outer: egui::Rect,
-) -> (egui::Rect, egui::Rect) {
-    let style = ctx.global_style();
-    let margin = style.spacing.window_margin;
-    let edge = style.visuals.window_stroke().width;
-    let side = ctx.fonts_mut(|f| f.row_height(&egui::TextStyle::Heading.resolve(&style)));
-    let close = egui::Rect::from_min_size(
-        egui::pos2(
-            outer.right() - edge - margin.rightf() - side,
-            outer.top() + edge + margin.topf(),
-        ),
-        egui::Vec2::splat(side),
-    );
-    let square = close.translate(egui::vec2(-(side + style.spacing.item_spacing.x), 0.0));
-    let title = egui::Rect::from_x_y_ranges(
-        outer.left() + edge..=square.left(),
-        outer.top()..=close.bottom() + margin.bottomf(),
-    );
-    (
-        square.shrink((side - style.spacing.icon_width) / 2.0),
-        title,
-    )
 }
 
 /// Whether what is typed in the box of an engine that pulls by name is a model to pull rather than words to look up:

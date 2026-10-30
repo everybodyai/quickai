@@ -80,13 +80,7 @@ impl App {
         }
         let form = self.form();
         let mut close = false;
-        let builder = crate::with_app_icon(
-            egui::ViewportBuilder::default()
-                .with_title(SETTINGS_TITLE)
-                .with_app_id(crate::APP_ID)
-                .with_inner_size(OPENS_AT)
-                .with_min_inner_size(LEAST),
-        );
+        let builder = theme::own_window(SETTINGS_TITLE, OPENS_AT, LEAST);
         ctx.show_viewport_immediate(id, builder, |ui, class| {
             if class == egui::ViewportClass::EmbeddedWindow {
                 // A context that cannot open a window (a test draws on one with no display) shows it inside
