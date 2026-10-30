@@ -3,8 +3,9 @@
 Telemetry and crash reports the way VS Code does them, the admin of everybodyai.dev, and the shared configurations of
 quickai.everybodyai.dev.
 
-_Status: plan, 2026-10-30; nothing of it is built. Revised the same day: no signing anywhere, following VS Code. The
-decisions in [§18](#18-decisions) were made by the user._
+_Status: plan, 2026-10-30. Revised the same day: no signing anywhere, following VS Code. The decisions in
+[§18](#18-decisions) were made by the user. Built since: the app's part ([§21](#21-built-in-the-app-2026-10-30)), and the
+API and the admin, deployed ([§22](#22-built-on-the-server-2026-10-30)); the community is not built._
 
 The user, 2026-10-30: "we need to track the usage of the quickai and also provide option for the user to provide crash
 reports. everybodyai.dev (admin page) needs to be created and it has to have apis in place which accepts the
@@ -1059,6 +1060,43 @@ implementation plan, decisions C195 to C197. What differs from the sections abov
   (4.42.8 to 4.42.12); `strip = "debuginfo"` (S-R2); the function lists of a release for the plausibility of a
   backtrace; a lawyer's read of the policy; the site's page of QuickAI still says "No telemetry", which is true of
   0.1.0 and changes with the release that carries this.
+
+## 22. Built on the server (2026-10-30)
+
+The user, the same day: "prepare the apis and deploy that - I also need a page to administer the data". Built and
+deployed: 4.42.3 (the API) and 4.42.6 (the admin), in a new repository `services` (local; not on GitHub yet, see below),
+on its branch `main`.
+
+- **`api.everybodyai.dev`** (Worker `everybodyai-api`): `POST /v1/events`, `POST /v1/crash`, `GET` and `DELETE /v1/me`,
+  `GET /v1/status`, with every check of §8.2 and every answer of §9. Workers Logs is off. The Cron trigger runs at
+  02:20 UTC: versions from GitHub, the day folded into `run_days` and `rollups`, the retention of §12, and an email to
+  the owner about new crash groups and spikes.
+- **The schema the server checks by is the app's own list.** `quickai --telemetry` now prints a `type` for every field
+  (and `values` for a choice) beside the words, and `services/shared/schemas/1.json` is that output, copied by
+  `npm run sync:schema`. The server's rules repeat `Shape::accepts`, and refuse any unknown key too. A test sends an
+  example of every event and field in the list.
+- **Crash bodies are in D1, not R2**: R2 is not enabled on the account, and a report is at most 256 KiB, well under
+  D1's 2 MB a row. Deletion is then one statement per table. The database `telemetry` is created in the EU
+  jurisdiction (§12, "where the data is"), and PRIVACY.md says so.
+- **Crash groups** are keyed by QuickAI's first three frames (the functions, not the lines, so a crash keeps its group
+  across versions), or by the location and the message without its numbers. A group marked fixed in a version opens
+  again when the crash comes from that version or a later one.
+- **`admin.everybodyai.dev`** (Worker `everybodyai-admin`): the pages of §10 except Community (nothing to moderate yet).
+  Server-rendered, no script, a CSP of `default-src 'none'`, charts in SVG. The tables of distinct installs read the
+  batches of the period (kept 90 days, the longest period offered); the daily chart reads `rollups`. Buckets under 20
+  installs are shown as "other" on Systems. Every change is in the audit log; a deletion is logged by a hash of the
+  install id, not the id.
+- **Signing in to the admin: a passphrase for now, Access when it is set up.** Cloudflare Zero Trust is not set up on
+  the account (the API token cannot reach it), so the admin takes a passphrase (the secret `ADMIN_PASSWORD`, kept by
+  the owner) and gives a signed cookie for 12 hours (`SESSION_KEY`), limited to 10 tries a minute per address. Signing
+  out ends every session. Once an Access application covers `admin.everybodyai.dev`, setting `ACCESS_TEAM_DOMAIN` and
+  `ACCESS_AUD` makes the Worker require and check Access's token instead, as §10 has it.
+- **Tests**: 36 Worker tests in workerd (vitest), among them each refusal, the version tags, 429, deletion against
+  every table with an `install_id` column (read from the database the migration made), the nightly fold and
+  retention, the admin's sign-in, CSRF refusal, escaping and each change.
+- **Left**: the repository on GitHub as `everybodyai/services` (public, decision 10); Cloudflare Access for the admin;
+  Workers Paid (decision 8); the app reading `GET /v1/status`; the community (4.42.8 to 4.42.12); the public page of
+  numbers (4.42.13); the function lists of a release for checking a backtrace (§7.5).
 
 ## Appendix A: draft text for PRIVACY.md
 
