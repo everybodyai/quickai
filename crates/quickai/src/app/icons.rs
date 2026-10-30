@@ -60,6 +60,8 @@ pub(super) enum Icon {
     Terminal,
     Keyboard,
     Route,
+    // the stars of a configuration of the community
+    Star,
 }
 
 /// Draws `icon` in `rect` (it is drawn in the largest square that fits, in the middle) in `color`.
@@ -578,6 +580,17 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
                 (9.0, 5.0),
                 (15.8, 5.0),
             ]);
+        }
+        Icon::Star => {
+            // five points, and the five corners between them
+            let points: Vec<(f32, f32)> = (0..=10)
+                .map(|i| {
+                    let r = if i % 2 == 0 { 9.5 } else { 4.0 };
+                    let a = (-90.0 + i as f32 * 36.0_f32).to_radians();
+                    (12.0 + r * a.cos(), 12.5 + r * a.sin())
+                })
+                .collect();
+            line(&points);
         }
     }
 }

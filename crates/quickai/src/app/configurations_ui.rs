@@ -87,6 +87,8 @@ pub(super) struct Configs {
     pub reports: BTreeMap<String, Report>,
     /// The files of the folder that could not be used, and why.
     pub unusable: Vec<Unusable>,
+    /// Who each configuration is, by its id (`profile::canonical`): the community's list is compared with it.
+    pub identities: BTreeMap<String, String>,
     pub import: Option<super::configurations_window::ImportDialog>,
     pub export: Option<super::configurations_window::ExportDialog>,
     pub confirm: Option<super::configurations_window::Confirm>,
@@ -107,6 +109,7 @@ impl Configs {
             selected: None,
             reports: BTreeMap::new(),
             unusable: Vec::new(),
+            identities: BTreeMap::new(),
             import: None,
             export: None,
             confirm: None,
@@ -359,7 +362,13 @@ impl App {
         self.forget_installed();
         let installed = self.installed_now();
         let mut reports = BTreeMap::new();
+        let mut identities = BTreeMap::new();
         for entry in self.configuration_entries() {
+            identities.insert(
+                entry.id.clone(),
+                quickai_core::profile::canonical::identity(&self.registry, &entry.configuration)
+                    .identity,
+            );
             let here = self.configuration_inventory(Some(&entry.configuration), &installed);
             reports.insert(
                 entry.id.clone(),
@@ -373,6 +382,7 @@ impl App {
             );
         }
         self.configs.reports = reports;
+        self.configs.identities = identities;
         self.configs.unusable = unusable(&self.registry);
     }
 

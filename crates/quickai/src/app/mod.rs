@@ -29,6 +29,7 @@ mod api_info;
 mod catalog_view;
 mod chat;
 mod command_line;
+mod community_window;
 mod companion;
 mod configurations_ui;
 mod configurations_window;
@@ -201,6 +202,8 @@ pub struct App {
     show_configurations: bool,
     /// It was asked for while open: it comes to the front once.
     raise_configurations: bool,
+    /// The configurations people shared on quickai.everybodyai.dev (`community_window.rs`).
+    community: community_window::CommunityUi,
     /// The person pressed the chat button that sets the companion up: the Settings show its page the next time
     /// they are drawn, whatever page they were on.
     companion_section_wanted: bool,
@@ -454,6 +457,7 @@ impl App {
             configs: configurations_ui::Configs::new(),
             show_configurations: false,
             raise_configurations: false,
+            community: community_window::CommunityUi::new(),
             companion_section_wanted: false,
             advanced_section_wanted: false,
             settings_page: settings_window::SettingsPage::default(),
@@ -940,6 +944,7 @@ impl eframe::App for App {
         self.poll_chat();
         self.poll_remote(ui.ctx());
         self.poll_setup_run(ui.ctx());
+        self.poll_community(ui.ctx());
 
         self.poll_restart(ui.ctx());
         self.telemetry_frame();
@@ -974,6 +979,7 @@ impl eframe::App for App {
         self.show_port_taken_dialog(ui.ctx());
         self.show_configuration_modals(ui.ctx(), false);
         self.show_configurations_window(ui.ctx());
+        self.show_community_window(ui.ctx());
         self.show_telemetry_log(ui.ctx());
         self.show_crash_offer(ui.ctx());
         self.show_report_problem(ui.ctx());

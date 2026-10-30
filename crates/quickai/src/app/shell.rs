@@ -139,6 +139,14 @@ impl App {
                     self.open_configurations();
                     self.raise_configurations = true;
                 }
+                if ui
+                    .button("Community configurations…")
+                    .on_hover_text("Configurations people shared on quickai.everybodyai.dev. The list is fetched when you open it.")
+                    .clicked()
+                {
+                    let ctx = ui.ctx().clone();
+                    self.open_community(&ctx);
+                }
                 if ui.button("Settings…").clicked() {
                     self.toggle_settings();
                 }
