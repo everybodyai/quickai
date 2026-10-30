@@ -1038,7 +1038,6 @@ impl App {
                     Ok(()) => {
                         self.configs.status = Some(format!("Exported to {}", dialog.path.trim()));
                         self.configs.export = None;
-                        self.note_feature("configuration_export");
                         return;
                     }
                     Err(e) => {
@@ -1312,7 +1311,6 @@ impl App {
                 let id = done.configuration.id.clone();
                 self.configs.selected = Some(id.clone());
                 self.configs.status = Some(format!("Imported \"{}\".", done.configuration.name));
-                self.note_feature("configuration_import");
                 self.push_log(format!(
                     "[quickai] Imported the configuration \"{}\".",
                     done.configuration.name

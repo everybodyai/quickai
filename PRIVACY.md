@@ -13,9 +13,8 @@ Scoop, Chocolatey or the AUR.
 ## In short
 
 QuickAI sends nothing to its developer until you choose to. The first time it starts it asks you to pick a
-**telemetry level**: **All** (crash reports, error reports, and counts of what the app did, such as which engine ran
-and whether a model started), **Errors and crashes**, **Crashes only**, or **Off**. Until you answer, and whenever it is
-Off, nothing is sent. Reports go to EverybodyAI's server, `api.everybodyai.dev`, with a random install id and a rough
+**telemetry level**: **Errors and crashes**, **Crashes only**, or **Off**. It never counts how you use the app. Until
+you answer, and whenever it is Off, nothing is sent. Reports go to EverybodyAI's server, `api.everybodyai.dev`, with a random install id and a rough
 description of your computer; they never include your prompts, the model's replies, your files, folders or searches.
 `quickai --telemetry` lists everything the app can send, and Settings → Privacy shows what it did send, lets you change
 the level at any time, and download or delete what EverybodyAI holds (see [Telemetry](#telemetry)).
@@ -166,11 +165,8 @@ app does not always do that for you.
   Start), a model download that failed (its site, such as Hugging Face, and a word for the reason, such as `network`
   or `checksum`, never the file or the address), the window not answering for five seconds or more (for how long, in
   ranges), and a session that ended without closing (counted at the next start).
-- **All** adds counts of what the app did: that it started and was closed (and how long it was open, in ranges),
-  which of its windows were opened, which features were used (the live traffic view, keeping chats, a remote computer,
-  Open WebUI, the chat, importing or exporting a configuration), how a model was added (from the recommended list, a
-  look-up or a link), and for each Start the engine, its build, the model, whether it ran here or on another computer
-  and how long it took to be ready.
+
+There is no level that counts how you use the app: an install that never crashes and hits no error sends nothing.
 
 Every report also says: QuickAI's version, whether it is a build EverybodyAI released or one built from source, the
 commit and the kind of computer it was built for, and how it was installed (AppImage, Snap, DMG...); your system, its
@@ -211,8 +207,9 @@ install id** replaces it. Don't post it in public: it is how you ask EverybodyAI
 
 **Where it goes and how long it is kept.** To EverybodyAI's server, `api.everybodyai.dev`, which runs on Cloudflare
 (Workers and a D1 database) under Cloudflare's data processing terms. The server records the country your request came
-from (two letters), not your address, and logs nothing of a request. Reports are kept in full for 90 days, and counts per
-engine and model for 13 months; after that only totals with no install id remain. Crash reports are kept for 180 days.
+from (two letters), not your address, and logs nothing of a request. Reports are kept in full for 90 days, and crash
+reports for 180 days. The first and last day an install id sent something is kept for 13 months after the last; after
+that only daily totals with no install id remain.
 The server's code is public: <https://github.com/everybodyai/services>.
 
 **Your choices.** Settings → Privacy → **Show what is sent** shows what was sent, what waits, and everything that can be

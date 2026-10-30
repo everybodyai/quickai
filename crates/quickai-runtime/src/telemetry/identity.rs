@@ -292,7 +292,7 @@ mod tests {
         let common = identity.common(
             "3f1c9a2e-7b44-4d0e-9c1a-0b6f1e2a3c4d",
             "5b0e2c7a-1111-4222-8333-444455556666",
-            Level::All,
+            Level::Error,
         );
         assert_eq!(
             quickai_core::telemetry::schema::check_common(&common),

@@ -5,7 +5,9 @@ quickai.everybodyai.dev.
 
 _Status: plan, 2026-10-30. Revised the same day: no signing anywhere, following VS Code. The decisions in
 [§18](#18-decisions) were made by the user. Built since: the app's part ([§21](#21-built-in-the-app-2026-10-30)), and the
-API and the admin, deployed ([§22](#22-built-on-the-server-2026-10-30)); the community is not built._
+API and the admin, deployed ([§22](#22-built-on-the-server-2026-10-30)); the community is not built. Changed since: no
+level All, so no usage is counted, and the site counts downloads instead; the admin moved to
+`quickaiadmin.everybodyai.dev` ([§23](#23-no-level-all-downloads-counted-instead-2026-10-30))._
 
 The user, 2026-10-30: "we need to track the usage of the quickai and also provide option for the user to provide crash
 reports. everybodyai.dev (admin page) needs to be created and it has to have apis in place which accepts the
@@ -1099,7 +1101,40 @@ on its branch `main`.
   Workers Paid (decision 8); the app reading `GET /v1/status`; the community (4.42.8 to 4.42.12); the public page of
   numbers (4.42.13); the function lists of a release for checking a backtrace (§7.5).
 
+## 23. No level All; downloads counted instead (2026-10-30)
+
+The user, the same day: "remove 'all' from telemetry - its not needed", then "in the admin page, i also need to know
+which country people installed from with version numbers etc", and, asked where those numbers should come from once
+no healthy install sends anything, chose to count the site's downloads. Then: "also change from
+https://admin.everybodyai.dev to https://quickaiadmin.everybodyai.dev".
+
+- **The levels are Errors and crashes, Crashes only and Off.** `Level::All` is gone, and with it the seven events only
+  it sent (`session.start`, `session.end`, `window.open`, `feature.use`, `model.add`, `run.start`, `run.ready`), the
+  list of features and the purposes *performance* and *feature insight*. A stored or environment `all` reads as Errors
+  and crashes, the most there is now (a person who chose All agreed to more than that). The window still keeps what a
+  crash report or `error.engine_exit` says: the windows open, the engine's state, and the run's engine, build and model.
+  The consent version stays 1: less is collected, so nobody is asked again.
+- **The server** refuses a batch at level `all` or with one of those events (the schema it checks by is the app's list
+  again, `npm run sync:schema`). Migration 0002 drops `run_days`, which was made of the runs' starts and readiness,
+  takes `all` out of the levels collected and deletes the usage counts. The admin loses Engines and models and
+  Features; Errors gains the engine exits by model and hardware class, which the nightly job also keeps as a daily count
+  (`error.engine_exit.model`). PRIVACY.md says there is no usage level, and no longer promises counts per engine and
+  model for 13 months.
+- **What the admin cannot know now**: how many installs there are, or how they are used. An install that never fails
+  sends nothing, so the Overview's "installs reporting" are installs that had a problem.
+- **Downloads are counted by the site instead.** The download links of quickai.everybodyai.dev go to
+  `/download/v<version>/<file>` on the site, whose Worker (repository `everybodyai`, `worker/download.ts`) adds one to a
+  count per day, version, file and country (Cloudflare's two letters) in the site's D1 and answers 302 to the file on
+  GitHub. Only the files of the site's list are taken, so it sends nobody elsewhere; only the site's own version is
+  counted; crawlers, link previews, prefetches and HEAD are not; and a rate limit counts one download per address and
+  file a minute, the address held by Cloudflare in memory and never stored. The site's privacy page says so. The
+  admin's new **Downloads** page reads it: totals, a daily line, countries, a table of countries by version, versions,
+  and versions by system, for up to a year.
+- **The admin is `quickaiadmin.everybodyai.dev`**, and the owner's email links there.
+
 ## Appendix A: draft text for PRIVACY.md
+
+_The draft as planned. PRIVACY.md is the text in force, and has no level All since §23._
 
 *In short* becomes:
 

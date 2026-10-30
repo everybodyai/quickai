@@ -133,25 +133,17 @@ impl Kind {
     }
 }
 
-/// Why an event is collected.
+/// Why an event is collected. Only health is left: the usage counts of the level All went with it (level.rs).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Purpose {
     /// To find and fix what breaks.
     Health,
-    /// To know how fast things are.
-    Performance,
-    /// To know what is used, and what to build or recommend.
-    FeatureInsight,
 }
 
 impl Purpose {
     fn label(self) -> &'static str {
         match self {
             Purpose::Health => "health: to find and fix what breaks",
-            Purpose::Performance => "performance: to know how fast things are",
-            Purpose::FeatureInsight => {
-                "feature insight: what is used, and what to build or recommend"
-            }
         }
     }
 }
@@ -196,7 +188,7 @@ pub const PACKAGES: &[&str] = &[
 pub const SYSTEMS: &[&str] = &["linux", "windows", "macos", "other"];
 /// The makers of graphics adapters.
 pub const GPU_MAKERS: &[&str] = &["nvidia", "amd", "intel", "apple"];
-/// The windows whose opening is counted.
+/// The windows a crash report says were open.
 pub const WINDOWS: &[&str] = &[
     "add_model",
     "recommended",
@@ -207,16 +199,6 @@ pub const WINDOWS: &[&str] = &[
     "about",
     "telemetry_log",
     "report_problem",
-];
-/// The features whose use is counted.
-pub const FEATURES: &[&str] = &[
-    "live_traffic",
-    "keep_chats",
-    "remote_run",
-    "open_webui",
-    "configuration_import",
-    "configuration_export",
-    "chat",
 ];
 const ENGINE_STATES: &[&str] = &["idle", "starting", "running", "stopping", "crashed"];
 const REASONS: &[&str] = &[
@@ -333,7 +315,7 @@ pub const COMMON: &[FieldSpec] = &[
     ),
     f(
         "level",
-        Shape::Choice(&["off", "crash", "error", "all"]),
+        Shape::Choice(&["off", "crash", "error"]),
         Kind::System,
         "the telemetry level in force",
     ),
@@ -396,58 +378,6 @@ pub const EVENTS: &[EventSpec] = &[
         about: "The last session ended without closing (a crash of the system's graphics, a forced kill, a power cut). \
                 Sent at the next start; never asked about.",
         fields: &[],
-    },
-    EventSpec {
-        name: "session.start",
-        level: Level::All,
-        purpose: Purpose::FeatureInsight,
-        about: "QuickAI started.",
-        fields: &[f("first_run", Shape::Flag, Kind::Use, "whether it is the first start, with no model yet")],
-    },
-    EventSpec {
-        name: "session.end",
-        level: Level::All,
-        purpose: Purpose::FeatureInsight,
-        about: "QuickAI was closed.",
-        fields: &[f("minutes_open", Shape::Choice(&MINUTES), Kind::Measure, "how long it was open")],
-    },
-    EventSpec {
-        name: "window.open",
-        level: Level::All,
-        purpose: Purpose::FeatureInsight,
-        about: "A window was opened.",
-        fields: &[f("window", Shape::Choice(WINDOWS), Kind::Use, "which")],
-    },
-    EventSpec {
-        name: "feature.use",
-        level: Level::All,
-        purpose: Purpose::FeatureInsight,
-        about: "A feature was used or switched on.",
-        fields: &[f("feature", Shape::Choice(FEATURES), Kind::Use, "which")],
-    },
-    EventSpec {
-        name: "model.add",
-        level: Level::All,
-        purpose: Purpose::FeatureInsight,
-        about: "A model was added.",
-        fields: &[
-            f("how", Shape::Choice(&["recommended", "lookup", "link", "import", "pull"]), Kind::Use, "how it was added"),
-            MODEL,
-        ],
-    },
-    EventSpec {
-        name: "run.start",
-        level: Level::All,
-        purpose: Purpose::FeatureInsight,
-        about: "Start was pressed.",
-        fields: &[ENGINE, BUILD, MODEL, f("where", Shape::Choice(&["local", "remote"]), Kind::Use, "this computer or another")],
-    },
-    EventSpec {
-        name: "run.ready",
-        level: Level::All,
-        purpose: Purpose::Performance,
-        about: "The engine answered after Start, with its model loaded.",
-        fields: &[ENGINE, MODEL, f("seconds", Shape::Seconds, Kind::Measure, "how long that took")],
     },
 ];
 
@@ -577,7 +507,7 @@ pub fn reference_page() -> String {
          `quickai --telemetry` prints the same as JSON. Do not edit by hand._\n\n\
          This is everything QuickAI can send EverybodyAI. Nothing is sent until you choose a telemetry level, and a \
          level sends only the events of its own level and those below it: **Crashes only** sends `crash` events, \
-         **Errors and crashes** adds `error` events, **All** adds the rest. Text is cleaned before it is sent: a home \
+         **Errors and crashes** adds `error` events. Text is cleaned before it is sent: a home \
          folder, user and computer names, addresses, email addresses and anything that looks like a password or a \
          token are replaced. See [the privacy policy](https://quickai.everybodyai.dev/privacy).\n\n\
          ## Sent with every batch\n\n| Property | Shape | Kind | What it is |\n|---|---|---|---|\n",
@@ -586,7 +516,7 @@ pub fn reference_page() -> String {
         out.push_str(&row(field));
     }
     out.push_str("\nThe server adds the country the request came from, as two letters, and never stores the address.\n");
-    for level in [Level::Crash, Level::Error, Level::All] {
+    for level in [Level::Crash, Level::Error] {
         out.push_str(&format!(
             "\n## {}: events of level `{}`\n",
             level.label(),
@@ -643,7 +573,7 @@ mod tests {
             memory_gb: 32,
             gpus: vec!["amd".into()],
             language: "en".into(),
-            level: "all".into(),
+            level: "error".into(),
         }
     }
 
@@ -668,11 +598,11 @@ mod tests {
 
     #[test]
     fn an_event_of_the_schema_passes_and_anything_else_is_refused() {
-        let ok = Event::new("run.start", 1_793_351_564)
+        let ok = Event::new("error.engine_exit", 1_793_351_564)
             .with("engine", "llamacpp")
             .with("build", "b11889-vulkan")
             .with("model", "catalog:qwen3-8b-q4_k_m")
-            .with("where", "local");
+            .with("phase", "loading");
         assert_eq!(check(&ok), Ok(()));
         assert!(
             check(&Event::new("run.secret", 0)).is_err(),
@@ -683,7 +613,7 @@ mod tests {
             "an unknown field"
         );
         assert!(
-            check(&ok.clone().with("where", "moon")).is_err(),
+            check(&ok.clone().with("phase", "moon")).is_err(),
             "a word that is not a choice"
         );
         assert!(
@@ -693,10 +623,10 @@ mod tests {
         let mut late = ok.clone();
         late.time = "2026-10-30T09:12:44Z".into();
         assert!(check(&late).is_err(), "a moment, not an hour");
-        let ready = Event::new("run.ready", 0)
+        let exit = Event::new("error.engine_exit", 0)
             .with("engine", "ollama")
-            .with("seconds", -3);
-        assert!(check(&ready).is_err(), "seconds are whole and not negative");
+            .with("after_seconds", -3);
+        assert!(check(&exit).is_err(), "seconds are whole and not negative");
     }
 
     #[test]
@@ -737,7 +667,7 @@ mod tests {
         let batch = Batch::new(
             "b".into(),
             common(),
-            vec![Event::new("session.start", 0).with("first_run", true)],
+            vec![Event::new("error.stall", 0).with("seconds", "5-10")],
         );
         assert_eq!(check_batch(&batch), Ok(()));
     }
@@ -752,7 +682,7 @@ mod tests {
         assert_eq!(list["common"][13]["name"], "level");
         assert_eq!(
             list["common"][13]["values"],
-            json!(["off", "crash", "error", "all"])
+            json!(["off", "crash", "error"])
         );
         let page = reference_page();
         for e in EVENTS {

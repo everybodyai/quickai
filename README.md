@@ -159,8 +159,8 @@ It listens on the loopback only; reach it through an SSH tunnel. See [docs/headl
 
 - Prompts and replies go only between your browser or app and the local server. Neither QuickAI nor its
   developer ever sees them.
-- No accounts or automatic update checks. Telemetry (crash reports, error reports, usage counts) is off until you
-  choose a level, VS Code's four: All, Errors and crashes, Crashes only, Off. `quickai --telemetry` lists everything it
+- No accounts or automatic update checks. Telemetry (crash reports and error reports, never usage) is off until you
+  choose a level: Errors and crashes, Crashes only, Off. `quickai --telemetry` lists everything it
   can send, Settings → Privacy shows what it sent and deletes what EverybodyAI holds, and `DO_NOT_TRACK=1` turns it off
   for good. See [PRIVACY.md](PRIVACY.md#telemetry).
 - The internet is used only when you search for or download a model or an engine, and the app says so.
