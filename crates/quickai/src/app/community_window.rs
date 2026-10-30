@@ -261,6 +261,10 @@ impl App {
     pub(super) fn open_community(&mut self, ctx: &egui::Context) {
         self.community.raise = self.community.open;
         self.community.open = true;
+        // who this computer's configurations are, for the cards to say which of them it has
+        if !self.show_configurations {
+            self.refresh_configurations();
+        }
         self.fetch_community_list(ctx);
     }
 
