@@ -56,8 +56,8 @@ pub fn stall_bucket(seconds: u64) -> &'static str {
     }
 }
 
-/// The size of a model that is sent as `other`, in GB ranges.
-pub const SIZES: [&str; 5] = ["<2", "2-5", "5-10", "10-20", "20+"];
+/// The size of a model that is sent as `other`, in GB ranges. Plain words: they are part of a name (`other:0-2`).
+pub const SIZES: [&str; 5] = ["0-2", "2-5", "5-10", "10-20", "20+"];
 
 /// The range of `SIZES` that a file of `bytes` falls in.
 pub fn size_bucket(bytes: u64) -> &'static str {
@@ -196,7 +196,7 @@ mod tests {
         assert_eq!(minutes_bucket(600), "180+");
         assert_eq!(stall_bucket(5), "5-10");
         assert_eq!(stall_bucket(75), "60+");
-        assert_eq!(size_bucket(1_100_000_000), "<2");
+        assert_eq!(size_bucket(1_100_000_000), "0-2");
         assert_eq!(size_bucket(6_140_000_000), "5-10");
     }
 
@@ -225,7 +225,24 @@ mod tests {
             size: 1,
             ..ModelFacts::default()
         };
-        assert_eq!(model_name(&odd), "other:<2");
+        assert_eq!(model_name(&odd), "other:0-2");
+    }
+
+    #[test]
+    fn every_name_a_model_can_be_given_is_a_plain_name() {
+        for size in [
+            0,
+            2_500_000_000,
+            6_000_000_000,
+            15_000_000_000,
+            50_000_000_000,
+        ] {
+            let name = model_name(&ModelFacts {
+                size,
+                ..ModelFacts::default()
+            });
+            assert!(is_plain_name(&name), "{name}");
+        }
     }
 
     #[test]
