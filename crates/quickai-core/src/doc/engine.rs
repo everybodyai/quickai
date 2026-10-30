@@ -38,6 +38,19 @@ pub struct EngineDoc {
     /// How each kind of file that goes with a model (a projector) is attached to the program.
     #[serde(default)]
     pub components: std::collections::BTreeMap<String, Component>,
+    /// How the program reads its command line, for telling two configurations apart
+    /// (`profile::canonical`).
+    #[serde(default)]
+    pub flags: Flags,
+}
+
+/// `[flags]`: what the program's command line means, as far as the canonical form of a configuration needs it
+/// (docs/reports-and-community.md, section 11.11).
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct Flags {
+    /// Other spellings of a flag, by the spelling written in its place: `"-c" = "--ctx-size"`.
+    #[serde(default)]
+    pub aliases: std::collections::BTreeMap<String, String>,
 }
 
 /// How one kind of companion file reaches the program (`[components.mmproj]`).
@@ -1237,6 +1250,9 @@ pub struct Field {
     /// Named facts for expressions: `gpu_offload = "value > 0"`.
     #[serde(default)]
     pub derive: std::collections::BTreeMap<String, String>,
+    /// Whether the value changes what runs, for telling two configurations apart: `false` for a port,
+    /// since two configurations that differ only in it run the same model the same way. Default true.
+    pub identity: Option<bool>,
     #[serde(default)]
     pub ui: FieldUi,
 }

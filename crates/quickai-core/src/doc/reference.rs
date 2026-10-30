@@ -225,6 +225,7 @@ pub const GROUPS: &[Group] = &[
             a("applies", "`on_start`, `spawn_only`, `live`", "When a change takes effect: at the next start; at the next start, and only when QuickAI starts the engine itself; at once. Default `on_start`."),
             a("bind", "table, below", "How the value reaches the engine."),
             a("derive", "table of conditions", "Named facts for the rest of the program, from the field's value (`gpu_offload = \"value > 0\"`)."),
+            a("identity", "bool", "Whether the value changes what runs, for telling two shared configurations apart (the community keeps one copy of each). `false` for a port: two configurations that differ only in it run the same model the same way. Default true."),
             a("ui", "table, below", "Where and how the window shows it."),
         ],
     },
@@ -389,6 +390,14 @@ pub const GROUPS: &[Group] = &[
         source: Some("ComponentBind"),
         attributes: &[
             a("arg", "list of templates", "The arguments, one entry each, over `${component.path}` (the file): `[\"--mmproj\", \"${component.path}\"]`. Required unless the component has a `place`."),
+        ],
+    },
+    Group {
+        heading: "`[flags]`",
+        intro: "What the program's command line means, as far as telling two shared configurations apart needs it: the community keeps one copy of each configuration, whatever the order or the spelling of its extra arguments.",
+        source: Some("Flags"),
+        attributes: &[
+            a("aliases", "table of text", "Other spellings of a flag, by the spelling written in its place: `\"-c\" = \"--ctx-size\"`. A short form, or a second long name, becomes the one it stands for; a flag that is not listed keeps its spelling."),
         ],
     },
     Group {
@@ -1200,6 +1209,16 @@ pub const PROFILE_GROUPS: &[Group] = &[
             a("note", "text", "A sentence or two from whoever made the file."),
             a("made_with", "text", "The application that wrote it (`QuickAI 0.1.0`)."),
             a("made_on", "`{ os, arch, gpu, memory_gb }`", "The kind of computer it was made on: `linux`, `windows` or `macos`; `x86_64` or `aarch64`; the makers of the graphics cards (`amd`, `nvidia`, `intel`); the memory in whole gigabytes. The person who opens the file is told where the computer differs from theirs."),
+            a("community", "`{ id, version }`", "The configuration of quickai.everybodyai.dev the file was fetched from (`{ id = \"vision-chat-16gb\", version = 3 }`). QuickAI writes it when it imports one, and an export keeps it, so that a configuration made from another can say what it is based on. Nothing in it changes what runs."),
+        ],
+    },
+    Group {
+        heading: "`[meta]` `community`",
+        intro: "Where on quickai.everybodyai.dev a configuration came from.",
+        source: Some("CommunityDoc"),
+        attributes: &[
+            a("id", "text", "The configuration's id on the site."),
+            a("version", "whole number", "Its version."),
         ],
     },
     Group {

@@ -9,6 +9,7 @@
 //! which settings travel is the `share` of each field of the engine documents, and what is said
 //! about them is the vocabulary's.
 
+pub mod canonical;
 pub mod check;
 pub mod environment;
 pub mod notes;
@@ -73,8 +74,30 @@ pub struct Meta {
     pub note: Option<String>,
     pub made_with: Option<String>,
     pub made_on: Option<MadeOn>,
+    /// The configuration of quickai.everybodyai.dev it was fetched from.
+    pub community: Option<CommunityRef>,
     /// Keys of `[meta]` this version does not know.
     pub extra: toml::Table,
+}
+
+/// A configuration of quickai.everybodyai.dev, and its version.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CommunityRef {
+    pub id: String,
+    pub version: u32,
+}
+
+/// Whether `id` can be the id of a configuration of quickai.everybodyai.dev: lower-case letters, digits and
+/// single `-` between them, up to 60 characters.
+pub fn valid_community_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 60
+        && id.split('-').all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        })
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -776,7 +799,7 @@ fn read_meta(doc: &MetaDoc, body: &toml::Table, _fatal: &mut Vec<Fatal>) -> Meta
     let mut extra = toml::Table::new();
     if let Some(toml::Value::Table(meta)) = body.get("meta") {
         for (key, value) in meta {
-            if !matches!(key.as_str(), "note" | "made_with" | "made_on") {
+            if !matches!(key.as_str(), "note" | "made_with" | "made_on" | "community") {
                 extra.insert(key.clone(), value.clone());
             }
         }
@@ -802,6 +825,15 @@ fn read_meta(doc: &MetaDoc, body: &toml::Table, _fatal: &mut Vec<Fatal>) -> Meta
                 .collect(),
             memory_gb: m.memory_gb,
         }),
+        // a reference that is not one is dropped: it changes nothing that runs
+        community: doc
+            .community
+            .as_ref()
+            .filter(|c| valid_community_id(&c.id) && c.version > 0)
+            .map(|c| CommunityRef {
+                id: c.id.clone(),
+                version: c.version,
+            }),
         extra,
     }
 }
@@ -1306,6 +1338,7 @@ impl Configuration {
         let has_meta = self.meta.note.is_some()
             || self.meta.made_with.is_some()
             || self.meta.made_on.is_some()
+            || self.meta.community.is_some()
             || !self.meta.extra.is_empty();
         if has_meta {
             let mut meta = Table::new();
@@ -1334,6 +1367,12 @@ impl Configuration {
                     inline.insert("memory_gb", (gb as i64).into());
                 }
                 meta["made_on"] = Item::Value(inline.into());
+            }
+            if let Some(community) = &self.meta.community {
+                let mut inline = InlineTable::new();
+                inline.insert("id", community.id.as_str().into());
+                inline.insert("version", i64::from(community.version).into());
+                meta["community"] = Item::Value(inline.into());
             }
             for (key, item) in &self.meta.extra {
                 if let Some(item) = extra_item(key, item) {

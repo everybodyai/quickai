@@ -305,6 +305,7 @@ ui = { section = "advanced", order = 1 }
 id = "port"
 label = "Port"
 type = "port"
+identity = false                # two configurations that differ only in the port run the same thing
 default = 8188
 help = "The port ComfyUI listens on, on this machine only (127.0.0.1)."
 bind.port = "public"

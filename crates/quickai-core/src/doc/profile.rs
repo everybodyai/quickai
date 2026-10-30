@@ -49,6 +49,15 @@ pub struct MetaDoc {
     pub made_with: Option<String>,
     /// The kind of computer it was made on.
     pub made_on: Option<MadeOnDoc>,
+    /// The configuration of quickai.everybodyai.dev it was fetched from.
+    pub community: Option<CommunityDoc>,
+}
+
+/// `[meta] community`: a configuration of quickai.everybodyai.dev, and its version.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct CommunityDoc {
+    pub id: String,
+    pub version: u32,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

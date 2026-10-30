@@ -57,7 +57,7 @@ QuickAI headless commands
   quickai plan ... [--configuration ID|FILE]
       Start from a configuration: its engine, model and settings; what is given on the line wins.
 
-  quickai configuration list | show | check | export | import
+  quickai configuration list | show | check | export | import | identity
       Configurations, a runtime as a file that can be shared (docs/configurations.md). Each is shown by
       `quickai configuration` with no arguments.
 
