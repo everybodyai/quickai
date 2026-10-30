@@ -642,6 +642,7 @@ impl App {
         let mut turn = Turn::said(true, text);
         turn.pictures = std::mem::take(&mut self.chat.pictures);
         self.chat.turns.push(turn);
+        self.note_chat_sent();
         self.ask_for_reply(ctx);
     }
 

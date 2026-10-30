@@ -41,5 +41,6 @@ pub mod run_file;
 pub mod runtime;
 pub mod settings;
 pub mod sources;
+pub mod telemetry;
 #[cfg(any(test, feature = "testkit"))]
 pub mod testkit;

@@ -25,11 +25,14 @@ webbrowser = "1"
 libc = "0.2"
 
 [features]
-default = ["remote-setup"]
+default = ["remote-setup", "telemetry"]
 # Runs QuickAI sets up on another computer (WP4.33, docs/remote-runs.md section 5): the way "QuickAI sets it up" of a
 # computer, the page of its run, its dialogs. Without it (`--no-default-features`) the window has the computers it
 # attaches to only; `app/remote_run_off.rs` stands in for what is left out.
 remote-setup = ["quickai-runtime/remote-setup"]
+# Telemetry (WP4.42, docs/reports-and-community.md): without it the build has no code that sends, and Settings says so.
+# Packagers who want a build that never sends build with `--no-default-features --features remote-setup`.
+telemetry = ["quickai-runtime/telemetry"]
 
 [dev-dependencies]
 # the fakes and the golden files the runtime's own tests use

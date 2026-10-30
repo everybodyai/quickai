@@ -30,14 +30,15 @@
 </p>
 
 QuickAI is a small desktop app that downloads, runs and manages AI models on the hardware you already have:
-chat, code, vision, speech, documents, images and video. There's no account, no cloud and no telemetry, and your
-prompts never leave your computer.
+chat, code, vision, speech, documents, images and video. There's no account and no cloud, telemetry is off until
+you choose a level, and your prompts never leave your computer.
 
 ## Why QuickAI
 
 - **Private by default.** The models run on your computer, and the servers QuickAI starts listen on `127.0.0.1`
-  only. No telemetry, no accounts, no update checks. It uses the internet only when you click something that
-  needs it. [PRIVACY.md](PRIVACY.md) lists every host it can contact, and why.
+  only. No accounts, no update checks, and nothing sent to us until you choose a telemetry level. It uses the
+  internet only when you click something that needs it. [PRIVACY.md](PRIVACY.md) lists every host it can contact,
+  and why.
 - **Works out of the box.** It ships with llama.cpp and Bonsai 2 4B (ternary weights, 1.2 GB), so your first
   chat needs no download at all.
 - **Runs on ordinary hardware.** GPU acceleration through Vulkan on AMD, NVIDIA and Intel. QuickAI suggests a
@@ -158,7 +159,10 @@ It listens on the loopback only; reach it through an SSH tunnel. See [docs/headl
 
 - Prompts and replies go only between your browser or app and the local server. Neither QuickAI nor its
   developer ever sees them.
-- No telemetry, analytics, crash reporting, accounts or automatic update checks.
+- No accounts or automatic update checks. Telemetry (crash reports, error reports, usage counts) is off until you
+  choose a level, VS Code's four: All, Errors and crashes, Crashes only, Off. `quickai --telemetry` lists everything it
+  can send, Settings → Privacy shows what it sent and deletes what EverybodyAI holds, and `DO_NOT_TRACK=1` turns it off
+  for good. See [PRIVACY.md](PRIVACY.md#telemetry).
 - The internet is used only when you search for or download a model or an engine, and the app says so.
 - If you install ComfyUI with its Manager (the box is ticked by default), the Manager fetches its lists of nodes and
   models from GitHub and the Comfy Registry whenever ComfyUI starts. A custom node it installs is another person's

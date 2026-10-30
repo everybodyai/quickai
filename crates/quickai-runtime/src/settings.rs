@@ -39,6 +39,12 @@ pub const KEEP_CHATS_KEY: &str = "app.keep_chats";
 /// The key under which a first conversation is remembered: the last step of Getting started is done.
 pub const SAID_HELLO_KEY: &str = "app.said_hello";
 
+/// The telemetry level the person chose (`off`, `crash`, `error`, `all`; WP4.42); absent until they answer, which is Off.
+pub const TELEMETRY_LEVEL_KEY: &str = "app.telemetry_level";
+/// The version of what telemetry collects that the person answered about (`telemetry::CONSENT_VERSION`); absent until
+/// they answer.
+pub const TELEMETRY_ASKED_KEY: &str = "app.telemetry_asked";
+
 /// The tab the window shows under the model (`chat`, `log` or `live`); absent, the chat (UI v2).
 pub const TAB_KEY: &str = "app.tab";
 
@@ -118,7 +124,7 @@ impl Settings {
 
     /// The settings stored at `path`; the defaults when the file is missing, unreadable, not JSON
     /// or of the wrong shape (a wrongly typed value discards the whole file, as it always has).
-    pub(crate) fn load_from(path: &Path) -> Self {
+    pub fn load_from(path: &Path) -> Self {
         std::fs::read_to_string(path)
             .ok()
             .and_then(|s| Self::from_json(&s))
@@ -372,6 +378,34 @@ impl Settings {
     /// Records that a model has answered in the chat.
     pub fn set_said_hello(&mut self) {
         self.set_app_value(SAID_HELLO_KEY, Some(serde_json::Value::Bool(true)));
+    }
+
+    /// The telemetry level the person chose; `None` while they have not answered.
+    pub fn telemetry_level(&self) -> Option<quickai_core::telemetry::Level> {
+        self.app_value(TELEMETRY_LEVEL_KEY)
+            .and_then(serde_json::Value::as_str)
+            .and_then(quickai_core::telemetry::Level::parse)
+    }
+
+    /// Records the level chosen, and that the person answered about what is collected now.
+    pub fn set_telemetry_level(&mut self, level: quickai_core::telemetry::Level) {
+        self.set_app_value(
+            TELEMETRY_LEVEL_KEY,
+            Some(serde_json::Value::from(level.id())),
+        );
+        self.set_app_value(
+            TELEMETRY_ASKED_KEY,
+            Some(serde_json::Value::from(
+                quickai_core::telemetry::schema::CONSENT_VERSION,
+            )),
+        );
+    }
+
+    /// The version of what is collected the person answered about; 0 when they never did.
+    pub fn telemetry_asked(&self) -> u64 {
+        self.app_value(TELEMETRY_ASKED_KEY)
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0)
     }
 
     fn app_value(&self, key: &str) -> Option<&serde_json::Value> {
@@ -875,6 +909,25 @@ default = 1.5
             settings.engine_values(engine),
             values,
             "and read back the same"
+        );
+    }
+
+    #[test]
+    fn the_telemetry_level_is_absent_until_answered_and_read_back() {
+        use quickai_core::telemetry::Level;
+        let mut s = Settings::default();
+        assert_eq!(s.telemetry_level(), None);
+        assert_eq!(s.telemetry_asked(), 0);
+        assert!(
+            s.other.is_empty(),
+            "a person never asked keeps the file they had"
+        );
+        s.set_telemetry_level(Level::Error);
+        let back = Settings::from_json(&s.to_json().unwrap()).unwrap();
+        assert_eq!(back.telemetry_level(), Some(Level::Error));
+        assert_eq!(
+            back.telemetry_asked(),
+            u64::from(quickai_core::telemetry::schema::CONSENT_VERSION)
         );
     }
 

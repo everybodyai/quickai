@@ -15,6 +15,7 @@ pub mod fake_hub;
 pub mod fake_library;
 pub mod fake_ollama;
 pub mod fake_ssh;
+pub mod fake_telemetry;
 pub mod files;
 pub mod headless_world;
 pub mod http;

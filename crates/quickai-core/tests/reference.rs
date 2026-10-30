@@ -36,6 +36,14 @@ fn the_checked_in_page_is_the_generated_one() {
 }
 
 #[test]
+fn the_checked_in_telemetry_page_is_the_generated_one() {
+    check_golden(
+        "telemetry-events.md",
+        quickai_core::telemetry::schema::reference_page(),
+    );
+}
+
+#[test]
 fn the_checked_in_vocabulary_page_is_the_generated_one() {
     check_golden("vocab-fields.md", render_vocab());
 }

@@ -20,8 +20,11 @@ use crate::models::ModelEntry;
 
 /// Where the documentation and the privacy policy are read (from Help), and the website (from About).
 pub(super) const DOCS_URL: &str = "https://github.com/everybodyai/quickai/tree/main/docs";
-pub(super) const PRIVACY_URL: &str = "https://github.com/everybodyai/quickai/blob/main/PRIVACY.md";
-pub(super) const WEBSITE_URL: &str = "https://everybodyai.dev/quickai";
+// QuickAI's public documents are on its own site (quickai.everybodyai.dev), the policy of the released version
+pub(super) const PRIVACY_URL: &str = "https://quickai.everybodyai.dev/privacy";
+pub(super) const WEBSITE_URL: &str = "https://quickai.everybodyai.dev";
+/// Where Help → Report a problem files an issue.
+pub(super) const NEW_ISSUE_URL: &str = "https://github.com/everybodyai/quickai/issues/new";
 
 /// The height of a row of the list of models: the name, and under it its size and what else is known.
 const MODEL_ROW: f32 = 42.0;
@@ -45,6 +48,12 @@ impl App {
         egui::Panel::top("menu_bar")
             .frame(theme::bar_frame(egui::Margin::symmetric(6, 3)))
             .show(ui, |ui| self.show_menu_bar(ui));
+        // the first start asks about telemetry once, under the menu bar, over nothing (WP4.42)
+        if self.tel.notice {
+            egui::Panel::top("telemetry_notice")
+                .frame(theme::bar_frame(egui::Margin::symmetric(12, 8)))
+                .show(ui, |ui| self.show_telemetry_notice(ui));
+        }
         egui::Panel::bottom("status_bar")
             .frame(theme::bar_frame(egui::Margin::symmetric(10, 3)))
             .show(ui, |ui| self.show_status_bar(ui, state));
@@ -170,6 +179,10 @@ impl App {
                     // open already, somewhere behind the main window: it comes to the front
                     self.raise_about = self.show_about;
                     self.show_about = true;
+                }
+                // last, so that the items above stay where they were (WP4.42)
+                if ui.button("Report a problem…").clicked() {
+                    self.open_report_problem();
                 }
             });
             // at the right end, what is set once in a while: the engine, the theme, Help and Settings
