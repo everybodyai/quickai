@@ -536,6 +536,7 @@ fn import_command(
         called.as_deref(),
         on_taken,
         true,
+        None,
     ) {
         Ok(done) => {
             print_notes(&registry, &done.report, out);

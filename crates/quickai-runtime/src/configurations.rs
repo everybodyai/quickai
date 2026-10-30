@@ -26,7 +26,8 @@ use quickai_core::profile::state::{
     apply, capture, Applied, Captured, ModelFacts, WorkingState, MODEL_FIELD,
 };
 use quickai_core::profile::{
-    clean_text, family, requires_for, Configuration, MadeOn, ModelSource, Runtime, MAX_NAME_CHARS,
+    clean_text, family, requires_for, CommunityRef, Configuration, MadeOn, ModelSource, Runtime,
+    MAX_NAME_CHARS,
 };
 use quickai_core::registry::{Engine, Registry};
 use quickai_core::value::Value;
@@ -1032,7 +1033,8 @@ pub struct Imported {
 /// Imports the text of a file from outside: it is opened, looked at for this computer, and what the
 /// person ticked (`ticked`: the keys of the settings asked about) is stored as one of their own
 /// configurations. Reading and looking use no network and start nothing; the one file written is the
-/// configuration, in the person's folder.
+/// configuration, in the person's folder. A file fetched from quickai.everybodyai.dev is stored with
+/// where it came from (`community`, its `[meta] community`).
 #[allow(clippy::too_many_arguments)]
 pub fn import(
     dirs: &ConfigDirs,
@@ -1043,6 +1045,7 @@ pub fn import(
     called: Option<&str>,
     on_taken: OnTaken,
     write_it: bool,
+    community: Option<CommunityRef>,
 ) -> Result<Imported, Report> {
     let Opened {
         configuration,
@@ -1110,6 +1113,9 @@ pub fn import(
     };
     stored.id = id;
     stored.name = name;
+    if community.is_some() {
+        stored.meta.community = community;
+    }
     let file = if write_it {
         Some(write(dirs, registry, &stored).map_err(|e| Report {
             notes: vec![Note::new("not_a_configuration", &[("why", e.to_string())])],
