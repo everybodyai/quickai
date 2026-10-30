@@ -229,8 +229,8 @@ const PAGES: &[Page] = &[
         lead: "Which model fits this computer, and how to get it.",
         picture: Some(Picture {
             name: "add-model",
-            marks: &[(2, 650.0, 228.0), (3, 285.0, 79.0), (4, 640.0, 79.0), (5, 395.0, 420.0)],
-            ring: Some([661.0, 216.0, 24.0, 24.0]),
+            marks: &[(2, 618.0, 177.0), (3, 284.0, 28.0), (4, 660.0, 28.0), (5, 394.0, 369.0)],
+            ring: Some([681.0, 165.0, 24.0, 24.0]),
         }),
         steps: &[
             step("Press **Add a model** at the top of the list, or Ctrl+K.")
@@ -697,13 +697,7 @@ impl App {
             ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);
         }
         let mut close = false;
-        let builder = crate::with_app_icon(
-            egui::ViewportBuilder::default()
-                .with_title(HELP_TITLE)
-                .with_app_id(crate::APP_ID)
-                .with_inner_size(OPENS_AT)
-                .with_min_inner_size(LEAST),
-        );
+        let builder = theme::own_window(HELP_TITLE, OPENS_AT, LEAST);
         ctx.show_viewport_immediate(id, builder, |ui, class| {
             if self.take_help_keys(ui) {
                 close = true;

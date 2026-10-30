@@ -386,6 +386,40 @@ fn shape(style: &mut egui::Style) {
 
 // ---- frames -------------------------------------------------------------------------------------
 
+/// A window of its own titled `title`, as all the application's windows are (C194: none is drawn over the main window, to
+/// be moved anywhere and made as big as the screen with the window manager's own buttons and edges): the icon and the name
+/// of the application for the desktop, opened at `size`, and no smaller than `least`.
+pub(super) fn own_window(
+    title: impl Into<String>,
+    size: [f32; 2],
+    least: [f32; 2],
+) -> egui::ViewportBuilder {
+    crate::with_app_icon(
+        egui::ViewportBuilder::default()
+            .with_title(title)
+            .with_app_id(crate::APP_ID)
+            .with_inner_size(size)
+            .with_min_inner_size(least),
+    )
+}
+
+/// `add`, as the page of a window of its own: on the face of the window, with room round it. A context that cannot open a
+/// window (a test draws on one with no display) shows it as a window inside the main one, which has its own frame.
+pub(super) fn own_window_page<R>(
+    ui: &mut egui::Ui,
+    class: egui::ViewportClass,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    if class == egui::ViewportClass::EmbeddedWindow {
+        add(ui)
+    } else {
+        egui::CentralPanel::default()
+            .frame(page_frame())
+            .show(ui, add)
+            .inner
+    }
+}
+
 /// Makes the window of its own that is being drawn as tall as what it holds: `wanted` is its content with its margins
 /// and footer, kept between `least` and most of the screen (past that it scrolls). No empty room is left at its foot.
 /// The width stays the person's; a height they set by hand stays too, until what the window holds changes (the height

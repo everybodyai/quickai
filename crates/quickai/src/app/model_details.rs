@@ -1,4 +1,4 @@
-//! What is known of a model, in a window of its own (WP4.28): its name and file, how big it is on the disk, the
+//! What is known of a model, in a window of its own (WP4.28, C194): its name and file, how big it is on the disk, the
 //! quantization its name says, what it can do, what goes with it and where it came from; and, at the head of the list
 //! of models, how much room they all take. Opened from Details... beside the model's name, or from its menu in the
 //! list.
@@ -39,6 +39,11 @@ pub fn quantization(name: &str) -> Option<String> {
         .find(|w| ["F16", "BF16", "F32", "FP16"].contains(&w.as_str()))
 }
 
+/// Which window the details are: the id the display knows it by (one for every model: the details of another are shown in it).
+pub(super) fn details_viewport() -> egui::ViewportId {
+    egui::ViewportId::from_hash_of("quickai_model_details")
+}
+
 /// The room all the models take, by what the list says of each.
 pub fn total_bytes(models: &[ModelEntry]) -> u64 {
     models.iter().map(|m| m.size_bytes).sum()
@@ -54,16 +59,20 @@ impl App {
             self.details_of = None;
             return;
         };
-        let mut open = true;
+        let id = details_viewport();
+        if std::mem::take(&mut self.raise_details) {
+            ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);
+        }
+        let mut close = false;
         let lists = self.lists_models();
         let where_it_runs = self.remote_in_use().map(|r| r.name.clone());
-        egui::Window::new(format!("Details: {}", model.display))
-            .id(egui::Id::new("model_details"))
-            .open(&mut open)
-            .collapsible(false)
-            .resizable([true, false])
-            .default_width(460.0)
-            .show(ctx, |ui| {
+        let builder = theme::own_window(
+            format!("Details: {}", model.display),
+            [480.0, 320.0],
+            [360.0, 160.0],
+        );
+        ctx.show_viewport_immediate(id, builder, |ui, class| {
+            let body = |ui: &mut egui::Ui| {
                 egui::Grid::new("model_details_grid")
                     .num_columns(2)
                     .spacing([12.0, 6.0])
@@ -146,8 +155,18 @@ impl App {
                         ui.ctx().copy_text(model.filename.clone());
                     }
                 });
-            });
-        if !open {
+            };
+            if class == egui::ViewportClass::EmbeddedWindow {
+                body(ui);
+            } else {
+                if ui.input(|i| i.viewport().close_requested()) {
+                    close = true;
+                }
+                // as tall as what it says
+                theme::fitted_page(ui, "details_scroll", theme::page_frame(), 0.0, 160.0, body);
+            }
+        });
+        if close {
             self.details_of = None;
         }
     }

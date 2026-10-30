@@ -26,6 +26,14 @@ use super::lookup_view::{bundle_words, show_entry, show_section, BundleWords, De
 use super::{theme, widgets, App};
 use crate::hardware::{self, Fit};
 
+/// The title of the window, which is one of its own (C194).
+const CATALOG_TITLE: &str = "Recommended models";
+
+/// Which window the recommended models are: the id the display knows it by.
+pub(super) fn catalog_viewport() -> egui::ViewportId {
+    egui::ViewportId::from_hash_of("quickai_recommended")
+}
+
 /// The page of the window that is shown.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Page {
@@ -64,6 +72,8 @@ pub struct CatalogView {
     /// position of the list before it, and a page that opens at its end looks as if it had no more
     /// than its last few models.
     pub drawn: Option<Browse>,
+    /// The window was asked for again while open, somewhere behind the main window: it comes to the front.
+    pub raise: bool,
 }
 
 /// Whether what a button fetches is already there: every file in the models folders at the size the
@@ -156,6 +166,7 @@ impl App {
             focus_search: true,
             note: None,
             drawn: None,
+            raise: self.catalog.open,
         };
         // what was said under the box of the page is not about what this window will pull
         if self.named.pull.is_none() && self.named.queued.is_none() {
@@ -195,10 +206,9 @@ impl App {
         if !self.catalog.open {
             return;
         }
-        // Escape closes the window, as it closes anything else that was put over the one beneath
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.catalog.open = false;
-            return;
+        let id = catalog_viewport();
+        if std::mem::take(&mut self.catalog.raise) {
+            ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);
         }
         let engine_name = self.engine_name();
         let types = self.registry.vocabulary().model_types().to_vec();
@@ -223,17 +233,32 @@ impl App {
         let mut tasks_chosen = std::mem::take(&mut self.catalog.chosen);
         let mut sizes_open = self.catalog.sizes_open.take();
 
-        egui::Window::new("Recommended models")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(true)
-            // the eight tasks in one row and the three picks under them, on a screen that has the room
-            .default_size([
-                (ctx.content_rect().width() - 16.0).clamp(744.0, 920.0),
-                (ctx.content_rect().height() - 16.0).clamp(530.0, 640.0),
-            ])
-            .default_pos(egui::pos2(8.0, 8.0))
-            .show(ctx, |ui| {
+        // the progress of what is being fetched, where the person is looking: a download, or a model pulled by the engine
+        // (the engine coming up for it, the pull, or why it was not pulled)
+        let download = self
+            .download
+            .as_ref()
+            .map(|job| (job.progress_line(), job.fraction()));
+        let server = self.server_name();
+        let pulled = match (&self.named.queued, &self.named.pull) {
+            (Some(queued), _) => Some((queued.waiting_line(&server), None, false)),
+            (None, Some((job, _))) => Some((job.progress_line(), job.fraction(), false)),
+            (None, None) => self.named.notice.clone().map(|n| (n, None, true)),
+        };
+        let mut cancel = false;
+
+        // a window of its own (C194): the eight tasks in one row and the three picks under them
+        let builder = theme::own_window(CATALOG_TITLE, [920.0, 640.0], [560.0, 400.0]);
+        ctx.show_viewport_immediate(id, builder, |ui, class| {
+            // Escape closes the window, and so does the window manager's close button
+            if ui.input(|i| i.key_pressed(egui::Key::Escape))
+                || (class != egui::ViewportClass::EmbeddedWindow
+                    && ui.input(|i| i.viewport().close_requested()))
+            {
+                open = false;
+                return;
+            }
+            theme::own_window_page(ui, class, |ui| {
                 super::theme::compact(ui);
                 if page == Page::Tasks {
                     let installed_fn = |o: &Offer| installed(o, &have, &listed);
@@ -458,29 +483,13 @@ impl App {
                     });
                 });
             });
-
-        self.catalog.entries = entries;
-        self.catalog.browse = what;
-        self.catalog.drawn = drawn_now;
-        self.catalog.page = page;
-        self.catalog.chosen = tasks_chosen;
-        self.catalog.sizes_open = sizes_open;
-        self.catalog.focus_search |= focus_search;
-        if !open {
-            self.catalog.open = false;
-        }
-        // the progress of what is being fetched, where the person is looking
-        let mut cancel = false;
-        if self.catalog.open {
-            if let Some(job) = &self.download {
-                let line = job.progress_line();
-                let fraction = job.fraction();
+            if let Some((line, fraction)) = &download {
                 egui::Window::new("Downloading")
                     .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
                     .anchor(egui::Align2::CENTER_BOTTOM, [0.0, -12.0])
-                    .show(ctx, |ui| {
+                    .show(ui.ctx(), |ui| {
                         ui.horizontal(|ui| {
                             ui.colored_label(super::theme::palette().warn, line);
                             if ui
@@ -493,32 +502,36 @@ impl App {
                                 cancel = true;
                             }
                         });
-                        if let Some(fraction) = fraction {
+                        if let Some(fraction) = *fraction {
                             widgets::progress_bar(ui, Some(fraction));
                         }
                     });
             }
-            // a model pulled by the engine: the engine coming up for it, the pull, or why it was not pulled
-            let server = self.server_name();
-            let pulled = match (&self.named.queued, &self.named.pull) {
-                (Some(queued), _) => Some((queued.waiting_line(&server), None, false)),
-                (None, Some((job, _))) => Some((job.progress_line(), job.fraction(), false)),
-                (None, None) => self.named.notice.clone().map(|n| (n, None, true)),
-            };
-            if let Some((line, fraction, failed)) = pulled {
+            if let Some((line, fraction, failed)) = &pulled {
                 egui::Window::new("Pulling")
                     .title_bar(false)
                     .collapsible(false)
                     .resizable(false)
                     .anchor(egui::Align2::CENTER_BOTTOM, [0.0, -12.0])
-                    .show(ctx, |ui| {
+                    .show(ui.ctx(), |ui| {
                         let p = super::theme::palette();
-                        ui.colored_label(if failed { p.bad } else { p.warn }, line);
+                        ui.colored_label(if *failed { p.bad } else { p.warn }, line);
                         if fraction.is_some() {
-                            widgets::progress_bar(ui, fraction);
+                            widgets::progress_bar(ui, *fraction);
                         }
                     });
             }
+        });
+
+        self.catalog.entries = entries;
+        self.catalog.browse = what;
+        self.catalog.drawn = drawn_now;
+        self.catalog.page = page;
+        self.catalog.chosen = tasks_chosen;
+        self.catalog.sizes_open = sizes_open;
+        self.catalog.focus_search |= focus_search;
+        if !open {
+            self.catalog.open = false;
         }
         if cancel {
             self.cancel_download();

@@ -771,53 +771,183 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// I38 (C192): Add a model's button beside its × makes it all the main window has between its bars, and a double click
-    /// on its title makes it small again, at the width it had.
+    /// I38 (C194): Add a model, the recommended models, a model's details and About are windows of their own, as Settings
+    /// and Help are, to be moved anywhere and made as big as the screen with the window manager's own buttons: a display that
+    /// can open windows is asked for one of each, with its title and the application's icon, and the main window draws none
+    /// of them. Escape in Add a model or in the recommended models closes it; the window manager's close button closes each;
+    /// asked for again while open, each comes to the front.
     #[test]
-    fn p3_i38_add_a_model_can_be_as_big_as_the_main_window_and_small_again() {
+    fn p3_i38_add_a_model_recommended_details_and_about_are_windows_of_their_own() {
+        use super::super::about_window::about_viewport;
+        use super::super::add_model::add_model_viewport;
+        use super::super::catalog_view::catalog_viewport;
+        use super::super::model_details::details_viewport;
+        use std::cell::RefCell;
+        use std::collections::{HashMap, HashSet};
+        use std::rc::Rc;
+
+        /// What a display that opens a window of its own for each viewport saw: what each window asked for and said, and
+        /// what the person does in it (a key, its close button) in the next frame.
+        #[derive(Default)]
+        struct Display {
+            windows: HashMap<egui::ViewportId, (egui::ViewportBuilder, String)>,
+            keys: HashMap<egui::ViewportId, egui::Key>,
+            closed: HashSet<egui::ViewportId>,
+        }
+
         let dir = scratch("i38");
         let mut app = app_in(&dir, "llamacpp");
         only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
         let ctx = egui::Context::default();
-        app.open_add_model();
-        settled(&mut app, &ctx, true);
-        let area = |ctx: &egui::Context, id: &str| {
-            ctx.memory(|m| m.area_rect(egui::Id::new(id)))
-                .expect("the window is drawn")
+        let display = Rc::new(RefCell::new(Display::default()));
+        ctx.set_embed_viewports(false);
+        let inner = Rc::clone(&display);
+        egui::Context::set_immediate_viewport_renderer(move |ctx, viewport| {
+            let egui::ImmediateViewport {
+                ids,
+                builder,
+                mut viewport_ui_cb,
+            } = viewport;
+            let (key, closed) = {
+                let mut display = inner.borrow_mut();
+                (
+                    display.keys.remove(&ids.this),
+                    display.closed.remove(&ids.this),
+                )
+            };
+            let mut info = egui::ViewportInfo::default();
+            if closed {
+                info.events.push(egui::ViewportEvent::Close);
+            }
+            let size = builder.inner_size.unwrap_or(egui::vec2(500.0, 500.0));
+            let mut raw = egui::RawInput {
+                viewport_id: ids.this,
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                events: key
+                    .map(|key| {
+                        vec![egui::Event::Key {
+                            key,
+                            physical_key: None,
+                            pressed: true,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    })
+                    .unwrap_or_default(),
+                ..Default::default()
+            };
+            raw.viewports.insert(ids.this, info);
+            let mut output = ctx.run_ui(raw, |ui| viewport_ui_cb(ui));
+            output.textures_delta.clear();
+            let said = rects(&output).into_keys().collect::<Vec<_>>().join("\n");
+            inner.borrow_mut().windows.insert(ids.this, (builder, said));
+        });
+        // one frame of the main window with the four windows, as the application draws them: what the main window said
+        let frame = |app: &mut App| {
+            display.borrow_mut().windows.clear();
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(760.0, 560.0),
+                )),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(raw, |ui| {
+                app.show_window(ui);
+                app.show_about_window(ui.ctx());
+                app.show_catalog_window(ui.ctx());
+                app.show_model_details(ui.ctx());
+                app.show_add_model_window(ui.ctx());
+            });
+            output.textures_delta.clear();
+            rects(&output).into_keys().collect::<Vec<_>>().join("\n")
         };
-        let small = area(&ctx, "add_model");
+
+        // closed, the display is asked for nothing
+        frame(&mut app);
+        assert!(display.borrow().windows.is_empty());
+
+        // open, each is a window of its own with its title, the application's name and its icon, and says what it is for;
+        // the main window says none of it
+        app.open_add_model();
+        app.open_catalog();
+        app.details_of = Some("Small-Q4_K_M.gguf".into());
+        app.show_about = true;
+        let mut main = String::new();
+        for _ in 0..4 {
+            main = frame(&mut app);
+        }
+        let windows = [
+            (
+                add_model_viewport(),
+                "Add a model",
+                "SUGGESTED FOR THIS COMPUTER",
+            ),
+            (
+                catalog_viewport(),
+                "Recommended models",
+                "What do you want to do",
+            ),
+            (details_viewport(), "Details: ", "Quantization"),
+            (about_viewport(), "About QuickAI", "Disclaimer"),
+        ];
+        {
+            let shown = display.borrow();
+            assert_eq!(shown.windows.len(), windows.len());
+            for (id, title, says) in windows {
+                let (builder, said) = &shown.windows[&id];
+                assert!(
+                    builder
+                        .title
+                        .as_deref()
+                        .is_some_and(|t| t.starts_with(title)),
+                    "{:?}",
+                    builder.title
+                );
+                assert_eq!(builder.app_id.as_deref(), Some(crate::APP_ID));
+                assert_eq!(builder.icon.is_some(), !cfg!(target_os = "macos"));
+                assert!(said.contains(says), "{title}: {said}");
+                assert!(!main.contains(says), "{says} is in the main window");
+            }
+        }
+
+        // Escape in Add a model closes it and nothing else; in the recommended models, the same
+        display
+            .borrow_mut()
+            .keys
+            .insert(add_model_viewport(), egui::Key::Escape);
+        frame(&mut app);
+        assert!(!app.add_model_open, "Escape closes Add a model");
+        assert!(app.catalog.open && app.details_of.is_some() && app.show_about);
+        display
+            .borrow_mut()
+            .keys
+            .insert(catalog_viewport(), egui::Key::Escape);
+        frame(&mut app);
+        assert!(!app.catalog.open, "Escape closes the recommended models");
+
+        // the window manager's close button closes each
+        app.open_add_model();
+        app.open_catalog();
+        frame(&mut app);
+        for (id, _, _) in windows {
+            display.borrow_mut().closed.insert(id);
+        }
+        frame(&mut app);
         assert!(
-            small.width() < 700.0 && small.height() < app.room.height() - 40.0,
-            "{small:?} in {:?}",
-            app.room
+            !app.add_model_open && !app.catalog.open && app.details_of.is_none() && !app.show_about,
+            "each closed by its close button"
         );
-        let (button, _) = super::super::add_model::size_button_place(&ctx, small);
-        click(&mut app, &ctx, button.center());
-        assert!(app.add_model_max, "the button makes it big");
-        settled(&mut app, &ctx, true);
-        let big = area(&ctx, "add_model_max");
-        assert!(
-            (big.left() - (app.room.left() + 8.0)).abs() < 1.0
-                && (big.right() - (app.room.right() - 8.0)).abs() < 1.0
-                && (big.top() - (app.room.top() + 8.0)).abs() < 1.0
-                && (big.bottom() - (app.room.bottom() - 8.0)).abs() < 1.0,
-            "{big:?} in {:?}",
-            app.room
-        );
-        // a double click on the title: two clicks a few frames apart
-        let (_, title) = super::super::add_model::size_button_place(&ctx, big);
-        click(&mut app, &ctx, title.center());
-        click(&mut app, &ctx, title.center());
-        assert!(
-            !app.add_model_max,
-            "a double click on the title makes it small"
-        );
-        settled(&mut app, &ctx, true);
-        let again = area(&ctx, "add_model");
-        assert!(
-            (again.width() - small.width()).abs() < 1.0,
-            "{again:?} {small:?}"
-        );
+        frame(&mut app);
+        assert!(display.borrow().windows.is_empty(), "closed, none is drawn");
+
+        // asked for again while open, it comes to the front
+        app.open_add_model();
+        app.open_catalog();
+        assert!(!app.raise_add_model && !app.catalog.raise, "just opened");
+        app.open_add_model();
+        app.open_catalog();
+        assert!(app.raise_add_model && app.catalog.raise, "open already");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -289,9 +289,9 @@ impl App {
                     });
                 }
                 let sections = arrange(&entries, &types, size.as_deref());
-                // in Add a model made as big as the main window, the rest of its height but the line under them
-                let room = if self.add_model_open && self.add_model_max {
-                    (ui.available_height() - 40.0).max(260.0)
+                // in the window of Add a model, the rest of its height but the line under them: as big as the person makes it
+                let room = if ui.ctx().viewport_id() == super::add_model::add_model_viewport() {
+                    (ui.available_height() - 40.0).max(160.0)
                 } else {
                     260.0
                 };

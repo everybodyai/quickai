@@ -76,7 +76,8 @@ opened: choose **Done**, then press **Open Anyway** in **System Settings → Pri
 To get more models, press **Add a model** at the top of the list. With its box empty it suggests models that suit
 this computer; type words to search online, paste a link to download a file, or press the folder to add a `.gguf`
 you already have. The **Hugging Face** link under it opens the hub's page of GGUF models, to look for one yourself and
-paste its link in the box; the button beside the window's × makes it as big as the main window. **Models →
+paste its link in the box. Add a model, the recommended list, a model's details and About are windows of their own:
+move them anywhere, and make them bigger or fill the screen as you would any other window. **Models →
 Recommended** has the whole curated list. To use another model, choose it in the list
 and press the play button; the **⋯** on its row in the list (or a right-click) has Details, Show in folder and Delete,
 and the row says its size, whether it should be fast here, and whether it is the one recommended for this computer.
