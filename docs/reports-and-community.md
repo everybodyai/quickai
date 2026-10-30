@@ -131,14 +131,16 @@ Not asked, but needed for it to work or to be lawful:
 |---|---|---|
 | `everybodyai.dev` | the site, as now (static, with the forms Worker) | everyone |
 | `api.everybodyai.dev` | the app's API, `/v1/...` | the app |
-| `quickai.everybodyai.dev` | community configurations | everyone; signing in to rate or share |
+| `quickai.everybodyai.dev` | QuickAI's own site (live since 2026-10-30, built in `everybodyai`), and the community configurations under `/configurations` | everyone; signing in to rate or share |
 | `admin.everybodyai.dev` | the admin | the owner and moderators, through Cloudflare Access |
 
 **Repositories.** The site stays in `everybodyai`. A new public repository, **`everybodyai/services`**, holds:
 - `api/`, `community/` and `admin/`, one Worker each;
 - `shared/`: the event schemas, the D1 migrations and the test vectors.
 
-It is public so that anyone can check what the server keeps (decision 10). Its licence is QuickAI's unless you choose
+It is public so that anyone can check what the server keeps (decision 10). QuickAI's site already answers on
+`quickai.everybodyai.dev` (its Worker `quickai-site`, from the `everybodyai` repository). It passes `/configurations*` on
+to the community Worker through a service binding, as it passes nothing else, so one hostname serves both. Its licence is QuickAI's unless you choose
 otherwise. The admin's code being public is fine: Access protects it, not secrecy. The app's side is in
 `quickai-public`, and the release side is in `quickai_base`.
 
@@ -517,10 +519,13 @@ framework and keeps the CSP as strict as the site's.
 
 ### 11.1 What a visitor sees
 
-- **Home**: a search box, the categories, *Popular this month*, *New*, and *Fits computers like…* (pick a hardware class).
-- **A category** (`/c/coding`): a list with filters (engine, hardware, system, *no custom arguments*) and a sort (rating,
+The community lives under `/configurations` on QuickAI's site, and the site's header gains a link to it.
+
+- **Home** (`/configurations`): a search box, the categories, *Popular this month*, *New*, and *Fits computers like…*
+  (pick a hardware class).
+- **A category** (`/configurations/c/coding`): a list with filters (engine, hardware, system, *no custom arguments*) and a sort (rating,
   worked on, newest).
-- **A configuration** (`/config/vision-chat-16gb`) shows:
+- **A configuration** (`/configurations/vision-chat-16gb`) shows:
   - its title, author, summary and categories;
   - badges: the engine; *Sets its own command-line arguments*, shown prominently when it does; *Reviewed by
     EverybodyAI*; *Also shared by N people*;
