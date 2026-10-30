@@ -15,6 +15,7 @@ pub mod assets;
 pub mod bundles;
 pub mod chats;
 pub mod cli;
+pub mod community;
 pub mod config;
 pub mod configuration_cli;
 pub mod configurations;
