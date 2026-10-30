@@ -547,8 +547,8 @@ embedding model) says so in the record beside its weights as the id of the engin
 | J24 | 4.10 | ready | Nothing a card says is cut off: every card of the shipped list, for both engines, is drawn at the width of the list with the whole of its note (no ellipsis, nothing past the edge that clips it, the note in one piece on the screen). The notes were cut short after one line, and the rest was only in a hover. | `app/engine.rs` |
 | J24b | 4.10 | ready | The window as a person first sees it (the first page of WP4.34, then Start here, All, a category) has nothing cut off and nothing outside it: the hint of the search box is whole, and every section and every card is under the one before it. They were laid out side by side, because a scroll area takes the layout of the row it is in, so that everything but the first section (and, on a category page, everything but the first card) was off to the right, where a list that scrolls down cannot be reached. | `app/engine.rs` |
 | J24c | 4.10 | ready | Another page, a search, or the window opened again starts at the top of its list, however far the one before was scrolled (the toolkit keeps the position of a scroll area, and a page that opened at its end looked as if it held a few models). | `app/engine.rs` |
-| J13 | 4.34 | ready | A model of the list does the tasks whose rule holds for it (its type, what it reads, its features) and the ones it says it does, in the order of the tasks; a task no vocabulary defines is refused with the nearest one; its tagline is on its card, and one longer than 80 characters is a warning (`p3_catalog.rs`). |
-| J14 | 4.34 | ready | Every model of the shipped list has a tagline and does a task, and every task llama.cpp's models do has, for a computer of 16 GB, a pick that is one of the list's models to start with and fits with room to spare (`p3_catalog.rs`). |
+| J26 | 4.34 | ready | A model of the list does the tasks whose rule holds for it (its type, what it reads, its features) and the ones it says it does, in the order of the tasks; a task no vocabulary defines is refused with the nearest one; its tagline is on its card, and one longer than 80 characters is a warning (`p3_catalog.rs`). |
+| J27 | 4.34 | ready | Every model of the shipped list has a tagline and does a task, and every task llama.cpp's models do has, for a computer of 16 GB, a pick that is one of the list's models to start with and fits with room to spare (`p3_catalog.rs`). |
 | J25 | 4.34 | ready | The window opens on what a person wants to do, Chat chosen, with the picks for 32 GB (Qwen3.5 9B, Qwen3.5 4B, LFM2.5 1.2B Instruct) and nothing cut short; a second task shows only what does both (Chat and Transcribe: Gemma 4 E4B), a pair nothing does says so, nothing chosen asks for a choice; the button of a pick starts the download of what the list recommends; *All N models that do this* opens the list with only those, and the list has the way back (`engine.rs`; the picking itself by the unit tests of `lookup/picks.rs`). |
 
 ### F. ComfyUI as an engine (WP4.11)
@@ -1027,7 +1027,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 706 / 0 / 16 / 5 (total 727). The test kit has 29 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 709 / 0 / 16 / 5 (total 730). The test kit has 29 tests of its own and the Python fake
 22, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 

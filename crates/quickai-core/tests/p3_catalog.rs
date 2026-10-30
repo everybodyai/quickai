@@ -1538,10 +1538,10 @@ fn p3_j09_the_reference_page_of_catalog_documents_is_the_one_generated_from_its_
     }
 }
 
-// ---------------------------------------------------------------------------------------------- J13
+// ---------------------------------------------------------------------------------------------- J26
 
 #[test]
-fn p3_j13_a_model_does_the_tasks_whose_rule_holds_for_it_and_the_ones_it_says_and_says_what_it_is()
+fn p3_j26_a_model_does_the_tasks_whose_rule_holds_for_it_and_the_ones_it_says_and_says_what_it_is()
 {
     // Alpha chats, thinks and reads pictures: its type, its features and what it reads say so
     let r = registry(&[(
@@ -1607,7 +1607,7 @@ fn p3_j13_a_model_does_the_tasks_whose_rule_holds_for_it_and_the_ones_it_says_an
 }
 
 #[test]
-fn p3_j14_every_model_of_the_shipped_list_says_what_it_is_and_every_task_has_models_to_start_with()
+fn p3_j27_every_model_of_the_shipped_list_says_what_it_is_and_every_task_has_models_to_start_with()
 {
     let r = shipped_registry(&[]);
     let models = r.catalog().models();
