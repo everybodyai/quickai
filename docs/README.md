@@ -34,5 +34,5 @@ measured on.
 - [implementation-plan.md](implementation-plan.md): the phases and work packages, with their logs
 - [phase3-test-plan.md](phase3-test-plan.md): the acceptance tests, written before the code
 - [engine-facts.md](engine-facts.md): what was verified about each engine, and how
-- [reports-and-community.md](reports-and-community.md): usage statistics, crash reports, the admin and the community configurations (a proposal; nothing built yet)
+- [reports-and-community.md](reports-and-community.md): telemetry and crash reports the way VS Code does them, the admin, and the community configurations (the plan; nothing built yet)
 - [ollama-backend-architecture.md](ollama-backend-architecture.md): the first Ollama design, superseded by architecture.md
