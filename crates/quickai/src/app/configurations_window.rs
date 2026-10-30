@@ -2162,7 +2162,7 @@ mod tests {
             &profile(
                 "pictures",
                 "Pictures",
-                "catalog = \"qwen3-vl-2b\"\nfile = \"Qwen3VL-2B-Instruct-Q4_K_M.gguf\"",
+                "catalog = \"qwen3-vl-8b\"\nfile = \"Qwen3VL-8B-Instruct-Q4_K_M.gguf\"",
             ),
         );
         put(
@@ -2203,7 +2203,7 @@ mod tests {
         let pair = |a: &str, b: &str| vec![(a.to_string(), b.to_string())];
         assert_eq!(
             chips(&app, "pictures"),
-            pair("Projector", "mmproj-Qwen3VL-2B-Instruct-F16.gguf"),
+            pair("Projector", "mmproj-Qwen3VL-8B-Instruct-F16.gguf"),
             "the list's, before it is here"
         );
         assert_eq!(
@@ -2224,7 +2224,7 @@ mod tests {
         app.configs.selected = Some("pictures".to_string());
         settle(&mut app, &ctx, &display);
         let said_now = said(&display);
-        for want in ["Projector", "mmproj-Qwen3VL-2B-Instruct-F16.gguf"] {
+        for want in ["Projector", "mmproj-Qwen3VL-8B-Instruct-F16.gguf"] {
             assert!(said_now.iter().any(|t| t == want), "{want} in {said_now:?}");
         }
         let _ = std::fs::remove_dir_all(&dir);
