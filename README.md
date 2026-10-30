@@ -50,7 +50,9 @@ you choose a level, and your prompts never leave your computer.
 - **Works with your other apps.** An OpenAI-compatible API on your own machine, for editors, scripts and chat
   clients. Turn on the **Live** tab to watch what each app asks and what the model answers, as it happens.
 - **Configurations you can share.** Save a whole setup (engine, model, settings) as one small file and give it
-  to someone else. Local paths and secrets are never exported.
+  to someone else, or share it on [quickai.everybodyai.dev](https://quickai.everybodyai.dev/configurations), where
+  people rate the ones they use. Local paths and secrets are never exported, and a file you get is shown in full
+  before anything is taken from it.
 - **Headless, too.** `quickai-run` starts a configuration on a server with no display.
 
 ## Install
@@ -163,7 +165,8 @@ It listens on the loopback only; reach it through an SSH tunnel. See [docs/headl
   choose a level: Errors and crashes, Crashes only, Off. `quickai --telemetry` lists everything it
   can send, Settings → Privacy shows what it sent and deletes what EverybodyAI holds, and `DO_NOT_TRACK=1` turns it off
   for good. See [PRIVACY.md](PRIVACY.md#telemetry).
-- The internet is used only when you search for or download a model or an engine, and the app says so.
+- The internet is used only when you search for or download a model or an engine, or open the community's
+  configurations, and the app says so.
 - If you install ComfyUI with its Manager (the box is ticked by default), the Manager fetches its lists of nodes and
   models from GitHub and the Comfy Registry whenever ComfyUI starts. A custom node it installs is another person's
   program.
