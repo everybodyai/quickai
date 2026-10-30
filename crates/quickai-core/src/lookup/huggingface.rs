@@ -75,6 +75,19 @@ pub fn search_url(site: &str, query: Option<&str>) -> String {
     search_url_in(site, query, None)
 }
 
+/// `{site}/models?library=gguf&sort=trending`: the page of the hub where a person looks for GGUF models themselves, with
+/// the words of `query` (as `search_words` makes them) when there are some.
+pub fn page_url(site: &str, query: &str) -> String {
+    let url = format!(
+        "{}/models?library=gguf&sort=trending",
+        site.trim().trim_end_matches('/')
+    );
+    match search_words(query) {
+        words if words.is_empty() => url,
+        words => format!("{url}&search={}", percent_encode(&words)),
+    }
+}
+
 /// The same search restricted to the repositories of one pipeline (`text-to-video`), which is how the
 /// plain list of an engine that runs pictures and video is made: the most downloaded GGUF repository
 /// of a language model is no help to it. A pipeline is what the hub calls one: lower case letters,
@@ -392,6 +405,18 @@ mod tests {
             search_url("http://127.0.0.1:9", None)
         );
         assert_eq!(search_words(&"a ".repeat(200)).chars().count(), 99);
+    }
+
+    #[test]
+    fn the_page_a_person_reads_is_of_gguf_models_and_of_the_words_when_there_are_some() {
+        assert_eq!(
+            page_url("https://huggingface.co/", ""),
+            "https://huggingface.co/models?library=gguf&sort=trending"
+        );
+        assert_eq!(
+            page_url("https://huggingface.co", " qwen  coder:7b"),
+            "https://huggingface.co/models?library=gguf&sort=trending&search=qwen%20coder"
+        );
     }
 
     #[test]

@@ -64,7 +64,17 @@ impl App {
                         ui.horizontal(|ui| {
                             self.show_logo(ui, 48.0);
                             ui.add_space(4.0);
-                            ui.heading(format!("QuickAI {}", env!("CARGO_PKG_VERSION")));
+                            ui.vertical(|ui| {
+                                ui.heading(format!("QuickAI {}", env!("CARGO_PKG_VERSION")));
+                                let site = super::shell::WEBSITE_URL;
+                                if ui
+                                    .link(site.trim_start_matches("https://"))
+                                    .on_hover_text("QuickAI on the web")
+                                    .clicked()
+                                {
+                                    let _ = webbrowser::open(site);
+                                }
+                            });
                         });
                         ui.add_space(4.0);
                         ui.label(

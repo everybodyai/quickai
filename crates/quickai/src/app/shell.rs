@@ -10,7 +10,7 @@
 
 use eframe::egui;
 
-use super::help::{mark_spot, HelpPage, Spot};
+use super::help::{mark_spot, Spot};
 use super::icons::{self, Icon};
 use super::theme::{self, Tone};
 use super::{App, Tab};
@@ -18,10 +18,10 @@ use crate::events::ServerState;
 use crate::hardware::SpeedTier;
 use crate::models::ModelEntry;
 
-/// Where the documentation and the privacy policy are read.
+/// Where the documentation and the privacy policy are read (from Help), and the website (from About).
 pub(super) const DOCS_URL: &str = "https://github.com/everybodyai/quickai/tree/main/docs";
 pub(super) const PRIVACY_URL: &str = "https://github.com/everybodyai/quickai/blob/main/PRIVACY.md";
-const WEBSITE_URL: &str = "https://everybodyai.dev/quickai";
+pub(super) const WEBSITE_URL: &str = "https://everybodyai.dev/quickai";
 
 /// The height of a row of the list of models: the name, and under it its size and what else is known.
 const MODEL_ROW: f32 = 42.0;
@@ -42,12 +42,16 @@ impl App {
         }
         self.take_shortcuts(ui.ctx(), state, active);
 
-        egui::Panel::top("menu_bar")
+        let menu_bar = egui::Panel::top("menu_bar")
             .frame(theme::bar_frame(egui::Margin::symmetric(6, 3)))
             .show(ui, |ui| self.show_menu_bar(ui));
-        egui::Panel::bottom("status_bar")
+        let status_bar = egui::Panel::bottom("status_bar")
             .frame(theme::bar_frame(egui::Margin::symmetric(10, 3)))
             .show(ui, |ui| self.show_status_bar(ui, state));
+        self.room = egui::Rect::from_x_y_ranges(
+            ui.ctx().content_rect().x_range(),
+            menu_bar.response.rect.bottom()..=status_bar.response.rect.top(),
+        );
         // a computer QuickAI sets up, chosen in the status bar: the page of its run (WP4.33)
         let remote_view = self.setup_in_use().is_some();
         if self.runs_alone() && !remote_view {
@@ -93,7 +97,7 @@ impl App {
             )
         });
         if help {
-            self.open_help(None);
+            self.open_help();
         }
         if run && self.setup_in_use().is_some() {
             // the run on the computer QuickAI set up that is shown
@@ -157,30 +161,15 @@ impl App {
                     super::workbench::open_folder(&self.models_dir);
                 }
             });
+            // the rest (Getting started, the keys, the documentation online, the privacy policy) is in Help's own
+            // window, and the address of the website in About
             ui.menu_button("Help", |ui| {
                 if ui
                     .add(egui::Button::new("Help…").shortcut_text("F1"))
                     .clicked()
                 {
-                    self.open_help(None);
+                    self.open_help();
                 }
-                if ui.button("Getting started").clicked() {
-                    self.open_help(Some(HelpPage::GettingStarted));
-                }
-                if ui.button("Keyboard shortcuts").clicked() {
-                    self.open_help(Some(HelpPage::Shortcuts));
-                }
-                ui.separator();
-                if ui.button("Online documentation").clicked() {
-                    let _ = webbrowser::open(DOCS_URL);
-                }
-                if ui.button("Privacy policy").clicked() {
-                    let _ = webbrowser::open(PRIVACY_URL);
-                }
-                if ui.button("QuickAI on the web").clicked() {
-                    let _ = webbrowser::open(WEBSITE_URL);
-                }
-                ui.separator();
                 if ui.button("About QuickAI").clicked() {
                     self.show_about = true;
                 }
@@ -198,7 +187,7 @@ impl App {
                     .on_hover_text("Help (F1)");
                 mark_spot(ui, Spot::Help, help.rect);
                 if help.clicked() {
-                    self.open_help(None);
+                    self.open_help();
                 }
                 let dark = self.dark_mode;
                 if icons::icon_button(

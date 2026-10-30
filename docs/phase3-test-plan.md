@@ -1006,11 +1006,14 @@ Asked for on 2026-10-23 ("Lets stick to classic, but lets turn things around a b
 | I30 | 4.37 | ready | **In a narrow window the sidebar of the Settings is its pictures** (C190): at 480 px wide no page's name is painted and the page has the room; at 760 the names are back and the page is beside them. | `app/settings_window.rs` |
 | I31 | 4.37 | ready | **The builds are one list** (C190): each by its release and the backend its name says, with its size and the rest of its name; the one in use says *In use* (once) and every other one has Use; a program of the person's that is no build is a row of its own, in use; the box for a path is behind *Use a program on disk…* and opens with the program in use in it. | `app/runtime_manager.rs` |
 | I32 | 4.37 | ready | **The models are listed in the Settings only for an engine whose window lists none** (C190): ComfyUI's General page lists its downloaded models, each with Delete in its ⋯ menu, which asks in the Settings window and deletes nothing before the yes; llama.cpp's has no such list (its rows' own menus delete). | `app/settings_window.rs` |
-| I33 | 4.38 | ready | **The ? and F1 open Help, a window of its own** (C191): the ? at the right of the menu bar opens a window called *QuickAI Help*, with no menu in between; F1 opens it; the Help menu opens it on a page, and brings it to the front when it is open. | `app/help.rs` |
+| I33 | 4.38 | ready | **The ? and F1 open Help, a window of its own** (C191): the ? at the right of the menu bar opens a window called *QuickAI Help*, with no menu in between; F1 opens it; *Help...* of the Help menu brings it to the front, on its page, when it is open. | `app/help.rs` |
 | I34 | 4.38 | ready | **Every page's picture is in the program in both themes, with its marks inside it** (C191): the dark picture and the light are one size, every mark and ring is inside the picture, a mark is the number of a step of its page, every picture the program carries is a page's, and every sentence's bold is closed and every button it draws (`{play}`) is one the window has. | `app/help.rs` |
 | I35 | 4.38 | ready | **The search finds the pages by the start of their words** (C191): "port" is the page of a port that is taken and not the one that says "report"; "api key" is Connect an app; an empty box is every page; a word no page has is none. | `app/help.rs` |
 | I36 | 4.38 | ready | **Show me rings a part the main window shows, and only that** (C191): the play button is where the main window drew it, the plug is not while the model is stopped; Show me on the play button paints a green ring round it and lasts; on the plug it stops. | `app/help.rs` |
 | I37 | 4.38 | ready | **The tour passes what the window does not show, and Escape ends it** (C191): with no model, a stop the page lacks is passed to the next part that is shown and none that is shown is passed; with a model it stops at How it runs; after the last stop it is over; Escape ends it. | `app/help.rs` |
+| I38 | 4.39 | ready | **Add a model can be as big as the main window, and small again** (C192): the button beside its × makes it all the main window has between its bars, less a margin; a double click on its title makes it small, at the width it had. | `app/header.rs` |
+| I39 | 4.39 | ready | **Add a model leads to the site its box searches** (C192): under the suggestions, *Hugging Face* and *and paste its link in the box*, to the hub's page of GGUF models; for Ollama, ollama.com's search. | `app/header.rs` |
+| I40 | 4.39 | ready | **The Help menu is Help and About** (C192): *Help…* and *About QuickAI*, and none of Getting started, Keyboard shortcuts, Online documentation, Privacy policy, QuickAI on the web. | `app/header.rs` |
 
 ### N. llama.cpp must not change
 
@@ -1024,7 +1027,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 703 / 0 / 16 / 5 (total 724). The test kit has 29 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 706 / 0 / 16 / 5 (total 727). The test kit has 29 tests of its own and the Python fake
 22, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 
