@@ -135,6 +135,7 @@ ui = { section = "advanced", order = 1 }
 id = "port"
 label = "Port"
 type = "port"
+identity = false                # two configurations that differ only in the port run the same thing
 default = 11434
 bind.port = "public"
 enabled_when = "not session.running"

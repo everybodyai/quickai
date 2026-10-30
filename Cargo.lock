@@ -2769,6 +2769,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickai-check"
+version = "0.2.0"
+dependencies = [
+ "include_dir",
+ "quickai-core",
+ "serde_json",
+]
+
+[[package]]
 name = "quickai-core"
 version = "0.2.0"
 dependencies = [

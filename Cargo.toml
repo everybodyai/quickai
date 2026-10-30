@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/quickai", "crates/quickai-core", "crates/quickai-runtime", "crates/quickai-run"]
+members = ["crates/quickai", "crates/quickai-core", "crates/quickai-runtime", "crates/quickai-run", "crates/quickai-check"]
 
 [workspace.package]
 version = "0.2.0"

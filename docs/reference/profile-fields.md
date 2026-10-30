@@ -28,6 +28,16 @@ Who made the file and for what. Coarse on purpose: no name of a person or of a c
 | `note` | text | A sentence or two from whoever made the file. |
 | `made_with` | text | The application that wrote it (`QuickAI 0.1.0`). |
 | `made_on` | `{ os, arch, gpu, memory_gb }` | The kind of computer it was made on: `linux`, `windows` or `macos`; `x86_64` or `aarch64`; the makers of the graphics cards (`amd`, `nvidia`, `intel`); the memory in whole gigabytes. The person who opens the file is told where the computer differs from theirs. |
+| `community` | `{ id, version }` | The configuration of quickai.everybodyai.dev the file was fetched from (`{ id = "vision-chat-16gb", version = 3 }`). QuickAI writes it when it imports one, and an export keeps it, so that a configuration made from another can say what it is based on. Nothing in it changes what runs. |
+
+## `[meta]` `community`
+
+Where on quickai.everybodyai.dev a configuration came from.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `id` | text | The configuration's id on the site. |
+| `version` | whole number | Its version. |
 
 ## `[meta]` `made_on`
 

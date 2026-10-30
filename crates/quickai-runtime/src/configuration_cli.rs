@@ -1,4 +1,4 @@
-//! `quickai configuration list | show | check | export | import`, and the configuration of `quickai
+//! `quickai configuration list | show | check | export | import | identity`, and the configuration of `quickai
 //! plan --configuration` (docs/configurations.md, section 11). They are for scripts and for support,
 //! and they are how the whole of it is tested without a window.
 //!
@@ -41,6 +41,11 @@ pub const USAGE: &str = "\
   quickai configuration import <file> [--as NAME] [--replace | --keep-both] [--accept-review]
       Stores a file from outside as a configuration of your own. Free text and settings that widen
       what a program may do are shown and are not taken unless --accept-review says so.
+
+  quickai configuration identity <id | file> [--canonical]
+      Who the configuration is, whatever the spelling of its file: two with the same identity run the
+      same thing, and quickai.everybodyai.dev keeps one copy of each. --canonical also prints the form
+      the hash is taken over.
 
   quickai plan --configuration <id | file> [--explain | --json]
       The run plan that configuration makes here.
@@ -185,10 +190,11 @@ pub fn run(args: &[String], dirs: &ConfigDirs, out: &mut dyn Write, err: &mut dy
         Some("check") => check(&args[1..], dirs, out, err),
         Some("export") => export_command(&args[1..], dirs, out, err),
         Some("import") => import_command(&args[1..], dirs, out, err),
+        Some("identity") => identity_command(&args[1..], dirs, out, err),
         _ => {
             let _ = writeln!(
                 err,
-                "quickai: expected `configuration list | show | check | export | import`\n\n{USAGE}"
+                "quickai: expected `configuration list | show | check | export | import | identity`\n\n{USAGE}"
             );
             2
         }
@@ -229,6 +235,33 @@ fn list(dirs: &ConfigDirs, out: &mut dyn Write) -> i32 {
     }
     for bad in unusable(&registry) {
         let _ = writeln!(out, "! {}\n    {}", bad.file, bad.why);
+    }
+    0
+}
+
+fn identity_command(
+    args: &[String],
+    dirs: &ConfigDirs,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> i32 {
+    let (target, canonical) = match args {
+        [target] => (target, false),
+        [target, flag] | [flag, target] if flag == "--canonical" => (target, true),
+        _ => return usage(err, "`configuration identity` needs an id or a file"),
+    };
+    let registry = build_registry(dirs);
+    let configuration = match resolve(&registry, target) {
+        Ok((configuration, _, _)) => configuration,
+        Err(message) => {
+            let _ = writeln!(err, "quickai: {message}");
+            return 1;
+        }
+    };
+    let id = quickai_core::profile::canonical::identity(&registry, &configuration);
+    let _ = writeln!(out, "identity {}\nfamily   {}", id.identity, id.family);
+    if canonical {
+        let _ = writeln!(out, "{}", id.canonical);
     }
     0
 }

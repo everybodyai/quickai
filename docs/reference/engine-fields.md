@@ -193,6 +193,7 @@ One setting. Fields build the settings the window shows, and each says how its v
 | `applies` | `on_start`, `spawn_only`, `live` | When a change takes effect: at the next start; at the next start, and only when QuickAI starts the engine itself; at once. Default `on_start`. |
 | `bind` | table, below | How the value reaches the engine. |
 | `derive` | table of conditions | Named facts for the rest of the program, from the field's value (`gpu_offload = "value > 0"`). |
+| `identity` | bool | Whether the value changes what runs, for telling two shared configurations apart (the community keeps one copy of each). `false` for a port: two configurations that differ only in it run the same model the same way. Default true. |
 | `ui` | table, below | Where and how the window shows it. |
 
 ## `[[field]]` `bind`
@@ -357,6 +358,14 @@ The arguments a companion adds.
 | Key | Value | Meaning |
 |---|---|---|
 | `arg` | list of templates | The arguments, one entry each, over `${component.path}` (the file): `["--mmproj", "${component.path}"]`. Required unless the component has a `place`. |
+
+## `[flags]`
+
+What the program's command line means, as far as telling two shared configurations apart needs it: the community keeps one copy of each configuration, whatever the order or the spelling of its extra arguments.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `aliases` | table of text | Other spellings of a flag, by the spelling written in its place: `"-c" = "--ctx-size"`. A short form, or a second long name, becomes the one it stands for; a flag that is not listed keeps its spelling. |
 
 ## `[models]` `list`
 

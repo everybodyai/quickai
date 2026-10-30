@@ -533,6 +533,7 @@ engine = "ollama"
 note = "Qwen3-VL 8B on Ollama."
 made_with = "QuickAI 0.1.0"
 made_on = { os = "linux", arch = "x86_64", gpu = ["amd"], memory_gb = 32 }
+community = { id = "vision-chat-16gb", version = 3 }
 
 [runtime]
 build = "v0.40.0"
