@@ -55,6 +55,7 @@ pub(super) enum HelpPage {
     Remote,
     Engines,
     Configurations,
+    Community,
     Settings,
     WontStart,
     Slow,
@@ -109,6 +110,7 @@ enum Deed {
     Recommended,
     Settings,
     Configurations,
+    Community,
     Log,
     ModelsFolder,
     Privacy,
@@ -121,6 +123,7 @@ impl Deed {
             Deed::Recommended => "Open Recommended",
             Deed::Settings => "Open Settings",
             Deed::Configurations => "Open Configurations",
+            Deed::Community => "Open Community",
             Deed::Log => "Show the log",
             Deed::ModelsFolder => "Open the folder",
             Deed::Privacy => "Read the privacy policy",
@@ -133,6 +136,7 @@ impl Deed {
             Deed::Recommended => Icon::Bulb,
             Deed::Settings => Icon::Gear,
             Deed::Configurations => Icon::Save,
+            Deed::Community => Icon::Globe,
             Deed::Log => Icon::Document,
             Deed::ModelsFolder => Icon::Folder,
             Deed::Privacy => Icon::Lock,
@@ -404,6 +408,25 @@ const PAGES: &[Page] = &[
         tip: Some("A file you are given says what it would change before anything is used."),
     },
     Page {
+        page: HelpPage::Community,
+        group: Group::Further,
+        icon: Icon::Globe,
+        title: "Configurations others shared",
+        lead: "People share their configurations on quickai.everybodyai.dev, where they are rated and sorted by use.",
+        picture: None,
+        steps: &[
+            step("**File → Configurations…**, then **Community…**, fetches the list. Nothing is fetched before.")
+                .does(Deed::Community),
+            step("**Fits this computer** keeps what was made on a computer like this one. It is worked out here, and nothing about this computer is sent."),
+            step(
+                "**Get…** fetches one and shows what it would change. Its own command-line arguments and other free text are taken only if you tick them.",
+            ),
+            step("To share one of yours, choose **Share with the community…** in its menu. You see the file first, then finish on the site, signed in with GitHub."),
+        ],
+        numbered: true,
+        tip: Some("Shared configurations are reviewed before they are listed, and anyone may use them (CC0)."),
+    },
+    Page {
         page: HelpPage::Settings,
         group: Group::Further,
         icon: Icon::Gear,
@@ -503,8 +526,8 @@ const PAGES: &[Page] = &[
         picture: None,
         steps: &[
             step("What you type and the answers stay on this computer: the engine listens on this computer only."),
-            step("QuickAI uses the internet when you ask it to: to search for or download a model, or an engine."),
-            step("There is no account, no analytics, no crash report and no update check."),
+            step("QuickAI uses the internet when you ask it to: to search for or download a model or an engine, or to open the configurations others shared."),
+            step("Crash and error reports go to EverybodyAI only at the level you choose in **Settings → Privacy**."),
             step("A model on another computer you added gets your messages through your own ssh.")
                 .does(Deed::Privacy),
         ],
@@ -1288,6 +1311,10 @@ impl App {
             Deed::Configurations => {
                 self.open_configurations();
                 self.raise_configurations = true;
+            }
+            Deed::Community => {
+                self.open_configurations();
+                self.open_community(ctx);
             }
             Deed::Log => {
                 self.active_tab = super::Tab::Main;

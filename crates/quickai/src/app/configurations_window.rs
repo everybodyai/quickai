@@ -16,7 +16,7 @@ use eframe::egui;
 use quickai_core::profile::check::{open_text, review, Opened, Report};
 use quickai_core::profile::notes::{Level, Note};
 use quickai_core::profile::state::{carried, changes, Change};
-use quickai_core::profile::{label_of, Configuration};
+use quickai_core::profile::{label_of, CommunityRef, Configuration};
 
 use super::configurations_ui::{modal_width, modified_color, NameFor, UNSAVED_MARK};
 use super::icons::{self, Icon};
@@ -60,6 +60,9 @@ pub(super) struct ImportDialog {
     pub name: String,
     /// What to do when the name is used.
     pub when_taken: WhenTaken,
+    /// The configuration of the community the text was fetched from (Get... of the Community window), and its title:
+    /// there is no path, and the stored file says where it came from.
+    pub community: Option<(CommunityRef, String)>,
 }
 
 /// The three answers to a name that is in use.
@@ -321,8 +324,9 @@ impl App {
             }
             // the questions of the window are asked in it
             self.show_configuration_modals(ui.ctx(), true);
-            self.show_import_dialog(ui.ctx());
+            self.show_import_dialog(ui.ctx(), false);
             self.show_export_dialog(ui.ctx());
+            self.show_share_dialog(ui.ctx());
         });
         if close {
             self.close_configurations();
@@ -334,8 +338,16 @@ impl App {
     pub(super) fn close_configurations(&mut self) {
         self.show_configurations = false;
         self.raise_configurations = false;
-        self.configs.import = None;
+        if self
+            .configs
+            .import
+            .as_ref()
+            .is_some_and(|d| d.community.is_none())
+        {
+            self.configs.import = None;
+        }
         self.configs.export = None;
+        self.community.share = None;
         if self.configs.in_window {
             self.configs.question = None;
             self.configs.name_box = None;
@@ -365,6 +377,15 @@ impl App {
             {
                 self.configs.in_window = true;
                 self.configs.import = Some(ImportDialog::default());
+            }
+            if icons::labelled_button(ui, Role::Normal, true, Icon::Globe, "Community...", 28.0)
+                .on_hover_text(
+                    "Configurations people shared on quickai.everybodyai.dev. The list is fetched when you press this.",
+                )
+                .clicked()
+            {
+                let ctx = ui.ctx().clone();
+                self.open_community(&ctx);
             }
         });
         if let Some(why) = &self.configs.error {
@@ -480,6 +501,9 @@ impl App {
             .iter()
             .filter(|n| n.level != Level::Says)
             .count();
+        // what the community's list says of it, once the list was fetched
+        let (shared, withdrawn) = self.community_of(entry);
+        let shared = shared.map(|(c, _)| super::community_window::stars_words(c));
         let height = BADGE + 4.0;
         let layout = egui::Layout::right_to_left(egui::Align::Center);
         ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), height), layout, |ui| {
@@ -513,6 +537,12 @@ impl App {
                         }
                         if notes > 0 && stopped.is_none() {
                             tags.push((1, Some(Icon::Warn), notes.to_string(), warn, warn_fill));
+                        }
+                        if withdrawn.is_some() {
+                            tags.push((4, None, WITHDRAWN.into(), p.bad, p.card.lerp_to_gamma(p.bad, 0.16)));
+                        }
+                        if let Some(stars) = &shared {
+                            tags.push((0, Some(Icon::Star), stars.clone(), p.muted, egui::Color32::TRANSPARENT));
                         }
                         let spacing = ui.spacing().item_spacing.x;
                         let font = egui::TextStyle::Body.resolve(ui.style());
@@ -552,6 +582,12 @@ impl App {
                             let shown = tag(ui, *icon, text, *color, *fill);
                             if text.starts_with(UNSAVED_MARK) {
                                 shown.on_hover_text("What the window holds is not what was saved.");
+                            } else if text == WITHDRAWN {
+                                shown.on_hover_text(
+                                    "The community withdrew the version it came from: open it to read why.",
+                                );
+                            } else if icon == &Some(Icon::Star) {
+                                shown.on_hover_text("Shared on the community: its stars and how many rated it.");
                             } else if icon == &Some(Icon::Warn) {
                                 shown.on_hover_text(format!(
                                     "{notes} note{} about it on this computer: open it to read them.",
@@ -625,12 +661,13 @@ impl App {
         }
     }
 
-    /// The … of a card and its menu: Rename, Duplicate, Export, and Delete (Reset to factory, for the Default).
+    /// The … of a card and its menu: Rename, Duplicate, Export, Share with the community, and Delete (Reset to factory,
+    /// for the Default).
     /// What is built in or comes with the package cannot be renamed or deleted, and says so.
     fn card_menu(&mut self, ui: &mut egui::Ui, entry: &Entry) {
         let yours = entry.origin == Origin::Yours;
         let more = icons::icon_button(ui, Icon::More, egui::vec2(28.0, 26.0), true, false)
-            .on_hover_text("Rename, duplicate, export or delete it");
+            .on_hover_text("Rename, duplicate, export, share or delete it");
         egui::Popup::menu(&more)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
             .show(|ui| {
@@ -658,6 +695,13 @@ impl App {
                 {
                     self.configs.in_window = true;
                     self.configs.export = Some(self.export_dialog_for(entry));
+                }
+                if icons::menu_item(ui, Icon::Globe, "Share with the community...", true, false)
+                    .on_hover_text("Upload it to quickai.everybodyai.dev for others to use. You see the file first.")
+                    .clicked()
+                {
+                    self.configs.in_window = true;
+                    self.open_share(entry);
                 }
                 ui.separator();
                 if entry.id == DEFAULT_ID {
@@ -710,10 +754,57 @@ impl App {
                 if chips.is_empty() {
                     ui.label(theme::muted("Every setting at its default."));
                 }
+                self.show_card_community(ui, entry);
                 for note in &report.notes {
                     self.show_note(ui, note, c);
                 }
             });
+        });
+    }
+
+    /// What the community's list says of an opened card, once it was fetched: that its version was withdrawn, and why;
+    /// that it is shared, with its stars and downloads. The application changes nothing by itself.
+    fn show_card_community(&mut self, ui: &mut egui::Ui, entry: &Entry) {
+        let p = theme::palette();
+        let (shared, withdrawn) = self.community_of(entry);
+        if let Some(reason) = withdrawn {
+            let from = entry
+                .configuration
+                .meta
+                .community
+                .as_ref()
+                .map_or(0, |c| c.version);
+            ui.label(
+                egui::RichText::new(format!(
+                    "The community withdrew version {from} of the configuration this came from: {reason}"
+                ))
+                .small()
+                .color(p.bad),
+            );
+        }
+        let Some((shared, version)) = shared else {
+            return;
+        };
+        let (title, url) = (shared.title.clone(), shared.url.clone());
+        let mut line = format!(
+            "On the community as \"{title}\"{}: {}, {} download{}.",
+            if version == shared.version {
+                String::new()
+            } else {
+                format!(" (version {version}; it is at {} now)", shared.version)
+            },
+            super::community_window::stars_words(shared),
+            shared.downloads,
+            if shared.downloads == 1 { "" } else { "s" },
+        );
+        if shared.ratings == 0 {
+            line = line.replace("No ratings yet", "no ratings yet");
+        }
+        ui.horizontal_wrapped(|ui| {
+            ui.label(theme::muted(line));
+            if !url.is_empty() && ui.small_button("Open its page").clicked() {
+                let _ = webbrowser::open(&url);
+            }
         });
     }
 
@@ -1064,13 +1155,17 @@ impl App {
         if path.is_empty() {
             return;
         }
-        let text = match crate::configuration_cli::read_file(&path) {
-            Ok(text) => text,
-            Err(e) => {
-                dialog.error = Some(e);
-                return;
-            }
-        };
+        match crate::configuration_cli::read_file(&path) {
+            Ok(text) => self.load_for_import(dialog, text),
+            Err(e) => dialog.error = Some(e),
+        }
+    }
+
+    /// Looks at the text of a file from outside for this computer: what the dialog shows before anything is written.
+    pub(super) fn load_for_import(&mut self, dialog: &mut ImportDialog, text: String) {
+        dialog.error = None;
+        dialog.loaded = None;
+        dialog.ticked.clear();
         let opened = match open_text(&self.registry, &text, env!("CARGO_PKG_VERSION")) {
             Ok(opened) => opened,
             Err(stop) => {
@@ -1108,11 +1203,15 @@ impl App {
         });
     }
 
-    /// The dialog that imports a file from outside: the path, the report, what to take, the name.
-    fn show_import_dialog(&mut self, ctx: &egui::Context) {
+    /// The dialog that imports a file from outside: the path, the report, what to take, the name. A file of the
+    /// community (`from_community`) is reviewed in the Community window, and has its title where the path is.
+    pub(super) fn show_import_dialog(&mut self, ctx: &egui::Context, from_community: bool) {
         let Some(mut dialog) = self.configs.import.clone() else {
             return;
         };
+        if dialog.community.is_some() != from_community {
+            return;
+        }
         let (mut read, mut browse, mut cancel, mut go, mut go_and_use) =
             (false, false, false, false, false);
         let taken = dialog.loaded.as_ref().is_some_and(|l| {
@@ -1129,6 +1228,12 @@ impl App {
             ui.set_width(modal_width(ctx, 500.0));
             ui.label(egui::RichText::new("Import a configuration").strong());
             ui.add_space(6.0);
+            if let Some((from, title)) = &dialog.community {
+                ui.label(format!(
+                    "\"{title}\" (version {}) from quickai.everybodyai.dev, checked against the community's list.",
+                    from.version
+                ));
+            } else {
             ui.label("File:");
             ui.horizontal(|ui| {
                 let edit = ui.add(
@@ -1146,6 +1251,7 @@ impl App {
                     read = true;
                 }
             });
+            }
             if let Some(why) = &dialog.error {
                 ui.add_space(4.0);
                 ui.label(egui::RichText::new(why).color(super::theme::palette().bad));
@@ -1282,7 +1388,7 @@ impl App {
     }
 
     /// Stores what was read, with what the person ticked, as one of their configurations.
-    fn finish_import(&mut self, dialog: &mut ImportDialog, and_use: bool) {
+    pub(super) fn finish_import(&mut self, dialog: &mut ImportDialog, and_use: bool) {
         let Some(loaded) = dialog.loaded.clone() else {
             return;
         };
@@ -1304,6 +1410,7 @@ impl App {
             called,
             taken_policy,
             true,
+            dialog.community.as_ref().map(|(from, _)| from.clone()),
         ) {
             Ok(done) => {
                 self.reload_configurations();
@@ -1311,6 +1418,12 @@ impl App {
                 let id = done.configuration.id.clone();
                 self.configs.selected = Some(id.clone());
                 self.configs.status = Some(format!("Imported \"{}\".", done.configuration.name));
+                if dialog.community.is_some() {
+                    self.community.status = Some(format!(
+                        "Imported \"{}\": it is in Configurations.",
+                        done.configuration.name
+                    ));
+                }
                 self.push_log(format!(
                     "[quickai] Imported the configuration \"{}\".",
                     done.configuration.name
@@ -1492,7 +1605,12 @@ pub(super) fn made_line(c: &Configuration) -> String {
 }
 
 /// `Linux x86_64 (AMD GPU, 32 GB)`.
-fn computer_line(os: &str, arch: &str, gpus: &[String], memory_gb: Option<u64>) -> String {
+pub(super) fn computer_line(
+    os: &str,
+    arch: &str,
+    gpus: &[String],
+    memory_gb: Option<u64>,
+) -> String {
     let os = match os {
         "linux" => "Linux",
         "windows" => "Windows",
@@ -1532,6 +1650,9 @@ fn level_color(level: Level) -> egui::Color32 {
 
 /// The side of the badge of an engine on a card.
 const BADGE: f32 = 30.0;
+
+/// The tag of a configuration whose version of the community was withdrawn.
+const WITHDRAWN: &str = "Withdrawn";
 
 /// The program `companion` is switched on in `configuration`.
 fn companion_on(configuration: &Configuration, companion: &str) -> bool {
