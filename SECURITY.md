@@ -30,10 +30,13 @@ QuickAI's design rests on a few promises. Breaking any of them is a vulnerabilit
 - **An imported configuration cannot act on its own.** Before anything is taken, the person sees in full the
   text that would reach a command line or an environment; lines that make a program load other code
   (`LD_PRELOAD`, `PATH`) are refused. A configuration that runs code, or changes a setting, without consent is
-  a bug.
+  a bug. A configuration fetched from quickai.everybodyai.dev is checked against the SHA-256 of the community's list
+  and then reviewed in the same way as any other file; a way to have one taken without that review is a bug.
 - **No unexpected network traffic.** QuickAI contacts the hosts listed in [PRIVACY.md](PRIVACY.md), and only when
   the person asks; telemetry goes to `api.everybodyai.dev` only, only at the level the person chose, and not at all
-  before they choose or at Off. Any other connection is a bug.
+  before they choose or at Off. The community's configurations are fetched from `api.everybodyai.dev` only when the
+  person opens them, and a configuration is uploaded only when they press **Upload**, with no install id. Any other
+  connection is a bug.
 - **Telemetry carries no content.** An event never holds a prompt, a reply, a file or folder name, a typed search or
   address, or a secret, and nothing that is not in its schema (`quickai --telemetry`). One that does is a bug.
 - **Files stay where they belong.** Engines keep their files under `~/.quickai`. Writing elsewhere is a bug.

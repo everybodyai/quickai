@@ -22,7 +22,8 @@ the level at any time, and download or delete what EverybodyAI holds (see [Telem
 The app has no accounts, no advertising and no automatic update check. Your prompts and the model's replies are
 processed on your own computer and are never uploaded. Apart from the telemetry you choose, the app talks to the
 internet only when you ask it to, to search for or download a model, a llama.cpp build, an Ollama build, a ComfyUI build
-or an Open WebUI build, or to look Ollama's library up (see [When the app uses the internet](#when-the-app-uses-the-internet)).
+or an Open WebUI build, to look Ollama's library up, or to see, get or share the configurations people shared on
+quickai.everybodyai.dev (see [When the app uses the internet](#when-the-app-uses-the-internet)).
 Some of the stores and package managers you can install it through do their own data collection, independent of
 anything the app does; see [Stores and package managers](#stores-and-package-managers) below.
 
@@ -340,12 +341,25 @@ while it runs, not while you chat. It does so only when you press a button, or E
   side. QuickAI keeps the address, the ports and the name of a key file you give in its settings, and never a password
   (it cannot ask for one). That computer, and whoever runs it, sees what you send to the models there.
 
+- **The community's configurations.** **Community…** in the Configurations window (or **File → Community
+  configurations…**) asks `api.everybodyai.dev` for the list of the configurations people shared on
+  quickai.everybodyai.dev, each time the window is opened or refreshed, and nothing before. Searching and filtering the
+  list, *Fits this computer* among them, are worked out on your computer: nothing about it is sent. **Get…** fetches
+  that one file, which is checked against the SHA-256 of the list (a file that does not match is not used) and then
+  reviewed like any file you are given, before anything is taken from it. The server counts one download for that
+  configuration, and nothing about who fetched it. **Share with the community…** in a configuration's menu shows the
+  file the export makes (no folder, no program, nothing that looks like a secret) and, when you press **Upload**, sends
+  exactly that text, nothing else; you then finish in your browser on quickai.everybodyai.dev, signed in with GitHub,
+  under that site's [privacy policy](https://everybodyai.dev/privacy). None of these requests carries the install id
+  or anything that names you or this computer: only the request and a `User-Agent` that says `quickai`. The server
+  sees your IP address, as any server does, and does not store it. A configuration you got from the community keeps
+  which one it was (`[meta] community`, its id and version) in its file on this computer.
 - **Telemetry, at the level you chose.** As described in [Telemetry](#telemetry), to `api.everybodyai.dev` only, and
   nothing at Off.
 
 Each of these is an ordinary web request (HTTPS, or plain HTTP if you type an `http://` address), or for a remote
-computer an SSH connection, from your computer straight to that server. Apart from telemetry, the developer of QuickAI is
-not involved in them and receives nothing.
+computer an SSH connection, from your computer straight to that server. Apart from telemetry and the community's
+configurations, the developer of QuickAI is not involved in them and receives nothing.
 
 The chat keeps nothing unless you tick **Keep chats**; then each conversation is a file in QuickAI's own data folder on
 this computer (`~/.quickai/chats`), and you can delete it from the list. A picture you attach is sent to the model and

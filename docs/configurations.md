@@ -56,6 +56,7 @@ engine = "ollama"                         # the keys that are not tables come fi
 note = "Qwen3-VL 8B on Ollama, 16K context, with Open WebUI beside it."
 made_with = "QuickAI 0.1.0"
 made_on = { os = "linux", arch = "x86_64", gpu = ["amd"], memory_gb = 32 }    # coarse on purpose: nothing that names a person or a computer
+community = { id = "vision-chat-16gb", version = 3 }    # written on import when the file came from quickai.everybodyai.dev
 
 [runtime]                                 # the program as who it is, never as where it is
 build = "v0.40.0-ollama-linux-amd64"      # the label of a build in the manager's list: the release and the file
@@ -86,7 +87,7 @@ Every key is on the generated page [reference/profile-fields.md](reference/profi
 |---|---|
 | `schema`, `kind`, `id`, `requires` | the envelope of every document. `requires.app` is the lowest version that reads the file; a file for a newer one is refused with the sentence that says to update |
 | `name` | any text up to 60 characters (control and direction characters are taken out). The file's id is made from it (lower case, letters, digits, `-`; a number is added if it is taken); the name is never used as a path |
-| `[meta]` | `note` (typed by the person who exports), `made_with`, `made_on`. No user name, host name or folder is ever written |
+| `[meta]` | `note` (typed by the person who exports), `made_with`, `made_on`, and `community`: the id and version of the configuration of quickai.everybodyai.dev the file was fetched from, written on import and kept by an export, so that a configuration made from another can say what it is based on ([reports-and-community.md](reports-and-community.md), section 11.9). No user name, host name or folder is ever written |
 | `engine` | an engine a person can choose; a companion is not one |
 | `[runtime]` | `build`, `version`. Absent: the program this computer uses by default (for llama.cpp, the one the package ships). `[runtime.<program>]` pins the build of a program that goes with the engine (`[runtime.openwebui]`): only `quickai-run` installs from it |
 | `[[model]]` | `role`, one source (§5), `size`, `sha256`, `name` for people, and for a file where it can be had from: `from`, `path`, `revision`, `into`, or `url`. Several are allowed; the first is the one the engine loads |
@@ -276,7 +277,7 @@ A configuration comes from a stranger as often as from the person. The threat is
 * **No network, no process.** Reading, checking and previewing do neither; the core cannot (`tests/purity.rs` holds it, A33). The network is used only by what the person starts: *Get*, *Look up online*, the manager's look-up.
 * **Nothing private is written.** The export is built from an allow-list (fields with `share = yes`, and `review` ones the person kept), so a field added tomorrow is private until its document says otherwise.
 * **The way back.** `QUICKAI_SAFE=1`, the Default's *Reset to factory*, and the fact that nothing is started or installed by choosing.
-* **Provenance is not claimed.** There is no signature and no author check; the report says what the file says about itself and nothing more. Signing waits for the content packs of Phase 6.
+* **Provenance is not claimed.** There is no signature and no author check; the report says what the file says about itself and nothing more. Signing waits for the content packs of Phase 6. A file of the community ([reports-and-community.md](reports-and-community.md), section 11) is checked against the SHA-256 of the community's list, which says it is the file the site published and reviewed, and is then reviewed here as any other file.
 
 PRIVACY.md has a paragraph: configurations are files in the person's configuration directory; export writes where the person chose; import reads what the person chose; nothing is sent; `model-sources.json`.
 
@@ -409,6 +410,7 @@ quickai configuration show <id | file>
 quickai configuration check <file> [--strict]          # the notes for this computer; exit 1 if one stops it (and, with --strict, if one asks or warns)
 quickai configuration export <id> [-o file] [--note TEXT]
 quickai configuration import <file> [--as NAME] [--replace | --keep-both] [--accept-review]    # what is asked about is not taken without --accept-review
+quickai configuration identity <id | file> [--canonical]    # who it is, whatever the spelling of its file (the community keeps one copy of each)
 quickai plan --configuration <id | file> [--explain | --json]   # the run plan it makes here; what is said on the line wins
 quickai config docs profile                             # the reference page
 ```
