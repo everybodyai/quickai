@@ -5,9 +5,11 @@ quickai.everybodyai.dev.
 
 _Status: plan, 2026-10-30. Revised the same day: no signing anywhere, following VS Code. The decisions in
 [§18](#18-decisions) were made by the user. Built since: the app's part ([§21](#21-built-in-the-app-2026-10-30)), and the
-API and the admin, deployed ([§22](#22-built-on-the-server-2026-10-30)); the community is not built. Changed since: no
-level All, so no usage is counted, and the site counts downloads instead; the admin moved to
-`quickaiadmin.everybodyai.dev` ([§23](#23-no-level-all-downloads-counted-instead-2026-10-30))._
+API and the admin, deployed ([§22](#22-built-on-the-server-2026-10-30)), and the community
+([§24](#24-the-community-built-2026-10-30)). Changed since: no level All, so no usage is counted, and the site counts
+downloads instead; the admin moved to `quickaiadmin.everybodyai.dev`
+([§23](#23-no-level-all-downloads-counted-instead-2026-10-30)); and no "worked on", since it needed level All: each
+configuration's downloads are counted instead (§24)._
 
 The user, 2026-10-30: "we need to track the usage of the quickai and also provide option for the user to provide crash
 reports. everybodyai.dev (admin page) needs to be created and it has to have apis in place which accepts the
@@ -47,8 +49,8 @@ The host is written `quickai.everybodyai.dev` below (the request has `everbodyai
   started, memory in steps, the GPU's maker. Never prompts, replies, file names, paths, search words or an IP address.
   The country is kept as two letters (decision 7).
 - **Community configurations** are QuickAI's own configuration files, sorted by use, engine and hardware.
-  - **Rated** with stars by people signed in with GitHub, and *worked on N computers like yours* from installs at level
-    All.
+  - **Rated** with stars by people signed in with GitHub, and each one's downloads counted. (*Worked on N computers
+    like yours* was planned from installs at level All, and went with it: §24.)
   - **Moderated** at launch, under CC0. Configurations for adult image models are not allowed (decision 11).
   - **Reviewed on import.** The app reviews a downloaded file as it reviews any imported one.
   - **Kept once.** Two files that run the same thing are one configuration, whatever the order of their arguments,
@@ -63,7 +65,7 @@ The host is written `quickai.everybodyai.dev` below (the request has `everbodyai
 | Track usage | Events at level All, batched, with a schema the server enforces | 5, 6 |
 | Crash reports | A panic hook and an unclean-exit marker. Engine failures are error events, because they are the crashes people actually meet | 7 |
 | Admin page and APIs | `api.everybodyai.dev/v1` (Worker, D1, R2) and `admin.everybodyai.dev` behind Cloudflare Access | 9, 10 |
-| `quickai.everybodyai.dev`, categorized and rateable | Server-rendered pages, GitHub sign-in, categories, stars, "worked on", moderation, browse and share from the app | 11 |
+| `quickai.everybodyai.dev`, categorized and rateable | Server-rendered pages, GitHub sign-in, categories, stars, download counts, moderation, browse and share from the app | 11 |
 | The same configuration shared by many is kept once | A canonical form of what a configuration runs (the order of arguments, environment lines and keys, quoting, defaults) and its hash | 11.11 |
 | Privacy policy | PRIVACY.md, the site's policy, community terms, SECURITY.md, About, Help, store listings | 13, App. A |
 | Trusted reports | The standard way, without signing: validation, known versions, rate limits, block lists, analysis that resists junk | 8 |
@@ -239,7 +241,7 @@ The events (the full list is the schema in `quickai-core`; times are rounded dow
 | `model.add` | all | `how` (recommended, lookup, link, import, pull), `model` (§6.3) | feature insight |
 | `run.start` | all | `engine`, `build`, `model`, `where` (local, remote), `configuration` (a community id and version, or none) | feature insight |
 | `run.ready` | all | `engine`, `model`, `seconds` | performance |
-| `community.outcome` | all | `config`, `version`, `worked` | feature insight |
+| ~~`community.outcome`~~ | all | `config`, `version`, `worked` (dropped with level All: §24) | feature insight |
 
 `run.start`, `run.ready` and `error.engine_exit` together are the most useful data: which engines, builds and models
 start, how often they fail and on what hardware. They are the evidence for the recommended list (WP4.40 was done by
@@ -527,14 +529,14 @@ The community lives under `/configurations` on QuickAI's site, and the site's he
 - **Home** (`/configurations`): a search box, the categories, *Popular this month*, *New*, and *Fits computers like…*
   (pick a hardware class).
 - **A category** (`/configurations/c/coding`): a list with filters (engine, hardware, system, *no custom arguments*) and a sort (rating,
-  worked on, newest).
+  downloads, newest).
 - **A configuration** (`/configurations/vision-chat-16gb`) shows:
   - its title, author, summary and categories;
   - badges: the engine; *Sets its own command-line arguments*, shown prominently when it does; *Reviewed by
     EverybodyAI*; *Also shared by N people*;
   - what it runs: the models with sizes, sources and licences, and the build;
   - its settings, by the engine documents' names, with free text shown in full;
-  - *Worked on* by hardware class, the stars and reviews;
+  - its downloads, the stars and reviews;
   - its variants, and its versions with what changed;
   - **Download** (the `.toml`), and *How to use it in QuickAI*.
 - **Share** (signed in): upload a `.toml`, or finish one shared from the app.
@@ -550,21 +552,21 @@ them. They use the site's tokens and IBM Plex, and carry no analytics, like the 
 |---|---|---|
 | Use | Chat, Coding, Reasoning and maths, Pictures in (vision), Pictures out, Video, Documents and search (Open WebUI), Embeddings, Small and fast, Long context | the author (one to three); a moderator can change them |
 | Engine | llama.cpp, Ollama, ComfyUI (+ Open WebUI beside) | read from the file |
-| Hardware | the classes of §6.4, folded to maker and memory | the file's `made_on`, then the "worked on" results |
+| Hardware | the classes of §6.4, folded to maker and memory | the file's `made_on` |
 
 Categories are rows in D1: adding one is an admin action, not a release.
 
-### 11.3 Ratings and "worked on"
+### 11.3 Ratings and downloads
 
 - **Stars** (1 to 5) and an optional review of up to 1000 characters.
   - Rating needs a signed-in account: one rating per account and configuration, which its author can change.
   - Authors cannot rate their own, and a moderator can hide a review.
   - The list sorts by a Bayesian mean: with the site's mean `m` and `C = 5`, score = (C·m + Σ stars) / (C + n). One
     5-star rating does not top the list.
-- **Worked on.** When an install at level All starts a configuration from the community, the next batch carries
-  `community.outcome`: whether the engine reached ready (decision 12). The server counts one result per install and
-  configuration, by hardware class, and the latest result wins: "worked on 37 computers, 9 like yours". It needs no
-  account, and it is shown apart from the stars, never mixed in.
+- **Downloads.** Each configuration counts its downloads, from the site and from the app's **Get…**, by day: one per
+  address and configuration a minute (the address is held by the rate limit in memory, never stored), and none for
+  a crawler, a prefetch or a HEAD. *Popular this month* is the last 30 days. (The plan had *worked on N computers*
+  here, from installs at level All; level All is gone, and with it this: §24.)
 - **Abuse**:
   - accounts younger than 7 days can rate but are not counted until then;
   - rate limits per account;
@@ -635,16 +637,13 @@ never changes; a fix is a new version.
 - **Browse.** Configurations → **Community…** opens a window of its own (C194).
   - It fetches the list only on that click, under PRIVACY.md's rule, and filters it on the computer. *Fits this
     computer* uses the local hardware class, so nothing about the computer is sent to browse.
-  - A row shows the title, author, engine, stars, "worked on N like this one", and badges.
+  - A row shows the title, author, engine, stars, downloads, and badges.
   - **Get…** fetches the file, checks its SHA-256 against the list, then runs **the import review the app already
     has**: the notes, and the free text shown in full and taken only when ticked.
 - **Where it came from.** An imported configuration keeps `[meta] community = { id = "…", version = 3 }`, a new key of
   the `profile` schema. Its export keeps it, so a configuration made from another can say "based on".
 - **The same as a community one.** The Configurations window says when any configuration's identity is in the list,
-  with its stars and "worked on", whether it was fetched from the community or not.
-- **Worked or not.** At level All, the first start of a configuration whose identity is in the list queues
-  `community.outcome`. The identity of a configuration nobody shared is never sent: it could be guessed back from a
-  small set of likely candidates.
+  with its stars and downloads, whether it was fetched from the community or not. Nothing about a run is ever sent.
 - **Withdrawn.** When the list says a version was withdrawn, the configuration's row shows a warning note with the
   reason. The app changes nothing by itself.
 - **A `.toml` downloaded from the site** is just a file, imported as today with the full review.
@@ -726,7 +725,7 @@ app's word for it.
 
 A draft from the app is checked when it is uploaded, so the app hears "already shared as …" at once. A unique index on
 the identity among pending and published versions holds the rule even when two people submit at the same moment: the
-second insert fails and becomes the *Also shared by* case. Ratings, reviews and "worked on" therefore all gather on the
+second insert fails and becomes the *Also shared by* case. Ratings, reviews and downloads therefore all gather on the
 one copy.
 
 **Close, but not the same.** Configurations with the same engine, models and build but different settings are
@@ -780,8 +779,7 @@ CREATE TABLE config_sharers (config_id TEXT, user_id INTEGER, at TEXT, PRIMARY K
 CREATE TABLE refused (identity TEXT PRIMARY KEY, reason TEXT, at TEXT);    -- a refused file cannot return under a new name
 CREATE TABLE ratings (config_id TEXT, user_id INTEGER, stars INTEGER CHECK (stars BETWEEN 1 AND 5), review TEXT,
   created TEXT, updated TEXT, hidden INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (config_id, user_id));
-CREATE TABLE outcomes (config_id TEXT, version INTEGER, install_hash TEXT, hardware TEXT, worked INTEGER, day TEXT,
-  PRIMARY KEY (config_id, install_hash));                    -- install_hash = HMAC(secret, install id): no join with telemetry
+CREATE TABLE downloads (config_id TEXT, day TEXT, downloads INTEGER, PRIMARY KEY (config_id, day));  -- §24: no outcomes
 CREATE TABLE drafts (token_hash TEXT PRIMARY KEY, toml TEXT, identity TEXT, expires TEXT);
 CREATE TABLE flags (id INTEGER PRIMARY KEY, config_id TEXT, rating_user INTEGER, reporter INTEGER, reason TEXT,
   created TEXT, resolved TEXT);
@@ -799,13 +797,13 @@ CREATE TABLE flags (id INTEGER PRIMARY KEY, config_id TEXT, rating_user INTEGER,
 | `installs` | 13 months after the last report | deleted with everything of it |
 | drafts | 24 hours | |
 | sessions | 30 days | |
-| `outcomes` | 13 months | folded into the counts |
+| community `downloads` by day | 400 days | the total stays with the configuration |
 | accounts, ratings, configurations | while the account exists | §11.4 |
 | `deletions`, `audit` | 2 years | |
 | Cloudflare's own logs | Cloudflare's terms | |
 
 **Deletion from the app.** *Delete what EverybodyAI holds* sends `DELETE /v1/me`. The server deletes the install's row,
-batches, runs and crashes, the R2 objects under `crash/<install>/`, and the community `outcomes` under its keyed hash.
+batches, runs and crashes, and the R2 objects under `crash/<install>/`. The community holds nothing of an install.
 `rollups` hold no id and stay. The answer is a receipt. The app then makes a new install id, so that what is sent later
 is not tied to the old data. A test lists every table with an install column and fails if one is missing from the
 deletion.
@@ -991,7 +989,7 @@ Made by the user on 2026-10-30 ("I accept your recommendeds", with the answers f
 | 9 | A public page of numbers, after the admin (4.42.13) |
 | 10 | The server code and schemas are public, in `everybodyai/services` (reversed by the user on 2026-10-30: the repository is private, §23) |
 | 11 | Configurations for adult image or video models are not allowed |
-| 12 | "Worked on" counts only installs at level All |
+| 12 | ~~"Worked on" counts only installs at level All~~ Dropped with level All: each configuration's downloads are counted instead (the user, 2026-10-30, §24) |
 | 13 | No signing of reports, requests or community files; the standard checks of §8 instead (the user: "drop the idea if its not a standard one - we will follow similar to vscode") |
 
 ## 19. Costs, limits and risks
@@ -1046,7 +1044,7 @@ implementation plan, decisions C195 to C197. What differs from the sections abov
 
 - **A crash report is a batch of one `crash.panic` event** (`Batch`, the same shape as the events'), sent to
   `POST /v1/crash`. Its `install` and `level` are filled in when it is sent; the hook writes them empty.
-- **Not sent yet**: `community.outcome` (there is no community yet), an install that failed (`error.install`), and
+- **Not sent yet**: an install that failed (`error.install`), and
   `model.add` for an Ollama pull or a file imported (a download from the recommended list, a look-up or a link is
   counted). `error.engine_exit` has no `changed` field. The schema lists only what is sent, and grows with it.
 - **The package's cap** is a file `telemetry.toml` in the package's configuration folder (`ConfigDirs::bundle`), with one
@@ -1134,6 +1132,64 @@ https://admin.everybodyai.dev to https://quickaiadmin.everybodyai.dev".
 - **`everybodyai/services` is private** (the user: "also make the services repo private"), which reverses decision 10.
   PRIVACY.md no longer links it; what the app can send is still public, in `quickai --telemetry` and
   docs/reference/telemetry-events.md.
+
+## 24. The community, built (2026-10-30)
+
+The user, the same day: "remove the 'worked on 37 computers' - we do not collect 'all' now. Implement community - let
+people be able to share/rate - also keep a download count of the specific cfg." So *worked on* is gone everywhere
+(decision 12, `community.outcome`, the `outcomes` table), and each configuration counts its downloads instead (§11.3).
+
+**What runs where.**
+
+| Part | Where | What it is |
+|---|---|---|
+| The identity | `quickai-core`, `profile/canonical.rs` | §11.11, `canon` 1. Engine documents gained `identity = false` (the four ports) and `[flags.aliases]` (llama-server's, from its `--help` at b11889). `quickai configuration identity <id \| file> [--canonical]` |
+| The server's check | `crates/quickai-check`, built to WebAssembly | The app's own `open_text` over the shipped documents; what the app would drop on import is a reason to refuse; then no secret-like word or line, no path, no denied environment line, and models only from the recommended list, Ollama's library or Hugging Face (§11.6). Answers the identity and what the pages show. 3.7 MB (1.2 MB compressed). A fresh isolate builds its registry in about 20 ms, so it needs Workers Paid (decision 8); then a check is under a millisecond |
+| The community's Worker | `everybodyai/services`, `community/` | `everybodyai-community`, with no address of its own and its own D1 `quickai-community` (rule 7). Pages, forms, GitHub sign-in, ratings, downloads, drafts, and `/v1/community/*`. `npm run build:check` copies the WebAssembly in from quickai-public |
+| The app's API | `api.everybodyai.dev/v1/community/*` | The API Worker passes it on through a service binding, with the `QuickAI-Install` header taken off |
+| The pages | `quickai.everybodyai.dev/configurations*` | QuickAI's site Worker passes them on through a service binding. A page comes back as JSON (title, description, whether it may be indexed, the HTML of its `<main>`) and is put into `/configurations-shell`, a page the site builds, so it has the site's header, footer, theme and Content-Security-Policy (everybodyai, `worker/community.ts`) |
+| Moderation | the admin's **Community** page | The queue, each version in full with what the check read and links to its models, Publish, Do not accept (with a reason), Withdraw (with a reason), reports, and accounts (ok, limited, banned). Refusing or withdrawing refuses the identity too. Every action is in the audit log |
+| The app | Configurations → **Community…**, **Share with the community…** | Built in `quickai-public` (`community.rs`, `community_window.rs`): the list fetched on the click only, filtered on the computer, Get… with the SHA-256 check and the import review, `[meta] community`, "already shared as", the withdrawn note |
+
+**The API.**
+- `GET /v1/community/index`: every published configuration (id, version, title, summary, author, engine, models,
+  categories, `made_on`, the badges, stars, ratings, score, downloads, sharers, the file's SHA-256, identity, family,
+  older versions' identities, the page's address), the withdrawn versions with their reasons, and the categories. Made
+  on request from D1, not each night: the community is small enough.
+- `GET /v1/community/configs/{id}/{version}`: the file, counted as a download. 404, or 410 with the reason when
+  withdrawn.
+- `POST /v1/community/drafts`: the file. 201 with a claim address valid for 24 hours; 200 `already` when its identity
+  is pending or published (or an older version of one); 400 with the problems; 409 when it was refused before; 413;
+  429 (10 a minute per network).
+
+**Different from the plan, on purpose.**
+- The pages are made by a Worker as HTML, not by Astro with the Cloudflare adapter, and borrow the site's page through
+  the shell. They carry no script, no style attribute and no picture from elsewhere, so the site's policy holds: there
+  are no GitHub avatars, only logins.
+- The forms are behind GitHub sign-in, a same-origin check and a rate limit per account (20 a minute); Turnstile is
+  not on them.
+- The guidelines and the terms are pages of the community, `/configurations/guidelines` and `/configurations/terms`.
+- A model's identity is its SHA-256 when the file gives one, else its source; the server does not fill SHA-256s in
+  from the hub.
+- A new version of one's own configuration is chosen on the share page ("Is it a new version of one of yours?"); a
+  file whose `[meta] community` names one of the person's own configurations has it chosen already.
+
+**Not built yet.** Suggested edits and merges for the moderators (a different title from a second sharer is not kept);
+the job that computes every identity again when `canon` goes up; the shared test vectors of §16
+(`services/shared/test-vectors/`); a Cron email to the owner when something waits for review; a public page of numbers
+(4.42.13).
+
+**Going live**, in this order:
+1. `npx wrangler d1 create quickai-community`, and its id in `community/wrangler.jsonc` and `admin/wrangler.jsonc`.
+2. A GitHub OAuth app of the `everybodyai` organization, with the callback
+   `https://quickai.everybodyai.dev/configurations/auth/callback` and no scope; its client id as `GITHUB_CLIENT_ID` in
+   `community/wrangler.jsonc`, and its secret as `GITHUB_CLIENT_SECRET` (`npx wrangler secret put GITHUB_CLIENT_SECRET
+   -c community/wrangler.jsonc`).
+3. In `services`: `npm run deploy` (the community's migration and Worker first, then the API and the admin).
+4. In `everybodyai`: build and deploy QuickAI's site (`wrangler.quickai.jsonc`) and the main site, whose privacy policy
+   and roadmap say so.
+5. Rebuild the check (`npm run build:check`) and deploy the community again whenever the app's documents change, and
+   before each release: a file that asks for a newer QuickAI than the check's is refused.
 
 ## Appendix A: draft text for PRIVACY.md
 
