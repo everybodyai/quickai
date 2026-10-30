@@ -210,7 +210,6 @@ install id** replaces it. Don't post it in public: it is how you ask EverybodyAI
 from (two letters), not your address, and logs nothing of a request. Reports are kept in full for 90 days, and crash
 reports for 180 days. The first and last day an install id sent something is kept for 13 months after the last; after
 that only daily totals with no install id remain.
-The server's code is public: <https://github.com/everybodyai/services>.
 
 **Your choices.** Settings → Privacy → **Show what is sent** shows what was sent, what waits, and everything that can be
 sent. **Download what EverybodyAI holds** saves all of it to a file in `~/.quickai/telemetry`; **Delete what EverybodyAI

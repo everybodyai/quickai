@@ -989,7 +989,7 @@ Made by the user on 2026-10-30 ("I accept your recommendeds", with the answers f
 | 7 | The country is stored, as two letters taken from Cloudflare, never the address |
 | 8 | Workers Paid before launch ($5 a month when last checked): the free plan's daily D1 writes are per account, and its CPU limit is 10 ms |
 | 9 | A public page of numbers, after the admin (4.42.13) |
-| 10 | The server code and schemas are public, in `everybodyai/services` |
+| 10 | The server code and schemas are public, in `everybodyai/services` (reversed by the user on 2026-10-30: the repository is private, §23) |
 | 11 | Configurations for adult image or video models are not allowed |
 | 12 | "Worked on" counts only installs at level All |
 | 13 | No signing of reports, requests or community files; the standard checks of §8 instead (the user: "drop the idea if its not a standard one - we will follow similar to vscode") |
@@ -1131,6 +1131,9 @@ https://admin.everybodyai.dev to https://quickaiadmin.everybodyai.dev".
   admin's new **Downloads** page reads it: totals, a daily line, countries, a table of countries by version, versions,
   and versions by system, for up to a year.
 - **The admin is `quickaiadmin.everybodyai.dev`**, and the owner's email links there.
+- **`everybodyai/services` is private** (the user: "also make the services repo private"), which reverses decision 10.
+  PRIVACY.md no longer links it; what the app can send is still public, in `quickai --telemetry` and
+  docs/reference/telemetry-events.md.
 
 ## Appendix A: draft text for PRIVACY.md
 
