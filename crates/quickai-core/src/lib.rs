@@ -29,4 +29,5 @@ pub mod prerequisite;
 pub mod profile;
 pub mod registry;
 pub mod stream;
+pub mod telemetry;
 pub mod value;

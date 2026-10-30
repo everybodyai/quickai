@@ -33,12 +33,17 @@ QuickAI headless commands
       --strict      warnings (for example keys this version does not know) fail too
       --embedded    check only the documents compiled into the application
 
-  quickai config docs [vocab | catalog | profile]
+  quickai config docs [vocab | catalog | profile | telemetry]
       Print the reference page for engine documents (docs/reference/engine-fields.md), or with
       `vocab` the one for vocabulary documents (docs/reference/vocab-fields.md), with `catalog`
       the one for catalog documents (docs/reference/catalog-fields.md), or with `profile` the one
       for configuration documents (docs/reference/profile-fields.md), generated from the types the
-      loader reads.
+      loader reads; with `telemetry`, every event QuickAI can send
+      (docs/reference/telemetry-events.md).
+
+  quickai --telemetry
+      Print, as JSON, every telemetry event this build can send: its level, why it is collected,
+      and each field with its shape and the kind of data it is.
 
   quickai plan [--explain | --json] [--engine ID] [--model FILE|NAME] [--binary FILE] [--port N]
                [--ctx-size N] [--gpu-layers N] [--extra-args TEXT] [--proxy]
@@ -63,7 +68,10 @@ QuickAI headless commands
 /// interface as usual. Any other arguments are ignored by the interface, as they always were.
 pub fn run(args: &[String]) -> Option<i32> {
     let first = args.first().map(String::as_str)?;
-    if !matches!(first, "config" | "configuration" | "plan" | "--help" | "-h") {
+    if !matches!(
+        first,
+        "config" | "configuration" | "plan" | "--telemetry" | "--help" | "-h"
+    ) {
         return None;
     }
     let stdout = std::io::stdout();
@@ -87,6 +95,15 @@ pub fn run_with(
             let _ = write!(out, "{USAGE}");
             0
         }
+        Some("--telemetry") if args.len() == 1 => {
+            let list = quickai_core::telemetry::schema::list_json();
+            let _ = writeln!(
+                out,
+                "{}",
+                serde_json::to_string_pretty(&list).unwrap_or_default()
+            );
+            0
+        }
         Some("config") => match args.get(1).map(String::as_str) {
             Some("check") => config_check(&args[2..], dirs, out, err),
             Some("docs") if args.len() == 2 => {
@@ -99,6 +116,10 @@ pub fn run_with(
             }
             Some("docs") if args.len() == 3 && args[2] == "catalog" => {
                 let _ = write!(out, "{}", quickai_core::doc::reference::render_catalog());
+                0
+            }
+            Some("docs") if args.len() == 3 && args[2] == "telemetry" => {
+                let _ = write!(out, "{}", quickai_core::telemetry::schema::reference_page());
                 0
             }
             Some("docs") if args.len() == 3 && args[2] == "profile" => {
@@ -528,6 +549,23 @@ mod tests {
             page.replace("\r\n", "\n"),
             "regenerate it with `quickai config docs vocab`"
         );
+    }
+
+    #[test]
+    fn telemetry_lists_every_event_as_json_and_as_a_page() {
+        let (code, out, _) = run_capture(&["--telemetry"], &ConfigDirs::default());
+        assert_eq!(code, 0);
+        let list: serde_json::Value = serde_json::from_str(&out).expect("JSON");
+        assert_eq!(
+            list["events"].as_array().map(Vec::len),
+            Some(quickai_core::telemetry::schema::EVENTS.len())
+        );
+        let (code, page, _) = run_capture(&["config", "docs", "telemetry"], &ConfigDirs::default());
+        assert_eq!(code, 0);
+        assert_eq!(page, quickai_core::telemetry::schema::reference_page());
+        // only alone
+        let (code, _, _) = run_capture(&["--telemetry", "x"], &ConfigDirs::default());
+        assert_ne!(code, 0);
     }
 
     #[test]

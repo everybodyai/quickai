@@ -34,6 +34,8 @@ struct Shared {
     gone: AtomicBool,
     /// What the watcher has to say to the person, for the log pane.
     notices: Mutex<Vec<String>>,
+    /// How long each stall lasted, in seconds, for telemetry (`error.stall`).
+    stalls: Mutex<Vec<u64>>,
 }
 
 /// The pulse of the window: each frame beats, and a watcher looks at how long ago.
@@ -50,6 +52,7 @@ impl Heartbeat {
                 running: Mutex::new(None),
                 gone: AtomicBool::new(false),
                 notices: Mutex::new(Vec::new()),
+                stalls: Mutex::new(Vec::new()),
             }),
         }
     }
@@ -72,6 +75,15 @@ impl Heartbeat {
             .notices
             .lock()
             .map(|mut n| std::mem::take(&mut *n))
+            .unwrap_or_default()
+    }
+
+    /// How long each stall since the last call lasted, in seconds.
+    pub fn take_stalls(&self) -> Vec<u64> {
+        self.shared
+            .stalls
+            .lock()
+            .map(|mut s| std::mem::take(&mut *s))
             .unwrap_or_default()
     }
 
@@ -168,6 +180,9 @@ fn look(
                         format_duration(stalled)
                     ),
                 );
+                if let Ok(mut stalls) = shared.stalls.lock() {
+                    stalls.push(stalled.as_secs());
+                }
                 if let Ok(mut notices) = shared.notices.lock() {
                     notices.push(format!(
                         "[quickai] The window did not answer for {} while {running} was running. What the machine was doing is written in {}.",

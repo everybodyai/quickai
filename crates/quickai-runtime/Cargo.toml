@@ -9,7 +9,7 @@ description = "QuickAI without a window: it finds, installs, fetches, starts, wa
 path = "src/lib.rs"
 
 [features]
-default = ["remote-setup"]
+default = ["remote-setup", "telemetry"]
 # The fakes of the four things QuickAI talks to and the golden files, for the tests of the crates that use this one
 # (they are always there for this crate's own tests). Nothing that ships turns it on.
 testkit = []
@@ -17,11 +17,16 @@ testkit = []
 # program and the configuration copied there, the run started, followed and stopped, and the other ways for what it
 # lacks (`remote::{probe, deploy, run, job, alternatives}`). Without it, a computer is only one the window attaches to.
 remote-setup = []
+# Telemetry (WP4.42, docs/reports-and-community.md): the requests that send reports to EverybodyAI. Without it the
+# build has no code that sends, and telemetry is off for good, as a packager may want (`--no-default-features`).
+telemetry = []
 
 [dependencies]
 quickai-core = { path = "../quickai-core" }
 crossbeam-channel = "0.5.16"
 directories = "6"
+# the install id and the ids of reports (telemetry)
+getrandom = "0.3"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 regex = "1"
 ruzstd = "0.8"

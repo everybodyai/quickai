@@ -1,6 +1,6 @@
 # Privacy policy: QuickAI
 
-_Last updated: 2026-10-24_
+_Last updated: 2026-10-30_
 
 QuickAI ("the app") is a desktop program for running language models on your own computer: you pick a model,
 start it, and chat with it in your browser or from another program on the same machine. It can run them with
@@ -12,13 +12,20 @@ Scoop, Chocolatey or the AUR.
 
 ## In short
 
-The app itself does not collect, store or send personal information to its developer or to anyone else. It has no
-accounts, no analytics or telemetry, no advertising, no crash reporting and no automatic update check of its own.
-Your prompts and the model's replies are processed on your own computer and are never uploaded. The app talks to
-the internet only when you ask it to, to search for or download a model, a llama.cpp build, an Ollama build, a
-ComfyUI build or an Open WebUI build, or to look Ollama's library up (see [When the app uses the internet](#when-the-app-uses-the-internet)). Some of the stores and package managers you can
-install it through do their own data collection, independent of anything the app does; see
-[Stores and package managers](#stores-and-package-managers) below.
+QuickAI sends nothing to its developer until you choose to. The first time it starts it asks you to pick a
+**telemetry level**: **All** (crash reports, error reports, and counts of what the app did, such as which engine ran
+and whether a model started), **Errors and crashes**, **Crashes only**, or **Off**. Until you answer, and whenever it is
+Off, nothing is sent. Reports go to EverybodyAI's server, `api.everybodyai.dev`, with a random install id and a rough
+description of your computer; they never include your prompts, the model's replies, your files, folders or searches.
+`quickai --telemetry` lists everything the app can send, and Settings → Privacy shows what it did send, lets you change
+the level at any time, and download or delete what EverybodyAI holds (see [Telemetry](#telemetry)).
+
+The app has no accounts, no advertising and no automatic update check. Your prompts and the model's replies are
+processed on your own computer and are never uploaded. Apart from the telemetry you choose, the app talks to the
+internet only when you ask it to, to search for or download a model, a llama.cpp build, an Ollama build, a ComfyUI build
+or an Open WebUI build, or to look Ollama's library up (see [When the app uses the internet](#when-the-app-uses-the-internet)).
+Some of the stores and package managers you can install it through do their own data collection, independent of
+anything the app does; see [Stores and package managers](#stores-and-package-managers) below.
 
 ## What the app does with your data
 
@@ -106,7 +113,7 @@ install it through do their own data collection, independent of anything the app
   they are not stored or sent anywhere.
 - **Settings.** The app saves a small settings file in your operating system's per-user configuration folder (on
   Linux `~/.config/quickai/settings.json`, on Windows under `%APPDATA%\quickai`): the last-used model file name,
-  port, context size and GPU layers, light or dark mode, the live-traffic switch, and the custom models folder,
+  port, context size and GPU layers, light or dark mode, the live-traffic switch, the telemetry level you chose, and the custom models folder,
   `llama-server` path and extra command-line arguments if you entered any. It holds no account or personal data
   beyond the paths you typed, and it is never sent anywhere. The app keeps no history of your prompts, files,
   searches or downloads.
@@ -146,10 +153,90 @@ install it through do their own data collection, independent of anything the app
 To remove everything the app has saved, delete `~/.quickai` and the settings folder named above. Uninstalling the
 app does not always do that for you.
 
+## Telemetry
+
+**The levels.** You choose one when QuickAI first starts, and can change it in Settings → Privacy.
+
+- **Crashes only**: a report when QuickAI stops because of an error. It holds the error's message, where in QuickAI's
+  code it happened and the names of the functions that led there, the name of the thread, and what the app was doing
+  (which engine, whether it was running, which windows were open, how long the app had been open, in ranges). Never a
+  log.
+- **Errors and crashes** adds reports of what failed: an engine that stopped by itself (the engine, the label of its
+  build, the model as named below, whether it was loading or serving, how it ended, such as `exit 1`, and how long after
+  Start), a model download that failed (its site, such as Hugging Face, and a word for the reason, such as `network`
+  or `checksum`, never the file or the address), the window not answering for five seconds or more (for how long, in
+  ranges), and a session that ended without closing (counted at the next start).
+- **All** adds counts of what the app did: that it started and was closed (and how long it was open, in ranges),
+  which of its windows were opened, which features were used (the live traffic view, keeping chats, a remote computer,
+  Open WebUI, the chat, importing or exporting a configuration), how a model was added (from the recommended list, a
+  look-up or a link), and for each Start the engine, its build, the model, whether it ran here or on another computer
+  and how long it took to be ready.
+
+Every report also says: QuickAI's version, whether it is a build EverybodyAI released or one built from source, the
+commit and the kind of computer it was built for, and how it was installed (AppImage, Snap, DMG...); your system, its
+version and your processor's architecture; your memory rounded to 8, 16, 32, 64 or 128 GB and more; the makers of your
+graphics adapters (NVIDIA, AMD, Intel, Apple), never the model of the card; your system's language, without the region;
+and the level in force. A model is named only when it is on QuickAI's recommended list (`catalog:<id>`) or is a public
+Hugging Face repository you found through the app (`hf:<owner>/<repo>`); any other model is `other` with its size in
+ranges, so a file you made or renamed is never named. Before a crash report is written, the app replaces your home
+folder, your user name, your computer's name, the addresses of your remote computers, other IP addresses, email
+addresses, the query of any web address and anything that looks like a password or a token. Each event carries the hour
+it happened in, not the moment. `quickai --telemetry` prints the whole list, as JSON; the same list is
+[docs/reference/telemetry-events.md](docs/reference/telemetry-events.md).
+
+**What it never contains**: your prompts, the model's replies or your chats; pictures; file or folder names; words you
+typed into a search or a box; web addresses you typed; the text of command-line arguments or environment lines; your
+configurations; your IP address (it reaches Cloudflare, which carries the request; EverybodyAI does not store it).
+
+**At Off.** Nothing is sent. If QuickAI stopped because of an error, the next start offers to send that one report,
+shows it to you first, and sends it only if you press **Send this report**. At **Crashes only** and above, a crash
+report is sent at the next start without asking.
+
+**On your computer.** Telemetry keeps its files in `~/.quickai/telemetry`: the install id (`install-id`, made the first
+time anything is sent, readable by you only), the events waiting to be sent (`queue.jsonl`, at most 1 MB), when the last
+batch went (`state.json`), what was sent, exactly as it was sent (`telemetry.log`, its last 1 MB), crash reports not yet
+sent (`crashes/`; those you chose not to send are in `crashes/kept`, for a GitHub issue; both are deleted after 90 days),
+and a small marker of each session that is open (`running-<number>.json`), so that the next start can tell a session
+that ended without closing. A crash report is written there whatever the level, and leaves your computer only as said
+above.
+
+**When it is sent.** Events are sent in batches: when 100 wait, every six hours while the app is open, and when you
+close it, but not in the first two minutes after it starts. If the server cannot be reached the app waits an hour, then
+six, then a day, and drops what waited more than three days. Each batch is one HTTPS request to `api.everybodyai.dev`
+(`POST /v1/events`, and `/v1/crash` for a crash report) that carries the install id and the user agent `quickai/<version>`.
+
+**The install id** is random. It is not made from your hardware and is not linked to your name or any account, but it
+does link your reports together, so the data is pseudonymous, not anonymous. Settings → Privacy shows it, and **New
+install id** replaces it. Don't post it in public: it is how you ask EverybodyAI for your data.
+
+**Where it goes and how long it is kept.** To EverybodyAI's server, `api.everybodyai.dev`, which runs on Cloudflare
+(Workers, D1 and R2) under Cloudflare's data processing terms. The server records the country your request came from
+(two letters), not your address. Reports are kept in full for 90 days, and counts per engine and model for 13 months;
+after that only totals with no install id remain. Crash reports are kept for 180 days.
+
+**Your choices.** Settings → Privacy → **Show what is sent** shows what was sent, what waits, and everything that can be
+sent. **Download what EverybodyAI holds** saves all of it to a file in `~/.quickai/telemetry`; **Delete what EverybodyAI
+holds** deletes it from the server at once, empties the queue and starts a new install id (`GET` and `DELETE
+/v1/me`). You can change the level at any time; a lower level drops what waits that it no longer allows. Without the
+app, write to <hello@everybodyai.dev> with your install id. Consent is the basis of all of this, and withdrawing it
+changes nothing that was lawful before.
+
+**Off for good.** A build made without the `telemetry` feature has no code that sends, and Settings says so (packagers
+can make one with `--no-default-features --features remote-setup`). A file `telemetry.toml` in the package's `config`
+folder with `level = "off"` (or `crash`, `error`) holds the level down for everyone using that installation, for an
+organization. `QUICKAI_TELEMETRY=off` (or `crash`, `error`) or `DO_NOT_TRACK=1` in the environment does the same.
+`quickai-run`, the headless program, sends no telemetry.
+
+**What it is not for.** Telemetry is never sold or shared, never used for advertising, and never used to check a
+licence.
+
+**Help → Report a problem** sends nothing to EverybodyAI. It opens a new issue on GitHub with what you wrote and your
+system's details, which you read and can change before you post it, under GitHub's privacy statement.
+
 ## When the app uses the internet
 
-The app never connects to the internet by itself: not at startup, not while it runs, not while you chat. It does so
-only when you press a button, or Enter in a box, for one of these:
+Apart from the telemetry you choose (above), the app never connects to the internet by itself: not at startup, not
+while it runs, not while you chat. It does so only when you press a button, or Enter in a box, for one of these:
 
 - **Searching for a model.** Words typed into the box of **Add a model** (anything that is neither a link nor the
   path of an existing file is treated as a search) and Enter, Enter in the empty box (which lists the most downloaded),
@@ -256,9 +343,12 @@ only when you press a button, or Enter in a box, for one of these:
   side. QuickAI keeps the address, the ports and the name of a key file you give in its settings, and never a password
   (it cannot ask for one). That computer, and whoever runs it, sees what you send to the models there.
 
+- **Telemetry, at the level you chose.** As described in [Telemetry](#telemetry), to `api.everybodyai.dev` only, and
+  nothing at Off.
+
 Each of these is an ordinary web request (HTTPS, or plain HTTP if you type an `http://` address), or for a remote
-computer an SSH connection, from your computer straight to that server. The developer of QuickAI is not involved in them
-and receives nothing.
+computer an SSH connection, from your computer straight to that server. Apart from telemetry, the developer of QuickAI is
+not involved in them and receives nothing.
 
 The chat keeps nothing unless you tick **Keep chats**; then each conversation is a file in QuickAI's own data folder on
 this computer (`~/.quickai/chats`), and you can delete it from the list. A picture you attach is sent to the model and

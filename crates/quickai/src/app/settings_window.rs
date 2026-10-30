@@ -44,6 +44,7 @@ pub(super) enum SettingsPage {
     Start,
     Companion,
     Computers,
+    Privacy,
 }
 
 /// Which window the Settings are: the id the display knows it by.
@@ -206,6 +207,7 @@ impl App {
                 "Other computers",
             ));
         }
+        pages.push(NavItem::new(SettingsPage::Privacy, Icon::Lock, "Privacy"));
         pages
     }
 
@@ -264,6 +266,7 @@ impl App {
             SettingsPage::Start => self.show_start_page(ui, form),
             SettingsPage::Companion => self.show_companion_page(ui),
             SettingsPage::Computers => self.show_computers_page(ui),
+            SettingsPage::Privacy => self.show_privacy_page(ui),
         }
         if let Some(msg) = &self.settings_error {
             ui.add_space(8.0);

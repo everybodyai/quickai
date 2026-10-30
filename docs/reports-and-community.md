@@ -1036,6 +1036,30 @@ the forms and the community. Hence decision 8.
   (still left out, as configurations.md says); threads of comments or a forum. Reviews are enough to start.
 - **Tokens per second**, until the app measures it.
 
+## 21. Built in the app (2026-10-30)
+
+The app's part, 4.42.1 (in part), 4.42.2, 4.42.4, 4.42.5 and 4.42.7 (in the app's repository), is built: WP4.42 of the
+implementation plan, decisions C195 to C197. What differs from the sections above, and what is left:
+
+- **A crash report is a batch of one `crash.panic` event** (`Batch`, the same shape as the events'), sent to
+  `POST /v1/crash`. Its `install` and `level` are filled in when it is sent; the hook writes them empty.
+- **Not sent yet**: `community.outcome` (there is no community yet), an install that failed (`error.install`), and
+  `model.add` for an Ollama pull or a file imported (a download from the recommended list, a look-up or a link is
+  counted). `error.engine_exit` has no `changed` field. The schema lists only what is sent, and grows with it.
+- **The package's cap** is a file `telemetry.toml` in the package's configuration folder (`ConfigDirs::bundle`), with one
+  line `level = "off"` (or `crash`, `error`).
+- **`QUICKAI_TELEMETRY_URL`** replaces `https://api.everybodyai.dev`, for a test or a server of one's own.
+- **The app does not read `GET /v1/status` yet**: a version the server no longer takes answers 410 to a batch, and the
+  app stops.
+- **`quickai-run` sends nothing** and has no `--telemetry` yet.
+- **The build's identity**: `QUICKAI_CHANNEL=official` and `QUICKAI_COMMIT` at build time, read by
+  `quickai-runtime/build.rs`, which also passes the target. The release scripts of `quickai_base` set them.
+- **The queue is written one line at a time**, and whole only when it has to drop its oldest events.
+- **Left**: the API (4.42.3), and it must exist before a release carries this; the admin (4.42.6); the community
+  (4.42.8 to 4.42.12); `strip = "debuginfo"` (S-R2); the function lists of a release for the plausibility of a
+  backtrace; a lawyer's read of the policy; the site's page of QuickAI still says "No telemetry", which is true of
+  0.1.0 and changes with the release that carries this.
+
 ## Appendix A: draft text for PRIVACY.md
 
 *In short* becomes:
