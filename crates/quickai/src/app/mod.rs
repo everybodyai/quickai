@@ -38,8 +38,8 @@ mod diagnostics;
 mod engine;
 mod engine_bar;
 mod foreign_program;
-mod guide;
 mod header;
+mod help;
 mod icons;
 mod live_traffic;
 mod log_pane;
@@ -224,8 +224,8 @@ pub struct App {
     add_model_open: bool,
     /// The box of *Add a model* is to be given the keyboard on the next frame.
     focus_add_box: bool,
-    /// The window of the guides is open, on this one.
-    guide: Option<guide::Guide>,
+    /// Help: a window of its own, its page, and what it shows in the main window (`help.rs`).
+    help: help::HelpState,
     /// *Change* is open under the model's name.
     change_open: bool,
     /// Custom was chosen among the presets: the fields are shown whatever the context size is.
@@ -452,7 +452,7 @@ impl App {
             logo: None,
             add_model_open: false,
             focus_add_box: false,
-            guide: None,
+            help: help::HelpState::default(),
             change_open: false,
             change_custom: false,
             log_unread: false,
@@ -934,6 +934,8 @@ impl eframe::App for App {
         self.seen_state = Some(state);
 
         self.show_window(ui);
+        // the ring of Help's Show me and the tour, over what the main window drew
+        self.show_help_marks(ui.ctx());
         if self.delete_asked_in_window {
             self.show_confirm_delete_modal(ui.ctx());
         }
@@ -947,7 +949,7 @@ impl eframe::App for App {
         self.show_connect_popover(ui.ctx());
         self.show_busy_dialog(ui.ctx());
         self.show_alternatives_dialog(ui.ctx());
-        self.show_guide_window(ui.ctx());
+        self.show_help_window(ui.ctx());
         self.show_foreign_program_modal(ui.ctx());
         self.show_port_taken_dialog(ui.ctx());
         self.show_configuration_modals(ui.ctx(), false);

@@ -83,8 +83,8 @@ The line under the model's name says how it runs. **Change** chooses *Balanced*,
 numbers themselves under *Custom*.
 
 To switch engines, use the menu at the top right (it says **llama.cpp**). An engine that is not installed yet has an
-**Install** button on its page; pulling a model starts Ollama by itself. Beside it are the light and dark theme, the
-guides (**?**, with Getting started) and Settings.
+**Install** button on its page; pulling a model starts Ollama by itself. Beside it are the light and dark theme, Help
+(**?**, or F1: pages with pictures of the window, a button that shows where each thing is, and a short tour) and Settings.
 
 ## Chat
 

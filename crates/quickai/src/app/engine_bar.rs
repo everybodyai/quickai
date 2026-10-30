@@ -76,6 +76,7 @@ impl App {
         let lock = self.engine_lock_reason();
         let name = self.engine_name();
         let button = engine_button(ui, &name, lock.is_none());
+        super::help::mark_spot(ui, super::help::Spot::EngineMenu, button.rect);
         let button = match lock {
             Some(why) => button.on_hover_text(format!("Engine. {why}")),
             None => button.on_hover_text(

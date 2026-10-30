@@ -683,6 +683,7 @@ impl App {
             8.0 + 15.0 + 6.0 + galley.size().x + if dot.is_some() { 14.0 } else { 0.0 } + 18.0;
         let (rect, response) =
             ui.allocate_exact_size(egui::vec2(width, 22.0), egui::Sense::click());
+        super::help::mark_spot(ui, super::help::Spot::Computer, rect);
         let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
         if ui.is_rect_visible(rect) {
             let lit = open || response.hovered();

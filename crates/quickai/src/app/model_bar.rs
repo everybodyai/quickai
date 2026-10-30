@@ -3,6 +3,7 @@
 
 use eframe::egui;
 
+use super::help::{self, Spot};
 use super::icons::{self, Icon};
 use super::theme::{self, Role};
 use super::App;
@@ -245,10 +246,11 @@ fn title(ui: &mut egui::Ui, name: &str) {
 
 /// The play button: `hint` says what it does when the pointer rests on it, also while it cannot be pressed.
 fn play_button(ui: &mut egui::Ui, role: Role, enabled: bool, hint: &str) -> bool {
-    icons::framed_icon_button(ui, role, enabled, Icon::Play, egui::Vec2::splat(BUTTON))
+    let play = icons::framed_icon_button(ui, role, enabled, Icon::Play, egui::Vec2::splat(BUTTON))
         .on_hover_text(hint)
-        .on_disabled_hover_text(hint)
-        .clicked()
+        .on_disabled_hover_text(hint);
+    help::mark_spot(ui, Spot::Play, play.rect);
+    play.clicked()
 }
 
 /// The stop button of the running `server`.

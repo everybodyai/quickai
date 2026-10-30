@@ -10,6 +10,7 @@
 
 use eframe::egui;
 
+use super::help::{mark_spot, HelpPage, Spot};
 use super::icons::{self, Icon};
 use super::theme::{self, Tone};
 use super::{App, Tab};
@@ -19,7 +20,7 @@ use crate::models::ModelEntry;
 
 /// Where the documentation and the privacy policy are read.
 pub(super) const DOCS_URL: &str = "https://github.com/everybodyai/quickai/tree/main/docs";
-const PRIVACY_URL: &str = "https://github.com/everybodyai/quickai/blob/main/PRIVACY.md";
+pub(super) const PRIVACY_URL: &str = "https://github.com/everybodyai/quickai/blob/main/PRIVACY.md";
 const WEBSITE_URL: &str = "https://everybodyai.dev/quickai";
 
 /// The height of a row of the list of models: the name, and under it its size and what else is known.
@@ -79,17 +80,21 @@ impl App {
     }
 
     /// The keys that do what a button does: Ctrl+Enter starts or stops, Ctrl+K adds a model, Ctrl+L goes to the
-    /// chat's box and Ctrl+, opens Settings (A6).
+    /// chat's box, Ctrl+, opens Settings (A6) and F1 Help.
     fn take_shortcuts(&mut self, ctx: &egui::Context, state: ServerState, active: bool) {
         let command = egui::Modifiers::COMMAND;
-        let (run, add, chat, settings) = ctx.input_mut(|i| {
+        let (run, add, chat, settings, help) = ctx.input_mut(|i| {
             (
                 i.consume_key(command, egui::Key::Enter),
                 i.consume_key(command, egui::Key::K),
                 i.consume_key(command, egui::Key::L),
                 i.consume_key(command, egui::Key::Comma),
+                i.consume_key(egui::Modifiers::NONE, egui::Key::F1),
             )
         });
+        if help {
+            self.open_help(None);
+        }
         if run && self.setup_in_use().is_some() {
             // the run on the computer QuickAI set up that is shown
             if self.setup_run().is_some_and(|r| r.running() || r.working()) {
@@ -153,14 +158,20 @@ impl App {
                 }
             });
             ui.menu_button("Help", |ui| {
+                if ui
+                    .add(egui::Button::new("Help…").shortcut_text("F1"))
+                    .clicked()
+                {
+                    self.open_help(None);
+                }
                 if ui.button("Getting started").clicked() {
-                    self.open_guide(super::guide::Guide::GettingStarted);
+                    self.open_help(Some(HelpPage::GettingStarted));
                 }
                 if ui.button("Keyboard shortcuts").clicked() {
-                    self.open_guide(super::guide::Guide::Shortcuts);
+                    self.open_help(Some(HelpPage::Shortcuts));
                 }
                 ui.separator();
-                if ui.button("Documentation").clicked() {
+                if ui.button("Online documentation").clicked() {
                     let _ = webbrowser::open(DOCS_URL);
                 }
                 if ui.button("Privacy policy").clicked() {
@@ -174,24 +185,21 @@ impl App {
                     self.show_about = true;
                 }
             });
-            // at the right end, what is set once in a while: the engine, the theme, the guides and Settings
+            // at the right end, what is set once in a while: the engine, the theme, Help and Settings
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
-                if icons::icon_button(ui, Icon::Gear, BAR_ICON, true, self.show_settings)
-                    .on_hover_text("Settings (Ctrl+,)")
-                    .clicked()
-                {
+                let gear = icons::icon_button(ui, Icon::Gear, BAR_ICON, true, self.show_settings)
+                    .on_hover_text("Settings (Ctrl+,)");
+                mark_spot(ui, Spot::Settings, gear.rect);
+                if gear.clicked() {
                     self.toggle_settings();
                 }
-                let help = icons::icon_button(ui, Icon::Help, BAR_ICON, true, false)
-                    .on_hover_text("Getting started and guides");
-                egui::Popup::menu(&help)
-                    .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
-                    .width(270.0)
-                    .show(|ui| {
-                        ui.set_width(270.0);
-                        self.show_guide_menu(ui);
-                    });
+                let help = icons::icon_button(ui, Icon::Help, BAR_ICON, true, self.help.open)
+                    .on_hover_text("Help (F1)");
+                mark_spot(ui, Spot::Help, help.rect);
+                if help.clicked() {
+                    self.open_help(None);
+                }
                 let dark = self.dark_mode;
                 if icons::icon_button(
                     ui,
@@ -373,6 +381,7 @@ impl App {
             ui.add_space(10.0);
             let width = ui.available_width() - 10.0;
             let button = add_model_button(ui, width, ready);
+            mark_spot(ui, Spot::AddModel, button.rect);
             let button = if ready {
                 button.on_hover_text(
                     "Search for a model, paste a link, or add a file you already have (Ctrl+K).",
@@ -744,10 +753,10 @@ impl App {
             {
                 self.active_tab = Tab::Chat;
             }
-            if dock_tab_marked(ui, "Log", on_log, self.log_unread && !on_log, true)
-                .on_hover_text("What the server says as it starts and runs.")
-                .clicked()
-            {
+            let log = dock_tab_marked(ui, "Log", on_log, self.log_unread && !on_log, true)
+                .on_hover_text("What the server says as it starts and runs.");
+            mark_spot(ui, Spot::LogTab, log.rect);
+            if log.clicked() {
                 self.active_tab = Tab::Main;
             }
             if live

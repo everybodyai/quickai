@@ -987,6 +987,7 @@ impl App {
     pub(super) fn show_chat_actions(&mut self, ui: &mut egui::Ui) {
         let more = icons::icon_button(ui, Icon::More, egui::vec2(28.0, 24.0), true, false)
             .on_hover_text("Keep chats, options, export");
+        super::help::mark_spot(ui, super::help::Spot::ChatMenu, more.rect);
         let mut export = false;
         let mut keep = self.chat.keep;
         let mut keep_changed = false;
@@ -1325,7 +1326,7 @@ impl App {
         let mut attach = false;
         // a run on a computer QuickAI set up may not say its model (llama.cpp serves the one it was started with)
         let ready = running && (model.is_some() || remote_run.is_some());
-        egui::Frame::new()
+        let frame = egui::Frame::new()
             .fill(p.well)
             .stroke(egui::Stroke::new(1.0, p.outline))
             .corner_radius(10)
@@ -1338,12 +1339,13 @@ impl App {
             })
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    attach = icons::icon_button(ui, Icon::Clip, egui::vec2(30.0, 28.0), ready, false)
+                    let clip = icons::icon_button(ui, Icon::Clip, egui::vec2(30.0, 28.0), ready, false)
                         .on_hover_text(
                             "Add a picture (PNG, JPEG, WebP, GIF) for a model that sees them, or a text file to put \
                              in the message.",
-                        )
-                        .clicked();
+                        );
+                    super::help::mark_spot(ui, super::help::Spot::Clip, clip.rect);
+                    attach = clip.clicked();
                     // Enter sends and Shift+Enter is a new line: the key is taken before the box sees it, so that it
                     // does not put a line break in the message wherever the cursor is
                     let input_id = egui::Id::new("chat_input");
@@ -1384,6 +1386,16 @@ impl App {
                     }
                 });
             });
+        // the box, without the room its frame keeps round it
+        let r = frame.response.rect;
+        super::help::mark_spot(
+            ui,
+            super::help::Spot::ChatBox,
+            egui::Rect::from_min_max(
+                r.min + egui::vec2(16.0, 6.0),
+                r.max - egui::vec2(16.0, 10.0),
+            ),
+        );
         if attach {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter(

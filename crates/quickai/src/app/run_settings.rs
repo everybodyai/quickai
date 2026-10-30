@@ -205,10 +205,11 @@ impl App {
                     "What is set here is no longer what the configuration saved. Change has Save and Revert.",
                 );
             }
-            toggle = ui
+            let link = ui
                 .link(if self.change_open { "Done" } else { "Change" })
-                .on_hover_text("How the model runs, where, and the configuration in use.")
-                .clicked();
+                .on_hover_text("How the model runs, where, and the configuration in use.");
+            super::help::mark_spot(ui, super::help::Spot::Change, link.rect);
+            toggle = link.clicked();
         });
         if toggle {
             self.change_open = !self.change_open;
