@@ -47,6 +47,22 @@ impl Shape {
         }
     }
 
+    /// The shape for a program (the server checks against the list `quickai --telemetry` prints): its id, and the
+    /// words a choice allows.
+    fn id(self) -> (&'static str, Option<&'static [&'static str]>) {
+        match self {
+            Shape::Choice(words) => ("choice", Some(words)),
+            Shape::Choices(words) => ("choices", Some(words)),
+            Shape::Name => ("name", None),
+            Shape::Label => ("label", None),
+            Shape::Text => ("text", None),
+            Shape::Location => ("location", None),
+            Shape::Frames => ("frames", None),
+            Shape::Seconds => ("seconds", None),
+            Shape::Flag => ("flag", None),
+        }
+    }
+
     fn accepts(self, value: &Value) -> bool {
         let short = |s: &str, most: usize| {
             s.chars().count() <= most && !s.chars().any(|c| c.is_control() && c != '\n')
@@ -515,12 +531,18 @@ fn is_hour(text: &str) -> bool {
 }
 
 fn field_json(field: &FieldSpec) -> Value {
-    json!({
+    let (id, words) = field.shape.id();
+    let mut o = json!({
         "name": field.name,
         "shape": field.shape.describe(),
+        "type": id,
         "kind": field.kind.label(),
         "about": field.about,
-    })
+    });
+    if let Some(words) = words {
+        o["values"] = words.into();
+    }
+    o
 }
 
 /// Every event this build can send, with its level, purpose and fields: what `quickai --telemetry` prints.
@@ -725,6 +747,13 @@ mod tests {
         let list = list_json();
         assert_eq!(list["events"].as_array().map(Vec::len), Some(EVENTS.len()));
         assert_eq!(list["common"].as_array().map(Vec::len), Some(COMMON.len()));
+        // what the server checks by: a type for every field, and the words of every choice
+        assert_eq!(list["common"][0]["type"], "name");
+        assert_eq!(list["common"][13]["name"], "level");
+        assert_eq!(
+            list["common"][13]["values"],
+            json!(["off", "crash", "error", "all"])
+        );
         let page = reference_page();
         for e in EVENTS {
             assert!(page.contains(&format!("### `{}`", e.name)));
