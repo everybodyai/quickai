@@ -51,6 +51,7 @@ pub fn advice(
         let Ok(text) = rule.hint.render(&context) else {
             continue;
         };
+        // (`matching_rule` holds a rule to the same two conditions)
         let advice = Advice {
             text: text.to_string(),
             action: rule.action.clone(),
@@ -60,4 +61,31 @@ pub fn advice(
         }
     }
     out
+}
+
+/// Which of the engine's `[[diagnostic]]` rules applies to a run, counted from 1 in the document's order: the first
+/// whose conditions all hold, as `advice` holds them; 0 when none does or there is no such engine. Telemetry sends
+/// this number in place of the log.
+pub fn matching_rule(
+    registry: &Registry,
+    engine: &str,
+    log: &[String],
+    ended_in: Option<&str>,
+) -> u64 {
+    let Some(engine) = registry.engine(engine) else {
+        return 0;
+    };
+    engine
+        .diagnostics
+        .iter()
+        .position(|rule| {
+            rule.log_matches
+                .as_ref()
+                .is_none_or(|pattern| log.iter().any(|line| pattern.is_match(line)))
+                && rule
+                    .exited_during
+                    .as_deref()
+                    .is_none_or(|state| ended_in == Some(state))
+        })
+        .map_or(0, |i| i as u64 + 1)
 }

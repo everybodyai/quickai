@@ -14,6 +14,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use eframe::egui;
 
+use quickai_runtime::telemetry::machine::{self, MachineNow};
+
 use crate::hardware::format_duration;
 
 /// How long without a frame is a stall.
@@ -34,8 +36,17 @@ struct Shared {
     gone: AtomicBool,
     /// What the watcher has to say to the person, for the log pane.
     notices: Mutex<Vec<String>>,
-    /// How long each stall lasted, in seconds, for telemetry (`error.stall`).
-    stalls: Mutex<Vec<u64>>,
+    /// The stalls that ended, for telemetry (`error.stall`).
+    stalls: Mutex<Vec<Stall>>,
+}
+
+/// A stall that ended: how long it lasted, what was running, and what the machine said when the watcher noticed it.
+#[derive(Clone, Debug)]
+pub struct Stall {
+    pub seconds: u64,
+    /// As the window says it (`an install`).
+    pub running: &'static str,
+    pub machine: MachineNow,
 }
 
 /// The pulse of the window: each frame beats, and a watcher looks at how long ago.
@@ -78,8 +89,8 @@ impl Heartbeat {
             .unwrap_or_default()
     }
 
-    /// How long each stall since the last call lasted, in seconds.
-    pub fn take_stalls(&self) -> Vec<u64> {
+    /// The stalls that ended since the last call.
+    pub fn take_stalls(&self) -> Vec<Stall> {
         self.shared
             .stalls
             .lock()
@@ -129,6 +140,8 @@ fn look(
 ) {
     // when the last frame before the stall was drawn
     let mut stalled_from: Option<Instant> = None;
+    // what was running and what the machine said when the stall was noticed, for telemetry when it ends
+    let mut noticed: Option<(&'static str, MachineNow)> = None;
     // the last time the window was seen covered or minimized
     let mut hidden_at: Option<Instant> = None;
     while !shared.gone.load(Ordering::Relaxed) {
@@ -136,6 +149,7 @@ fn look(
         let running = shared.running.lock().ok().and_then(|r| *r);
         let Some(running) = running else {
             stalled_from = None;
+            noticed = None;
             hidden_at = None;
             continue;
         };
@@ -144,6 +158,7 @@ fn look(
         if ctx.input(|input| input.viewport().visible()) == Some(false) {
             hidden_at = Some(Instant::now());
             stalled_from = None;
+            noticed = None;
             continue;
         }
         // a window that is alive and has nothing to say draws nothing: ask it for a frame, so that the
@@ -160,15 +175,17 @@ fn look(
         match stalled_from {
             None if since_beat >= limit => {
                 stalled_from = Some(Instant::now() - since_beat);
+                let said = machine::now(thread);
                 append(
                     record,
                     &format!(
                         "{} · the window has not answered for {} while {running} was running\n{}",
                         utc(now_epoch()),
                         format_duration(since_beat),
-                        what_the_machine_says(thread)
+                        describe(&said)
                     ),
                 );
+                noticed = Some((running, said));
             }
             Some(from) if since_beat < limit => {
                 let stalled = from.elapsed().saturating_sub(since_beat);
@@ -180,8 +197,14 @@ fn look(
                         format_duration(stalled)
                     ),
                 );
+                let (was_running, said) =
+                    noticed.take().unwrap_or((running, MachineNow::default()));
                 if let Ok(mut stalls) = shared.stalls.lock() {
-                    stalls.push(stalled.as_secs());
+                    stalls.push(Stall {
+                        seconds: stalled.as_secs(),
+                        running: was_running,
+                        machine: said,
+                    });
                 }
                 if let Ok(mut notices) = shared.notices.lock() {
                     notices.push(format!(
@@ -256,138 +279,58 @@ fn append(record: &Path, text: &str) {
     }
 }
 
-/// What the machine says about the window's thread and about itself, as lines of the record. Where the
+/// What the machine said about the window's thread and about itself, as lines of the record. Where the
 /// system does not say (anything but Linux), only that.
-fn what_the_machine_says(thread: Option<u32>) -> String {
-    #[cfg(target_os = "linux")]
-    {
-        linux::describe(thread)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = thread;
-        "  (this system does not say what the window's thread was doing)\n".to_string()
-    }
-}
-
-#[cfg(target_os = "linux")]
-mod linux {
+fn describe(said: &MachineNow) -> String {
     use crate::hardware::format_bytes;
 
-    fn read(path: &str) -> String {
-        std::fs::read_to_string(path)
-            .unwrap_or_default()
-            .trim()
-            .to_string()
+    if said == &MachineNow::default() {
+        return "  (this system does not say what the window's thread was doing)\n".to_string();
     }
-
-    /// The name of a system call by its number on x86-64, for the ones a window waits in.
-    fn syscall_name(number: i64) -> Option<&'static str> {
-        Some(match number {
-            0 => "read",
-            1 => "write",
-            7 => "poll",
-            16 => "ioctl",
-            17 => "pread64",
-            18 => "pwrite64",
-            23 => "select",
-            35 => "nanosleep",
-            46 => "sendmsg",
-            47 => "recvmsg",
-            74 => "fsync",
-            202 => "futex",
-            217 => "getdents64",
-            230 => "clock_nanosleep",
-            232 => "epoll_wait",
-            257 => "openat",
-            262 => "newfstatat",
-            270 => "pselect6",
-            271 => "ppoll",
-            281 => "epoll_pwait",
-            332 => "statx",
-            _ => return None,
-        })
-    }
-
-    fn state_word(state: &str) -> &'static str {
-        match state {
-            "R" => "running",
-            "S" => "sleeping",
-            "D" => "waiting on the disk or a device, which nothing can interrupt",
-            "T" | "t" => "stopped",
-            "Z" => "ended",
-            "I" => "idle",
-            _ => "in a state the system does not name",
-        }
-    }
-
-    /// `kB` lines of `/proc/<..>/status` and `/proc/meminfo` as bytes.
-    fn kib(text: &str, key: &str) -> Option<u64> {
-        let line = text.lines().find(|l| l.starts_with(key))?;
-        let number: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
-        Some(number * 1024)
-    }
-
-    /// The share of the last ten seconds in which something waited (`some avg10=` of a pressure file).
-    fn pressure(path: &str) -> Option<String> {
-        let text = std::fs::read_to_string(path).ok()?;
-        let line = text.lines().find(|l| l.starts_with("some"))?;
-        let value = line
-            .split_whitespace()
-            .find_map(|w| w.strip_prefix("avg10="))?;
-        Some(format!("{value}%"))
-    }
-
-    pub fn describe(thread: Option<u32>) -> String {
-        let mut text = String::new();
-        if let Some(tid) = thread {
-            let base = format!("/proc/self/task/{tid}");
-            let stat = read(&format!("{base}/stat"));
-            let state = stat
-                .rsplit_once(')')
-                .and_then(|(_, rest)| rest.split_whitespace().next())
-                .unwrap_or("?");
-            let waiting = read(&format!("{base}/wchan"));
-            let call = read(&format!("{base}/syscall"));
-            let number = call
-                .split_whitespace()
-                .next()
-                .and_then(|n| n.parse::<i64>().ok());
-            let call_text = match (number, call.as_str()) {
-                (_, "running") => "none (it was running)".to_string(),
-                (Some(n), _) => match syscall_name(n) {
-                    Some(name) => format!("{name} ({n})"),
-                    None => format!("number {n}"),
-                },
-                _ => "not said".to_string(),
-            };
-            text.push_str(&format!(
-                "  its thread: {state}, {}; waiting in the kernel at {}; system call: {call_text}\n",
-                state_word(state),
-                if waiting.is_empty() || waiting == "0" {
-                    "nothing it names"
-                } else {
-                    &waiting
-                }
-            ));
-        }
-        let meminfo = read("/proc/meminfo");
-        let status = read("/proc/self/status");
-        let size = |value: Option<u64>| value.map_or("?".to_string(), format_bytes);
+    let mut text = String::new();
+    if let Some(thread) = &said.thread {
+        let call_text = match &thread.syscall {
+            machine::Syscall::Running => "none (it was running)".to_string(),
+            machine::Syscall::Number(n) => match thread.syscall.name() {
+                Some(name) => format!("{name} ({n})"),
+                None => format!("number {n}"),
+            },
+            machine::Syscall::Unknown => "not said".to_string(),
+        };
         text.push_str(&format!(
-            "  memory: {} available, {} of {} swap free; this program holds {} and has {} in swap\n",
-            size(kib(&meminfo, "MemAvailable:")),
-            size(kib(&meminfo, "SwapFree:")),
-            size(kib(&meminfo, "SwapTotal:")),
-            size(kib(&status, "VmRSS:")),
-            size(kib(&status, "VmSwap:")),
+            "  its thread: {}, {}; waiting in the kernel at {}; system call: {call_text}\n",
+            thread.state,
+            state_word(&thread.state),
+            thread.waiting_in.as_deref().unwrap_or("nothing it names")
         ));
-        text.push_str(&format!(
-            "  the machine in the last 10 s: something waited for memory {} of the time, for the disk {}\n",
-            pressure("/proc/pressure/memory").unwrap_or_else(|| "?".into()),
-            pressure("/proc/pressure/io").unwrap_or_else(|| "?".into()),
-        ));
-        text
+    }
+    let size = |value: Option<u64>| value.map_or("?".to_string(), format_bytes);
+    text.push_str(&format!(
+        "  memory: {} available, {} of {} swap free; this program holds {} and has {} in swap\n",
+        size(said.memory_available),
+        size(said.swap_free),
+        size(said.swap_total),
+        size(said.resident),
+        size(said.swapped),
+    ));
+    let percent = |value: Option<f64>| value.map_or("?".to_string(), |p| format!("{p:.2}%"));
+    text.push_str(&format!(
+        "  the machine in the last 10 s: something waited for memory {} of the time, for the disk {}\n",
+        percent(said.memory_pressure),
+        percent(said.io_pressure),
+    ));
+    text
+}
+
+fn state_word(state: &str) -> &'static str {
+    match state {
+        "R" => "running",
+        "S" => "sleeping",
+        "D" => "waiting on the disk or a device, which nothing can interrupt",
+        "T" | "t" => "stopped",
+        "Z" => "ended",
+        "I" => "idle",
+        _ => "in a state the system does not name",
     }
 }
 

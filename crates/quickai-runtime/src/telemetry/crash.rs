@@ -17,6 +17,10 @@ pub struct CrashContext {
     pub engine_state: Option<&'static str>,
     /// Of `schema::WINDOWS`.
     pub open_windows: Vec<&'static str>,
+    /// What the window was showing that runs on without it, of `measure::RUNNING` (`none` is left out).
+    pub running: Option<&'static str>,
+    /// What the machine said of its memory and its waits at the crash: the hook reads it, as late as it can.
+    pub machine: Option<super::machine::MachineNow>,
 }
 
 /// Functions of the panic machinery itself, which say nothing about where QuickAI failed.
@@ -103,6 +107,12 @@ pub fn crash_event(
     if let Some(state) = context.engine_state {
         event = event.with("engine_state", state);
     }
+    if let Some(running) = context.running {
+        event = event.with("running", running);
+    }
+    if let Some(machine) = &context.machine {
+        event = super::machine::with_machine(event, machine, false);
+    }
     schema::check(&event).ok().map(|()| event)
 }
 
@@ -143,11 +153,13 @@ impl Hook {
         let thread = thread.name().unwrap_or("<unnamed>");
         let backtrace = std::backtrace::Backtrace::force_capture().to_string();
         // a lock held by the thread that panicked is not waited for
-        let context = self
+        let mut context = self
             .context
             .try_lock()
             .map(|c| c.clone())
             .unwrap_or_default();
+        // a few small files of /proc, read now: how the memory was is part of why a program fails
+        context.machine = Some(super::machine::now(None));
         let now = (self.clock)();
         let minutes = now.saturating_sub(self.started) / 60;
         if let Some(event) = crash_event(
@@ -200,6 +212,11 @@ mod tests {
             engine: Some("ollama".into()),
             engine_state: Some("running"),
             open_windows: vec!["recommended"],
+            running: Some("download"),
+            machine: Some(super::super::machine::MachineNow {
+                memory_available: Some(512 * 1024 * 1024),
+                ..Default::default()
+            }),
         };
         let event = crash_event(
             "cannot read /home/grace/.quickai/models/secret-model.gguf",
@@ -222,6 +239,8 @@ mod tests {
         );
         assert_eq!(event.fields["engine"], "ollama");
         assert_eq!(event.fields["minutes_open"], "30-60");
+        assert_eq!(event.fields["running"], "download");
+        assert_eq!(event.fields["memory_available"], "<1");
         assert_eq!(event.time, "2026-10-30T09:00:00Z");
     }
 

@@ -460,10 +460,20 @@ fn rp_w11_a_small_model_from_a_link_is_named_as_the_schema_allows() {
     app.note_download_failed(
         "HTTP 404 from the hub",
         Some("huggingface:someone/tiny-GGUF"),
+        3_000_000_000,
+        Some(6_000_000_000),
     );
     let queued = app.telemetry.queued();
     assert_eq!(names(&app), vec!["error.engine_exit", "error.download"]);
     assert_eq!(queued[0].fields["model"], "other:0-2");
+    assert_eq!(queued[0].fields["model_size"], "0-2");
+    assert_eq!(
+        queued[0].fields["diagnostic"], 0,
+        "a log that says nothing the document knows"
+    );
+    assert_eq!(queued[1].fields["size"], "5-10");
+    assert_eq!(queued[1].fields["progress"], "50-75%");
+    assert_eq!(queued[1].fields["http_status"], 404);
     for event in &queued {
         assert_eq!(schema::check(event), Ok(()), "{event:?}");
     }

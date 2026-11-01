@@ -41,6 +41,12 @@ QuickAI stopped because of an error. Written when it happens, sent at the next s
 | `engine_state` | one of: idle, starting, running, stopping, crashed | feature use | whether the engine was running |
 | `open_windows` | any of: add_model, recommended, details, settings, configurations, help, about, telemetry_log, report_problem | feature use | which windows were open |
 | `minutes_open` | one of: <5, 5-30, 30-60, 60-180, 180+ | measurement | how long the app had been open |
+| `running` | one of: none, download, install, delete, look-up | feature use | what the window was showing that goes on without it: a download, an install, a delete, a look-up, or none |
+| `memory_available` | one of: <1, 1-2, 2-4, 4-8, 8-16, 16+ | measurement | the memory the system could still give, in GB ranges |
+| `swap_free` | one of: no-swap, <10%, 10-50%, 50%+ | measurement | how much of the swap was free, or that there is none |
+| `memory_pressure` | one of: <1, 1-10, 10-30, 30-60, 60+ | measurement | the share of the last ten seconds in which something on the computer waited for memory, in percent ranges (Linux) |
+| `io_pressure` | one of: <1, 1-10, 10-30, 30-60, 60+ | measurement | the share of the last ten seconds in which something on the computer waited for the disk, in percent ranges (Linux) |
+| `app_memory` | one of: <256MB, 256MB-1GB, 1-4GB, 4GB+ | measurement | the memory QuickAI itself held, in ranges |
 
 ## Errors and crashes: events of level `error`
 
@@ -56,6 +62,8 @@ An engine stopped by itself, while loading a model or while serving. Purpose: he
 | `phase` | one of: loading, serving | feature use | what the engine was doing |
 | `status` | short text, cleaned | error, cleaned | how it ended (`exit 1`, `signal 9`, `unknown`) |
 | `after_seconds` | whole seconds | measurement | how long after Start |
+| `diagnostic` | a whole number | error, cleaned | which of the engine document's `[[diagnostic]]` rules matched its log, counted from 1 (0: none); the number of a rule, never the log |
+| `model_size` | one of: 0-2, 2-5, 5-10, 10-20, 20+ | measurement | the size of the model's file, in GB ranges |
 
 ### `error.download`
 
@@ -66,14 +74,29 @@ A download failed: its kind, the site and the reason, never the file or the addr
 | `what` | one of: model, build, program | feature use | what was being downloaded |
 | `source` | one of: huggingface, github, ollama, pypi, pytorch, other | public name | the site it came from |
 | `reason` | one of: checksum, network, disk_full, http_4xx, http_5xx, other | error, cleaned | why it failed |
+| `size` | one of: 0-2, 2-5, 5-10, 10-20, 20+ | measurement | how big the download was, in GB ranges, when the site said |
+| `progress` | one of: 0%, 1-25%, 25-50%, 50-75%, 75-99%, 100% | measurement | how far it got before it failed |
+| `http_status` | a whole number | error, cleaned | the HTTP status the site answered with, when there was one |
 
 ### `error.stall`
 
-The window stopped answering for five seconds or more. Purpose: health: to find and fix what breaks.
+The window stopped answering for five seconds or more. What the machine was doing is read when the watcher notices, five seconds in. Purpose: health: to find and fix what breaks.
 
 | Field | Shape | Kind | What it is |
 |---|---|---|---|
 | `seconds` | one of: 5-10, 10-30, 30-60, 60+ | measurement | for how long |
+| `running` | one of: none, download, install, delete, look-up | feature use | what the window was showing that goes on without it: a download, an install, a delete, a look-up, or none |
+| `thread_state` | one of: running, sleeping, disk, stopped, ended, idle, other | error, cleaned | what the window's thread was doing as the system says it: running, sleeping, waiting on the disk or a device (`disk`), stopped, ended, idle or other (Linux) |
+| `waiting_in` | short text, cleaned | call stack | the function of the system's kernel the window's thread was waiting in (`do_epoll_wait`, `folio_wait_bit_common`): a name in the kernel's code, made of letters, digits and `_` (Linux) |
+| `syscall` | short text, cleaned | call stack | the system call the window's thread was in (`futex`, `read`), its number when it has no name here, or `none` when it was running (Linux) |
+| `memory_available` | one of: <1, 1-2, 2-4, 4-8, 8-16, 16+ | measurement | the memory the system could still give, in GB ranges |
+| `swap_free` | one of: no-swap, <10%, 10-50%, 50%+ | measurement | how much of the swap was free, or that there is none |
+| `memory_pressure` | one of: <1, 1-10, 10-30, 30-60, 60+ | measurement | the share of the last ten seconds in which something on the computer waited for memory, in percent ranges (Linux) |
+| `io_pressure` | one of: <1, 1-10, 10-30, 30-60, 60+ | measurement | the share of the last ten seconds in which something on the computer waited for the disk, in percent ranges (Linux) |
+| `app_memory` | one of: <256MB, 256MB-1GB, 1-4GB, 4GB+ | measurement | the memory QuickAI itself held, in ranges |
+| `engine` | a name (letters, digits and ._:/+@-) | public name | the engine (llamacpp, ollama, comfyui) |
+| `engine_state` | one of: idle, starting, running, stopping, crashed | feature use | whether the engine was running |
+| `open_windows` | any of: add_model, recommended, details, settings, configurations, help, about, telemetry_log, report_problem | feature use | which windows were open |
 
 ### `session.unclean_exit`
 

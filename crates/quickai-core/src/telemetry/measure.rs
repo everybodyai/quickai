@@ -71,6 +71,121 @@ pub fn size_bucket(bytes: u64) -> &'static str {
     }
 }
 
+/// What the window was showing that runs on without it when a stall or a crash happened: nothing, a download, an
+/// install, a delete or a look-up (of the engine or of the program that goes with it).
+pub const RUNNING: [&str; 5] = ["none", "download", "install", "delete", "look-up"];
+
+/// The state of a thread, as the system says it: running, sleeping, waiting on the disk or a device (`disk`, which
+/// nothing can interrupt), stopped, ended, idle, or another.
+pub const THREAD_STATES: [&str; 7] = [
+    "running", "sleeping", "disk", "stopped", "ended", "idle", "other",
+];
+
+/// The word of `THREAD_STATES` for a state letter of `/proc/<pid>/task/<tid>/stat`.
+pub fn thread_state(letter: &str) -> &'static str {
+    match letter {
+        "R" => THREAD_STATES[0],
+        "S" => THREAD_STATES[1],
+        "D" => THREAD_STATES[2],
+        "T" | "t" => THREAD_STATES[3],
+        "Z" | "X" => THREAD_STATES[4],
+        "I" => THREAD_STATES[5],
+        _ => THREAD_STATES[6],
+    }
+}
+
+/// The memory the system could still give, in GB ranges.
+pub const AVAILABLE: [&str; 6] = ["<1", "1-2", "2-4", "4-8", "8-16", "16+"];
+
+/// The range of `AVAILABLE` that `bytes` falls in.
+pub fn available_bucket(bytes: u64) -> &'static str {
+    let mib = bytes / (1024 * 1024);
+    match mib {
+        0..1024 => AVAILABLE[0],
+        1024..2048 => AVAILABLE[1],
+        2048..4096 => AVAILABLE[2],
+        4096..8192 => AVAILABLE[3],
+        8192..16384 => AVAILABLE[4],
+        _ => AVAILABLE[5],
+    }
+}
+
+/// How much of the swap was free: none set up, or a share of it.
+pub const SWAP_FREE: [&str; 4] = ["no-swap", "<10%", "10-50%", "50%+"];
+
+/// The range of `SWAP_FREE` for `free` bytes of `total`.
+pub fn swap_free_bucket(free: u64, total: u64) -> &'static str {
+    if total == 0 {
+        return SWAP_FREE[0];
+    }
+    match free.saturating_mul(100) / total {
+        0..10 => SWAP_FREE[1],
+        10..50 => SWAP_FREE[2],
+        _ => SWAP_FREE[3],
+    }
+}
+
+/// The share of the last ten seconds in which something on the computer waited (for memory, or for the disk), in
+/// percent ranges, as the system's pressure files say it.
+pub const PRESSURE: [&str; 5] = ["<1", "1-10", "10-30", "30-60", "60+"];
+
+/// The range of `PRESSURE` that `percent` falls in.
+pub fn pressure_bucket(percent: f64) -> &'static str {
+    match percent {
+        p if p < 1.0 => PRESSURE[0],
+        p if p < 10.0 => PRESSURE[1],
+        p if p < 30.0 => PRESSURE[2],
+        p if p < 60.0 => PRESSURE[3],
+        _ => PRESSURE[4],
+    }
+}
+
+/// The memory QuickAI itself holds, in ranges.
+pub const APP_MEMORY: [&str; 4] = ["<256MB", "256MB-1GB", "1-4GB", "4GB+"];
+
+/// The range of `APP_MEMORY` that `bytes` falls in.
+pub fn app_memory_bucket(bytes: u64) -> &'static str {
+    let mib = bytes / (1024 * 1024);
+    match mib {
+        0..256 => APP_MEMORY[0],
+        256..1024 => APP_MEMORY[1],
+        1024..4096 => APP_MEMORY[2],
+        _ => APP_MEMORY[3],
+    }
+}
+
+/// How far a download got before it failed.
+pub const PROGRESS: [&str; 6] = ["0%", "1-25%", "25-50%", "50-75%", "75-99%", "100%"];
+
+/// The range of `PROGRESS` for `done` bytes of `total`.
+pub fn progress_bucket(done: u64, total: u64) -> &'static str {
+    if done == 0 || total == 0 {
+        return PROGRESS[0];
+    }
+    if done >= total {
+        return PROGRESS[5];
+    }
+    match done.saturating_mul(100) / total {
+        0..25 => PROGRESS[1],
+        25..50 => PROGRESS[2],
+        50..75 => PROGRESS[3],
+        _ => PROGRESS[4],
+    }
+}
+
+/// A function of the system's kernel as it may be sent (`do_epoll_wait`): its letters, digits, `_` and `.`, at most
+/// 64. `None` when there is none (`0`, empty) or it has anything else in it.
+pub fn kernel_function(name: &str) -> Option<String> {
+    let name = name.trim();
+    (!name.is_empty()
+        && name != "0"
+        && name.len() <= 64
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.'))
+    .then(|| name.to_string())
+}
+
 /// What is known of a model, to name it in telemetry.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ModelFacts<'a> {
@@ -270,5 +385,37 @@ mod tests {
         // a leap day
         assert_eq!(hour_utc(951_782_400), "2000-02-29T00:00:00Z");
         assert_eq!(moment_utc(1_793_351_564), "2026-10-30T09:12:44Z");
+    }
+
+    #[test]
+    fn the_moment_of_a_stall_or_a_crash_is_sent_in_ranges() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+        assert_eq!(available_bucket(512 * 1024 * 1024), "<1");
+        assert_eq!(available_bucket(3 * GIB), "2-4");
+        assert_eq!(available_bucket(40 * GIB), "16+");
+        assert_eq!(swap_free_bucket(0, 0), "no-swap");
+        assert_eq!(swap_free_bucket(1, 100), "<10%");
+        assert_eq!(swap_free_bucket(30, 100), "10-50%");
+        assert_eq!(swap_free_bucket(100, 100), "50%+");
+        assert_eq!(pressure_bucket(0.0), "<1");
+        assert_eq!(pressure_bucket(61.25), "60+");
+        assert_eq!(app_memory_bucket(300 * 1024 * 1024), "256MB-1GB");
+        assert_eq!(progress_bucket(0, 100), "0%");
+        assert_eq!(
+            progress_bucket(10, 0),
+            "0%",
+            "no total: nothing can be said"
+        );
+        assert_eq!(progress_bucket(60, 100), "50-75%");
+        assert_eq!(progress_bucket(99, 100), "75-99%");
+        assert_eq!(progress_bucket(100, 100), "100%");
+        assert_eq!(thread_state("D"), "disk");
+        assert_eq!(thread_state("?"), "other");
+        assert_eq!(
+            kernel_function("do_epoll_wait"),
+            Some("do_epoll_wait".into())
+        );
+        assert_eq!(kernel_function("0"), None);
+        assert_eq!(kernel_function("/home/grace"), None);
     }
 }

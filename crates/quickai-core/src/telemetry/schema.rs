@@ -7,7 +7,10 @@ use serde_json::{json, Map, Value};
 
 use super::event::{Batch, Common, Event, SCHEMA};
 use super::level::Level;
-use super::measure::{is_plain_name, MINUTES, STALL};
+use super::measure::{
+    is_plain_name, APP_MEMORY, AVAILABLE, MINUTES, PRESSURE, PROGRESS, RUNNING, SIZES, STALL,
+    SWAP_FREE, THREAD_STATES,
+};
 
 /// The shape of a field's value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,6 +31,8 @@ pub enum Shape {
     Frames,
     /// A whole number of seconds.
     Seconds,
+    /// A whole number, at most a million (an HTTP status, the number of a rule).
+    Count,
     /// Yes or no.
     Flag,
 }
@@ -43,6 +48,7 @@ impl Shape {
             Shape::Location => "a file of QuickAI's source and a line".to_string(),
             Shape::Frames => "function names, at most 64".to_string(),
             Shape::Seconds => "whole seconds".to_string(),
+            Shape::Count => "a whole number".to_string(),
             Shape::Flag => "yes or no".to_string(),
         }
     }
@@ -59,6 +65,7 @@ impl Shape {
             Shape::Location => ("location", None),
             Shape::Frames => ("frames", None),
             Shape::Seconds => ("seconds", None),
+            Shape::Count => ("count", None),
             Shape::Flag => ("flag", None),
         }
     }
@@ -94,6 +101,7 @@ impl Shape {
                     })
             }
             (Shape::Seconds, Value::Number(n)) => n.as_u64().is_some_and(|n| n <= 100_000_000),
+            (Shape::Count, Value::Number(n)) => n.as_u64().is_some_and(|n| n <= 1_000_000),
             (Shape::Flag, Value::Bool(_)) => true,
             _ => false,
         }
@@ -178,7 +186,9 @@ const fn f(name: &'static str, shape: Shape, kind: Kind, about: &'static str) ->
 
 /// The version of what is collected that a person answers about. It goes up when an event or a field is added that a
 /// person who said yes did not agree to, and the notice asks them again (people who chose Off are not asked again).
-pub const CONSENT_VERSION: u32 = 1;
+/// 2 (2026-11-01): a stall and a crash say what the machine was doing (its memory, the waits, what the window's thread
+/// was in), an engine's exit which of its document's diagnostics matched, a download how big it was and how far it got.
+pub const CONSENT_VERSION: u32 = 2;
 
 /// The ways QuickAI is packaged, as `common.app.package` names them.
 pub const PACKAGES: &[&str] = &[
@@ -229,6 +239,54 @@ const BUILD: FieldSpec = f(
     Shape::Name,
     Kind::PublicName,
     "the label of the engine's build (`b11889-vulkan`), `bundled`, or `custom` for a program of the person's own",
+);
+const ENGINE_STATE: FieldSpec = f(
+    "engine_state",
+    Shape::Choice(ENGINE_STATES),
+    Kind::Use,
+    "whether the engine was running",
+);
+const OPEN_WINDOWS: FieldSpec = f(
+    "open_windows",
+    Shape::Choices(WINDOWS),
+    Kind::Use,
+    "which windows were open",
+);
+const RUNNING_NOW: FieldSpec = f(
+    "running",
+    Shape::Choice(&RUNNING),
+    Kind::Use,
+    "what the window was showing that goes on without it: a download, an install, a delete, a look-up, or none",
+);
+const MEMORY_AVAILABLE: FieldSpec = f(
+    "memory_available",
+    Shape::Choice(&AVAILABLE),
+    Kind::Measure,
+    "the memory the system could still give, in GB ranges",
+);
+const SWAP_FREE_NOW: FieldSpec = f(
+    "swap_free",
+    Shape::Choice(&SWAP_FREE),
+    Kind::Measure,
+    "how much of the swap was free, or that there is none",
+);
+const MEMORY_PRESSURE: FieldSpec = f(
+    "memory_pressure",
+    Shape::Choice(&PRESSURE),
+    Kind::Measure,
+    "the share of the last ten seconds in which something on the computer waited for memory, in percent ranges (Linux)",
+);
+const IO_PRESSURE: FieldSpec = f(
+    "io_pressure",
+    Shape::Choice(&PRESSURE),
+    Kind::Measure,
+    "the share of the last ten seconds in which something on the computer waited for the disk, in percent ranges (Linux)",
+);
+const APP_MEMORY_NOW: FieldSpec = f(
+    "app_memory",
+    Shape::Choice(&APP_MEMORY),
+    Kind::Measure,
+    "the memory QuickAI itself held, in ranges",
 );
 const MODEL: FieldSpec = f(
     "model",
@@ -334,9 +392,15 @@ pub const EVENTS: &[EventSpec] = &[
             f("thread", Shape::Label, Kind::CallStack, "the name of the thread it happened in"),
             f("backtrace", Shape::Frames, Kind::CallStack, "the names of the functions that led to it"),
             ENGINE,
-            f("engine_state", Shape::Choice(ENGINE_STATES), Kind::Use, "whether the engine was running"),
-            f("open_windows", Shape::Choices(WINDOWS), Kind::Use, "which windows were open"),
+            ENGINE_STATE,
+            OPEN_WINDOWS,
             f("minutes_open", Shape::Choice(&MINUTES), Kind::Measure, "how long the app had been open"),
+            RUNNING_NOW,
+            MEMORY_AVAILABLE,
+            SWAP_FREE_NOW,
+            MEMORY_PRESSURE,
+            IO_PRESSURE,
+            APP_MEMORY_NOW,
         ],
     },
     EventSpec {
@@ -351,6 +415,14 @@ pub const EVENTS: &[EventSpec] = &[
             f("phase", Shape::Choice(&["loading", "serving"]), Kind::Use, "what the engine was doing"),
             f("status", Shape::Label, Kind::Error, "how it ended (`exit 1`, `signal 9`, `unknown`)"),
             f("after_seconds", Shape::Seconds, Kind::Measure, "how long after Start"),
+            f(
+                "diagnostic",
+                Shape::Count,
+                Kind::Error,
+                "which of the engine document's `[[diagnostic]]` rules matched its log, counted from 1 (0: none); \
+                 the number of a rule, never the log",
+            ),
+            f("model_size", Shape::Choice(&SIZES), Kind::Measure, "the size of the model's file, in GB ranges"),
         ],
     },
     EventSpec {
@@ -362,14 +434,50 @@ pub const EVENTS: &[EventSpec] = &[
             f("what", Shape::Choice(&["model", "build", "program"]), Kind::Use, "what was being downloaded"),
             f("source", Shape::Choice(SOURCES), Kind::PublicName, "the site it came from"),
             f("reason", Shape::Choice(REASONS), Kind::Error, "why it failed"),
+            f("size", Shape::Choice(&SIZES), Kind::Measure, "how big the download was, in GB ranges, when the site said"),
+            f("progress", Shape::Choice(&PROGRESS), Kind::Measure, "how far it got before it failed"),
+            f("http_status", Shape::Count, Kind::Error, "the HTTP status the site answered with, when there was one"),
         ],
     },
     EventSpec {
         name: "error.stall",
         level: Level::Error,
         purpose: Purpose::Health,
-        about: "The window stopped answering for five seconds or more.",
-        fields: &[f("seconds", Shape::Choice(&STALL), Kind::Measure, "for how long")],
+        about: "The window stopped answering for five seconds or more. What the machine was doing is read when the \
+                watcher notices, five seconds in.",
+        fields: &[
+            f("seconds", Shape::Choice(&STALL), Kind::Measure, "for how long"),
+            RUNNING_NOW,
+            f(
+                "thread_state",
+                Shape::Choice(&THREAD_STATES),
+                Kind::Error,
+                "what the window's thread was doing as the system says it: running, sleeping, waiting on the disk or \
+                 a device (`disk`), stopped, ended, idle or other (Linux)",
+            ),
+            f(
+                "waiting_in",
+                Shape::Label,
+                Kind::CallStack,
+                "the function of the system's kernel the window's thread was waiting in (`do_epoll_wait`, \
+                 `folio_wait_bit_common`): a name in the kernel's code, made of letters, digits and `_` (Linux)",
+            ),
+            f(
+                "syscall",
+                Shape::Label,
+                Kind::CallStack,
+                "the system call the window's thread was in (`futex`, `read`), its number when it has no name here, \
+                 or `none` when it was running (Linux)",
+            ),
+            MEMORY_AVAILABLE,
+            SWAP_FREE_NOW,
+            MEMORY_PRESSURE,
+            IO_PRESSURE,
+            APP_MEMORY_NOW,
+            ENGINE,
+            ENGINE_STATE,
+            OPEN_WINDOWS,
+        ],
     },
     EventSpec {
         name: "session.unclean_exit",
