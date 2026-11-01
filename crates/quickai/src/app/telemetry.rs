@@ -47,6 +47,8 @@ struct RunWatch {
     engine: String,
     model: String,
     build: String,
+    /// The size of the model's file, when there is one in the list.
+    size: Option<u64>,
     ready: bool,
 }
 
@@ -178,16 +180,24 @@ impl App {
             self.note_run_state(state);
             self.tel.seen_state = Some(state);
         }
-        for seconds in self.heartbeat.take_stalls() {
-            t.record(
-                t.event("error.stall")
-                    .with("seconds", measure::stall_bucket(seconds)),
-            );
+        for stall in self.heartbeat.take_stalls() {
+            let mut event = t
+                .event("error.stall")
+                .with("seconds", measure::stall_bucket(stall.seconds))
+                .with("running", running_id(stall.running))
+                .with("engine_state", state_id(state))
+                .with("open_windows", self.open_windows());
+            if measure::is_plain_name(&self.engine) {
+                event = event.with("engine", self.engine.as_str());
+            }
+            t.record(rt::machine::with_machine(event, &stall.machine, true));
         }
+        let running = self.running_now().map(running_id);
         if let Ok(mut context) = t.context().try_lock() {
             context.engine = Some(self.engine.clone());
             context.engine_state = Some(state_id(state));
             context.open_windows = self.open_windows();
+            context.running = running;
         }
     }
 
@@ -202,6 +212,7 @@ impl App {
                 engine: self.engine.clone(),
                 model: self.telemetry_model(),
                 build: self.telemetry_build(),
+                size: self.models.get(self.selected).map(|m| m.size_bytes),
                 ready: false,
             });
         }
@@ -213,21 +224,34 @@ impl App {
             }
             ServerState::Crashed => {
                 if let Some(run) = self.tel.run.take() {
-                    t.record(
-                        t.event("error.engine_exit")
-                            .with("engine", run.engine.as_str())
-                            .with("build", run.build.as_str())
-                            .with("model", run.model.as_str())
-                            .with("phase", if run.ready { "serving" } else { "loading" })
-                            .with(
-                                "status",
-                                self.tel
-                                    .last_exit
-                                    .clone()
-                                    .unwrap_or_else(|| "unknown".into()),
-                            )
-                            .with("after_seconds", now.saturating_sub(run.started)),
+                    // which of the document's diagnostics the log matches, by its number: the log itself is never sent
+                    let log: Vec<String> = self.log_lines.iter().cloned().collect();
+                    let ended_in = if run.ready { "running" } else { "starting" };
+                    let diagnostic = quickai_core::advice::matching_rule(
+                        &self.registry,
+                        &run.engine,
+                        &log,
+                        Some(ended_in),
                     );
+                    let mut event = t
+                        .event("error.engine_exit")
+                        .with("engine", run.engine.as_str())
+                        .with("build", run.build.as_str())
+                        .with("model", run.model.as_str())
+                        .with("phase", if run.ready { "serving" } else { "loading" })
+                        .with(
+                            "status",
+                            self.tel
+                                .last_exit
+                                .clone()
+                                .unwrap_or_else(|| "unknown".into()),
+                        )
+                        .with("after_seconds", now.saturating_sub(run.started))
+                        .with("diagnostic", diagnostic);
+                    if let Some(size) = run.size.filter(|s| *s > 0) {
+                        event = event.with("model_size", measure::size_bucket(size));
+                    }
+                    t.record(event);
                 }
             }
             ServerState::Idle => self.tel.run = None,
@@ -274,20 +298,35 @@ impl App {
             .map(|m| m.id.clone())
     }
 
-    /// A download failed (`error.download`): the site and the reason, never the file or the address.
-    pub(super) fn note_download_failed(&mut self, message: &str, place: Option<&str>) {
+    /// A download failed (`error.download`): the site and the reason, how big it was and how far it got (`downloaded`
+    /// of `total` bytes), and the HTTP status when the message names one; never the file or the address.
+    pub(super) fn note_download_failed(
+        &mut self,
+        message: &str,
+        place: Option<&str>,
+        downloaded: u64,
+        total: Option<u64>,
+    ) {
         let source = if place.is_some_and(|p| p.starts_with("huggingface:")) {
             "huggingface"
         } else {
             "other"
         };
         let t = &self.telemetry;
-        t.record(
-            t.event("error.download")
-                .with("what", "model")
-                .with("source", source)
-                .with("reason", download_reason(message)),
-        );
+        let mut event = t
+            .event("error.download")
+            .with("what", "model")
+            .with("source", source)
+            .with("reason", download_reason(message));
+        if let Some(total) = total.filter(|t| *t > 0) {
+            event = event
+                .with("size", measure::size_bucket(total))
+                .with("progress", measure::progress_bucket(downloaded, total));
+        }
+        if let Some(code) = http_status(&message.to_ascii_lowercase()) {
+            event = event.with("http_status", u64::from(code));
+        }
+        t.record(event);
     }
 
     /// The build of the engine's program, as telemetry names it: its label when QuickAI installed it, `bundled` when
@@ -834,6 +873,15 @@ fn http_status(message: &str) -> Option<u16> {
             .collect();
         code.parse::<u16>().ok().filter(|c| (400..600).contains(c))
     })
+}
+
+/// The id of `measure::RUNNING` for what the window says is running (`an install`, `a look-up`).
+fn running_id(words: &str) -> &'static str {
+    measure::RUNNING[1..]
+        .iter()
+        .copied()
+        .find(|id| words.contains(id))
+        .unwrap_or(measure::RUNNING[0])
 }
 
 /// The state's id in `crash.panic`.

@@ -901,7 +901,12 @@ impl App {
                 self.rescan_models();
             }
             Some(Err(msg)) => {
-                self.note_download_failed(&msg, source.as_ref().map(|s| s.place.as_str()));
+                self.note_download_failed(
+                    &msg,
+                    source.as_ref().map(|s| s.place.as_str()),
+                    job.downloaded,
+                    job.total,
+                );
                 self.push_log(format!("Download failed: {msg}"));
                 self.catalog.note = Some(format!("Download failed: {msg}"));
                 self.bench_failed(&msg);

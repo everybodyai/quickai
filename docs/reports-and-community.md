@@ -1135,6 +1135,31 @@ https://admin.everybodyai.dev to the admin".
   PRIVACY.md no longer links it; what the app can send is still public, in `quickai --telemetry` and
   docs/reference/telemetry-events.md.
 
+## 25. What an error and a crash say of the moment (2026-11-01)
+
+(§24, the community configurations, is on the branch `community`.)
+
+The user, after `error.stall` reports of 10 to 30 s and of 60 s and more came from a 0.2.0 AppImage (Ubuntu 26.04,
+64 GB, AMD) with nothing but their length: "we also need to capture more details when error occurs or when it crashes.
+I also want to see details of the error in the admin page, i.e. when selecting a specific one".
+
+- **`error.stall`** says what `~/.quickai/ui-stalls.log` says, in ranges and names: what was going (`running`: a
+  download, an install, a delete, a look-up, or none), the window thread's state (`thread_state`), the kernel function
+  it waited in (`waiting_in`, letters, digits and `_` only) and its system call (`syscall`), the memory available, the
+  swap free, the memory and disk pressure of the last ten seconds, the memory QuickAI held, and the engine, its state
+  and the windows open. The reading is the one the watcher writes down five seconds in (runtime
+  `telemetry::machine`); on systems other than Linux there is none and those fields are left out.
+- **`crash.panic`** adds what was going and the same figures of memory and pressure, read by the panic hook (a few
+  files of `/proc`; no thread's state: the thread that panics is the one running).
+- **`error.engine_exit`** adds `diagnostic`, the number (from 1) of the engine document's first `[[diagnostic]]` rule
+  that the log matches (`advice::matching_rule`, the same conditions as the crash panel's advice; 0 for none), in place
+  of any of the log, and `model_size` in GB ranges.
+- **`error.download`** adds `size` and `progress` in ranges, when the site said how big the file was, and
+  `http_status`, a new shape `count` (a whole number) that the server checks too.
+- **The consent version is 2**: more is collected, so people who chose a level are asked again (§5.2).
+- **The admin** shows one error or crash on a page of its own, from the Errors page: every field, the hour, the batch's
+  version, system, hardware and country, and how many times the same install reported the same event.
+
 ## Appendix A: draft text for PRIVACY.md
 
 _The draft as planned. PRIVACY.md is the text in force, and has no level All since §23._

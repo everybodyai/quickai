@@ -16,6 +16,7 @@
 
 mod crash;
 pub mod identity;
+pub mod machine;
 pub mod send;
 
 use std::path::{Path, PathBuf};

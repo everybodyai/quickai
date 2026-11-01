@@ -157,14 +157,21 @@ app does not always do that for you.
 **The levels.** You choose one when QuickAI first starts, and can change it in Settings → Privacy.
 
 - **Crashes only**: a report when QuickAI stops because of an error. It holds the error's message, where in QuickAI's
-  code it happened and the names of the functions that led there, the name of the thread, and what the app was doing
-  (which engine, whether it was running, which windows were open, how long the app had been open, in ranges). Never a
-  log.
+  code it happened and the names of the functions that led there, the name of the thread, what the app was doing
+  (which engine, whether it was running, which windows were open, whether a download, an install, a delete or a
+  look-up was going, how long the app had been open, in ranges), and how the computer was at that moment, in ranges:
+  the memory still available, how much of the swap was free, how much of the last ten seconds anything waited for
+  memory or for the disk, and how much memory QuickAI held. Never a log.
 - **Errors and crashes** adds reports of what failed: an engine that stopped by itself (the engine, the label of its
-  build, the model as named below, whether it was loading or serving, how it ended, such as `exit 1`, and how long after
-  Start), a model download that failed (its site, such as Hugging Face, and a word for the reason, such as `network`
-  or `checksum`, never the file or the address), the window not answering for five seconds or more (for how long, in
-  ranges), and a session that ended without closing (counted at the next start).
+  build, the model as named below and its size in ranges, whether it was loading or serving, how it ended, such as
+  `exit 1`, how long after Start, and the number of the engine document's diagnostic its log matched, never the log
+  itself), a model download that failed (its site, such as Hugging Face, a word for the reason, such as `network` or
+  `checksum`, the HTTP status the site answered with, how big the download was and how far it got, in ranges, never
+  the file or the address), the window not answering for five seconds or more (for how long, in ranges; what was
+  going; the same figures about the computer as a crash report; the engine, its state and the windows open; and what
+  the window's thread was doing as the system says it: its state, the name of the function of the system's kernel it
+  waited in and its system call, such as `futex`), and a session that ended without closing (counted at the next
+  start).
 
 There is no level that counts how you use the app: an install that never crashes and hits no error sends nothing.
 
