@@ -369,7 +369,7 @@ impl App {
         ui.add_space(8.0);
         let p = theme::palette();
         for line in [
-            "They are used from the next Start. In the chat page, switch the tools on in its settings, then ask: the model calls them when it needs to.",
+            "They are used from the next Start. The chat page lists their tools, where each can be switched off, and the model calls them when it needs to.",
             "A server that is a command is started by llama-server on this computer and can do whatever its program does: add only ones you trust. One at an address is reached through QuickAI.",
             "Commands such as npx and uvx need Node.js or uv on this computer. If a server does not start, the log says why.",
         ] {

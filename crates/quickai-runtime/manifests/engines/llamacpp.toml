@@ -277,7 +277,7 @@ ui = { section = "advanced", order = 91, hint = "e.g. LLAMA_ARG_THREADS=8" }
 [[field]]
 id = "mcp_servers"
 label = "MCP servers"
-help = '''Tools the model can use in the chat page: servers of the Model Context Protocol (MCP) that read files, search the web, look at a calendar and more. Add one with its command (npx -y @modelcontextprotocol/server-filesystem ~/Documents) or its address (https://.../mcp), or paste the JSON a server's instructions give ({"mcpServers": {...}}). They are used from the next Start; turn the tools on in the chat page's settings. A server can do whatever its program does on this computer: add only ones you trust.'''
+help = '''Tools the model can use in the chat page: servers of the Model Context Protocol (MCP) that read files, search the web, look at a calendar and more. Add one with its command (npx -y @modelcontextprotocol/server-filesystem ~/Documents) or its address (https://.../mcp), or paste the JSON a server's instructions give ({"mcpServers": {...}}). They are used from the next Start: the chat page lists their tools, and the model calls them when it needs to. A server can do whatever its program does on this computer: add only ones you trust.'''
 type = "text"
 default = ""
 share = "never"
