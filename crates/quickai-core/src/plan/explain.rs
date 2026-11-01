@@ -76,11 +76,15 @@ pub fn render_explain(plan: &RunPlan) -> String {
                 push("", format!("mkdir {dir}"), "engine launch.spawn.mkdir");
             }
             for step in &spawn.write {
-                push(
-                    "",
-                    format!("write {}   (the application's own {})", step.to, step.asset),
-                    "engine launch.spawn.write",
-                );
+                if step.text.is_some() {
+                    push("", format!("write {}   (the MCP servers in use)", step.to), "field bind.mcp");
+                } else {
+                    push(
+                        "",
+                        format!("write {}   (the application's own {})", step.to, step.asset),
+                        "engine launch.spawn.write",
+                    );
+                }
             }
             for env in &spawn.env {
                 let text = match &env.mode {
@@ -90,6 +94,9 @@ pub fn render_explain(plan: &RunPlan) -> String {
                     }
                 };
                 push("", text, &env.origin);
+            }
+            for note in &spawn.notes {
+                push("note", note.clone(), "");
             }
         }
         if let Some(ready) = &unit.ready {

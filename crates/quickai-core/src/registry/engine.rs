@@ -291,6 +291,8 @@ pub struct CompiledSpawn {
     pub mkdir: Vec<Template>,
     /// The files of the application's own that are put where the program reads them, before it starts.
     pub write: Vec<CompiledWrite>,
+    /// The options QuickAI passes, by every name and variable (`[[launch.spawn.option]]`).
+    pub options: Vec<crate::doc::engine::OptionSpec>,
 }
 
 /// One file or folder of the application's own, and the template of where it goes.
@@ -440,6 +442,9 @@ pub struct CompiledField {
     /// For a field of the person's own lines of environment (`bind.env_lines`): the names those
     /// lines may not set, besides the ones the document locks.
     pub env_lines: Option<Vec<String>>,
+    /// For a field that holds a list of MCP servers (`bind.mcp`): the file they are written to and the arguments
+    /// that name it.
+    pub mcp: Option<CompiledMcp>,
     /// This field is the port clients connect to.
     pub public_port: bool,
     /// Where its bindings go among the arguments.
@@ -450,6 +455,13 @@ pub struct CompiledField {
     pub required_when: Option<Expr>,
     pub validate: Vec<CompiledRule>,
     pub pattern: Option<Regex>,
+}
+
+/// `bind.mcp`, parsed: the file's template, and the arguments' (`${value}` is the file).
+#[derive(Clone, Debug)]
+pub struct CompiledMcp {
+    pub file: Template,
+    pub arg: Vec<Template>,
 }
 
 /// A cross-field check, parsed: when `check` does not hold, `message` is the field's error.
@@ -947,6 +959,23 @@ fn compile_fields(c: &mut Checker, doc: &EngineDoc, known: &KnownPrimitives) -> 
             lines.protect.clone()
         });
 
+        let mcp = field.bind.mcp.as_ref().and_then(|mcp| {
+            let mcp_at = at.clone().key("bind").key("mcp");
+            if field.ty != FieldType::Text {
+                c.error(&mcp_at, "`bind.mcp` needs a text field");
+            }
+            let file = c.template(&mcp_at.clone().key("file"), &mcp.file, &engine_schema)?;
+            let arg: Vec<Option<Template>> = mcp
+                .arg
+                .iter()
+                .map(|t| c.template(&mcp_at.clone().key("arg"), t, &value_schema))
+                .collect();
+            arg.iter().all(Option::is_some).then(|| CompiledMcp {
+                file,
+                arg: arg.into_iter().flatten().collect(),
+            })
+        });
+
         let is_public = field.bind.port == Some(PortRole::Public);
         if field.bind.port.is_some() {
             if !matches!(field.ty, FieldType::Port | FieldType::Int) {
@@ -1051,6 +1080,7 @@ fn compile_fields(c: &mut Checker, doc: &EngineDoc, known: &KnownPrimitives) -> 
             arg_by_value: field.bind.arg_by_value.clone(),
             env,
             env_lines,
+            mcp,
             public_port: is_public,
             order: field.arg_order(),
             derive,
@@ -2199,6 +2229,34 @@ fn compile_launch(
                     })
                 })
                 .collect();
+            // an option is named as a command line names it: a word that starts with `-`
+            let options: Vec<crate::doc::engine::OptionSpec> = spawn
+                .option
+                .iter()
+                .enumerate()
+                .filter(|(i, option)| {
+                    let at = at.clone().key("option").index(*i);
+                    if option.names.is_empty() {
+                        c.error(&at.key("names"), "an option needs at least one name");
+                        return false;
+                    }
+                    match option
+                        .names
+                        .iter()
+                        .find(|n| !n.starts_with('-') || n.contains(char::is_whitespace))
+                    {
+                        Some(bad) => {
+                            c.error(
+                                &at.key("names"),
+                                format!("`{bad}` is not the name of an option: it starts with `-` and has no space"),
+                            );
+                            false
+                        }
+                        None => true,
+                    }
+                })
+                .map(|(_, option)| option.clone())
+                .collect();
             match (program, stop) {
                 (Some(program), Some(stop))
                     if args.iter().all(Option::is_some)
@@ -2215,6 +2273,7 @@ fn compile_launch(
                         cwd: cwd.flatten(),
                         mkdir: mkdir.into_iter().flatten().collect(),
                         write: write.into_iter().flatten().collect(),
+                        options,
                     })
                 }
                 _ => None,

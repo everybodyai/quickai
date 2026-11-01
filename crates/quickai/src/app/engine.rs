@@ -158,6 +158,34 @@ impl App {
             || self.companion_busy()
     }
 
+    /// A program chosen before (a build installed and deleted since, one on a disk that is not there, one from inside
+    /// a package that was opened somewhere else) is no reason to say the engine is not installed when it has one of its
+    /// own: the one the application finds by itself is used again, the choice is forgotten, and the log says so. One
+    /// that has nothing of its own keeps the choice, and is told as not found.
+    fn forget_a_program_that_is_gone(&mut self) {
+        let Some(chosen) = self.values.text("bin_override").map(PathBuf::from) else {
+            return;
+        };
+        if chosen.as_os_str().is_empty() || chosen.is_file() {
+            return;
+        }
+        let own =
+            launch::default_binary_in(&self.registry, &self.engine, self.data_dir_override.as_deref());
+        if !own.is_file() {
+            return;
+        }
+        self.push_log(format!(
+            "The {} chosen before is not there any more ({}). QuickAI uses {} again; choose another in Settings, Program.",
+            self.server_name(),
+            chosen.display(),
+            own.display()
+        ));
+        self.binary = own;
+        self.runtime.input.clear();
+        self.set_bin_override(None);
+        self.save_settings();
+    }
+
     /// Everything that depends on the engine: its executable, its models and the state of the
     /// panels that were about it. Called when the application starts and when the engine changes.
     pub(super) fn load_engine_state(&mut self) {
@@ -175,6 +203,7 @@ impl App {
             self.values.text("bin_override"),
             self.data_dir_override.as_deref(),
         );
+        self.forget_a_program_that_is_gone();
         self.host_facts = launch::host_facts(&self.binary, self.machine.clone(), None);
         if let Some(dir) = &self.data_dir_override {
             self.host_facts.data_dir = dir.clone();

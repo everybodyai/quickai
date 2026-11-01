@@ -23,6 +23,7 @@ pub mod heuristics;
 pub mod kvlines;
 pub mod loaderenv;
 pub mod lookup;
+pub mod mcp;
 pub mod models;
 pub mod plan;
 pub mod prerequisite;

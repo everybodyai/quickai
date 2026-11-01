@@ -162,6 +162,7 @@ pub const GROUPS: &[Group] = &[
             a("cwd", "template", "The folder the program starts in; it is made, with the ones above it, if it is not there. Without it the program starts wherever QuickAI was started from, which is the person's, and a program that writes a file to its working directory (Open WebUI keeps its secret key there) writes it there."),
             a("mkdir", "list of templates", "Folders made, with the ones above them, before the program starts: for a program that refuses a folder it is told about that does not exist yet (ComfyUI's `--models-directory`)."),
             a("write", "list of tables", "Files of the application's own that are put where the program is told to read them, before it starts, below."),
+            a("option", "list of tables", "The program's options that QuickAI passes, by every name they go by and the variable that sets them too, below: what lets the person's own arguments and environment take their place."),
             a("stop", "table", "How to stop it: `{ policy = \"kill\" }` (the default: at once), or `{ policy = \"graceful\", grace = \"10s\", exit_grace = \"2s\" }`: ask it to leave (SIGTERM to its group; Windows has no such signal), wait `grace` (`exit_grace` while the application is closing), then kill what is left."),
         ],
     },
@@ -172,6 +173,16 @@ pub const GROUPS: &[Group] = &[
         attributes: &[
             a("asset", "text", "The name of the file or folder among the application's own files, with `/` between the parts (`comfyui/quickai_bridge`)."),
             a("to", "template", "Where it is put (`${data}/comfyui/extensions/quickai_bridge`). The folders above it are made."),
+        ],
+    },
+    Group {
+        heading: "`[[launch.spawn.option]]`",
+        intro: "One option of the program. The person's own arguments and lines of environment win over QuickAI's: when the arguments of a field with `bind.arg_split` name an option that QuickAI passes (the document's `args`, a field's, a component's or a mode's), by any of its names or as `--no-<name>`, or the lines of a field with `bind.env_lines` set its variable, QuickAI's option and the words after it are left out, and the log says so. An option that is not listed here is matched by the name it is written with. A word that starts with `-` and then a letter is an option; the words after it, up to the next option, are its values.",
+        source: Some("OptionSpec"),
+        attributes: &[
+            a("names", "list of text", "The names it goes by, the one it is known by first (`[\"--ctx-size\", \"-c\"]`)."),
+            a("env", "text", "The variable that sets it as well (`LLAMA_ARG_CTX_SIZE`): a line of the person's for it takes the place of QuickAI's option, since a program that reads both lets the command line win."),
+            a("keep", "bool", "QuickAI's value stays and the person's is left out, with a line in the log: for what QuickAI needs to reach the program, such as the port it listens on, which a field changes. Default false."),
         ],
     },
     Group {
@@ -240,14 +251,24 @@ pub const GROUPS: &[Group] = &[
             a("order", "whole number", "Where among the field arguments these go. Default: the field's `ui.order`."),
             a("env", "list of tables, below", "Environment variables of the engine that this field decides, each with an optional condition on `value`."),
             a("env_lines", "table, below", "For a `kv_lines` field: its lines are environment variables of the engine."),
+            a("mcp", "table, below", "For a `text` field that holds a list of MCP servers: the servers in use are written to a file for the engine, which arguments name."),
         ],
     },
     Group {
         heading: "`[[field]]` `bind.env_lines`",
-        intro: "What a field of `KEY=VALUE` lines may set.",
+        intro: "What a field of `KEY=VALUE` lines may set. A line for a variable the document sets takes its place; one for a variable the document adds a folder to (`prepend`, a library path) goes in front of that folder, which stays; one for the variable of an option QuickAI passes (`[[launch.spawn.option]]`) takes the place of the option.",
         source: Some("EnvLines"),
         attributes: &[
-            a("protect", "list of text", "Names the person's lines may not set (`OLLAMA_MODELS`), besides every variable the document locks or adds to (`prepend`): the document's value stands. A name is protected in any spelling."),
+            a("protect", "list of text", "Names the person's lines may not set (`OLLAMA_MODELS`), besides every variable the document locks: the document's value stands. A name is protected in any spelling."),
+        ],
+    },
+    Group {
+        heading: "`[[field]]` `bind.mcp`",
+        intro: "A list of MCP servers, the tools a model may use (Model Context Protocol). The field's text is the list in the form the programs that use MCP print, `{\"mcpServers\": {\"<name>\": {\"command\", \"args\", \"env\"} or {\"url\", \"headers\"}}}`, with `\"disabled\": true` for one kept and not used; VS Code's `{\"servers\": ...}` is read too. At every start the servers in use are written, for their owner alone, to `file` as llama-server's list, and `arg` is added; a server at an address is QuickAI itself started as `mcp-bridge <url>`, with its headers in the variable `QUICKAI_MCP_HEADERS`. With no server in use nothing is written or added. `ui.widget = \"mcp_servers\"` gives the list a page of the Settings of its own.",
+        source: Some("McpBind"),
+        attributes: &[
+            a("file", "template", "Where the list is written (`${data}/llamacpp/mcp-servers.json`)."),
+            a("arg", "list of templates", "The arguments that name it; `${value}` is the file (`[\"--mcp-servers-config\", \"${value}\"]`)."),
         ],
     },
     Group {
@@ -257,7 +278,7 @@ pub const GROUPS: &[Group] = &[
         attributes: &[
             a("section", "text", "Where it goes: `primary` (the row under the model), `advanced` (inside Settings), or a section of your own. Default `advanced`."),
             a("order", "whole number", "Its place in the section, lowest first; those without come last."),
-            a("widget", "text", "A widget other than the type's usual one: `runtime_manager` (for a `runtime_path`) or `button` (a field that holds nothing, usually of type `hidden`: it is drawn as a button with the field's `label`, pressed only while `enabled_when` holds). Another name is an error when the document loads."),
+            a("widget", "text", "A widget other than the type's usual one: `runtime_manager` (for a `runtime_path`), `mcp_servers` (for a `text` field with `bind.mcp`: the list of MCP servers, on a page of the Settings of its own) or `button` (a field that holds nothing, usually of type `hidden`: it is drawn as a button with the field's `label`, pressed only while `enabled_when` holds). Another name is an error when the document loads."),
             a("hint", "text", "Greyed text shown in an empty text box. A number with a hint is a box that can be empty (the hint says what empty means), not a drag box."),
             a("action", "text", "What a click on a `button` makes the application do, as `verb` or `verb:what` (`open:settings`). A button needs one and nothing else has one."),
         ],

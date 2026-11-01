@@ -12,11 +12,12 @@ use std::path::PathBuf;
 
 use eframe::egui;
 
-use quickai_core::form::{FormField, FormModel};
+use quickai_core::form::{Edit, FormField, FormModel};
 
 use super::icons::{self, Icon};
 use super::runtime_manager::INSTALL_PYTHON_FIELD;
 use super::theme;
+use super::widgets::{self, Reply};
 use super::{App, PendingDelete};
 use crate::hardware;
 
@@ -42,6 +43,8 @@ pub(super) enum SettingsPage {
     General,
     Program,
     Start,
+    /// The MCP servers of the engine, when it takes them (`mcp_servers.rs`).
+    Tools,
     Companion,
     Computers,
     Privacy,
@@ -197,6 +200,12 @@ impl App {
             },
             NavItem::new(SettingsPage::Start, Icon::Terminal, "Starting it"),
         ];
+        if let Some(count) = self.mcp_server_count() {
+            pages.push(NavItem {
+                count: (count > 0).then_some(count),
+                ..NavItem::new(SettingsPage::Tools, Icon::Plug, "MCP servers")
+            });
+        }
         if let Some(name) = self.companion_name() {
             pages.push(NavItem::new(SettingsPage::Companion, Icon::Chat, &name));
         }
@@ -264,6 +273,7 @@ impl App {
             SettingsPage::General => self.show_general_page(ui, form),
             SettingsPage::Program => self.show_program_page(ui, form),
             SettingsPage::Start => self.show_start_page(ui, form),
+            SettingsPage::Tools => self.show_tools_page(ui, form),
             SettingsPage::Companion => self.show_companion_page(ui),
             SettingsPage::Computers => self.show_computers_page(ui),
             SettingsPage::Privacy => self.show_privacy_page(ui),
@@ -320,10 +330,71 @@ impl App {
         let name = self.engine_name();
         page_head(ui, &format!("Starting {}", self.server_name()), None);
         let (_, others) = advanced_fields(form);
+        // the MCP servers have a page of their own
+        let others: Vec<FormField> = others.into_iter().filter(|f| !is_mcp_field(f)).collect();
         if !others.is_empty() {
             group(ui, |ui| self.show_fields(ui, &others, Some(&name)));
         }
         self.show_command_line(ui);
+    }
+
+    /// MCP servers: the tools a model may use in the engine's chat page, as a list to add to, switch off and change.
+    fn show_tools_page(&mut self, ui: &mut egui::Ui, form: &Option<FormModel>) {
+        let Some(field) = form
+            .as_ref()
+            .and_then(|f| f.section("advanced"))
+            .and_then(|s| s.fields.iter().find(|f| is_mcp_field(f)))
+            .cloned()
+        else {
+            return;
+        };
+        page_head(
+            ui,
+            &field.label,
+            Some(&format!(
+                "Tools the model can use in {}'s chat page (Open Chat UI), from servers of the Model Context Protocol.",
+                self.engine_name()
+            )),
+        );
+        let reply = group(ui, |ui| {
+            ui.add_enabled_ui(field.enabled, |ui| widgets::show(ui, &field)).inner
+        });
+        if let Some(Reply::Set(value)) = reply {
+            self.values.apply(vec![Edit {
+                key: field.key.clone(),
+                value,
+            }]);
+            self.save_settings();
+        }
+        ui.add_space(8.0);
+        let p = theme::palette();
+        for line in [
+            "They are used from the next Start. In the chat page, switch the tools on in its settings, then ask: the model calls them when it needs to.",
+            "A server that is a command is started by llama-server on this computer and can do whatever its program does: add only ones you trust. One at an address is reached through QuickAI.",
+            "Commands such as npx and uvx need Node.js or uv on this computer. If a server does not start, the log says why.",
+        ] {
+            ui.add(egui::Label::new(egui::RichText::new(line).small().color(p.muted)).wrap());
+        }
+        if self.session.is_active() {
+            ui.add_space(4.0);
+            ui.colored_label(p.warn, "The server is running: a change is used after Stop and Start.");
+        }
+    }
+
+    /// How many MCP servers the engine in use has, when it takes them at all.
+    pub(super) fn mcp_server_count(&self) -> Option<usize> {
+        let engine = self.engine_doc()?;
+        let field = engine
+            .doc
+            .fields
+            .iter()
+            .find(|f| f.ui.widget.as_deref() == Some(widgets::MCP_SERVERS))?;
+        let text = self.values.text(&field.id).unwrap_or_default();
+        Some(
+            quickai_core::mcp::parse(text)
+                .map(|s| s.iter().filter(|s| !s.disabled).count())
+                .unwrap_or(0),
+        )
     }
 
     /// Other computers: whether QuickAI sets them up (WP4.33).
@@ -811,6 +882,11 @@ fn advanced_fields(form: &Option<FormModel>) -> (Vec<FormField>, Vec<FormField>)
         .unwrap_or_default()
         .into_iter()
         .partition(is_program_field)
+}
+
+/// Whether a field is the list of MCP servers, which has a page of its own.
+fn is_mcp_field(field: &FormField) -> bool {
+    field.widget.as_deref() == Some(widgets::MCP_SERVERS)
 }
 
 /// Whether a field is about the program itself: the manager of its builds, or the Python its install is made with.

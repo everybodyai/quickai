@@ -152,7 +152,7 @@ fn main() {
     // QuickAI's other headless commands are the same code in both programs
     if matches!(
         args.first().map(String::as_str),
-        Some("config" | "configuration" | "plan")
+        Some("config" | "configuration" | "plan" | quickai_runtime::mcp_bridge::BRIDGE_COMMAND)
     ) {
         if let Some(code) = quickai_runtime::cli::run(&args) {
             std::process::exit(code);

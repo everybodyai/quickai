@@ -49,6 +49,27 @@ args = ["--model", "${model.main.path}", "--host", "127.0.0.1", "--port", "${lis
 env = [ { name = "LD_LIBRARY_PATH", prepend = "${runtime.dir}", sep = ":" } ]
 group = false
 stop = { policy = "kill" }
+# The options QuickAI passes, by every name llama-server knows them by and the variable that sets each (its --help,
+# b11889). The person's own arguments and lines of environment win: one that names an option below, by any of its
+# names, as --no-..., or by its variable, takes the place of QuickAI's, and the log says so. The port stays QuickAI's,
+# since QuickAI reaches the server through it (the Port field changes it).
+option = [
+  { names = ["--port"], env = "LLAMA_ARG_PORT", keep = true },
+  { names = ["--model", "-m"], env = "LLAMA_ARG_MODEL" },
+  { names = ["--host"], env = "LLAMA_ARG_HOST" },
+  { names = ["--ctx-size", "-c"], env = "LLAMA_ARG_CTX_SIZE" },
+  { names = ["--n-gpu-layers", "-ngl", "--gpu-layers"], env = "LLAMA_ARG_N_GPU_LAYERS" },
+  { names = ["--mmproj", "-mm"], env = "LLAMA_ARG_MMPROJ" },
+  { names = ["--embeddings", "--embedding"], env = "LLAMA_ARG_EMBEDDINGS" },
+  { names = ["--reranking", "--rerank"], env = "LLAMA_ARG_RERANKING" },
+  { names = ["--reasoning", "-rea"], env = "LLAMA_ARG_REASONING" },
+  { names = ["--temp", "--temperature"], env = "LLAMA_ARG_TEMPERATURE" },
+  { names = ["--top-p"], env = "LLAMA_ARG_TOP_P" },
+  { names = ["--top-k"], env = "LLAMA_ARG_TOP_K" },
+  { names = ["--min-p"], env = "LLAMA_ARG_MIN_P" },
+  { names = ["--presence-penalty"], env = "LLAMA_ARG_PRESENCE_PENALTY" },
+  { names = ["--mcp-servers-config"], env = "LLAMA_ARG_MCP_SERVERS_CONFIG" },
+]
 
 [launch.ready]
 probe = { use = "http", path = "/health", expect = 200 }
@@ -163,6 +184,11 @@ when = { log_matches = "(?i)invalid magic characters" }
 hint = "The model's file is not a whole GGUF model (a download that broke off, or another kind of file). Get it again, or choose another model."
 
 [[diagnostic]]
+when = { log_matches = "(?i)MCP starting failed" }
+hint = "llama-server could not read the list of MCP servers. Look at them in Settings, MCP servers, or switch them off there."
+action = "open:settings"
+
+[[diagnostic]]
 when = { log_matches = "(?i)(failed to allocate|out of memory|cudamalloc failed)" }
 hint = "The model does not fit in memory. Choose Light under Change, fewer GPU layers, or a smaller model."
 action = "focus_field:ctx_size"
@@ -216,6 +242,8 @@ label = "Extra command-line arguments"
 help = '''
 Appended verbatim to the llama-server command, after the built-in options (port/context size/GPU layers). Space-separated; wrap a value containing spaces in "double quotes". An invalid or unsupported flag will make the server fail to start — check the log pane at the bottom of the main window if Start doesn't work.
 
+Yours win: an option QuickAI passes too (--ctx-size, -c, --reasoning, --temp...) is left out of QuickAI's part, and the log says so. Only --port stays QuickAI's: change it with the Port field.
+
 Examples:
 --threads 8         number of CPU threads to use
 --flash-attn on     enable flash attention (faster; needs support)
@@ -235,12 +263,27 @@ ui = { section = "advanced", order = 90, hint = "e.g. --threads 8 --flash-attn o
 id = "extra_env"
 label = "Extra environment (KEY=VALUE per line)"
 help = '''
-Variables for llama-server, one KEY=VALUE per line; a line that starts with # is a comment. Most of its options can be given this way as well as on the command line: LLAMA_ARG_THREADS=8 is --threads 8 (when both are given, the command line wins). The graphics libraries take only variables, e.g. GGML_VK_VISIBLE_DEVICES=0 to use the first GPU alone with a Vulkan build. LD_LIBRARY_PATH is QuickAI's: it points at the build's own libraries.'''
+Variables for llama-server, one KEY=VALUE per line; a line that starts with # is a comment. Most of its options can be given this way as well as on the command line: LLAMA_ARG_THREADS=8 is --threads 8. Yours win: a variable for an option QuickAI passes (LLAMA_ARG_CTX_SIZE=8192) takes the place of QuickAI's option, which llama-server would otherwise let win. The graphics libraries take only variables, e.g. GGML_VK_VISIBLE_DEVICES=0 to use the first GPU alone with a Vulkan build. A LD_LIBRARY_PATH of yours goes in front of the build's own libraries, which stay after it.'''
 type = "kv_lines"
 default = ""
-bind.env_lines = { protect = ["LD_LIBRARY_PATH"] }
+bind.env_lines = {}
 share_note = "Lines of environment, set for llama-server as they are written."
 ui = { section = "advanced", order = 91, hint = "e.g. LLAMA_ARG_THREADS=8" }
+
+# The tools a model may use: MCP servers. llama-server starts the ones that are commands and offers their tools in its
+# chat page; one at an address is carried by QuickAI itself (`quickai mcp-bridge`). The list is kept in the form the
+# programs that use MCP print (`{"mcpServers": {...}}`), so that one can be pasted as it is; it never travels in a
+# configuration, since a server's variables and headers may hold keys.
+[[field]]
+id = "mcp_servers"
+label = "MCP servers"
+help = '''Tools the model can use in the chat page: servers of the Model Context Protocol (MCP) that read files, search the web, look at a calendar and more. Add one with its command (npx -y @modelcontextprotocol/server-filesystem ~/Documents) or its address (https://.../mcp), or paste the JSON a server's instructions give ({"mcpServers": {...}}). They are used from the next Start; turn the tools on in the chat page's settings. A server can do whatever its program does on this computer: add only ones you trust.'''
+type = "text"
+default = ""
+share = "never"
+bind.mcp = { file = "${data}/llamacpp/mcp-servers.json", arg = ["--mcp-servers-config", "${value}"] }
+share_note = "MCP servers: programs and addresses, with their keys."
+ui = { section = "advanced", order = 80, widget = "mcp_servers" }
 
 [[field]]
 id = "bin_override"

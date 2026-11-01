@@ -44,6 +44,7 @@ mod icons;
 mod live_traffic;
 mod log_pane;
 mod lookup_view;
+mod mcp_servers;
 mod model_bar;
 mod model_details;
 mod named_models;
@@ -584,9 +585,19 @@ impl App {
     }
 
     fn set_bin_override(&mut self, path: Option<PathBuf>) {
+        // the program that came with the application, beside its executable, is the one it finds by itself: its path
+        // is not kept, since a package such as an AppImage is opened at another place every time it starts
+        let beside_us = |p: &PathBuf| {
+            let exe_dir = std::env::current_exe()
+                .ok()
+                .and_then(|e| e.parent().map(PathBuf::from));
+            exe_dir.is_some_and(|dir| p.parent() == Some(dir.as_path()))
+        };
         match path {
-            Some(path) => self.values.set("bin_override", path.display().to_string()),
-            None => self.values.clear("bin_override"),
+            Some(path) if !beside_us(&path) => {
+                self.values.set("bin_override", path.display().to_string())
+            }
+            _ => self.values.clear("bin_override"),
         }
     }
 

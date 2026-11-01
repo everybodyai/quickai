@@ -8,6 +8,7 @@
 pub mod args;
 pub mod env;
 pub mod explain;
+pub mod precedence;
 pub(crate) mod resolve;
 pub mod types;
 
@@ -122,6 +123,9 @@ pub struct HostFacts {
     pub data_dir: String,
     pub config_dir: String,
     pub exe_dir: String,
+    /// QuickAI's own executable, which an engine may be told to start (it carries an MCP server at an address,
+    /// `crate::mcp`). Empty when it could not be told.
+    pub exe: String,
     pub home: String,
     /// A free port for the engine to listen on when a proxy sits in front of it. The application
     /// picks one before planning, only when it is needed.
@@ -223,8 +227,15 @@ pub fn plan(
             }
             LaunchStrategy::Spawn => {
                 if let Some(spawn) = &engine.spawn {
-                    if let Some(mut plan) =
-                        plan_spawn(engine, spawn, &resolved, &context, selection, &mut errors)
+                    if let Some(mut plan) = plan_spawn(
+                        engine,
+                        spawn,
+                        &resolved,
+                        &context,
+                        selection,
+                        facts,
+                        &mut errors,
+                    )
                     {
                         // where an engine of this kind already answers, a second is not started
                         plan.identity = engine.launch.attach.as_ref().map(|a| IdentityPlan {
@@ -545,6 +556,7 @@ fn plan_spawn(
     resolved: &[Resolved],
     context: &Value,
     selection: &Selection,
+    facts: &HostFacts,
     errors: &mut Vec<Diagnostic>,
 ) -> Option<SpawnPlan> {
     let render =
@@ -576,6 +588,11 @@ fn plan_spawn(
     };
 
     let mut arguments: Vec<Traced<String>> = Vec::new();
+    // which of them the person wrote (a field's `bind.arg_split`), by place
+    let mut persons: Vec<usize> = Vec::new();
+    // files a field makes (the MCP servers in use), and what the log says about them
+    let mut made: Vec<WriteStep> = Vec::new();
+    let mut notes: Vec<String> = Vec::new();
     for template in &spawn.args {
         if let Some(text) = render(template, spawn_path.clone().key("args"), context, errors) {
             arguments.push(Traced {
@@ -605,7 +622,9 @@ fn plan_spawn(
         .fields
         .iter()
         .enumerate()
-        .filter(|(_, f)| f.arg.is_some() || f.arg_split || !f.arg_by_value.is_empty())
+        .filter(|(_, f)| {
+            f.arg.is_some() || f.arg_split || !f.arg_by_value.is_empty() || f.mcp.is_some()
+        })
         .map(|(i, f)| (f.order, i, Binding::Field(i, f)))
         .collect();
     bound.extend(
@@ -700,11 +719,53 @@ fn plan_spawn(
         }
         if field.arg_split {
             for part in args::split_args(&r.value.to_string()) {
+                persons.push(arguments.len());
                 arguments.push(Traced {
                     value: part,
                     origin: origin.clone(),
                 });
             }
+        }
+        if let Some(mcp) = &field.mcp {
+            let path = DocPath::default()
+                .key("field")
+                .id(&field.id)
+                .key("bind")
+                .key("mcp");
+            let servers = match crate::mcp::parse(&r.value.to_string()) {
+                Ok(servers) => servers,
+                Err(why) => {
+                    errors.push(engine_error(
+                        engine,
+                        path,
+                        format!("the list of MCP servers cannot be read: {why}"),
+                    ));
+                    continue;
+                }
+            };
+            let (config, said) = crate::mcp::engine_config(&servers, Some(&facts.exe));
+            notes.extend(said);
+            let Some(config) = config else {
+                continue; // no server in use: nothing is written and nothing is said to the engine
+            };
+            let Some(file) = render(&mcp.file, path.clone().key("file"), context, errors) else {
+                continue;
+            };
+            let mut ctx = context.clone();
+            ctx.set_path(&["value"], Value::from(file.clone()));
+            for template in &mcp.arg {
+                if let Some(text) = render(template, path.clone().key("arg"), &ctx, errors) {
+                    arguments.push(Traced {
+                        value: text,
+                        origin: origin.clone(),
+                    });
+                }
+            }
+            made.push(WriteStep {
+                asset: String::new(),
+                text: Some(config),
+                to: file,
+            });
         }
     }
 
@@ -751,19 +812,19 @@ fn plan_spawn(
     }
 
     // The person's own lines come last. A line for a variable that something earlier set (not
-    // locked: those were refused) replaces it where it stood; the rest follow.
+    // locked: those were refused) replaces it where it stood; one for a variable QuickAI adds a folder to (a
+    // library path) goes in front of that folder, so that what the person names is found first and what the
+    // program needs is still there; the rest follow.
     let windows = context.lookup(&["os"]).and_then(Value::as_str) == Some("windows");
+    let mut person_env: Vec<String> = Vec::new();
     for (i, field) in engine.fields.iter().enumerate() {
         let Some(protect) = &field.env_lines else {
             continue;
         };
         let text = resolved[i].value.to_string();
         for (name, value) in env::user_lines(engine, protect, &text, windows).entries {
-            let op = EnvOp {
-                name,
-                mode: EnvMode::Set { value },
-                origin: field_origin(engine, field, &resolved[i]),
-            };
+            person_env.push(name.clone());
+            let origin = field_origin(engine, field, &resolved[i]);
             let same = |a: &str, b: &str| {
                 if windows {
                     a.eq_ignore_ascii_case(b)
@@ -771,15 +832,51 @@ fn plan_spawn(
                     a == b
                 }
             };
-            match env
-                .iter_mut()
-                .find(|e| same(&e.name, &op.name) && matches!(e.mode, EnvMode::Set { .. }))
-            {
-                Some(earlier) => *earlier = op,
-                None => env.push(op),
+            match env.iter_mut().find(|e| same(&e.name, &name)) {
+                Some(earlier) => match &earlier.mode {
+                    EnvMode::Prepend { value: ours, sep } => {
+                        let joined = if value.is_empty() {
+                            ours.clone()
+                        } else {
+                            format!("{value}{sep}{ours}")
+                        };
+                        *earlier = EnvOp {
+                            name,
+                            mode: EnvMode::Prepend {
+                                value: joined,
+                                sep: sep.clone(),
+                            },
+                            origin,
+                        };
+                    }
+                    EnvMode::Set { .. } => {
+                        *earlier = EnvOp {
+                            name,
+                            mode: EnvMode::Set { value },
+                            origin,
+                        }
+                    }
+                },
+                None => env.push(EnvOp {
+                    name,
+                    mode: EnvMode::Set { value },
+                    origin,
+                }),
             }
         }
     }
+
+    // where the person's arguments or lines name an option QuickAI passes, theirs wins
+    let person: Vec<bool> = (0..arguments.len()).map(|i| persons.contains(&i)).collect();
+    let settled = precedence::settle(
+        &spawn.options,
+        arguments,
+        &person,
+        env,
+        &person_env,
+        windows,
+    );
+    let (arguments, env) = (settled.args, settled.env);
 
     Some(SpawnPlan {
         program: Traced {
@@ -788,6 +885,7 @@ fn plan_spawn(
         },
         args: arguments,
         env,
+        notes: settled.notes.into_iter().chain(notes).collect(),
         group: spawn.group,
         // A program QuickAI does not ship is a downloaded one, with libraries of its own.
         scrub_loader_env: !engine.doc.engine.bundled,
@@ -810,9 +908,11 @@ fn plan_spawn(
                 let to = render(&entry.to, spawn_path.clone().key("write"), context, errors)?;
                 Some(WriteStep {
                     asset: entry.asset.clone(),
+                    text: None,
                     to,
                 })
             })
+            .chain(made)
             .collect(),
     })
 }

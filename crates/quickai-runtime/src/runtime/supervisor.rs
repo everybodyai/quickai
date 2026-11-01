@@ -394,6 +394,10 @@ impl Supervisor {
         if let Some(line) = spawn.env_line() {
             self.log(line);
         }
+        // where the person's own arguments or environment took the place of QuickAI's, or could not
+        for note in &spawn.notes {
+            self.log(note.clone());
+        }
 
         // folders the program is told about and refuses when they are not there yet, and the one it
         // starts in
@@ -408,6 +412,15 @@ impl Supervisor {
         // a build made long ago has what an update brought, and the program does not meet a file it is
         // told about that is not there
         for step in &spawn.write {
+            if let Some(text) = &step.text {
+                // a file a field makes (the MCP servers in use), the owner's alone: it may hold keys
+                if let Err(e) = crate::assets::put_private(std::path::Path::new(&step.to), text) {
+                    self.log(format!("Could not write {}: {e}", step.to));
+                    self.finish(ServerState::Crashed);
+                    return;
+                }
+                continue;
+            }
             match crate::assets::put(&step.asset, std::path::Path::new(&step.to)) {
                 Ok(put) if put.written > 0 => self.log(format!(
                     "Put {} ({} of {} files written)",

@@ -560,6 +560,7 @@ mod tests {
                         mode: EnvMode::Set { value: "1".into() },
                         origin: "test".into(),
                     }],
+                    notes: Vec::new(),
                     group: false,
                     scrub_loader_env: false,
                     cwd: None,

@@ -593,6 +593,7 @@ mod tests {
                 })
                 .collect(),
             env: Vec::new(),
+            notes: Vec::new(),
             group: false,
             identity: None,
             scrub_loader_env: false,

@@ -1109,6 +1109,26 @@ pub struct Spawn {
     /// starts: for a program that has a folder of extensions (ComfyUI's custom nodes).
     #[serde(default)]
     pub write: Vec<WriteSpec>,
+    /// The program's options that QuickAI passes, by every name they go by and the variable that sets them as well:
+    /// what lets the person's own arguments and lines of environment take the place of QuickAI's.
+    #[serde(default)]
+    pub option: Vec<OptionSpec>,
+}
+
+/// One option of the program: the names it goes by, the variable that sets it as well, and whether it stays
+/// QuickAI's. When the person's own arguments name an option QuickAI passes (by any of its names, or as
+/// `--no-<name>`), or their lines of environment set its variable, QuickAI's is left out: the person's choice wins.
+/// An option that is not listed is matched by its name as written.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct OptionSpec {
+    /// Its names, the first the one it is known by (`["--ctx-size", "-c"]`).
+    pub names: Vec<String>,
+    /// The variable that sets it too (`LLAMA_ARG_CTX_SIZE`).
+    pub env: Option<String>,
+    /// QuickAI's value stays, and the person's is left out with a line in the log: for what QuickAI needs to reach
+    /// the program (the port it listens on, which a field of its own changes).
+    #[serde(default)]
+    pub keep: bool,
 }
 
 /// One file or folder of the application's own, and where it is put.
@@ -1294,6 +1314,19 @@ pub struct Bind {
     /// For a `kv_lines` field: its lines are environment variables of the engine, except the
     /// protected ones.
     pub env_lines: Option<EnvLines>,
+    /// For a text field that holds a list of MCP servers (`crate::mcp`): the servers in use are written to a file
+    /// for the engine, which its arguments name.
+    pub mcp: Option<McpBind>,
+}
+
+/// Where the list of MCP servers in use is written, and how the engine is told.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct McpBind {
+    /// The file, a template (`${data}/llamacpp/mcp-servers.json`). It is written at every start, readable by its
+    /// owner alone, since the servers' variables and headers may hold keys.
+    pub file: String,
+    /// The arguments that name it: templates, in which `${value}` is the file (`["--mcp-servers-config", "${value}"]`).
+    pub arg: Vec<String>,
 }
 
 /// What a field of lines may and may not set.

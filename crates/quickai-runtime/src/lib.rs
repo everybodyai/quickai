@@ -27,6 +27,7 @@ pub mod hardware;
 pub mod host;
 pub mod jobs;
 pub mod launch;
+pub mod mcp_bridge;
 pub mod models;
 #[cfg(test)]
 mod p3;

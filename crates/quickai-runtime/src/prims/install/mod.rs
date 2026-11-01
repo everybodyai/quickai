@@ -816,6 +816,9 @@ pub(super) fn download(
     let mut buf = vec![0u8; CHUNK];
     let mut hasher = Sha256::new();
     let mut bytes: u64 = 0;
+    // what is written goes to the disk as it comes, and the bar is told ten times a second (downloader.rs)
+    let mut behind = crate::downloader::WriteBehind::new(0);
+    let mut progress = crate::downloader::Throttled::new(send, before, total);
     loop {
         if cancel.load(Ordering::SeqCst) {
             return Err(CANCELLED.to_string());
@@ -830,11 +833,11 @@ pub(super) fn download(
             .map_err(|e| format!("write error: {e}"))?;
         hasher.update(&buf[..n]);
         bytes += n as u64;
-        send(JobEvent::Progress {
-            downloaded: before + bytes,
-            total,
-        });
+        behind.wrote(&file, bytes);
+        progress.at(bytes);
     }
+    behind.finish(&file, bytes);
+    progress.done(bytes);
     if let Some(announced) = announced {
         if bytes != announced {
             return Err(format!(

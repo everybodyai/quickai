@@ -5,13 +5,13 @@
 use crate::kvlines::{self, KvLines};
 use crate::registry::Engine;
 
-/// The names the lines of a field may not set: the field's own `protect` list, every variable the
-/// document locks (`locked = true` in `[[launch.spawn.env]]`) and every one it adds to rather than
-/// sets (`prepend`: a library path the program needs would be lost to a line that sets it).
+/// The names the lines of a field may not set: the field's own `protect` list and every variable the
+/// document locks (`locked = true` in `[[launch.spawn.env]]`). A variable the document adds to rather than sets
+/// (`prepend`, a library path) may be set: the person's value goes in front of the document's, which is kept.
 pub fn protected_names(engine: &Engine, protect: &[String]) -> Vec<String> {
     let mut names: Vec<String> = protect.to_vec();
     if let Some(spawn) = &engine.spawn {
-        for entry in spawn.env.iter().filter(|e| e.locked || e.prepend.is_some()) {
+        for entry in spawn.env.iter().filter(|e| e.locked) {
             if !names.iter().any(|n| n == &entry.name) {
                 names.push(entry.name.clone());
             }
