@@ -97,6 +97,33 @@ fn relative(path: &Path, root: &str) -> PathBuf {
     path.strip_prefix(root).unwrap_or(path).to_path_buf()
 }
 
+/// Writes `text` to `to` for its owner alone (a file a field makes, which may hold keys: the MCP servers in use),
+/// replacing what was there in one step. The folders above it are made.
+pub fn put_private(to: &Path, text: &str) -> std::io::Result<()> {
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut name = to.file_name().unwrap_or_default().to_os_string();
+    name.push(".quickai-new");
+    let temporary = to.with_file_name(name);
+    let _ = std::fs::remove_file(&temporary);
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut out = options.open(&temporary)?;
+    out.write_all(text.as_bytes())?;
+    drop(out);
+    if let Err(e) = std::fs::rename(&temporary, to) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(e);
+    }
+    Ok(())
+}
+
 fn put_file(file: &File<'static>, to: &Path, done: &mut Put) -> std::io::Result<()> {
     if std::fs::read(to).is_ok_and(|there| there == file.contents()) {
         done.kept += 1;

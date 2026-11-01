@@ -43,7 +43,7 @@ pub const PROVIDED: &[&str] = &[
 /// says which of them it draws (the window of this application holds this list to what it draws); what
 /// the loader holds a document to is this list, whichever program loads it, so that `config check` says the
 /// same with or without a window.
-pub const WIDGET_NAMES: &[&str] = &["runtime_manager", "button"];
+pub const WIDGET_NAMES: &[&str] = &["runtime_manager", "button", "mcp_servers"];
 
 /// The primitives this build provides, the widgets its interface draws and the files it carries, which is
 /// what documents are held to when they load.

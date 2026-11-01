@@ -61,6 +61,11 @@ QuickAI headless commands
       Configurations, a runtime as a file that can be shared (docs/configurations.md). Each is shown by
       `quickai configuration` with no arguments.
 
+  quickai mcp-bridge URL
+      Carry the MCP server at URL (Streamable HTTP) for an engine that starts MCP servers as commands:
+      lines of JSON-RPC on the input are sent to it, and its answers written to the output. Its headers
+      come as a JSON table in the variable QUICKAI_MCP_HEADERS. QuickAI starts it this way by itself.
+
   quickai --help
 ";
 
@@ -68,6 +73,10 @@ QuickAI headless commands
 /// interface as usual. Any other arguments are ignored by the interface, as they always were.
 pub fn run(args: &[String]) -> Option<i32> {
     let first = args.first().map(String::as_str)?;
+    // an MCP server at an address, carried for an engine that starts one as a command (quickai_core::mcp)
+    if first == quickai_core::mcp::BRIDGE_COMMAND {
+        return Some(crate::mcp_bridge::run(&args[1..]));
+    }
     if !matches!(
         first,
         "config" | "configuration" | "plan" | "--telemetry" | "--help" | "-h"

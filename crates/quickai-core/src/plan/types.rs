@@ -152,6 +152,10 @@ pub struct SpawnPlan {
     pub program: Traced<String>,
     pub args: Vec<Traced<String>>,
     pub env: Vec<EnvOp>,
+    /// What became of QuickAI's options where the person's own arguments or environment named them too: for
+    /// the log, after the command.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
     /// Start it in a process group of its own (Unix) or a job (Windows), so that stopping it takes
     /// its children with it.
     pub group: bool,
@@ -175,8 +179,11 @@ pub struct SpawnPlan {
 /// A file or folder of the application's own, and where it goes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct WriteStep {
-    /// Its name among the application's own files.
+    /// Its name among the application's own files; empty for a file a field makes.
     pub asset: String,
+    /// What a file a field makes holds (the MCP servers in use). Not shown with the plan: it may hold keys.
+    #[serde(skip)]
+    pub text: Option<String>,
     /// Where it is put.
     pub to: String,
 }
@@ -339,6 +346,7 @@ mod tests {
                 },
             ],
             env: vec![],
+            notes: Vec::new(),
             group: false,
             scrub_loader_env: false,
             cwd: None,
@@ -361,6 +369,7 @@ mod tests {
             },
             args: vec![],
             env,
+            notes: Vec::new(),
             group: true,
             scrub_loader_env: true,
             cwd: None,
@@ -467,6 +476,7 @@ mod tests {
             },
             args: vec![],
             env: ops(),
+            notes: Vec::new(),
             group: false,
             scrub_loader_env: false,
             cwd: None,

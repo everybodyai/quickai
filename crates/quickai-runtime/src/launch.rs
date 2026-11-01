@@ -157,6 +157,9 @@ pub fn host_facts(binary: &Path, machine: MachineFacts, internal_port: Option<u1
             .ok()
             .and_then(|e| e.parent().map(|p| p.display().to_string()))
             .unwrap_or_default(),
+        exe: std::env::current_exe()
+            .map(|e| e.display().to_string())
+            .unwrap_or_default(),
         home: home.display().to_string(),
         internal_port,
         ..Default::default()
@@ -572,5 +575,84 @@ mod tests {
         assert_eq!(facts.gpu_vendors, vec!["nvidia", "intel"]);
         assert!(facts.gpu_known);
         assert!(!MachineFacts::detect(1, &[]).gpu_known);
+    }
+
+    /// The MCP servers in use are written to a file for llama-server, which `--mcp-servers-config` names; one at an
+    /// address is QuickAI started as `mcp-bridge`, with its headers in a variable; one switched off is left out.
+    #[test]
+    fn the_mcp_servers_in_use_are_a_file_the_command_line_names() {
+        let registry = build_registry(&ConfigDirs::default());
+        let list = r#"{"mcpServers": {"files": {"command": "npx", "args": ["-y", "server-filesystem", "/home/me"]}, "web": {"url": "https://example.com/mcp", "headers": {"Authorization": "Bearer k"}}, "off": {"command": "x", "disabled": true}}}"#;
+        let s = selection(&model(), &settings()).set("llamacpp.mcp_servers", list);
+        let plan = plan_selection_in(
+            &registry,
+            &s,
+            Path::new("/opt/llama/llama-server"),
+            MachineFacts::default(),
+            None,
+            Some("/data"),
+        )
+        .unwrap();
+        let quickai_core::plan::Start::Spawn(spawn) = &plan.units[0].start[0] else {
+            panic!("a spawn")
+        };
+        let args = spawn.arg_values();
+        let at = args.iter().position(|a| a == "--mcp-servers-config").expect("the option");
+        assert_eq!(args[at + 1], "/data/llamacpp/mcp-servers.json");
+        let step = spawn.write.iter().find(|w| w.text.is_some()).expect("the file");
+        assert_eq!(step.to, "/data/llamacpp/mcp-servers.json");
+        let config: serde_json::Value = serde_json::from_str(step.text.as_ref().unwrap()).unwrap();
+        let servers = config["mcpServers"].as_object().unwrap();
+        assert_eq!(servers.len(), 2);
+        assert_eq!(servers["files"]["command"], "npx");
+        assert_eq!(servers["web"]["args"][0], "mcp-bridge");
+        assert!(servers["web"]["env"]["QUICKAI_MCP_HEADERS"].as_str().unwrap().contains("Bearer k"));
+        // the plan as it is shown never carries the file's text
+        assert!(!serde_json::to_string(&plan).unwrap().contains("Bearer k"));
+
+        // no server in use: no file and no option
+        let s = selection(&model(), &settings()).set("llamacpp.mcp_servers", "");
+        let plan = plan_selection(&registry, &s, Path::new("/x"), MachineFacts::default(), None).unwrap();
+        let quickai_core::plan::Start::Spawn(spawn) = &plan.units[0].start[0] else {
+            panic!("a spawn")
+        };
+        assert!(!spawn.arg_values().iter().any(|a| a == "--mcp-servers-config"));
+        assert!(spawn.write.iter().all(|w| w.text.is_none()));
+    }
+
+    /// The person's own variables win: one for an option QuickAI passes takes its place (llama-server would let the
+    /// command line win), and a library path of theirs goes in front of the build's own.
+    #[test]
+    fn the_persons_variables_win_over_quickais_options_and_go_before_its_library_path() {
+        let registry = build_registry(&ConfigDirs::default());
+        let s = selection(&model(), &settings()).set(
+            "llamacpp.extra_env",
+            "LLAMA_ARG_CTX_SIZE=8192\nLD_LIBRARY_PATH=/opt/rocm/lib",
+        );
+        let plan = plan_selection(
+            &registry,
+            &s,
+            Path::new("/opt/llama/llama-server"),
+            MachineFacts::default(),
+            None,
+        )
+        .unwrap();
+        let quickai_core::plan::Start::Spawn(spawn) = &plan.units[0].start[0] else {
+            panic!("a spawn")
+        };
+        assert!(!spawn.arg_values().iter().any(|a| a == "--ctx-size"));
+        assert!(spawn.notes.iter().any(|n| n.contains("LLAMA_ARG_CTX_SIZE")));
+        let library = spawn
+            .env
+            .iter()
+            .find(|e| e.name == "LD_LIBRARY_PATH")
+            .expect("the library path");
+        assert_eq!(
+            library.mode,
+            quickai_core::plan::EnvMode::Prepend {
+                value: "/opt/rocm/lib:/opt/llama".into(),
+                sep: ":".into()
+            }
+        );
     }
 }

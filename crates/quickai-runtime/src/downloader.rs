@@ -157,16 +157,27 @@ fn stream_to_part_at(
         path: part_path,
         resume_from,
     } = part;
-    // going on from what an earlier try left: its bytes count, and are hashed first
+    let mut progress = Throttled::new(send, base, total);
+    // going on from what an earlier try left: its bytes count, and are hashed first. That reads gigabytes of a big
+    // model, so the bar moves while it is read and the log says why it is not fetching yet.
     if resume_from > 0 {
         if let Some(digest) = digest.as_deref_mut() {
             match std::fs::File::open(part_path) {
                 Ok(mut had) => {
+                    send(JobEvent::Status(format!(
+                        "Checking the {} fetched before, to go on from there.",
+                        crate::hardware::format_bytes(resume_from)
+                    )));
                     let mut buf = vec![0u8; CHUNK];
+                    let mut read_so_far = 0u64;
                     loop {
                         match had.read(&mut buf) {
                             Ok(0) => break,
-                            Ok(n) => digest.update(&buf[..n]),
+                            Ok(n) => {
+                                digest.update(&buf[..n]);
+                                read_so_far += n as u64;
+                                progress.at(read_so_far);
+                            }
                             Err(_) => break,
                         }
                     }
@@ -199,6 +210,7 @@ fn stream_to_part_at(
 
     let mut buf = vec![0u8; CHUNK];
     let mut downloaded: u64 = resume_from;
+    let mut behind = WriteBehind::new(resume_from);
     loop {
         if cancel.load(Ordering::SeqCst) {
             drop(file);
@@ -227,12 +239,151 @@ fn stream_to_part_at(
             digest.update(&buf[..n]);
         }
         downloaded += n as u64;
-        send(JobEvent::Progress {
-            downloaded: base + downloaded,
+        behind.wrote(&file, downloaded);
+        progress.at(downloaded);
+    }
+    behind.finish(&file, downloaded);
+    progress.done(downloaded);
+    Ok(downloaded)
+}
+
+/// How often the bar is told how far a download is. A chunk comes every fraction of a millisecond on a fast
+/// connection, and each message wakes the window: ten a second are all a bar can show.
+const PROGRESS_EVERY: Duration = Duration::from_millis(100);
+
+/// The progress of one file, said at most every `PROGRESS_EVERY`, counted from `base` towards `total`.
+pub(crate) struct Throttled<'a, T> {
+    send: &'a dyn Fn(JobEvent<T>),
+    base: u64,
+    total: Option<u64>,
+    last: Option<std::time::Instant>,
+}
+
+impl<'a, T> Throttled<'a, T> {
+    pub(crate) fn new(send: &'a dyn Fn(JobEvent<T>), base: u64, total: Option<u64>) -> Self {
+        Throttled {
+            send,
+            base,
             total,
+            last: None,
+        }
+    }
+
+    /// The file has come to `bytes`: said, unless it was said a moment ago.
+    pub(crate) fn at(&mut self, bytes: u64) {
+        if self.last.is_some_and(|t| t.elapsed() < PROGRESS_EVERY) {
+            return;
+        }
+        self.last = Some(std::time::Instant::now());
+        self.done(bytes);
+    }
+
+    /// The file has come to `bytes`, said whatever the time: the last of it is never left out.
+    pub(crate) fn done(&self, bytes: u64) {
+        (self.send)(JobEvent::Progress {
+            downloaded: self.base + bytes,
+            total: self.total,
         });
     }
-    Ok(downloaded)
+}
+
+/// How much of a file being written may wait in memory to go to the disk. A machine with plenty of memory lets
+/// gigabytes of a download wait (a fifth of it, by default, on Linux) and then writes them all at once; anything
+/// else that reads or writes the disk meanwhile, the window's thread among them, waits behind that, for a minute
+/// and more on a slow disk. What was written is pushed out every `WRITE_BEHIND` bytes instead, and what has
+/// reached the disk is let go of, so the download keeps the disk busy evenly and the page cache stays the
+/// system's. Where a stretch cannot be pushed alone (below), the whole file's data is flushed, less often.
+#[cfg(target_os = "linux")]
+const WRITE_BEHIND: u64 = 32 * 1024 * 1024;
+#[cfg(not(target_os = "linux"))]
+const WRITE_BEHIND: u64 = 256 * 1024 * 1024;
+
+/// Pushes a file out to the disk as it is written (`WRITE_BEHIND`).
+pub(crate) struct WriteBehind {
+    /// Where the bytes not yet pushed begin.
+    pushed: u64,
+    /// The stretch pushed last, which may still be on its way.
+    in_flight: Option<(u64, u64)>,
+}
+
+impl WriteBehind {
+    pub(crate) fn new(from: u64) -> Self {
+        WriteBehind {
+            pushed: from,
+            in_flight: None,
+        }
+    }
+
+    /// The file is `written` bytes long now.
+    pub(crate) fn wrote(&mut self, file: &std::fs::File, written: u64) {
+        if written - self.pushed >= WRITE_BEHIND {
+            self.push(file, written);
+        }
+    }
+
+    /// The file is complete at `written` bytes: the rest goes too.
+    pub(crate) fn finish(&mut self, file: &std::fs::File, written: u64) {
+        if written > self.pushed {
+            self.push(file, written);
+        }
+        if let Some((start, len)) = self.in_flight.take() {
+            settle(file, start, len);
+        }
+    }
+
+    fn push(&mut self, file: &std::fs::File, written: u64) {
+        let (start, len) = (self.pushed, written - self.pushed);
+        start_writing(file, start, len);
+        // the stretch before has had the time this one took to come: waiting for it costs little
+        if let Some((start, len)) = self.in_flight.replace((start, len)) {
+            settle(file, start, len);
+        }
+        self.pushed = written;
+    }
+}
+
+/// Starts writing a stretch of the file to the disk, without waiting for it.
+#[cfg(target_os = "linux")]
+fn start_writing(file: &std::fs::File, start: u64, len: u64) {
+    use std::os::unix::io::AsRawFd;
+    // SAFETY: a valid descriptor of an open file and a range of it; the call only schedules the write.
+    unsafe {
+        libc::sync_file_range(
+            file.as_raw_fd(),
+            start as _,
+            len as _,
+            libc::SYNC_FILE_RANGE_WRITE,
+        );
+    }
+}
+
+/// Waits for a stretch of the file to be on the disk, and lets the memory that held it go.
+#[cfg(target_os = "linux")]
+fn settle(file: &std::fs::File, start: u64, len: u64) {
+    use std::os::unix::io::AsRawFd;
+    let fd = file.as_raw_fd();
+    // SAFETY: as above; DONTNEED drops pages that are clean now, and the file's content is unchanged.
+    unsafe {
+        libc::sync_file_range(
+            fd,
+            start as _,
+            len as _,
+            libc::SYNC_FILE_RANGE_WAIT_BEFORE
+                | libc::SYNC_FILE_RANGE_WRITE
+                | libc::SYNC_FILE_RANGE_WAIT_AFTER,
+        );
+        libc::posix_fadvise(fd, start as _, len as _, libc::POSIX_FADV_DONTNEED);
+    }
+}
+
+/// Elsewhere there is no call that writes a stretch alone: the file's data is flushed now and then instead,
+/// which bounds what waits all the same.
+#[cfg(not(target_os = "linux"))]
+fn start_writing(_file: &std::fs::File, _start: u64, _len: u64) {}
+
+#[cfg(not(target_os = "linux"))]
+fn settle(file: &std::fs::File, _start: u64, _len: u64) {
+    let _ = file.sync_data();
 }
 
 /// Starts the download (or local-file import) in a background thread and
@@ -487,6 +638,7 @@ fn use_local(
         let mut digest = Sha256::new();
         let mut buf = vec![0u8; CHUNK];
         let mut read_so_far = 0u64;
+        let mut progress = Throttled::new(send, base, total);
         loop {
             let n = file
                 .read(&mut buf)
@@ -496,11 +648,9 @@ fn use_local(
             }
             digest.update(&buf[..n]);
             read_so_far += n as u64;
-            send(JobEvent::Progress {
-                downloaded: base + read_so_far,
-                total,
-            });
+            progress.at(read_so_far);
         }
+        progress.done(read_so_far);
         let got: String = digest
             .finalize()
             .iter()

@@ -31,6 +31,9 @@ pub enum Reply {
 #[cfg(test)]
 pub const NAMED: &[&str] = quickai_runtime::prims::WIDGET_NAMES;
 
+/// The widget of a list of MCP servers (`mcp_servers.rs`), which has a page of the Settings of its own.
+pub(super) const MCP_SERVERS: &str = "mcp_servers";
+
 /// The red of a message under a field.
 pub(super) fn problem_color() -> egui::Color32 {
     super::theme::palette().bad
@@ -52,6 +55,9 @@ pub fn show(ui: &mut egui::Ui, field: &FormField) -> Option<Reply> {
 pub fn show_with(ui: &mut egui::Ui, field: &FormField, browse: Browse) -> Option<Reply> {
     if field.widget.as_deref() == Some("button") {
         return button(ui, field);
+    }
+    if field.widget.as_deref() == Some(MCP_SERVERS) {
+        return super::mcp_servers::editor(ui, field);
     }
     match field.ty {
         // a number that may be empty (the document gave no default and says what empty means) is

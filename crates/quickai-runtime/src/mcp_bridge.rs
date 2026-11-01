@@ -1,0 +1,230 @@
+//! `quickai mcp-bridge <url>`: an MCP server at an address, for an engine that only starts servers as commands.
+//!
+//! llama-server starts each MCP server of its list as a program and talks to it in lines of JSON-RPC over its input
+//! and output; a server at an address (Streamable HTTP) has no program. QuickAI is that program: it reads each line
+//! the engine writes, POSTs it to the address, and writes back what the server answers, whether the answer is one
+//! JSON body or a stream of events. The session the server gives, and the version of the protocol agreed on, go
+//! with every later request. The headers of the server (a key) come in a variable, not on the command line
+//! (`quickai_core::mcp::BRIDGE_HEADERS_VAR`). What goes wrong is said on the error output, which the engine logs,
+//! and a request that got no answer is answered with an error, so that the engine does not wait for it.
+
+use std::collections::BTreeMap;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::time::Duration;
+
+pub use quickai_core::mcp::BRIDGE_COMMAND;
+use quickai_core::mcp::BRIDGE_HEADERS_VAR;
+use serde_json::{json, Value as Json};
+
+/// How long the server may take to accept the connection. A tool may then work for as long as it needs.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// What the bridge remembers between requests.
+#[derive(Default)]
+struct Session {
+    /// The session the server gave (`Mcp-Session-Id`).
+    id: Option<String>,
+    /// The version of the protocol agreed on at `initialize`.
+    protocol: Option<String>,
+}
+
+/// Runs the bridge for `args` (`<url>`) until the engine closes its input. The exit code.
+pub fn run(args: &[String]) -> i32 {
+    let Some(url) = args.first() else {
+        eprintln!("usage: quickai mcp-bridge <url>   (headers as JSON in {BRIDGE_HEADERS_VAR})");
+        return 2;
+    };
+    let headers: BTreeMap<String, String> = match std::env::var(BRIDGE_HEADERS_VAR) {
+        Ok(text) if !text.trim().is_empty() => match serde_json::from_str(&text) {
+            Ok(headers) => headers,
+            Err(e) => {
+                eprintln!("mcp-bridge: {BRIDGE_HEADERS_VAR} is not a JSON table of headers: {e}");
+                return 2;
+            }
+        },
+        _ => BTreeMap::new(),
+    };
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .build()
+        .into();
+    let mut session = Session::default();
+    let stdin = std::io::stdin();
+    let stdout = std::io::stdout();
+    for line in stdin.lock().lines() {
+        let Ok(line) = line else { break };
+        if line.trim().is_empty() {
+            continue;
+        }
+        let message: Json = match serde_json::from_str(&line) {
+            Ok(message) => message,
+            Err(e) => {
+                eprintln!("mcp-bridge: a line that is not JSON was left out: {e}");
+                continue;
+            }
+        };
+        let id = message.get("id").filter(|v| !v.is_null()).cloned();
+        let initialize = message.get("method").and_then(Json::as_str) == Some("initialize");
+        let replies = match exchange(&agent, url, &headers, &mut session, &line, id.as_ref()) {
+            Ok(replies) => replies,
+            Err(why) => {
+                eprintln!("mcp-bridge: {url}: {why}");
+                match &id {
+                    Some(id) if message.get("method").is_some() => vec![json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "error": { "code": -32000, "message": format!("the MCP server at {url} could not be reached: {why}") },
+                    })],
+                    _ => Vec::new(),
+                }
+            }
+        };
+        let mut out = stdout.lock();
+        for reply in replies {
+            if initialize {
+                if let Some(version) = reply.pointer("/result/protocolVersion").and_then(Json::as_str) {
+                    session.protocol = Some(version.to_string());
+                }
+            }
+            if serde_json::to_writer(&mut out, &reply).is_err()
+                || out.write_all(b"\n").is_err()
+                || out.flush().is_err()
+            {
+                return 0; // the engine is gone
+            }
+        }
+    }
+    0
+}
+
+/// POSTs one message and gives the messages the server answers with: none for a notification it accepted, the
+/// response (and whatever the server says before it) for a request.
+fn exchange(
+    agent: &ureq::Agent,
+    url: &str,
+    headers: &BTreeMap<String, String>,
+    session: &mut Session,
+    body: &str,
+    id: Option<&Json>,
+) -> Result<Vec<Json>, String> {
+    let mut request = agent
+        .post(url)
+        .header("content-type", "application/json")
+        .header("accept", "application/json, text/event-stream")
+        .header("user-agent", concat!("quickai/", env!("CARGO_PKG_VERSION")));
+    for (name, value) in headers {
+        request = request.header(name.as_str(), value.as_str());
+    }
+    if let Some(id) = &session.id {
+        request = request.header("mcp-session-id", id.as_str());
+    }
+    if let Some(version) = &session.protocol {
+        request = request.header("mcp-protocol-version", version.as_str());
+    }
+    let response = request.send(body).map_err(|e| e.to_string())?;
+    if let Some(given) = response
+        .headers()
+        .get("mcp-session-id")
+        .and_then(|v| v.to_str().ok())
+    {
+        session.id = Some(given.to_string());
+    }
+    let status = response.status().as_u16();
+    let kind = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let mut answer = response.into_body();
+    if status == 202 || status == 204 {
+        return Ok(Vec::new());
+    }
+    if !(200..300).contains(&status) {
+        let text = answer.read_to_string().unwrap_or_default();
+        let text = text.trim();
+        let older = if (status == 404 || status == 405) && url.trim_end_matches('/').ends_with("/sse") {
+            " (an address that ends in /sse is a server of the older kind, which QuickAI does not carry: ask its maker for its Streamable HTTP address, often the same with /mcp)"
+        } else {
+            ""
+        };
+        return Err(format!(
+            "the server answered {status}{}{older}",
+            if text.is_empty() {
+                String::new()
+            } else {
+                format!(": {}", text.chars().take(300).collect::<String>())
+            }
+        ));
+    }
+    if kind.starts_with("text/event-stream") {
+        return Ok(events(answer.into_reader(), id));
+    }
+    let text = answer.read_to_string().map_err(|e| e.to_string())?;
+    if text.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    match serde_json::from_str::<Json>(&text).map_err(|e| format!("the answer is not JSON: {e}"))? {
+        Json::Array(batch) => Ok(batch),
+        one => Ok(vec![one]),
+    }
+}
+
+/// The messages of a stream of events, up to the response to the request `id` (the server may say other things
+/// first: progress, a log line, a request of its own).
+fn events(reader: impl Read, id: Option<&Json>) -> Vec<Json> {
+    let mut messages = Vec::new();
+    let mut data = String::new();
+    for line in BufReader::new(reader).lines() {
+        let Ok(line) = line else { break };
+        if let Some(rest) = line.strip_prefix("data:") {
+            if !data.is_empty() {
+                data.push('\n');
+            }
+            data.push_str(rest.strip_prefix(' ').unwrap_or(rest));
+            continue;
+        }
+        if !line.is_empty() {
+            continue; // `event:`, `id:`, `retry:` and comments say nothing the engine needs
+        }
+        // a blank line ends an event
+        let text = std::mem::take(&mut data);
+        if text.trim().is_empty() {
+            continue;
+        }
+        let Ok(message) = serde_json::from_str::<Json>(&text) else {
+            eprintln!("mcp-bridge: an event that is not JSON was left out");
+            continue;
+        };
+        let answered = id.is_some_and(|id| {
+            message.get("id") == Some(id)
+                && (message.get("result").is_some() || message.get("error").is_some())
+        });
+        messages.push(message);
+        if answered {
+            break;
+        }
+    }
+    if !data.trim().is_empty() {
+        if let Ok(message) = serde_json::from_str::<Json>(&data) {
+            messages.push(message);
+        }
+    }
+    messages
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stream_of_events_gives_its_messages_up_to_the_answer() {
+        let stream = "event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\"}\n\n\
+                      : a comment\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":7,\ndata: \"result\":{}}\n\n\
+                      data: {\"jsonrpc\":\"2.0\",\"method\":\"after\"}\n\n";
+        let got = events(stream.as_bytes(), Some(&json!(7)));
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[1]["id"], 7);
+    }
+}
