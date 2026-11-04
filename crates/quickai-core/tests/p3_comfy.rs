@@ -254,9 +254,20 @@ fn p3_f11_the_arguments_of_an_option_are_for_a_choice_field_and_its_options() {
     assert!(
         with(not_a_choice)
             .iter()
-            .any(|e| e.contains("needs a choice field")),
+            .any(|e| e.contains("needs a choice or int field")),
         "{:#?}",
         with(not_a_choice)
+    );
+    // a whole number has its values too (no layers on the GPU is no device at all), and only whole numbers are values
+    let number = "[[field]]\nid = \"layers\"\ntype = \"int\"\ndefault = 1\nbind.arg = [\"--layers\", \"${value}\"]\nbind.arg_by_value = { \"0\" = [\"--device\", \"none\"] }\n";
+    assert!(with(number).is_empty(), "{:#?}", with(number));
+    let not_a_number = number.replace("\"0\" =", "low =");
+    assert!(
+        with(&not_a_number)
+            .iter()
+            .any(|e| e.contains("is not a whole number")),
+        "{:#?}",
+        with(&not_a_number)
     );
     let unknown = good.replace("low = [", "medium = [");
     assert!(

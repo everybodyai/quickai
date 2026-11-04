@@ -151,6 +151,7 @@ One option of the program. The person's own arguments and lines of environment w
 | `names` | list of text | The names it goes by, the one it is known by first (`["--ctx-size", "-c"]`). |
 | `env` | text | The variable that sets it as well (`LLAMA_ARG_CTX_SIZE`): a line of the person's for it takes the place of QuickAI's option, since a program that reads both lets the command line win. |
 | `keep` | bool | QuickAI's value stays and the person's is left out, with a line in the log: for what QuickAI needs to reach the program, such as the port it listens on, which a field changes. Default false. |
+| `with` | list of text | QuickAI's other options that only mean something beside this one, and go when the person's takes its place (`--n-gpu-layers` lists `--device`, which QuickAI passes as `none` for CPU only). |
 
 ## `[[launch.spawn.env]]` and `[[field]]` `bind.env`
 
@@ -215,7 +216,7 @@ Turning a value into engine configuration. In an argument template, `${value}` i
 | `port` | `public` | This field is the port the engine listens on, and the one clients use. |
 | `arg` | list of templates | Arguments to add to the command line. |
 | `arg_split` | bool | The value is a text of arguments, split like a shell does (quotes group words); nothing is added when it is empty. |
-| `arg_by_value` | table of lists of text | For a `choice` field: the arguments each option adds, as plain words (`low = ["--lowvram"]`); an option that is not listed adds none. |
+| `arg_by_value` | table of lists of text | For a `choice` or `int` field: the arguments each value adds, as plain words (`low = ["--lowvram"]`, `"0" = ["--device", "none"]`), after those of `arg`; a value that is not listed adds none. |
 | `order` | whole number | Where among the field arguments these go. Default: the field's `ui.order`. |
 | `env` | list of tables, below | Environment variables of the engine that this field decides, each with an optional condition on `value`. |
 | `env_lines` | table, below | For a `kv_lines` field: its lines are environment variables of the engine. |

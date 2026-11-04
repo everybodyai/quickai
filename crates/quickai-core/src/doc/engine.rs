@@ -1129,6 +1129,10 @@ pub struct OptionSpec {
     /// the program (the port it listens on, which a field of its own changes).
     #[serde(default)]
     pub keep: bool,
+    /// QuickAI's other options that only mean something beside this one, and go when the person's takes its place
+    /// (`--device none` beside `--n-gpu-layers 0`: a person's `-ngl 99` would otherwise still run on the CPU).
+    #[serde(default)]
+    pub with: Vec<String>,
 }
 
 /// One file or folder of the application's own, and where it is put.
@@ -1301,8 +1305,8 @@ pub struct Bind {
     /// The value is a shell-like quoted string of arguments (nothing is added when it is empty).
     #[serde(default)]
     pub arg_split: bool,
-    /// For a `choice` field: the arguments each option adds (plain words, not templates); an option
-    /// that is not listed adds none.
+    /// For a `choice` or `int` field: the arguments each value adds (plain words, not templates); a value that is
+    /// not listed adds none.
     #[serde(default)]
     pub arg_by_value: std::collections::BTreeMap<String, Vec<String>>,
     /// Where among the field bindings this goes; defaults to the field's `ui.order`.
