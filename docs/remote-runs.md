@@ -128,7 +128,9 @@ and the person chooses; nothing is stopped or started without it:
 
 A run of QuickAI's is stopped with `quickai-run down`, and another program of the same person by its process. A system
 service (an Ollama installed as one) is stopped by QuickAI only through `sudo -n` when that needs no password; otherwise
-the window says the command that stops it (`sudo systemctl stop ollama`) and waits for its port to be free.
+the window says the command that stops it (`sudo systemctl stop ollama`) and waits for its port to be free. Only the
+service's main process counts as the service: a program that merely lives inside one (started by a remote desktop, a
+notebook server or a CI runner) is stopped by its process, so that the rest of that service goes on.
 
 What is built: a run of QuickAI's there is found by `quickai-run status`; another program by `check`, which says the
 ports the run would listen on and whether another program has one now (and what answers there, when it answers as the
