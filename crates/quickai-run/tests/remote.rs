@@ -2,8 +2,9 @@
 //! machine: the other computer is a folder of it, reached through the stand-in for `ssh` and `scp`
 //! (`testkit::fake_ssh`), and what runs there is this build of `quickai-run`, copied there as the window copies it,
 //! against the world of the runtime's tests (a fake GitHub, a file server, a stand-in `llama-server`). What a real
-//! computer adds (a login, another system) is left to the tests run with one.
-#![cfg(unix)]
+//! computer adds (a login, another system) is left to the tests run with one. On Linux only: the other computer is this
+//! machine, and what these tests hand it is the program for Linux.
+#![cfg(target_os = "linux")]
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
