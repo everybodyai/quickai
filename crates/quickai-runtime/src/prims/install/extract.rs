@@ -21,6 +21,10 @@ use super::zstd::ZstdReader;
 /// small file that expands without limit would otherwise fill the disk.
 const MAX_UNPACKED_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 const MAX_ENTRIES: u64 = 200_000;
+/// The longest target a zip's link may name: no system takes a longer path. A zip keeps the target
+/// as the entry's data and that data is read into memory, so without a limit a small archive that
+/// expands a long way could use all of it.
+const MAX_LINK_TARGET: usize = 4096;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArchiveKind {
@@ -173,7 +177,11 @@ fn extract_zip(archive: &Path, extractor: &mut Extractor) -> Result<(), Refusal>
         let mut entry = zip
             .by_index(index)
             .map_err(|e| Refusal::Failed(e.to_string()))?;
-        let name = PathBuf::from(entry.name());
+        let name = entry
+            .name()
+            .map_err(|e| Refusal::Failed(e.to_string()))?
+            .into_owned();
+        let name = PathBuf::from(name);
         let name = match &wrapper {
             Some(wrapper) => match name.strip_prefix(wrapper) {
                 Ok(inside) => inside.to_path_buf(),
@@ -187,8 +195,16 @@ fn extract_zip(archive: &Path, extractor: &mut Extractor) -> Result<(), Refusal>
         } else if entry.is_symlink() {
             let mut target = String::new();
             entry
+                .by_ref()
+                .take(MAX_LINK_TARGET as u64 + 1)
                 .read_to_string(&mut target)
                 .map_err(|e| Refusal::Failed(e.to_string()))?;
+            if target.len() > MAX_LINK_TARGET {
+                return Err(Refusal::Unsafe(format!(
+                    "the link `{}` has a target longer than any path",
+                    name.display()
+                )));
+            }
             extractor.symlink(&name, &target)?;
         } else {
             let mode = entry.unix_mode();
@@ -781,6 +797,55 @@ mod tests {
         );
         outcome.expect("installs");
         assert_eq!(names(&staging), ["a", "b"]);
+    }
+
+    #[test]
+    fn a_zip_link_with_a_target_longer_than_any_path_refuses_the_zip() {
+        let (outcome, _staging, outer) = unpack(
+            "long.zip",
+            zip(&[Entry::symlink("link", &"a".repeat(MAX_LINK_TARGET + 1))]),
+            &[],
+        );
+        let message = outcome.expect_err("a link with an endless target was accepted");
+        assert!(message.contains("longer than any path"), "{message}");
+        assert_eq!(names(&outer), ["long.zip", "staging"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_zip_keeps_the_links_and_permissions_of_a_real_package() {
+        use std::os::unix::fs::PermissionsExt;
+        let entry = |path: &str, mode: u32| Entry {
+            kind: crate::testkit::archives::Kind::File { mode },
+            ..Entry::file(path, b"x")
+        };
+        let (outcome, staging, _outer) = unpack(
+            "package.zip",
+            zip(&[
+                entry("llama-server", 0o755),
+                entry("setuid", 0o4755),
+                Entry::symlink("alias", "llama-server"),
+            ]),
+            &[],
+        );
+        outcome.expect("installs");
+        let mode = |n: &str| {
+            std::fs::metadata(staging.join(n))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o7777
+        };
+        assert_eq!(mode("llama-server"), 0o755);
+        assert_eq!(
+            mode("setuid"),
+            0o755,
+            "setuid is not kept from a zip either"
+        );
+        assert_eq!(
+            std::fs::read_link(staging.join("alias")).unwrap(),
+            Path::new("llama-server")
+        );
     }
 
     #[test]
