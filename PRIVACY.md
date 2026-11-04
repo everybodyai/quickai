@@ -352,8 +352,8 @@ while it runs, not while you chat. It does so only when you press a button, or E
   by QuickAI itself (`quickai mcp-bridge`, started by llama-server) at each Start, to list its tools, and whenever a
   model calls one of them in the chat page, with the headers you gave it (a key). What the model puts in a call goes
   to that server, which sees your IP address and handles what it gets under its own terms. The list, with its keys,
-  stays on this computer (`~/.quickai/llamacpp/mcp-servers.json`, readable by you alone) and is never part of a
-  configuration you share.
+  stays on this computer (in QuickAI's settings and `~/.quickai/llamacpp/mcp-servers.json`, both readable by you
+  alone) and is never part of a configuration you share.
 
 - **Telemetry, at the level you chose.** As described in [Telemetry](#telemetry), to `api.everybodyai.dev` only, and
   nothing at Off.

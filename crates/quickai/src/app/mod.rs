@@ -243,6 +243,8 @@ pub struct App {
     change_custom: bool,
     /// A run went wrong since the log was last looked at: its tab has a red dot.
     log_unread: bool,
+    /// The MCP servers being asked why they gave no tools: what the log says, when each has answered.
+    mcp_checks: Vec<crossbeam_channel::Receiver<String>>,
     /// The state of the server the last frame, to see a run end in a crash once.
     seen_state: Option<crate::events::ServerState>,
     /// When Start was last pressed: Stop, which takes its place, does not take the second click of a double-click.
@@ -474,6 +476,7 @@ impl App {
             change_open: false,
             change_custom: false,
             log_unread: false,
+            mcp_checks: Vec::new(),
             seen_state: None,
             start_pressed_at: None,
         };
@@ -943,8 +946,10 @@ impl eframe::App for App {
             });
         for line in new_lines {
             self.note_log_line(&line);
+            self.explain_mcp_line(&line, ui.ctx());
             self.push_log(line);
         }
+        self.poll_mcp_checks();
         for evt in new_traffic {
             self.apply_traffic_event(evt);
         }

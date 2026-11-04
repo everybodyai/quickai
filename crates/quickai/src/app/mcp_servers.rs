@@ -13,7 +13,86 @@ use quickai_core::mcp::{self, Reach, Server};
 use quickai_core::value::Value;
 
 use super::theme;
-use super::widgets::Reply;
+use super::widgets::{Reply, MCP_SERVERS};
+use super::App;
+
+/// The server a line of llama-server's log says gave no tools (`MCP warmup: 'wiki' discovered 0 tools`). If the words
+/// change, what is lost is only the line that says why.
+fn server_without_tools(line: &str) -> Option<&str> {
+    let (_, rest) = line.split_once("MCP warmup: '")?;
+    let (name, rest) = rest.split_once('\'')?;
+    rest.trim_start()
+        .starts_with("discovered 0 tools")
+        .then_some(name)
+}
+
+/// What the log says after a server at an address gave no tools, once it was asked why. Its name and not its address:
+/// an address can hold a key.
+fn why_no_tools(name: &str, found: Result<usize, String>) -> String {
+    match found {
+        Err(why) => format!("[MCP] {name} gave no tools: {why}"),
+        Ok(0) => format!(
+            "[MCP] {name} answers but offers no tools. Look at its instructions, and at whether its key allows them."
+        ),
+        Ok(tools) => format!(
+            "[MCP] {name} gave no tools at this Start, and has {tools} now. Stop and start the model again to use them."
+        ),
+    }
+}
+
+impl App {
+    /// For each line of the engine's log. llama-server says that a server gave no tools and keeps to itself what the
+    /// bridge told it about why, so a server at an address is asked again, on a thread, and the log gets the answer.
+    /// (A server that is a command has no one to ask but the program, which llama-server already started.)
+    pub(super) fn explain_mcp_line(&mut self, line: &str, ctx: &egui::Context) {
+        let Some(name) = server_without_tools(line) else {
+            return;
+        };
+        let Some(field) = self.engine_doc().and_then(|engine| {
+            engine
+                .doc
+                .fields
+                .iter()
+                .find(|f| f.ui.widget.as_deref() == Some(MCP_SERVERS))
+        }) else {
+            return;
+        };
+        let servers =
+            mcp::parse(self.values.text(&field.id).unwrap_or_default()).unwrap_or_default();
+        let Some(Reach::Url { url, headers }) = servers
+            .into_iter()
+            .find(|server| server.name == name)
+            .map(|server| server.reach)
+        else {
+            return;
+        };
+        let name = name.to_string();
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        self.mcp_checks.push(rx);
+        let wake = ctx.clone();
+        std::thread::spawn(move || {
+            let found = quickai_runtime::mcp_bridge::check(&url, &headers);
+            let _ = tx.send(why_no_tools(&name, found));
+            wake.request_repaint();
+        });
+    }
+
+    /// Each frame: what the servers that were asked have answered goes in the log.
+    pub(super) fn poll_mcp_checks(&mut self) {
+        let mut said = Vec::new();
+        self.mcp_checks.retain(|rx| match rx.try_recv() {
+            Ok(line) => {
+                said.push(line);
+                false
+            }
+            Err(crossbeam_channel::TryRecvError::Empty) => true,
+            Err(crossbeam_channel::TryRecvError::Disconnected) => false,
+        });
+        for line in said {
+            self.push_log(line);
+        }
+    }
+}
 
 /// What the boxes of the page hold between two frames.
 #[derive(Clone, Default)]
@@ -421,5 +500,70 @@ mod tests {
             load(&mut boxes, i, server);
             assert_eq!(&server_from(&boxes).unwrap(), server);
         }
+    }
+
+    #[test]
+    fn the_line_that_says_a_server_gave_no_tools_is_told_from_the_others() {
+        assert_eq!(
+            server_without_tools(
+                "0.00.646.887 I srv         start: MCP warmup: 'wiki' discovered 0 tools"
+            ),
+            Some("wiki")
+        );
+        for other in [
+            "0.00.592.906 I srv         start: MCP warmup: 'files' discovered 14 tools",
+            "0.00.027.012 W srv         start: MCP warmup: failed to spawn 'broken': ",
+            "0.00.646.887 I srv  setup: Added 0 MCP tools",
+        ] {
+            assert_eq!(server_without_tools(other), None, "{other}");
+        }
+    }
+
+    /// The Log tab says why a server at an address gave no tools; a command, or a server not on the list, is not asked.
+    #[test]
+    fn a_server_at_an_address_that_gave_no_tools_is_asked_why_and_the_log_says_it() {
+        use crate::config::{build_registry, ConfigDirs};
+        use crate::settings::Settings;
+        let dir = crate::testkit::scratch("mcp-why");
+        let mut settings = Settings::default();
+        settings.set_chosen_engine("llamacpp");
+        let mut app = App::build_in(
+            settings,
+            build_registry(&ConfigDirs::default()),
+            16 * 1024 * 1024 * 1024,
+            Vec::new(),
+            Some(dir.join("settings.json")),
+            Some(dir.join("data").display().to_string()),
+        );
+        // nothing listens here
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let closed = format!("http://{}/mcp", listener.local_addr().unwrap());
+        drop(listener);
+        app.values.set(
+            "mcp_servers",
+            format!(
+                r#"{{"mcpServers": {{"wiki": {{"url": "{closed}"}}, "files": {{"command": "npx"}}}}}}"#
+            ),
+        );
+        let ctx = egui::Context::default();
+
+        app.explain_mcp_line("I srv start: MCP warmup: 'files' discovered 0 tools", &ctx);
+        app.explain_mcp_line("I srv start: MCP warmup: 'other' discovered 0 tools", &ctx);
+        app.explain_mcp_line("I srv start: MCP warmup: 'wiki' discovered 3 tools", &ctx);
+        assert!(app.mcp_checks.is_empty());
+
+        app.explain_mcp_line("I srv start: MCP warmup: 'wiki' discovered 0 tools", &ctx);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !app.mcp_checks.is_empty() {
+            assert!(std::time::Instant::now() < deadline, "no answer");
+            app.poll_mcp_checks();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let line = app.log_lines.back().expect("a line in the log");
+        assert!(line.starts_with("[MCP] wiki gave no tools: "), "{line}");
+        assert!(
+            !line.contains(&closed),
+            "the address can hold a key: {line}"
+        );
     }
 }
