@@ -512,7 +512,8 @@ by Access email, and every change is written to an audit log.
 | Versions | the released versions read from GitHub, and the lowest version taken |
 | Installs and blocks | look up an install (for a deletion asked by email); block an install or a network |
 | Switches | the levels collected, retention |
-| Site | the waitlist and contact messages of the site's D1 |
+| Subscribers | who asked to hear when a product is ready, from the site's D1: how many for each product, and each list |
+| Messages | what people sent with the site's contact form, from the same D1 |
 | Audit | who changed what |
 
 The pages are server-rendered by the Worker with small inline charts drawn from `rollups`. That needs no front-end
