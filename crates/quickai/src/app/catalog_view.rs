@@ -693,7 +693,10 @@ fn show_task_page(ui: &mut egui::Ui, view: &TaskView<'_>, state: &mut TaskState<
         let field = ui.add(
             egui::TextEdit::singleline(&mut state.browse.words)
                 .id(search_id())
-                .hint_text(format!("Or search all {} models", view.entries.len()))
+                .hint_text(match view.entries.len() {
+                    1 => "Or search the 1 model".to_string(),
+                    n => format!("Or search all {n} models"),
+                })
                 .desired_width(room),
         );
         if std::mem::take(state.focus_search) {

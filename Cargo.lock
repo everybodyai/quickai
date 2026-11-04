@@ -2752,7 +2752,7 @@ dependencies = [
 
 [[package]]
 name = "quickai"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "crossbeam-channel",
  "directories",
@@ -2770,7 +2770,7 @@ dependencies = [
 
 [[package]]
 name = "quickai-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "regex",
  "semver",
@@ -2785,7 +2785,7 @@ dependencies = [
 
 [[package]]
 name = "quickai-run"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "crossbeam-channel",
  "libc",
@@ -2796,7 +2796,7 @@ dependencies = [
 
 [[package]]
 name = "quickai-runtime"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "crossbeam-channel",
  "directories",

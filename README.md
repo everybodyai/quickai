@@ -43,7 +43,7 @@ you choose a level, and your prompts never leave your computer.
   chat needs no download at all.
 - **Runs on ordinary hardware.** GPU acceleration through Vulkan on AMD, NVIDIA and Intel. QuickAI suggests a
   model that fits your memory and estimates how fast it will run before you start it.
-- **80+ recommended models.** A curated list for chat, reasoning, code, vision, document reading (OCR), speech,
+- **70+ recommended models.** A curated list for chat, reasoning, code, vision, document reading (OCR), speech,
   translation and search. Every file is checked against its SHA-256 as it arrives.
 - **Three engines.** llama.cpp is built in. [Ollama](https://ollama.com) and [ComfyUI](https://www.comfy.org)
   (images and video) are installed only when you ask, each in a folder of its own.
@@ -55,10 +55,11 @@ you choose a level, and your prompts never leave your computer.
 
 ## Install
 
-> Linux (tar.gz and AppImage), Windows (zip) and macOS (one disk image for Apple silicon and Intel Macs) builds are on
-> the [Releases](https://github.com/everybodyai/quickai/releases) page, with packages for the AUR, Homebrew, Snap,
-> Scoop, Chocolatey and the Microsoft Store to follow. To hear when they are out, sign up at
-> [everybodyai.dev](https://everybodyai.dev/quickai). You can also [build it from source](#build-from-source).
+> Linux (tar.gz and AppImage) and Windows (zip) builds are on the
+> [Releases](https://github.com/everybodyai/quickai/releases) page. macOS (one disk image for Apple silicon and Intel
+> Macs) is coming soon, with packages for the AUR, Homebrew, Snap, Scoop, Chocolatey and the Microsoft Store to follow.
+> To hear when they are out, sign up at [everybodyai.dev](https://everybodyai.dev/quickai). You can also
+> [build it from source](#build-from-source).
 
 Each package bundles QuickAI, llama.cpp's `llama-server` and the Bonsai 2 4B model, and runs as it is: nothing
 to install first. The Linux packages run on glibc 2.34 and newer (Ubuntu 22.04 and later); the Windows package
