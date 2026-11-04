@@ -164,31 +164,26 @@ pub fn tar_zst(entries: &[Entry]) -> Vec<u8> {
     zst_frame(&tar(entries))
 }
 
-/// A `.zip`; a name is written as given. A symlink is stored the way Info-ZIP stores one.
+/// A `.zip`; a name is written as given. A symlink is stored the way Info-ZIP stores one. Every
+/// entry says it was made on Unix, as the packages QuickAI installs do: left to itself the `zip`
+/// crate names the system it runs on, and a zip made on Windows has no modes to read back.
 pub fn zip(entries: &[Entry]) -> Vec<u8> {
     let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default().system(zip::System::Unix);
     for entry in entries {
         match &entry.kind {
             Kind::File { mode } => {
-                let options = zip::write::SimpleFileOptions::default().unix_permissions(*mode);
-                writer.start_file(entry.path.as_str(), options).unwrap();
+                writer
+                    .start_file(entry.path.as_str(), options.unix_permissions(*mode))
+                    .unwrap();
                 writer.write_all(&entry.data).unwrap();
             }
             Kind::Dir => {
-                writer
-                    .add_directory(
-                        entry.path.as_str(),
-                        zip::write::SimpleFileOptions::default(),
-                    )
-                    .unwrap();
+                writer.add_directory(entry.path.as_str(), options).unwrap();
             }
             Kind::Symlink { target } => {
                 writer
-                    .add_symlink(
-                        entry.path.as_str(),
-                        target.as_str(),
-                        zip::write::SimpleFileOptions::default(),
-                    )
+                    .add_symlink(entry.path.as_str(), target.as_str(), options)
                     .unwrap();
             }
             Kind::HardLink { .. } => panic!("a zip has no hard links"),
