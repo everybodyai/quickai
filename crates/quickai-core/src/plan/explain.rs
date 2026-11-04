@@ -77,7 +77,11 @@ pub fn render_explain(plan: &RunPlan) -> String {
             }
             for step in &spawn.write {
                 if step.text.is_some() {
-                    push("", format!("write {}   (the MCP servers in use)", step.to), "field bind.mcp");
+                    push(
+                        "",
+                        format!("write {}   (the MCP servers in use)", step.to),
+                        "field bind.mcp",
+                    );
                 } else {
                     push(
                         "",

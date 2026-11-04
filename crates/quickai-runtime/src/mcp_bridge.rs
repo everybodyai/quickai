@@ -83,7 +83,10 @@ pub fn run(args: &[String]) -> i32 {
         let mut out = stdout.lock();
         for reply in replies {
             if initialize {
-                if let Some(version) = reply.pointer("/result/protocolVersion").and_then(Json::as_str) {
+                if let Some(version) = reply
+                    .pointer("/result/protocolVersion")
+                    .and_then(Json::as_str)
+                {
                     session.protocol = Some(version.to_string());
                 }
             }
@@ -144,7 +147,9 @@ fn exchange(
     if !(200..300).contains(&status) {
         let text = answer.read_to_string().unwrap_or_default();
         let text = text.trim();
-        let older = if (status == 404 || status == 405) && url.trim_end_matches('/').ends_with("/sse") {
+        let older = if (status == 404 || status == 405)
+            && url.trim_end_matches('/').ends_with("/sse")
+        {
             " (an address that ends in /sse is a server of the older kind, which QuickAI does not carry: ask its maker for its Streamable HTTP address, often the same with /mcp)"
         } else {
             ""

@@ -169,8 +169,11 @@ impl App {
         if chosen.as_os_str().is_empty() || chosen.is_file() {
             return;
         }
-        let own =
-            launch::default_binary_in(&self.registry, &self.engine, self.data_dir_override.as_deref());
+        let own = launch::default_binary_in(
+            &self.registry,
+            &self.engine,
+            self.data_dir_override.as_deref(),
+        );
         if !own.is_file() {
             return;
         }

@@ -114,10 +114,15 @@ fn server(name: &str, body: &Json) -> Result<Server, String> {
                     (k.clone(), v)
                 })
                 .collect()),
-            Some(_) => Err(format!("\"{key}\" of the server \"{name}\" is a table of names and values")),
+            Some(_) => Err(format!(
+                "\"{key}\" of the server \"{name}\" is a table of names and values"
+            )),
         }
     };
-    let disabled = body.get("disabled").and_then(Json::as_bool).unwrap_or(false)
+    let disabled = body
+        .get("disabled")
+        .and_then(Json::as_bool)
+        .unwrap_or(false)
         || body.get("enabled").and_then(Json::as_bool) == Some(false);
     let reach = if let Some(command) = text("command").filter(|c| !c.is_empty()) {
         let args = match body.get("args") {
@@ -129,23 +134,34 @@ fn server(name: &str, body: &Json) -> Result<Server, String> {
                     other => other.to_string(),
                 })
                 .collect(),
-            Some(_) => return Err(format!("\"args\" of the server \"{name}\" is a list of words")),
+            Some(_) => {
+                return Err(format!(
+                    "\"args\" of the server \"{name}\" is a list of words"
+                ))
+            }
         };
         Reach::Command {
             command: command.to_string(),
             args,
             env: table("env")?,
         }
-    } else if let Some(url) = text("url").or_else(|| text("serverUrl")).filter(|u| !u.is_empty()) {
+    } else if let Some(url) = text("url")
+        .or_else(|| text("serverUrl"))
+        .filter(|u| !u.is_empty())
+    {
         if !(url.starts_with("http://") || url.starts_with("https://")) {
-            return Err(format!("the address of the server \"{name}\" begins with http:// or https://"));
+            return Err(format!(
+                "the address of the server \"{name}\" begins with http:// or https://"
+            ));
         }
         Reach::Url {
             url: url.to_string(),
             headers: table("headers")?,
         }
     } else {
-        return Err(format!("the server \"{name}\" has neither a \"command\" nor a \"url\""));
+        return Err(format!(
+            "the server \"{name}\" has neither a \"command\" nor a \"url\""
+        ));
     };
     Ok(Server {
         name: name.trim().to_string(),
@@ -191,7 +207,13 @@ pub fn to_text(servers: &[Server]) -> String {
 pub fn tool_prefix(name: &str) -> String {
     let cleaned: String = name
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     if cleaned.trim_matches('_').is_empty() {
         "server".to_string()
@@ -252,11 +274,16 @@ mod tests {
         let s = parse(claude).unwrap();
         assert_eq!(s.len(), 1);
         assert_eq!(s[0].name, "files");
-        assert_eq!(s[0].summary(), "npx -y @modelcontextprotocol/server-filesystem /home/a");
+        assert_eq!(
+            s[0].summary(),
+            "npx -y @modelcontextprotocol/server-filesystem /home/a"
+        );
 
         let vscode = r#"{"servers": {"gh": {"type": "http", "url": "https://api.example.com/mcp", "headers": {"Authorization": "Bearer x"}}}}"#;
         let s = parse(vscode).unwrap();
-        assert!(matches!(&s[0].reach, Reach::Url { url, headers } if url == "https://api.example.com/mcp" && headers["Authorization"] == "Bearer x"));
+        assert!(
+            matches!(&s[0].reach, Reach::Url { url, headers } if url == "https://api.example.com/mcp" && headers["Authorization"] == "Bearer x")
+        );
 
         let bare = r#"{"time": {"command": "uvx", "args": ["mcp-server-time"], "disabled": true}}"#;
         let s = parse(bare).unwrap();
@@ -266,7 +293,9 @@ mod tests {
         assert_eq!(parse(one).unwrap()[0].name, "server");
 
         assert_eq!(parse("  ").unwrap(), Vec::new());
-        assert!(parse("{\"mcpServers\": {\"x\": {}}}").unwrap_err().contains("neither"));
+        assert!(parse("{\"mcpServers\": {\"x\": {}}}")
+            .unwrap_err()
+            .contains("neither"));
         assert!(parse("[1]").is_err());
         assert!(parse("{\"x\": {\"url\": \"ftp://a\"}}").is_err());
     }
@@ -291,13 +320,18 @@ mod tests {
         assert_eq!(table["web"]["command"], "/opt/quickai/quickai");
         assert_eq!(table["web"]["args"], json!(["mcp-bridge", "https://w/mcp"]));
         let headers: BTreeMap<String, String> =
-            serde_json::from_str(table["web"]["env"][BRIDGE_HEADERS_VAR].as_str().unwrap()).unwrap();
+            serde_json::from_str(table["web"]["env"][BRIDGE_HEADERS_VAR].as_str().unwrap())
+                .unwrap();
         assert_eq!(headers["Authorization"], "Bearer k");
         assert!(notes.is_empty());
 
         let (config, notes) = engine_config(&servers, None);
         assert!(config.is_some());
-        assert_eq!(notes.len(), 1, "an address cannot be carried without QuickAI's own program");
+        assert_eq!(
+            notes.len(),
+            1,
+            "an address cannot be carried without QuickAI's own program"
+        );
         assert_eq!(engine_config(&[], Some("q")), (None, Vec::new()));
     }
 }

@@ -64,7 +64,9 @@ fn draw(ui: &mut egui::Ui, text: &str, boxes: &mut Boxes) -> Option<Reply> {
             let mut on = !server.disabled;
             if ui
                 .checkbox(&mut on, "")
-                .on_hover_text("Used from the next Start; off, it stays in the list and is not used.")
+                .on_hover_text(
+                    "Used from the next Start; off, it stays in the list and is not used.",
+                )
                 .changed()
             {
                 server.disabled = !on;
@@ -74,17 +76,29 @@ fn draw(ui: &mut egui::Ui, text: &str, boxes: &mut Boxes) -> Option<Reply> {
                 Reach::Command { .. } => "command",
                 Reach::Url { .. } => "address",
             };
-            ui.label(egui::RichText::new(&server.name).strong().color(if on { p.text } else { p.muted }))
-                .on_hover_text(format!("Its tools are called {}_<tool> in the chat page.", mcp::tool_prefix(&server.name)));
+            ui.label(egui::RichText::new(&server.name).strong().color(if on {
+                p.text
+            } else {
+                p.muted
+            }))
+            .on_hover_text(format!(
+                "Its tools are called {}_<tool> in the chat page.",
+                mcp::tool_prefix(&server.name)
+            ));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.small_button("Remove").on_hover_text("Take it out of the list").clicked() {
+                if ui
+                    .small_button("Remove")
+                    .on_hover_text("Take it out of the list")
+                    .clicked()
+                {
                     remove = Some(i);
                 }
                 if ui.small_button("Change").clicked() {
                     load(boxes, i, server);
                 }
                 ui.add(
-                    egui::Label::new(theme::muted(format!("{kind} · {}", server.summary()))).truncate(),
+                    egui::Label::new(theme::muted(format!("{kind} · {}", server.summary())))
+                        .truncate(),
                 )
                 .on_hover_text(server.summary());
             });
@@ -99,7 +113,14 @@ fn draw(ui: &mut egui::Ui, text: &str, boxes: &mut Boxes) -> Option<Reply> {
     }
 
     ui.add_space(10.0);
-    ui.label(egui::RichText::new(if boxes.editing.is_some() { "Change the server" } else { "Add a server" }).strong());
+    ui.label(
+        egui::RichText::new(if boxes.editing.is_some() {
+            "Change the server"
+        } else {
+            "Add a server"
+        })
+        .strong(),
+    );
     egui::Grid::new(ui.id().with("mcp_add"))
         .num_columns(2)
         .spacing([10.0, 6.0])
@@ -137,8 +158,20 @@ fn draw(ui: &mut egui::Ui, text: &str, boxes: &mut Boxes) -> Option<Reply> {
         });
     ui.horizontal(|ui| {
         let ready = !boxes.name.trim().is_empty() && !boxes.line.trim().is_empty();
-        let label = if boxes.editing.is_some() { "Save" } else { "Add" };
-        if theme::button_sized(ui, theme::Role::Primary, ready, label, egui::vec2(70.0, 0.0)).clicked() {
+        let label = if boxes.editing.is_some() {
+            "Save"
+        } else {
+            "Add"
+        };
+        if theme::button_sized(
+            ui,
+            theme::Role::Primary,
+            ready,
+            label,
+            egui::vec2(70.0, 0.0),
+        )
+        .clicked()
+        {
             match server_from(boxes) {
                 Ok(server) => {
                     match boxes.editing.filter(|i| *i < servers.len()) {
@@ -155,7 +188,10 @@ fn draw(ui: &mut egui::Ui, text: &str, boxes: &mut Boxes) -> Option<Reply> {
             && ui.button("Clear").clicked()
         {
             let raw = boxes.raw.take();
-            *boxes = Boxes { raw, ..Boxes::default() };
+            *boxes = Boxes {
+                raw,
+                ..Boxes::default()
+            };
         }
     });
 
@@ -223,7 +259,10 @@ fn raw_editor(
     let now = mcp::parse(raw);
     match (&now, &problem) {
         (Err(why), _) => {
-            ui.colored_label(theme::palette().bad, format!("Not used until it can be read: {why}"));
+            ui.colored_label(
+                theme::palette().bad,
+                format!("Not used until it can be read: {why}"),
+            );
         }
         (Ok(_), Some(_)) => {}
         (Ok(_), None) => {}
@@ -262,11 +301,19 @@ fn load(boxes: &mut Boxes, i: usize, server: &Server) {
     match &server.reach {
         Reach::Command { env, .. } => {
             boxes.line = server.summary();
-            boxes.pairs = env.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("\n");
+            boxes.pairs = env
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join("\n");
         }
         Reach::Url { url, headers } => {
             boxes.line = url.clone();
-            boxes.pairs = headers.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join("\n");
+            boxes.pairs = headers
+                .iter()
+                .map(|(k, v)| format!("{k}: {v}"))
+                .collect::<Vec<_>>()
+                .join("\n");
         }
     }
 }
@@ -276,7 +323,12 @@ fn server_from(boxes: &Boxes) -> Result<Server, String> {
     let name = boxes.name.trim().to_string();
     let line = boxes.line.trim();
     let mut pairs = std::collections::BTreeMap::new();
-    for raw in boxes.pairs.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+    for raw in boxes
+        .pairs
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+    {
         // a header is `Name: value`, a variable `NAME=value`; either is read in either box
         let split = if is_address(line) {
             raw.split_once(':').or_else(|| raw.split_once('='))
@@ -289,15 +341,26 @@ fn server_from(boxes: &Boxes) -> Result<Server, String> {
         pairs.insert(k.trim().to_string(), v.trim().to_string());
     }
     let reach = if is_address(line) {
-        Reach::Url { url: line.to_string(), headers: pairs }
+        Reach::Url {
+            url: line.to_string(),
+            headers: pairs,
+        }
     } else {
         let mut words = quickai_core::plan::args::split_args(line).into_iter();
         let Some(command) = words.next() else {
             return Err("Give the command that starts the server.".into());
         };
-        Reach::Command { command, args: words.collect(), env: pairs }
+        Reach::Command {
+            command,
+            args: words.collect(),
+            env: pairs,
+        }
     };
-    Ok(Server { name, reach, disabled: false })
+    Ok(Server {
+        name,
+        reach,
+        disabled: false,
+    })
 }
 
 /// Adds a server, or replaces the one of the same name.
@@ -325,7 +388,11 @@ mod tests {
             server.reach,
             Reach::Command {
                 command: "npx".into(),
-                args: vec!["-y".into(), "@modelcontextprotocol/server-filesystem".into(), "/home/me/My Notes".into()],
+                args: vec![
+                    "-y".into(),
+                    "@modelcontextprotocol/server-filesystem".into(),
+                    "/home/me/My Notes".into()
+                ],
                 env: [("DEBUG".to_string(), "1".to_string())].into(),
             }
         );
@@ -336,8 +403,13 @@ mod tests {
             ..Boxes::default()
         };
         let server = server_from(&boxes).unwrap();
-        assert!(matches!(&server.reach, Reach::Url { headers, .. } if headers["Authorization"] == "Bearer abc"));
-        let bad = Boxes { pairs: "nothing".into(), ..boxes };
+        assert!(
+            matches!(&server.reach, Reach::Url { headers, .. } if headers["Authorization"] == "Bearer abc")
+        );
+        let bad = Boxes {
+            pairs: "nothing".into(),
+            ..boxes
+        };
         assert!(server_from(&bad).is_err());
     }
 

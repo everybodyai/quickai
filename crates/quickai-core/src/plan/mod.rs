@@ -235,8 +235,7 @@ pub fn plan(
                         selection,
                         facts,
                         &mut errors,
-                    )
-                    {
+                    ) {
                         // where an engine of this kind already answers, a second is not started
                         plan.identity = engine.launch.attach.as_ref().map(|a| IdentityPlan {
                             path: a.identity_path.clone(),
