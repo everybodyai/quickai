@@ -1263,21 +1263,25 @@ mod tests {
         assert!(environment.top() > at("--threads 4").top());
         at("GGML_VK_VISIBLE_DEVICES=0");
         at("HF_TOKEN=***");
-        let name = at("LD_LIBRARY_PATH=");
-        let was = at("$LD_LIBRARY_PATH");
-        let shown = display.0.borrow();
-        let dirs: Vec<egui::Rect> = texts(&shown.windows[&settings_viewport()].shapes)
-            .into_iter()
-            .filter(|(text, _)| text.starts_with('/') && text.ends_with(':'))
-            .map(|(_, rect)| rect)
-            .collect();
-        drop(shown);
-        assert!(
-            dirs.iter().any(|dir| name.bottom() <= dir.top()
-                && dir.bottom() <= was.top()
-                && dir.left() > name.left()),
-            "the directory on a line of its own, in full, between {name:?} and {was:?}: {dirs:?}"
-        );
+        // (a Unix path's parts, each on a line of its own)
+        #[cfg(unix)]
+        {
+            let name = at("LD_LIBRARY_PATH=");
+            let was = at("$LD_LIBRARY_PATH");
+            let shown = display.0.borrow();
+            let dirs: Vec<egui::Rect> = texts(&shown.windows[&settings_viewport()].shapes)
+                .into_iter()
+                .filter(|(text, _)| text.starts_with('/') && text.ends_with(':'))
+                .map(|(_, rect)| rect)
+                .collect();
+            drop(shown);
+            assert!(
+                dirs.iter().any(|dir| name.bottom() <= dir.top()
+                    && dir.bottom() <= was.top()
+                    && dir.left() > name.left()),
+                "the directory on a line of its own, in full, between {name:?} and {was:?}: {dirs:?}"
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
