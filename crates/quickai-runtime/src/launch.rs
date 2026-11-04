@@ -597,26 +597,46 @@ mod tests {
             panic!("a spawn")
         };
         let args = spawn.arg_values();
-        let at = args.iter().position(|a| a == "--mcp-servers-config").expect("the option");
+        let at = args
+            .iter()
+            .position(|a| a == "--mcp-servers-config")
+            .expect("the option");
         assert_eq!(args[at + 1], "/data/llamacpp/mcp-servers.json");
-        let step = spawn.write.iter().find(|w| w.text.is_some()).expect("the file");
+        let step = spawn
+            .write
+            .iter()
+            .find(|w| w.text.is_some())
+            .expect("the file");
         assert_eq!(step.to, "/data/llamacpp/mcp-servers.json");
         let config: serde_json::Value = serde_json::from_str(step.text.as_ref().unwrap()).unwrap();
         let servers = config["mcpServers"].as_object().unwrap();
         assert_eq!(servers.len(), 2);
         assert_eq!(servers["files"]["command"], "npx");
         assert_eq!(servers["web"]["args"][0], "mcp-bridge");
-        assert!(servers["web"]["env"]["QUICKAI_MCP_HEADERS"].as_str().unwrap().contains("Bearer k"));
+        assert!(servers["web"]["env"]["QUICKAI_MCP_HEADERS"]
+            .as_str()
+            .unwrap()
+            .contains("Bearer k"));
         // the plan as it is shown never carries the file's text
         assert!(!serde_json::to_string(&plan).unwrap().contains("Bearer k"));
 
         // no server in use: no file and no option
         let s = selection(&model(), &settings()).set("llamacpp.mcp_servers", "");
-        let plan = plan_selection(&registry, &s, Path::new("/x"), MachineFacts::default(), None).unwrap();
+        let plan = plan_selection(
+            &registry,
+            &s,
+            Path::new("/x"),
+            MachineFacts::default(),
+            None,
+        )
+        .unwrap();
         let quickai_core::plan::Start::Spawn(spawn) = &plan.units[0].start[0] else {
             panic!("a spawn")
         };
-        assert!(!spawn.arg_values().iter().any(|a| a == "--mcp-servers-config"));
+        assert!(!spawn
+            .arg_values()
+            .iter()
+            .any(|a| a == "--mcp-servers-config"));
         assert!(spawn.write.iter().all(|w| w.text.is_none()));
     }
 

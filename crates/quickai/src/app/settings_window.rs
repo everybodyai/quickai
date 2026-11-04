@@ -357,7 +357,8 @@ impl App {
             )),
         );
         let reply = group(ui, |ui| {
-            ui.add_enabled_ui(field.enabled, |ui| widgets::show(ui, &field)).inner
+            ui.add_enabled_ui(field.enabled, |ui| widgets::show(ui, &field))
+                .inner
         });
         if let Some(Reply::Set(value)) = reply {
             self.values.apply(vec![Edit {
@@ -377,7 +378,10 @@ impl App {
         }
         if self.session.is_active() {
             ui.add_space(4.0);
-            ui.colored_label(p.warn, "The server is running: a change is used after Stop and Start.");
+            ui.colored_label(
+                p.warn,
+                "The server is running: a change is used after Stop and Start.",
+            );
         }
     }
 

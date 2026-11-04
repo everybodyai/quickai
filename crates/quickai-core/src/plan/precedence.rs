@@ -21,7 +21,9 @@ pub(super) struct Settled {
 /// end of the options).
 pub fn is_option(word: &str) -> bool {
     let rest = word.trim_start_matches('-');
-    rest.len() < word.len() && word.len() - rest.len() <= 2 && rest.starts_with(|c: char| c.is_ascii_alphabetic())
+    rest.len() < word.len()
+        && word.len() - rest.len() <= 2
+        && rest.starts_with(|c: char| c.is_ascii_alphabetic())
 }
 
 /// The option a word names, by the name it is known by: `-c` and `--ctx-size=8192` are `--ctx-size` when the
@@ -188,7 +190,12 @@ mod tests {
             .collect()
     }
 
-    fn settled(ours: &str, theirs: &str, lines: &[(&str, &str)], options: &[OptionSpec]) -> Settled {
+    fn settled(
+        ours: &str,
+        theirs: &str,
+        lines: &[(&str, &str)],
+        options: &[OptionSpec],
+    ) -> Settled {
         let mut args = words(ours, "engine");
         let mut person = vec![false; args.len()];
         let mine = words(theirs, "field extra_args");
@@ -232,38 +239,77 @@ mod tests {
 
     #[test]
     fn the_persons_option_takes_the_place_of_quickais_by_any_name() {
-        let options = [option(&["--reasoning", "-rea"], Some("LLAMA_ARG_REASONING"), false)];
-        let s = settled("--model m.gguf --reasoning off --temp 0.7", "-rea on", &[], &options);
+        let options = [option(
+            &["--reasoning", "-rea"],
+            Some("LLAMA_ARG_REASONING"),
+            false,
+        )];
+        let s = settled(
+            "--model m.gguf --reasoning off --temp 0.7",
+            "-rea on",
+            &[],
+            &options,
+        );
         assert_eq!(values(&s), "--model m.gguf --temp 0.7 -rea on");
         assert_eq!(s.notes.len(), 1);
-        assert!(s.notes[0].contains("Your -rea on takes the place of QuickAI's --reasoning off (engine)"));
+        assert!(s.notes[0]
+            .contains("Your -rea on takes the place of QuickAI's --reasoning off (engine)"));
     }
 
     #[test]
     fn an_option_that_is_not_listed_is_matched_by_its_name_and_a_switch_by_its_other_side() {
-        let s = settled("--embeddings --threads 4 --mmap", "--threads=8 --no-mmap", &[], &[]);
+        let s = settled(
+            "--embeddings --threads 4 --mmap",
+            "--threads=8 --no-mmap",
+            &[],
+            &[],
+        );
         assert_eq!(values(&s), "--embeddings --threads=8 --no-mmap");
         assert_eq!(s.notes.len(), 2);
     }
 
     #[test]
     fn a_line_of_environment_for_an_option_takes_the_place_of_quickais() {
-        let options = [option(&["--ctx-size", "-c"], Some("LLAMA_ARG_CTX_SIZE"), false)];
-        let s = settled("--ctx-size 4096 --port 8080", "", &[("LLAMA_ARG_CTX_SIZE", "8192")], &options);
+        let options = [option(
+            &["--ctx-size", "-c"],
+            Some("LLAMA_ARG_CTX_SIZE"),
+            false,
+        )];
+        let s = settled(
+            "--ctx-size 4096 --port 8080",
+            "",
+            &[("LLAMA_ARG_CTX_SIZE", "8192")],
+            &options,
+        );
         assert_eq!(values(&s), "--port 8080");
         assert_eq!(s.env.len(), 1, "the person's line stays");
-        assert!(s.notes[0].contains("Your line LLAMA_ARG_CTX_SIZE takes the place of QuickAI's --ctx-size 4096"));
+        assert!(s.notes[0]
+            .contains("Your line LLAMA_ARG_CTX_SIZE takes the place of QuickAI's --ctx-size 4096"));
     }
 
     #[test]
     fn what_quickai_needs_to_reach_the_program_stays_quickais() {
         let options = [option(&["--port"], Some("LLAMA_ARG_PORT"), true)];
-        let s = settled("--port 8080 --host 127.0.0.1", "--port 9000 --host 0.0.0.0", &[("LLAMA_ARG_PORT", "1")], &options);
+        let s = settled(
+            "--port 8080 --host 127.0.0.1",
+            "--port 9000 --host 0.0.0.0",
+            &[("LLAMA_ARG_PORT", "1")],
+            &options,
+        );
         assert_eq!(values(&s), "--port 8080 --host 0.0.0.0");
         assert!(s.env.is_empty(), "the line for the port is left out");
-        assert!(s.notes.iter().any(|n| n.contains("Your --port 9000 is left out")));
-        assert!(s.notes.iter().any(|n| n.contains("Your line LLAMA_ARG_PORT is left out")));
-        assert!(s.notes.iter().any(|n| n.contains("Your --host 0.0.0.0 takes the place")));
+        assert!(s
+            .notes
+            .iter()
+            .any(|n| n.contains("Your --port 9000 is left out")));
+        assert!(s
+            .notes
+            .iter()
+            .any(|n| n.contains("Your line LLAMA_ARG_PORT is left out")));
+        assert!(s
+            .notes
+            .iter()
+            .any(|n| n.contains("Your --host 0.0.0.0 takes the place")));
     }
 
     #[test]
@@ -274,8 +320,16 @@ mod tests {
 
     #[test]
     fn nothing_the_person_did_not_name_is_touched() {
-        let s = settled("--model m.gguf --ctx-size 4096", "--threads 8 --flash-attn on", &[], &[]);
-        assert_eq!(values(&s), "--model m.gguf --ctx-size 4096 --threads 8 --flash-attn on");
+        let s = settled(
+            "--model m.gguf --ctx-size 4096",
+            "--threads 8 --flash-attn on",
+            &[],
+            &[],
+        );
+        assert_eq!(
+            values(&s),
+            "--model m.gguf --ctx-size 4096 --threads 8 --flash-attn on"
+        );
         assert!(s.notes.is_empty());
     }
 }
