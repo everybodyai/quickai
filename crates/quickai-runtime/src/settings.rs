@@ -105,6 +105,22 @@ impl Default for Settings {
     }
 }
 
+/// A file an earlier version left for anyone on the computer to read is its owner's alone from now on, whether or not
+/// anything is saved before the application is closed.
+fn make_private(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = std::fs::metadata(path) {
+            if metadata.permissions().mode() & 0o077 != 0 {
+                let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+}
+
 fn config_path() -> Option<PathBuf> {
     let dirs = directories::ProjectDirs::from("dev", "quickai", "quickai")?;
     Some(dirs.config_dir().join("settings.json"))
@@ -125,6 +141,7 @@ impl Settings {
     /// The settings stored at `path`; the defaults when the file is missing, unreadable, not JSON
     /// or of the wrong shape (a wrongly typed value discards the whole file, as it always has).
     pub fn load_from(path: &Path) -> Self {
+        make_private(path);
         std::fs::read_to_string(path)
             .ok()
             .and_then(|s| Self::from_json(&s))
@@ -132,20 +149,11 @@ impl Settings {
     }
 
     pub fn save_to(&self, path: &Path) {
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
         // whole or not at all: a file cut short by a crash or a full disk is read as no file, and every setting
-        // (the engine, the folders, the programs) went back to its default
+        // (the engine, the folders, the programs) went back to its default. And for its owner alone: it holds the
+        // keys of the MCP servers and whatever else the person put in their lines of environment
         if let Some(json) = self.to_json() {
-            let mut temporary = path.as_os_str().to_os_string();
-            temporary.push(".part");
-            let temporary = std::path::PathBuf::from(temporary);
-            if std::fs::write(&temporary, json).is_ok()
-                && std::fs::rename(&temporary, path).is_err()
-            {
-                let _ = std::fs::remove_file(&temporary);
-            }
+            let _ = crate::assets::put_private(path, &json);
         }
     }
 
@@ -1046,5 +1054,39 @@ default = 1.5
             .get("values")
             .is_none_or(|v| v.get("demo.scale").is_none()));
         assert_eq!(settings.engine_values(engine)["demo.scale"], v(3.0));
+    }
+
+    /// It holds the keys of the MCP servers: only its owner reads it, whether it is written now or an earlier version
+    /// left it for anyone.
+    #[test]
+    #[cfg(unix)]
+    fn the_file_is_its_owners_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("settings-mode");
+        let path = dir.join("settings.json");
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+
+        Settings::default().save_to(&path);
+        assert_eq!(mode(&path), 0o600);
+
+        // saved over a file an earlier version left open
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o664)).unwrap();
+        Settings::default().save_to(&path);
+        assert_eq!(mode(&path), 0o600);
+
+        // and only read: it is closed all the same
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o664)).unwrap();
+        let _ = Settings::load_from(&path);
+        assert_eq!(mode(&path), 0o600);
+
+        // nothing is left beside it, and a file that is not there stays not there
+        let names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        assert_eq!(names.len(), 1, "{names:?}");
+        let _ = Settings::load_from(&dir.join("not-there.json"));
+        assert!(!dir.join("not-there.json").exists());
     }
 }

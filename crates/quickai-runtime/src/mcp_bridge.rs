@@ -5,8 +5,9 @@
 //! the engine writes, POSTs it to the address, and writes back what the server answers, whether the answer is one
 //! JSON body or a stream of events. The session the server gives, and the version of the protocol agreed on, go
 //! with every later request. The headers of the server (a key) come in a variable, not on the command line
-//! (`quickai_core::mcp::BRIDGE_HEADERS_VAR`). What goes wrong is said on the error output, which the engine logs,
-//! and a request that got no answer is answered with an error, so that the engine does not wait for it.
+//! (`quickai_core::mcp::BRIDGE_HEADERS_VAR`). What goes wrong is said on the error output, and a request that got no
+//! answer is answered with an error, so that the engine does not wait for it. The engine keeps both to itself: it logs
+//! that the server gave no tools and nothing more, so the window asks the server again (`check`) to say why.
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -18,6 +19,9 @@ use serde_json::{json, Value as Json};
 
 /// How long the server may take to accept the connection. A tool may then work for as long as it needs.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long `check` waits for a server, all told. Nothing is waiting for it but a line of the log.
+const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// What the bridge remembers between requests.
 #[derive(Default)]
@@ -99,6 +103,73 @@ pub fn run(args: &[String]) -> i32 {
         }
     }
     0
+}
+
+/// Asks the server at `url` what the engine asks when it starts: how many tools it has now, or why it gives none. Keeps
+/// no session: the engine's own ended with its answer.
+pub fn check(url: &str, headers: &BTreeMap<String, String>) -> Result<usize, String> {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_global(Some(CHECK_TIMEOUT))
+        .build()
+        .into();
+    let mut session = Session::default();
+    let hello = answer_to(
+        &agent,
+        url,
+        headers,
+        &mut session,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": { "name": "quickai", "version": env!("CARGO_PKG_VERSION") },
+            },
+        }),
+    )?;
+    session.protocol = hello
+        .pointer("/result/protocolVersion")
+        .and_then(Json::as_str)
+        .map(str::to_string);
+    let ready = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
+    exchange(&agent, url, headers, &mut session, &ready.to_string(), None)?;
+    let tools = answer_to(
+        &agent,
+        url,
+        headers,
+        &mut session,
+        &json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }),
+    )?;
+    Ok(tools
+        .pointer("/result/tools")
+        .and_then(Json::as_array)
+        .map_or(0, Vec::len))
+}
+
+/// The answer to one request; an error the server sent is an error here.
+fn answer_to(
+    agent: &ureq::Agent,
+    url: &str,
+    headers: &BTreeMap<String, String>,
+    session: &mut Session,
+    request: &Json,
+) -> Result<Json, String> {
+    let id = request.get("id");
+    let replies = exchange(agent, url, headers, session, &request.to_string(), id)?;
+    let answer = replies
+        .into_iter()
+        .find(|reply| reply.get("id") == id)
+        .ok_or("the server did not answer")?;
+    match answer.get("error") {
+        Some(error) => Err(error
+            .get("message")
+            .and_then(Json::as_str)
+            .map_or_else(|| error.to_string(), str::to_string)),
+        None => Ok(answer),
+    }
 }
 
 /// POSTs one message and gives the messages the server answers with: none for a notification it accepted, the
@@ -231,5 +302,94 @@ mod tests {
         let got = events(stream.as_bytes(), Some(&json!(7)));
         assert_eq!(got.len(), 2);
         assert_eq!(got[1]["id"], 7);
+    }
+
+    /// A stand-in for a server at an address: each request is answered with the next of `answers`.
+    fn serve(path: &str, answers: Vec<String>) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}{path}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for answer in answers {
+                let Ok((stream, _)) = listener.accept() else {
+                    return;
+                };
+                let mut reader = BufReader::new(stream);
+                let mut length = 0;
+                let mut line = String::new();
+                while reader.read_line(&mut line).is_ok_and(|n| n > 0) && line != "\r\n" {
+                    let lower = line.to_ascii_lowercase();
+                    if let Some(value) = lower.strip_prefix("content-length:") {
+                        length = value.trim().parse().unwrap_or(0);
+                    }
+                    line.clear();
+                }
+                let mut body = vec![0; length];
+                let _ = reader.read_exact(&mut body);
+                let _ = reader.get_mut().write_all(answer.as_bytes());
+            }
+        });
+        url
+    }
+
+    fn http(status: &str, body: &str) -> String {
+        format!(
+            "HTTP/1.1 {status}\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        )
+    }
+
+    #[test]
+    fn a_check_says_how_many_tools_a_server_has_or_why_it_gave_none() {
+        let hello = http(
+            "200 OK",
+            r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26"}}"#,
+        );
+        let accepted = http("202 Accepted", "");
+        let none = BTreeMap::new();
+
+        let url = serve(
+            "/mcp",
+            vec![
+                hello.clone(),
+                accepted.clone(),
+                http(
+                    "200 OK",
+                    r#"{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"a"},{"name":"b"}]}}"#,
+                ),
+            ],
+        );
+        assert_eq!(check(&url, &none), Ok(2));
+
+        // a key it does not take, said in its own words
+        let url = serve("/mcp", vec![http("401 Unauthorized", "a key is needed")]);
+        let why = check(&url, &none).unwrap_err();
+        assert!(
+            why.contains("401") && why.contains("a key is needed"),
+            "{why}"
+        );
+
+        // the older kind of address
+        let url = serve("/sse", vec![http("405 Method Not Allowed", "")]);
+        assert!(check(&url, &none).unwrap_err().contains("older kind"));
+
+        // it took the greeting and refused the list
+        let url = serve(
+            "/mcp",
+            vec![
+                hello,
+                accepted,
+                http(
+                    "200 OK",
+                    r#"{"jsonrpc":"2.0","id":2,"error":{"code":-32601,"message":"no tools for you"}}"#,
+                ),
+            ],
+        );
+        assert_eq!(check(&url, &none), Err("no tools for you".to_string()));
+
+        // nothing there
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let closed = format!("http://{}/mcp", listener.local_addr().unwrap());
+        drop(listener);
+        assert!(check(&closed, &none).is_err());
     }
 }

@@ -144,7 +144,9 @@ calling them wrongly, try another model: it has to be one made for tool use, and
 - **Some of what you send can leave your computer.** Your prompts normally stay here, but what the model puts in a call
   goes to the server. A server at an address sees it, and your IP address, under its own terms. So does whatever service
   a command server contacts. See [PRIVACY.md](../PRIVACY.md).
-- **Keys stay on this computer.** They are kept in QuickAI's settings and are never part of a configuration you share.
+- **Keys stay on this computer.** They are kept in QuickAI's settings, which only your account can read, and are never
+  part of a configuration you share. Versions up to 0.2.1 left the settings file readable by other accounts on the
+  computer: if you share a computer, update QuickAI before adding a key.
 
 ## If something does not work
 
@@ -154,14 +156,14 @@ Start with the **Log** tab under the model, and look for the lines that say `MCP
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | `MCP 'files': failed to spawn 'npx'` | The program was not found. Your other servers still work. | Install it. If you started QuickAI from a desktop launcher, it may not see a program set up by your shell (nvm, fnm): write the full path, which `which npx` prints. On Windows, try `cmd /c npx -y ...`. |
-| `'wiki' discovered 0 tools` | The server gave no tools: a wrong address, no connection, a missing or wrong key, or an older `/sse` address. | Run the check below, which says why. |
+| `'wiki' discovered 0 tools` | The server gave no tools: a wrong address, no connection, a missing or wrong key, or an older `/sse` address. | For a server at an address, a line starting `[MCP]` follows soon after and says why. Versions up to 0.2.1 do not have that line: run the check below. |
 | `MCP starting failed: ...` | llama-server could not read the list. | Correct it with **Edit the list as JSON**. |
 | `invalid argument: --mcp-servers-config` | This llama.cpp is too old to know MCP servers. | Choose a newer build under **Settings → Program**. |
 | No **Server** under **+ → Tools** | No server was loaded. | Stop the model and start it again, reload the page, and read the Log. |
 | *Waiting for result...* on a tool | The page is waiting for you. | Press **Allow once** or **Deny** under it. |
 | No **MCP servers** page in Settings | The engine in use is not llama.cpp. | Choose llama.cpp in the menu at the top right. |
 
-To see why a server at an address gives no tools, run this in a terminal, with its address at the end:
+To ask a server at an address yourself, run this in a terminal, with its address at the end:
 
 ```bash
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"check","version":"1"}}}' \

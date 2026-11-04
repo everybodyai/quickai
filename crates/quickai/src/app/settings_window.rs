@@ -377,7 +377,7 @@ impl App {
         for line in [
             "They are used from the next Start, in the chat page and not in the Chat tab. The page lists their tools under + and Tools, where each can be switched off, and asks you before the model uses one.",
             "A server that is a command is started by llama-server on this computer and can do whatever its program does: add only ones you trust. One at an address is reached through QuickAI.",
-            "Commands such as npx and uvx need Node.js or uv on this computer. If a server does not start, the Log tab says so.",
+            "Commands such as npx and uvx need Node.js or uv on this computer. If a server does not start, the Log tab says why.",
         ] {
             ui.add(egui::Label::new(egui::RichText::new(line).small().color(p.muted)).wrap());
         }
