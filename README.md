@@ -25,7 +25,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/quickai-dark.png">
-    <img src="assets/readme/quickai-light.png" width="760" alt="The QuickAI window running the Bonsai 8B model: the menu bar, the models in a list on the left under Add a model, the chosen model with Start beside its name and the line that says how it runs, the chat, and the status bar saying Running">
+    <img src="assets/readme/quickai-light.png" width="760" alt="The QuickAI window running Bonsai 2 4B, the model it comes with: Add a model and the list of models on the left, the model and how it runs on the right, its reply to a question in the chat, and Running in the status bar.">
   </picture>
 </p>
 
