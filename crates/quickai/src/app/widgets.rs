@@ -894,7 +894,7 @@ mod tests {
 
     #[test]
     fn the_widgets_a_document_may_name_are_the_ones_the_loader_is_told_about() {
-        assert_eq!(NAMED, ["runtime_manager", "button"]);
+        assert_eq!(NAMED, ["runtime_manager", "button", "mcp_servers"]);
         let known = crate::prims::known();
         let told: Vec<&str> = known
             .widget_names()
@@ -902,6 +902,6 @@ mod tests {
             .iter()
             .map(String::as_str)
             .collect();
-        assert_eq!(told, ["button", "runtime_manager"]);
+        assert_eq!(told, ["button", "mcp_servers", "runtime_manager"]);
     }
 }
