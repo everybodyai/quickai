@@ -1241,9 +1241,21 @@ mod tests {
             at("Context size").top() < projector.top(),
             "the settings' rows first"
         );
+        let words_on_the_page: Vec<egui::Rect> =
+            texts(&display.0.borrow().windows[&settings_viewport()].shapes)
+                .into_iter()
+                .filter(|(painted, _)| painted == "--threads 4")
+                .map(|(_, rect)| rect)
+                .collect();
+        assert_eq!(
+            words_on_the_page.len(),
+            2,
+            "in their box, and on the command line: {words_on_the_page:?}"
+        );
         assert!(
-            at("--threads 4").top() > projector.top(),
-            "the person's words last"
+            words_on_the_page[0].top() < at("Command line").top()
+                && words_on_the_page[1].top() > projector.top(),
+            "the person's words last on the command line: {words_on_the_page:?} {projector:?}"
         );
         // the variables in full, a row to each: the person's two lines, the secret not said, and QuickAI's library
         // path, a line to each of its parts under its name
@@ -1277,6 +1289,8 @@ mod tests {
     ) {
         let dir = scratch("i28");
         let mut app = app_in(&dir, "llamacpp");
+        // (`app_in` gives each test a folder of its own, which is a folder of the person's to this page)
+        app.models_dir_override = None;
         let ctx = egui::Context::default();
         let display = Display::attach(&ctx);
         app.toggle_settings();

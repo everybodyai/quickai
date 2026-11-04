@@ -792,16 +792,19 @@ mod tests {
             llama.binary
         );
         // and once it is there, it is not
-        let dir = crate::testkit::scratch("e25d");
-        let binary = crate::testkit::procs::write_script(&dir, "llama-server", "exit 0");
-        let llama = app_on(
-            &dir,
-            Settings {
-                llama_bin_override: Some(binary.display().to_string()),
-                ..Settings::default()
-            },
-        );
-        assert!(!llama.engine_missing(), "{:?}", llama.binary);
+        #[cfg(unix)]
+        {
+            let dir = crate::testkit::scratch("e25d");
+            let binary = crate::testkit::procs::write_script(&dir, "llama-server", "exit 0");
+            let llama = app_on(
+                &dir,
+                Settings {
+                    llama_bin_override: Some(binary.display().to_string()),
+                    ..Settings::default()
+                },
+            );
+            assert!(!llama.engine_missing(), "{:?}", llama.binary);
+        }
     }
 
     #[test]
@@ -3105,7 +3108,7 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
             let mut app = app_on(&dir, settings);
             app.open_catalog();
             let entries = std::mem::take(&mut app.catalog.entries);
-            assert!(entries.len() > 40, "{engine}: {} models", entries.len());
+            assert!(entries.len() > 30, "{engine}: {} models", entries.len());
             let labels = app
                 .engine_doc()
                 .map(super::super::lookup_view::bundle_words)

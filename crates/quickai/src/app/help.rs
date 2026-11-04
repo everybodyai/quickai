@@ -1876,7 +1876,7 @@ mod tests {
             } = viewport;
             said.borrow_mut()
                 .push(builder.title.clone().unwrap_or_default());
-            let raw = egui::RawInput {
+            let mut raw = egui::RawInput {
                 viewport_id: ids.this,
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -1884,6 +1884,8 @@ mod tests {
                 )),
                 ..Default::default()
             };
+            raw.viewports
+                .insert(ids.this, egui::ViewportInfo::default());
             let mut output = ctx.run_ui(raw, |ui| viewport_ui_cb(ui));
             output.textures_delta.clear();
         });

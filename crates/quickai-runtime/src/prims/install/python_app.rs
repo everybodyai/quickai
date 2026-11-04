@@ -2229,6 +2229,7 @@ mod tests {
         (server, hits)
     }
 
+    #[cfg(unix)]
     fn listing(dir: &Path) -> Vec<String> {
         let mut names: Vec<String> = std::fs::read_dir(dir)
             .map(|read| {

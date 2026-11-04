@@ -414,6 +414,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use eframe::egui;
+    #[cfg(unix)]
     use serde_json::json;
 
     use super::super::App;
@@ -644,6 +645,7 @@ mod tests {
     }
 
     /// The person's patch of the Ollama document that points its feed at `api`.
+    #[cfg(unix)]
     fn feed_at(dir: &Path, api: &str) {
         std::fs::create_dir_all(dir.join("cfg/engines")).unwrap();
         std::fs::write(
@@ -867,6 +869,7 @@ mod tests {
 
     /// The buttons of the head of the page, from left to right: the pictures in frames of 30 points beside the model's
     /// name, under the menu bar, as a frame of the whole window draws them.
+    #[cfg(unix)]
     fn buttons_of_the_head(app: &mut App, ctx: &egui::Context, width: f32) -> Vec<egui::Rect> {
         let raw = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
@@ -900,6 +903,7 @@ mod tests {
     }
 
     /// The window once the pointer has rested at a place for long enough for what is there to say what it does.
+    #[cfg(unix)]
     fn rest_on(
         app: &mut App,
         ctx: &egui::Context,

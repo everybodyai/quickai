@@ -1737,16 +1737,20 @@ enum Action {
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
+    #[cfg(unix)]
     use std::time::{Duration, Instant};
 
+    #[cfg(unix)]
     use eframe::egui;
 
     use super::*;
     use crate::config::{build_registry, ConfigDirs};
+    #[cfg(unix)]
     use crate::events::ServerState;
     use crate::settings::Settings;
-    use crate::testkit::fake_ollama::FakeOllama;
-    use crate::testkit::{fake_ssh, scratch};
+    use crate::testkit::scratch;
+    #[cfg(unix)]
+    use crate::testkit::{fake_ollama::FakeOllama, fake_ssh};
 
     const GB: u64 = 1024 * 1024 * 1024;
 
@@ -1775,6 +1779,7 @@ mod tests {
     }
 
     /// Polls what a frame polls until `done`.
+    #[cfg(unix)]
     fn until(app: &mut App, ctx: &egui::Context, what: &str, done: impl Fn(&App) -> bool) {
         let deadline = Instant::now() + Duration::from_secs(30);
         while !done(app) {

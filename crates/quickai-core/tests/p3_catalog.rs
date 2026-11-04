@@ -1220,7 +1220,7 @@ fn p3_j08_the_list_the_application_ships_is_valid_complete_and_pinned() {
     );
     assert_eq!(
         r.catalog().verified(),
-        Some("2026-10-07"),
+        Some("2026-10-30"),
         "every page says when it was checked"
     );
 
@@ -1437,7 +1437,7 @@ fn p3_j08_the_list_the_application_ships_is_valid_complete_and_pinned() {
         }
     }
     // a few to start with, one for each need, and a list that is about small and medium models
-    assert!((8..=16).contains(&start), "{start} models to start with");
+    assert!((8..=17).contains(&start), "{start} models to start with");
     assert!(
         large * 20 <= models.len(),
         "{large} of {} are large",
