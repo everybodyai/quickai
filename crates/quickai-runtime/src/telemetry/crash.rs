@@ -93,7 +93,12 @@ pub fn crash_event(
         let file: String = cleaner
             .clean(file)
             .chars()
-            .map(|c| if c.is_whitespace() { '_' } else { c })
+            .map(|c| match c {
+                // the same place reads the same on Windows, whose builds write `crates\\quickai\\src\\...`
+                '\\' => '/',
+                c if c.is_whitespace() => '_',
+                c => c,
+            })
             .collect();
         event = event.with("location", format!("{file}:{line}:{column}"));
     }
@@ -259,5 +264,25 @@ mod tests {
         )
         .expect("an event");
         assert_eq!(event.fields["location"], "/opt/my_crate/src/lib.rs:1:2");
+    }
+
+    #[test]
+    fn a_location_on_windows_reads_as_it_does_on_the_other_systems() {
+        let cleaner = Cleaner::default();
+        let event = crash_event(
+            "x",
+            Some((r"crates\quickai\src\app\mod.rs", 1, 2)),
+            "worker",
+            "",
+            &CrashContext::default(),
+            0,
+            0,
+            &cleaner,
+        )
+        .expect("an event");
+        assert_eq!(
+            event.fields["location"],
+            "crates/quickai/src/app/mod.rs:1:2"
+        );
     }
 }

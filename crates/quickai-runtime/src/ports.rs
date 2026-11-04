@@ -2,7 +2,8 @@
 //! have the port (docs/remote-runs.md section 3.2: Override, and Stop it, for a program QuickAI did not start). A
 //! program of the person is asked to end, then ended. A system service (an Ollama installed as one) is stopped by its
 //! service manager through `sudo -n` when that needs no password; otherwise what stops it is said, for the person to
-//! run. `quickai-run free` does it on a computer the window set up; the window does it here.
+//! run. Only the program that is the service counts: one that merely lives inside a service is ended on its own.
+//! `quickai-run free` does it on a computer the window set up; the window does it here.
 
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -269,16 +270,37 @@ fn process_uid(pid: u32) -> Option<u32> {
         .ok()
 }
 
-/// The systemd service a process belongs to, from its control group (`/system.slice/ollama.service`); a service of
-/// the person's own session (`/user.slice/...`) is not one to stop as the administrator.
+/// The systemd service a process is: the one its control group names (`/system.slice/ollama.service`), when the
+/// process is that service's main one. A service of the person's own session (`/user.slice/...`) is not one to stop as
+/// the administrator. A program that only lives inside a service is not that service either: what a remote desktop, a
+/// notebook server or a CI runner started is in its control group, and stopping the service would end all of it.
 #[cfg(target_os = "linux")]
 fn service_of(pid: u32) -> Option<String> {
     let groups = std::fs::read_to_string(format!("/proc/{pid}/cgroup")).ok()?;
+    let unit = unit_in(&groups)?;
+    let said = output("systemctl", &["show", "--property=MainPID", &unit])?;
+    (main_pid_in(&said) == Some(pid)).then_some(unit)
+}
+
+/// The system service a process's control groups place it in.
+#[cfg(target_os = "linux")]
+fn unit_in(groups: &str) -> Option<String> {
     groups.lines().find_map(|line| {
         let path = line.rsplit(':').next()?;
         let unit = path.strip_prefix("/system.slice/")?.split('/').next()?;
         unit.ends_with(".service").then(|| unit.to_string())
     })
+}
+
+/// The main process `systemctl show --property=MainPID` says (`MainPID=1234`); 0, for a service with none, is none.
+#[cfg(target_os = "linux")]
+fn main_pid_in(said: &str) -> Option<u32> {
+    said.lines()
+        .find_map(|l| l.strip_prefix("MainPID="))?
+        .trim()
+        .parse()
+        .ok()
+        .filter(|pid| *pid != 0)
 }
 
 /// A launchd service a process belongs to, when it is one of the system's (`system/com.example.ollama`).
@@ -364,4 +386,40 @@ pub fn free_port(port: u16) -> Freed {
         ));
     }
     freed
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_service_is_named_by_its_control_group_and_a_session_or_a_container_is_not_one() {
+        assert_eq!(
+            unit_in("0::/system.slice/ollama.service\n").as_deref(),
+            Some("ollama.service")
+        );
+        assert_eq!(
+            unit_in("0::/system.slice/runner.service/job/step\n").as_deref(),
+            Some("runner.service")
+        );
+        assert_eq!(
+            unit_in("0::/user.slice/user-1000.slice/session-2.scope\n"),
+            None
+        );
+        assert_eq!(unit_in("0::/system.slice/docker-abc.scope\n"), None);
+    }
+
+    #[test]
+    fn the_main_process_of_a_service_is_read_and_none_is_none() {
+        assert_eq!(main_pid_in("MainPID=1234\n"), Some(1234));
+        assert_eq!(main_pid_in("MainPID=0\n"), None);
+        assert_eq!(main_pid_in(""), None);
+    }
+
+    /// Whatever runs the tests is not a service. Under a CI runner they live inside the runner's service, and taking
+    /// a program there for the service stopped the runner, and the job with it.
+    #[test]
+    fn a_program_inside_a_service_is_not_that_service() {
+        assert_eq!(service_of(std::process::id()), None);
+    }
 }

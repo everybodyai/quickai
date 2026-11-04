@@ -963,7 +963,12 @@ mod tests {
         assert_eq!(r.status, 200);
         assert!(r.body.lines().next().unwrap().contains("pulling manifest"));
         assert!(r.body.lines().last().unwrap().contains("success"));
-        assert_eq!(fake.model_names(), ["qwen3:4b"]);
+        // it goes into the store just after the last line went out, which the client may have read by now
+        crate::testkit::wait_until(
+            std::time::Duration::from_secs(5),
+            "the pulled model in the store",
+            || fake.model_names() == ["qwen3:4b"],
+        );
 
         fake.behave(|b| b.pull.fail = Some("pull model manifest: file does not exist".into()));
         let r = post_json(&url, &json!({"model": "nope"}));
