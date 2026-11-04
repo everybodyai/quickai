@@ -648,7 +648,13 @@ mod tests {
                 ),
             ]
         );
-        assert_eq!(short("/m/p.gguf", None), "…/p.gguf");
+        // (a path that is a whole one on this system: on Windows, `/m/p.gguf` is not)
+        let whole = if cfg!(windows) {
+            r"C:\m\p.gguf"
+        } else {
+            "/m/p.gguf"
+        };
+        assert_eq!(short(whole, None), "…/p.gguf");
         assert_eq!(short("8080", None), "8080");
         let names = Names {
             files: vec![("/m/me--r--mmproj-f16.gguf".into(), "mmproj-f16.gguf".into())],
