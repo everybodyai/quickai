@@ -902,10 +902,16 @@ fn compile_fields(c: &mut Checker, doc: &EngineDoc, known: &KnownPrimitives) -> 
         }
         if !field.bind.arg_by_value.is_empty() {
             let by_value_at = at.clone().key("bind").key("arg_by_value");
-            if field.ty != FieldType::Choice {
-                c.error(&by_value_at, "`arg_by_value` needs a choice field");
+            if !matches!(field.ty, FieldType::Choice | FieldType::Int) {
+                c.error(&by_value_at, "`arg_by_value` needs a choice or int field");
             }
             for (option, words) in &field.bind.arg_by_value {
+                if field.ty == FieldType::Int && option.parse::<i64>().is_err() {
+                    c.error(
+                        &by_value_at.clone().key(option),
+                        format!("`{option}` is not a whole number"),
+                    );
+                }
                 if field.ty == FieldType::Choice && !field.options.contains(option) {
                     c.error_hint(
                         &by_value_at.clone().key(option),
@@ -2243,6 +2249,7 @@ fn compile_launch(
                     match option
                         .names
                         .iter()
+                        .chain(&option.with)
                         .find(|n| !n.starts_with('-') || n.contains(char::is_whitespace))
                     {
                         Some(bad) => {

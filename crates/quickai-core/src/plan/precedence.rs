@@ -4,7 +4,8 @@
 //! specified multiple times" and takes the last, and one that reads an option from a variable as well lets its
 //! command line win, so a line `LLAMA_ARG_CTX_SIZE=8192` did nothing while QuickAI passed `--ctx-size`. What the
 //! person wrote is what they meant: QuickAI's option is left out, and the log says so. Only what QuickAI needs to
-//! reach the program (an option marked `keep`) stays QuickAI's, and then the person's is the one left out.
+//! reach the program (an option marked `keep`) stays QuickAI's, and then the person's is the one left out. What only
+//! means something beside an option the person took over (`with`) goes with it.
 
 use crate::doc::engine::OptionSpec;
 
@@ -107,6 +108,8 @@ pub(super) fn settle(
     let mut drop = vec![false; runs.len()];
     let mut drop_env: Vec<String> = Vec::new();
     let mut notes = Vec::new();
+    // what goes with the options the person took over
+    let mut goes_with: Vec<&str> = Vec::new();
     for (q, ours) in runs.iter().enumerate() {
         let Some(key) = ours.key.as_ref().filter(|_| !ours.person) else {
             continue;
@@ -127,6 +130,7 @@ pub(super) fn settle(
                 ));
             } else if !drop[q] {
                 drop[q] = true;
+                goes_with.extend(spec.iter().flat_map(|o| o.with.iter().map(String::as_str)));
                 notes.push(format!(
                     "Your {} takes the place of QuickAI's {what}.",
                     text(&args, theirs)
@@ -145,10 +149,28 @@ pub(super) fn settle(
                 ));
             } else if !drop[q] {
                 drop[q] = true;
+                goes_with.extend(spec.iter().flat_map(|o| o.with.iter().map(String::as_str)));
                 notes.push(format!(
                     "Your line {line} takes the place of QuickAI's {what}: the program would let the command line win."
                 ));
             }
+        }
+    }
+    for (q, ours) in runs.iter().enumerate() {
+        let goes = !ours.person
+            && !drop[q]
+            && ours.key.as_ref().is_some_and(|key| {
+                goes_with
+                    .iter()
+                    .any(|name| &option_key(name, options) == key)
+            });
+        if goes {
+            drop[q] = true;
+            notes.push(format!(
+                "QuickAI's {} ({}) is left out too: it goes with the option you set.",
+                text(&args, ours),
+                args[ours.start].origin
+            ));
         }
     }
     env.retain(|op| !drop_env.iter().any(|n| same_var(n, &op.name)));
@@ -178,6 +200,7 @@ mod tests {
             names: names.iter().map(|n| n.to_string()).collect(),
             env: env.map(str::to_string),
             keep,
+            with: Vec::new(),
         }
     }
 
@@ -331,5 +354,48 @@ mod tests {
             "--model m.gguf --ctx-size 4096 --threads 8 --flash-attn on"
         );
         assert!(s.notes.is_empty());
+    }
+
+    fn words_of(s: &Settled) -> String {
+        s.args
+            .iter()
+            .map(|a| a.value.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    #[test]
+    fn what_goes_with_an_option_goes_when_the_person_takes_that_option_over() {
+        let options = [
+            OptionSpec {
+                with: vec!["--device".into()],
+                ..option(
+                    &["--n-gpu-layers", "-ngl"],
+                    Some("LLAMA_ARG_N_GPU_LAYERS"),
+                    false,
+                )
+            },
+            option(&["--device", "-dev"], Some("LLAMA_ARG_DEVICE"), false),
+        ];
+        let ours = "--n-gpu-layers 0 --device none";
+
+        // their number of layers: nothing of "CPU only" is left to hold it back, and the log says so
+        let s = settled(ours, "-ngl 99", &[], &options);
+        assert_eq!(words_of(&s), "-ngl 99");
+        assert_eq!(s.notes.len(), 2);
+        assert!(s.notes[1].contains("--device none"), "{:?}", s.notes);
+
+        // by a line of environment as well
+        let s = settled(ours, "", &[("LLAMA_ARG_N_GPU_LAYERS", "99")], &options);
+        assert_eq!(words_of(&s), "");
+
+        // their device leaves the number where the field put it: it does not work the other way round
+        let s = settled(ours, "--device vulkan0", &[], &options);
+        assert_eq!(words_of(&s), "--n-gpu-layers 0 --device vulkan0");
+
+        // both of theirs: each takes the place of its own, and nothing is said twice
+        let s = settled(ours, "-ngl 5 -dev vulkan0", &[], &options);
+        assert_eq!(words_of(&s), "-ngl 5 -dev vulkan0");
+        assert_eq!(s.notes.len(), 2);
     }
 }

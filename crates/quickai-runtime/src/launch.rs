@@ -675,4 +675,35 @@ mod tests {
             }
         );
     }
+
+    /// CPU only means no device at all: a build with a device of its own still gives it work with no layers (an OpenVINO
+    /// build then writes nonsense). A number of layers of the person's own wins over all of it.
+    #[test]
+    fn cpu_only_uses_no_device_unless_the_person_says_how_many_layers() {
+        let registry = build_registry(&ConfigDirs::default());
+        let args_of = |extra: &str, layers: u32| {
+            let s = selection(&model(), &settings())
+                .set("llamacpp.n_gpu_layers", layers)
+                .set("llamacpp.extra_args", extra);
+            let plan = plan_selection(
+                &registry,
+                &s,
+                Path::new("/opt/llama/llama-server"),
+                MachineFacts::default(),
+                None,
+            )
+            .unwrap();
+            let quickai_core::plan::Start::Spawn(spawn) = &plan.units[0].start[0] else {
+                panic!("a spawn")
+            };
+            spawn.arg_values().join(" ")
+        };
+        assert!(args_of("", 0).contains("--n-gpu-layers 0 --device none"));
+        assert!(!args_of("", 20).contains("--device"));
+
+        let theirs = args_of("-ngl 99", 0);
+        assert!(theirs.contains("-ngl 99"), "{theirs}");
+        assert!(!theirs.contains("--device"), "{theirs}");
+        assert!(!theirs.contains("--n-gpu-layers"), "{theirs}");
+    }
 }

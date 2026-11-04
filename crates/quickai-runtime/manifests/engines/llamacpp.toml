@@ -58,7 +58,8 @@ option = [
   { names = ["--model", "-m"], env = "LLAMA_ARG_MODEL" },
   { names = ["--host"], env = "LLAMA_ARG_HOST" },
   { names = ["--ctx-size", "-c"], env = "LLAMA_ARG_CTX_SIZE" },
-  { names = ["--n-gpu-layers", "-ngl", "--gpu-layers"], env = "LLAMA_ARG_N_GPU_LAYERS" },
+  { names = ["--n-gpu-layers", "-ngl", "--gpu-layers"], env = "LLAMA_ARG_N_GPU_LAYERS", with = ["--device"] },
+  { names = ["--device", "-dev"], env = "LLAMA_ARG_DEVICE" },
   { names = ["--mmproj", "-mm"], env = "LLAMA_ARG_MMPROJ" },
   { names = ["--embeddings", "--embedding"], env = "LLAMA_ARG_EMBEDDINGS" },
   { names = ["--reranking", "--rerank"], env = "LLAMA_ARG_RERANKING" },
@@ -232,6 +233,9 @@ range = [0, 999]
 default = 999
 legacy_key = "n_gpu_layers"
 bind.arg = ["--n-gpu-layers", "${value}"]
+# No layers is not enough for no device: an OpenVINO build still gave its device some of the model's work, and wrote
+# nonsense at 0.4 tokens a second (or none at all). With no device it writes what a CPU build writes.
+bind.arg_by_value = { "0" = ["--device", "none"] }
 derive = { gpu_offload = "value > 0" }
 enabled_when = "not session.running"
 ui = { section = "primary", order = 30 }

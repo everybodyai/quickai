@@ -150,7 +150,9 @@
       "--ctx-size",
       "256",
       "--n-gpu-layers",
-      "0"
+      "0",
+      "--device",
+      "none"
     ],
     "env": [
       [
@@ -168,7 +170,7 @@
       "port": 1,
       "proxy": false
     },
-    "log_line": "$ /ROOT/bin/llama-server --model /ROOT/models/Bonsai-8B-Q1_0.gguf --host 127.0.0.1 --port 1 --ctx-size 256 --n-gpu-layers 0",
+    "log_line": "$ /ROOT/bin/llama-server --model /ROOT/models/Bonsai-8B-Q1_0.gguf --host 127.0.0.1 --port 1 --ctx-size 256 --n-gpu-layers 0 --device none",
     "name": "lowest_values",
     "program": "/ROOT/bin/llama-server",
     "server_port": 1
