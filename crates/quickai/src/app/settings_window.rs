@@ -352,10 +352,15 @@ impl App {
             ui,
             &field.label,
             Some(&format!(
-                "Tools the model can use in {}'s chat page (Open Chat UI), from servers of the Model Context Protocol.",
+                "Tools the model can use in {}'s chat page (the globe button beside the model), from servers of the Model Context Protocol.",
                 self.engine_name()
             )),
         );
+        ui.hyperlink_to(
+            "How to add and use them",
+            "https://github.com/everybodyai/quickai/blob/main/docs/mcp-servers.md",
+        );
+        ui.add_space(6.0);
         let reply = group(ui, |ui| {
             ui.add_enabled_ui(field.enabled, |ui| widgets::show(ui, &field))
                 .inner
@@ -370,9 +375,9 @@ impl App {
         ui.add_space(8.0);
         let p = theme::palette();
         for line in [
-            "They are used from the next Start. The chat page lists their tools, where each can be switched off, and the model calls them when it needs to.",
+            "They are used from the next Start, in the chat page and not in the Chat tab. The page lists their tools under + and Tools, where each can be switched off, and asks you before the model uses one.",
             "A server that is a command is started by llama-server on this computer and can do whatever its program does: add only ones you trust. One at an address is reached through QuickAI.",
-            "Commands such as npx and uvx need Node.js or uv on this computer. If a server does not start, the log says why.",
+            "Commands such as npx and uvx need Node.js or uv on this computer. If a server does not start, the Log tab says so.",
         ] {
             ui.add(egui::Label::new(egui::RichText::new(line).small().color(p.muted)).wrap());
         }
