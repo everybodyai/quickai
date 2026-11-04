@@ -2,6 +2,7 @@
 
 ## Guides
 
+- [mcp-servers.md](mcp-servers.md): give your model tools with MCP servers: how to add them, use them and fix them
 - [headless.md](headless.md): `quickai-run`, QuickAI on a server with no display
 - [configurations.md](configurations.md): save a whole setup as a file, share it, and import one safely
 - [catalog.md](catalog.md): the list of recommended models, and how to add or hide one with a document of your own

@@ -104,6 +104,14 @@ beside the chat.
 Keyboard: Ctrl+Enter starts or stops the model, Ctrl+K adds a model, Ctrl+L goes to the chat's box and Ctrl+, opens
 Settings.
 
+## Give your model tools
+
+**Settings → MCP servers** (llama.cpp) adds servers of the Model Context Protocol, which let a model read files, fetch
+web pages and more. Add one by its command or address, or paste the JSON from its instructions. Then start the model and
+open its chat page with the globe button: the tools work there, not in the **Chat** tab, and the page asks you before
+each call. [docs/mcp-servers.md](docs/mcp-servers.md) has a worked example, servers to try, and what to do when one does
+not start.
+
 ## Run models on another computer
 
 A desktop with a big graphics card, or a rented GPU server, can run the models while you use them from here:

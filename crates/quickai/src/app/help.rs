@@ -53,6 +53,7 @@ pub(super) enum HelpPage {
     ConnectApp,
     Pictures,
     Remote,
+    Tools,
     Engines,
     Configurations,
     Settings,
@@ -358,6 +359,36 @@ const PAGES: &[Page] = &[
         ],
         numbered: true,
         tip: Some("Nothing is opened to the network: QuickAI uses your own ssh and keys."),
+    },
+    Page {
+        page: HelpPage::Tools,
+        group: Group::Further,
+        icon: Icon::Plug,
+        title: "Give your model tools",
+        lead: "MCP servers let a model read your files, fetch a web page and more. They work with llama.cpp, in its \
+               chat page in your browser, and not in the Chat tab.",
+        picture: None,
+        steps: &[
+            step(
+                "Open **Settings** and choose **MCP servers**. Give the server a name and the command or address from \
+                 its instructions, then press **Add**.",
+            )
+            .does(Deed::Settings),
+            step(
+                "Start the model with {play}. If it is already running, stop it and start it again: servers are read \
+                 when it starts.",
+            ),
+            step("Press the globe button {globe} to open the chat page. Your servers' tools are under **+**, then **Tools**."),
+            step(
+                "Ask for what you need, with exact paths and addresses. When the model calls a tool, check its \
+                 **Input** and press **Allow once** or **Deny**.",
+            ),
+        ],
+        numbered: true,
+        tip: Some(
+            "A server can do whatever its program does on this computer, so add only ones you trust. If one does not \
+             work, look in the **Log** tab for a line with MCP in it.",
+        ),
     },
     Page {
         page: HelpPage::Engines,
