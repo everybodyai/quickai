@@ -461,11 +461,24 @@ impl App {
         self.remote.error = None;
         self.remote.find_wanted = true;
         self.store_remotes();
-        // what is listed is what that computer has: its own list, when it gave one
+        self.list_for_where_models_run();
+    }
+
+    /// Reads the list of models again for where they run now, as the Refresh button does: what is listed is what that
+    /// computer has.
+    fn list_for_where_models_run(&mut self) {
         self.named = Default::default();
-        self.models.clear();
         if self.lists_models() {
+            // an engine that lists its models has a list for each computer: that one's, when it gave one
+            self.models.clear();
             self.load_cached_models();
+        } else if self.remote_in_use().is_some() {
+            // the window attaches to an engine there: the folders here say nothing of what it has
+            self.models.clear();
+        } else {
+            // the folders of this computer, with the model selected still so. A computer QuickAI sets up is sent the
+            // configuration with that model, and these are the files that can be copied to it
+            self.rescan_models();
         }
     }
 
@@ -602,7 +615,8 @@ impl App {
 
     /// Forgets a computer; the models run here again when it was the one in use (not while a run uses it).
     fn remove_remote(&mut self, id: &str) {
-        if self.remote.runner.as_deref() == Some(id) {
+        let in_use = self.remote.runner.as_deref() == Some(id);
+        if in_use {
             if self.engine_locked() {
                 return;
             }
@@ -614,6 +628,9 @@ impl App {
             self.remote.detail = None;
         }
         self.store_remotes();
+        if in_use {
+            self.list_for_where_models_run();
+        }
     }
 
     /// What is known of whether the computer `id` answers: a test that passed, one that did not, or none yet (the
@@ -1948,5 +1965,83 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
                 .unwrap();
         assert!(file["values"].get("app.runner").is_none());
+    }
+
+    /// One empty model file in `folder`.
+    fn model_file(folder: &Path, name: &str) {
+        std::fs::create_dir_all(folder).unwrap();
+        std::fs::File::create(folder.join(name))
+            .unwrap()
+            .set_len(1024 * 1024)
+            .unwrap();
+    }
+
+    fn listed(app: &App) -> Vec<&str> {
+        app.models.iter().map(|m| m.filename.as_str()).collect()
+    }
+
+    fn selected(app: &App) -> Option<&str> {
+        app.models.get(app.selected).map(|m| m.filename.as_str())
+    }
+
+    /// The files of this computer stay listed with a computer QuickAI sets up chosen, with the model selected still so
+    /// (its configuration, sent there, names it), and they are read again on the way back and when that computer is
+    /// removed. They used to be gone until Refresh was pressed.
+    #[test]
+    #[cfg(feature = "remote-setup")]
+    fn the_models_here_are_listed_after_another_computer_was_chosen_left_and_removed() {
+        let dir = scratch("remote-and-back");
+        let folder = dir.join("models");
+        model_file(&folder, "alpha-Q4_K_M.gguf");
+        model_file(&folder, "beta-Q4_K_M.gguf");
+        let mut app = app_on_remote(&dir, "llamacpp", "studio.local", 11434, Path::new("ssh"));
+        app.remote.remotes[0].way = Way::SetUp;
+        app.bundled_models_dir = dir.join("bundled");
+        app.choose_runner(None);
+        assert_eq!(listed(&app), ["alpha-Q4_K_M.gguf", "beta-Q4_K_M.gguf"]);
+        app.selected = 1;
+
+        app.choose_runner(Some("studio".into()));
+        assert!(app.setup_in_use().is_some());
+        assert_eq!(listed(&app), ["alpha-Q4_K_M.gguf", "beta-Q4_K_M.gguf"]);
+        assert_eq!(selected(&app), Some("beta-Q4_K_M.gguf"));
+
+        // a file that came while another computer was shown is seen on the way back, without Refresh
+        model_file(&folder, "0-new-Q4_K_M.gguf");
+        app.choose_runner(None);
+        assert_eq!(
+            listed(&app),
+            ["0-new-Q4_K_M.gguf", "alpha-Q4_K_M.gguf", "beta-Q4_K_M.gguf"]
+        );
+        assert_eq!(selected(&app), Some("beta-Q4_K_M.gguf"));
+
+        // the computer chosen is removed: the models run here again, and the list says so
+        app.choose_runner(Some("studio".into()));
+        model_file(&folder, "1-new-Q4_K_M.gguf");
+        app.remove_remote("studio");
+        assert_eq!(app.remote.runner, None);
+        assert_eq!(listed(&app).len(), 4);
+        assert_eq!(selected(&app), Some("beta-Q4_K_M.gguf"));
+    }
+
+    /// Attached to an engine on another computer, the folders here are not what it has; back here, they are listed.
+    #[test]
+    fn the_files_here_are_not_listed_for_an_engine_attached_to_on_another_computer() {
+        let dir = scratch("remote-attach-files");
+        // (ComfyUI's own models folder: the one in the settings is llama.cpp's)
+        model_file(
+            &dir.join("data/comfyui/models/checkpoints"),
+            "alpha.safetensors",
+        );
+        let mut app = app_on_remote(&dir, "comfyui", "studio.local", 8188, Path::new("ssh"));
+        app.choose_runner(None);
+        assert_eq!(listed(&app), ["alpha.safetensors"]);
+
+        app.choose_runner(Some("studio".into()));
+        assert!(app.remote_in_use().is_some());
+        assert!(listed(&app).is_empty());
+
+        app.choose_runner(None);
+        assert_eq!(listed(&app), ["alpha.safetensors"]);
     }
 }
