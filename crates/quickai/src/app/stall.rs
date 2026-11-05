@@ -398,12 +398,18 @@ mod tests {
             "the person is told when the window is back, since until then there is no one to tell"
         );
 
-        // the window answers again: that is written, and the person is told in the log
-        heartbeat.beat(Some("an install"));
+        // the window answers again, frame after frame: that is written, and the person is told in the log.
+        // The watcher writes first and tells afterwards, so the log can be a moment behind the file; and one
+        // frame could be old by the time a watcher held up on a busy machine looks at it
         wait_until(Duration::from_secs(5), "the end of the stall", || {
+            heartbeat.beat(Some("an install"));
             std::fs::read_to_string(&record).is_ok_and(|t| t.contains("answers again after"))
         });
-        let notices = heartbeat.take_notices();
+        let mut notices = Vec::new();
+        wait_until(Duration::from_secs(5), "the person to be told", || {
+            notices.extend(heartbeat.take_notices());
+            !notices.is_empty()
+        });
         assert_eq!(notices.len(), 1, "{notices:?}");
         assert!(
             notices[0].contains("did not answer for") && notices[0].contains("ui-stalls.log"),
