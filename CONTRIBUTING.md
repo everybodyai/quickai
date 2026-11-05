@@ -32,6 +32,17 @@ cargo test --workspace
 cargo run -p quickai -- config check --strict --embedded
 ```
 
+If you add or update a dependency, write its license into [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) too. A test
+fails until you do:
+
+```bash
+cargo install cargo-about --locked --features cli   # once
+python3 scripts/licenses/generate.py
+```
+
+It stops if a library's license isn't one the project already accepts, or if it can't find a library's notice. Say so in
+your pull request, so that somebody can look at that license.
+
 ## How the code is organized
 
 - **Four crates, each with a job.** `quickai-core` is pure logic (no processes, network or files),
