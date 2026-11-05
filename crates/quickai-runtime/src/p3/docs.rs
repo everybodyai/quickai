@@ -118,6 +118,36 @@ fn p3_x02_the_licences_say_ollama_is_mit_and_is_not_part_of_the_package() {
 }
 
 #[test]
+fn the_licenses_list_the_libraries_of_cargo_lock() {
+    use sha2::{Digest, Sha256};
+
+    let lock = text("Cargo.lock");
+    let mut libraries: Vec<String> = lock
+        .split("[[package]]")
+        .skip(1)
+        .filter_map(|entry| {
+            let field = |key: &str| {
+                entry.lines().find_map(|line| {
+                    line.strip_prefix(key)?
+                        .strip_prefix(" = \"")?
+                        .strip_suffix('"')
+                })
+            };
+            // QuickAI's own crates have no source, and their versions change with every release
+            field("source")?;
+            Some(format!("{} {}", field("name")?, field("version")?))
+        })
+        .collect();
+    libraries.sort();
+    let fingerprint = format!("{:x}", Sha256::digest(libraries.join("\n")));
+    assert!(
+        text("THIRD_PARTY_LICENSES.md").contains(&format!("from Cargo.lock {fingerprint}")),
+        "the libraries in Cargo.lock are not the ones THIRD_PARTY_LICENSES.md lists: \
+         run python3 scripts/licenses/generate.py (see CONTRIBUTING.md)"
+    );
+}
+
+#[test]
 fn p3_x04_every_host_an_engine_document_declares_is_named_in_the_privacy_text() {
     let privacy = text("PRIVACY.md");
     let registry = build_registry(&ConfigDirs::default());

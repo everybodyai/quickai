@@ -157,8 +157,8 @@ impl App {
                         ui.add_space(4.0);
                         ui.label(
                             egui::RichText::new(
-                                "Full license texts for all three are in LICENSE and \
-                             THIRD_PARTY_LICENSES.md next to this app.",
+                                "Full license texts for these, and for the Rust libraries this app is \
+                             built from, are in LICENSE and THIRD_PARTY_LICENSES.md next to this app.",
                             )
                             .small()
                             .color(theme::palette().muted),

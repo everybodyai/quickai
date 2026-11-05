@@ -33,7 +33,8 @@ Write to **hello@everybodyai.dev**, or use the form at
 A commercial license covers QuickAI's own code. Everything else keeps its own license, as listed in
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md):
 
-- **Bundled:** llama.cpp's `llama-server` (MIT) and the Bonsai 8B and 1.7B weights (Apache-2.0).
+- **Bundled:** llama.cpp's `llama-server` (MIT), the Bonsai 2 4B weights (Apache-2.0), the IBM Plex typefaces (OFL-1.1)
+  and the open-source Rust libraries the programs are built from (mostly MIT or Apache-2.0).
 - **Downloaded only when you ask:** Ollama (MIT), ComfyUI (GPL-3.0) and Open WebUI (its own license).
 - **Models you download:** each comes with its own license, and some do not allow commercial use or exclude
   some regions. Check a model's license before using it at work. The Recommended list shows each model's license.
