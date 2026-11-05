@@ -140,9 +140,6 @@ def blocks_of(data, packages):
             package = packages[use["crate"]["id"]]
             if package["name"] in OWN_CRATES:
                 continue
-            # the crate's own notice is in its LICENSE.txt; this is the blank form the KDE protocols' folder keeps
-            if package["name"] == "wayland-protocols-plasma" and PLACEHOLDER.search(text):
-                continue
             # ring's own files repeat, year by year, the notice its LICENSE-other-bits gives for all of them
             if package["name"] == "ring" and license["id"] == "ISC" and re.match(r"(//|/\*) *Copyright [\d-]+ Brian Smith", text):
                 continue
@@ -168,30 +165,27 @@ def by_name(package):
     return (package["name"], [int(part) if part.isdigit() else 0 for part in re.split(r"[.+-]", package["version"])])
 
 
-def plasma_section(by_crate_name):
-    package = by_crate_name["wayland-protocols-plasma"]
-    protocols = crate_dir(package) / "plasma-wayland-protocols"
-    winit = crate_dir(by_crate_name["winit"])
-    used = set()
-    for path in (winit / "src").rglob("*.rs"):
-        used.update(re.findall(r"wayland_protocols_plasma::(\w+)", path.read_text(errors="replace")))
-    if used != {"blur"}:
-        sys.exit(f"winit now uses these KDE protocols: {sorted(used)}. Read their licenses and change this section.")
-    blur = (protocols / "src/protocols/blur.xml").read_text()
-    notice = re.search(r"<!\[CDATA\[(.*?)\]\]>", blur, re.S)
-    if "LGPL-2.1-or-later" not in notice.group(1):
-        sys.exit("blur.xml's license has changed: read it and change this section.")
+def winit_section(packages, by_crate_name, lock_text):
+    """QuickAI's copy of winit leaves out KDE's blur protocol, so that no protocol under the LGPL reaches the programs.
+    Stops if one is on its way back in: see vendor/README.md."""
+    if 'name = "wayland-protocols-plasma"' in lock_text:
+        sys.exit("wayland-protocols-plasma is back in Cargo.lock, and its protocols are mostly LGPL: see vendor/README.md.")
+    for package in packages.values():
+        if {"wayland-protocols-misc", "smithay-client-toolkit"} & {dep["name"] for dep in package["dependencies"]}:
+            for path in (crate_dir(package) / "src").rglob("*.rs"):
+                if "server_decoration" in path.read_text(errors="replace"):
+                    sys.exit(f"{package['name']} now uses KDE's server-decoration protocol, which is under the LGPL: read {path}.")
+    winit = by_crate_name["winit"]
     return (
-        "### Code generated from a KDE protocol\n\n"
-        f"[wayland-protocols-plasma {package['version']}](https://crates.io/crates/wayland-protocols-plasma/{package['version']}) "
-        "is under the MIT License, below, and holds KDE's description of the Wayland protocols of its desktop, some of "
-        "them under other licenses. The window program for Linux contains code generated from one of them, `blur.xml`, "
-        "which winit includes to offer windows a blurred background; QuickAI does not ask for one. The source of that "
-        "library is at the link above, and QuickAI's at https://github.com/everybodyai/quickai. The notice of that "
-        "file, and the license it names:\n\n"
-        + fenced(tidy(notice.group(1)))
-        + "\n\n"
-        + fenced(tidy((protocols / "LICENSES/LGPL-2.1-or-later.txt").read_text()))
+        "### winit, changed for QuickAI\n\n"
+        f"The programs use {named(winit)}, under the Apache License 2.0, with one change: the code for KDE's window blur "
+        "protocol is taken out, because QuickAI never asks for a blurred window. The changed copy is in `vendor/winit` of "
+        "[QuickAI's source](https://github.com/everybodyai/quickai), and `vendor/README.md` there says what was changed.\n\n"
+        "Releases up to 0.2.3 use winit unchanged. Their window program for Linux contains code generated from `blur.xml`, "
+        "KDE's description of that protocol, © 2015 Martin Gräßlin and 2015 Marco Martin, under the "
+        "[GNU Lesser General Public License 2.1 or later](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html), which "
+        "reaches winit through [wayland-protocols-plasma](https://crates.io/crates/wayland-protocols-plasma), a library "
+        "under the MIT License. Later releases do not contain it."
     )
 
 
@@ -233,7 +227,7 @@ def generated(lock_text):
         STANDARD_LIBRARY,
         WINDOWS_RUNTIME,
         fenced(tidy((HERE / "mingw-w64-copyright.txt").read_text())),
-        plasma_section(by_crate_name),
+        winit_section(packages, by_crate_name, lock_text),
         further_notices_section(by_crate_name),
     ]
     for license in order:

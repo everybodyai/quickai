@@ -1,3 +1,4 @@
+// Changed for QuickAI, 2026-11-05: KDE's blur protocol is taken out. See vendor/README.md in QuickAI's source.
 //! The state of the window, which is shared with the event-loop.
 
 use std::num::NonZeroU32;
@@ -28,14 +29,12 @@ use sctk::shell::WaylandSurface;
 use sctk::shm::slot::SlotPool;
 use sctk::shm::Shm;
 use sctk::subcompositor::SubcompositorState;
-use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
 
 use crate::cursor::CustomCursor as RootCustomCursor;
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Size};
 use crate::error::{ExternalError, NotSupportedError};
 use crate::platform_impl::wayland::logical_to_physical_rounded;
 use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor};
-use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::{PlatformCustomCursor, WindowId};
 use crate::window::{CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme};
 
@@ -143,8 +142,6 @@ pub struct WindowState {
 
     viewport: Option<WpViewport>,
     fractional_scale: Option<WpFractionalScaleV1>,
-    blur: Option<OrgKdeKwinBlur>,
-    blur_manager: Option<KWinBlurManager>,
 
     /// Whether the client side decorations have pending move operations.
     ///
@@ -184,8 +181,6 @@ impl WindowState {
             .map(|fsm| fsm.fractional_scaling(window.wl_surface(), queue_handle));
 
         Self {
-            blur: None,
-            blur_manager: winit_state.kwin_blur_manager.clone(),
             compositor,
             connection,
             csd_fails: false,
@@ -1080,17 +1075,8 @@ impl WindowState {
     /// Make window background blurred
     #[inline]
     pub fn set_blur(&mut self, blurred: bool) {
-        if blurred && self.blur.is_none() {
-            if let Some(blur_manager) = self.blur_manager.as_ref() {
-                let blur = blur_manager.blur(self.window.wl_surface(), &self.queue_handle);
-                blur.commit();
-                self.blur = Some(blur);
-            } else {
-                info!("Blur manager unavailable, unable to change blur")
-            }
-        } else if !blurred && self.blur.is_some() {
-            self.blur_manager.as_ref().unwrap().unset(self.window.wl_surface());
-            self.blur.take().unwrap().release();
+        if blurred {
+            info!("QuickAI's winit has no blur protocol, unable to change blur")
         }
     }
 
@@ -1149,9 +1135,6 @@ impl WindowState {
 
 impl Drop for WindowState {
     fn drop(&mut self) {
-        if let Some(blur) = self.blur.take() {
-            blur.release();
-        }
 
         if let Some(fs) = self.fractional_scale.take() {
             fs.destroy();

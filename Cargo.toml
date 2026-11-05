@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/quickai", "crates/quickai-core", "crates/quickai-runtime", "crates/quickai-run"]
+# A changed copy of a library, not a part of QuickAI: its code is not checked or tested as ours is
+exclude = ["vendor/winit"]
 
 [workspace.package]
 version = "0.2.3"
@@ -12,3 +14,7 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = "symbols"
+
+# winit without KDE's blur protocol, which is under the LGPL: see vendor/README.md
+[patch.crates-io]
+winit = { path = "vendor/winit" }
