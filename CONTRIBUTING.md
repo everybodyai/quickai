@@ -43,6 +43,9 @@ python3 scripts/licenses/generate.py
 It stops if a library's license isn't one the project already accepts, or if it can't find a library's notice. Say so in
 your pull request, so that somebody can look at that license.
 
+`vendor/winit` is a changed copy of winit, without KDE's blur protocol: `vendor/README.md` says what was done, why, and
+what to do when eframe moves to a newer winit. The generator stops if what it took out comes back.
+
 ## How the code is organized
 
 - **Four crates, each with a job.** `quickai-core` is pure logic (no processes, network or files),
