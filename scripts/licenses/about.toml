@@ -1,6 +1,6 @@
 # What cargo-about reads for generate.py. The order of `accepted` is the order of preference: a library that offers a
 # choice is taken under the first of these it offers. A library under anything not listed stops the generator, so a new
-# kind of license is something somebody looks at. QuickAI's own crates are here to be recognised; generate.py leaves
+# kind of license is something somebody looks at. QuickAI's own crates are MIT, the first of them; generate.py leaves
 # them out.
 accepted = [
     "MIT",
@@ -18,7 +18,6 @@ accepted = [
     "CDLA-Permissive-2.0",
     "OFL-1.1",
     "Ubuntu-font-1.0",
-    "PolyForm-Noncommercial-1.0.0",
 ]
 
 # What the packages are built for: build/common.sh and build/windows.bat for Linux and Windows, build/macos.sh for macOS.

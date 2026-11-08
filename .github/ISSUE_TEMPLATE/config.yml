@@ -3,6 +3,6 @@ contact_links:
   - name: Report a security vulnerability
     url: https://github.com/everybodyai/quickai/security/advisories/new
     about: Please report security problems privately, not as an issue.
-  - name: Commercial licensing
-    url: https://everybodyai.dev/licensing
-    about: Using QuickAI in or for a business? See how licensing works.
+  - name: Help for organizations
+    url: https://everybodyai.dev/organizations
+    about: Deploying QuickAI in an organization? Paid help with deployment and support.

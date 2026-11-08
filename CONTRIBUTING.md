@@ -8,12 +8,10 @@ Thank you for helping. Bug reports, ideas, documentation and code are all welcom
 - **Found a security problem?** Report it privately, as [SECURITY.md](SECURITY.md) describes.
 - **Planning a larger change?** Open an issue first, so we can agree on the approach before you put in the work.
 
-## Contributor License Agreement
+## License of contributions
 
-QuickAI is offered under the PolyForm Noncommercial License and under commercial licenses
-([COMMERCIAL.md](COMMERCIAL.md)). To keep offering both, contributions are accepted under a
-[Contributor License Agreement](CLA.md). You keep the copyright of your work. Tick the box in the pull request
-template to agree.
+QuickAI is under the [MIT License](LICENSE). What you contribute is licensed under it too, the same as the rest of
+the code, and you keep the copyright of your work. Tick the box in the pull request template to agree.
 
 ## Building and testing
 

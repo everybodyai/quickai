@@ -1,6 +1,6 @@
 # Third-party licenses
 
-QuickAI's own source code is licensed under the PolyForm Noncommercial License 1.0.0 (see `LICENSE`). This package also
+QuickAI's own source code is licensed under the MIT License (see `LICENSE`). This package also
 contains things that are licensed separately from QuickAI itself and keep
 their own license terms, reproduced in full below:
 

@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/everybodyai/quickai/actions/workflows/ci.yml"><img src="https://github.com/everybodyai/quickai/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-246E37" alt="License: PolyForm Noncommercial 1.0.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-246E37" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-0E1611" alt="Platforms: Linux, macOS and Windows">
 </p>
 
@@ -18,8 +18,7 @@
   <a href="https://everybodyai.dev/quickai">Website</a> ·
   <a href="#install">Install</a> ·
   <a href="#quick-start">Quick start</a> ·
-  <a href="docs/README.md">Docs</a> ·
-  <a href="COMMERCIAL.md">Commercial use</a>
+  <a href="docs/README.md">Docs</a>
 </p>
 
 <p align="center">
@@ -193,10 +192,9 @@ the layout of the code, and the checks CI runs.
 
 ## License
 
-QuickAI is **free for personal and other noncommercial use** under the
-[PolyForm Noncommercial License 1.0.0](LICENSE). That includes learning, hobby projects, research, charities,
-schools and public institutions. **Using QuickAI in or for a business needs a commercial license.** See
-[COMMERCIAL.md](COMMERCIAL.md).
+QuickAI is open source under the [MIT License](LICENSE): free to use for anything, at home or at work, and free
+to change and share. Organizations that want help deploying it can get paid help and support from EverybodyAI:
+see [everybodyai.dev/organizations](https://everybodyai.dev/organizations).
 
 The components QuickAI bundles or downloads keep their own licenses ([THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)),
 and each model you download comes with its own license, too.
@@ -204,7 +202,7 @@ and each model you download comes with its own license, too.
 ## Contributing
 
 Bug reports, ideas and pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
-Contributions are accepted under a [Contributor License Agreement](CLA.md), and everyone is asked to follow the
+Contributions are accepted under the MIT License, the same as the code, and everyone is asked to follow the
 [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately, as described in [SECURITY.md](SECURITY.md).
 
 ---

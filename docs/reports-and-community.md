@@ -76,7 +76,7 @@ Not asked, but needed for it to work or to be lawful:
 2. **Access and deletion without accounts**, by the install id, from the app (§12).
 3. **Switches on the server.** They stop collecting a level, or stop an old version from sending, without a release
    (§9).
-4. **Off for good** for packagers (AUR, Snap, Homebrew), organizations under the commercial licence, and `quickai-run`
+4. **Off for good** for packagers (AUR, Snap, Homebrew), organizations, and `quickai-run`
    on servers (§5.4).
 5. **Symbols.** Release builds strip symbols today (`strip = "symbols"`), so a backtrace is only addresses. They should
    keep function names (§7.5).
@@ -833,7 +833,6 @@ All of these land in, or before, the first release that can send anything:
 | `docs/configurations.md` | §8's "Provenance is not claimed" points to §11 here; `[meta] community` in §3 |
 | `docs/reference/telemetry-events.md` | new, generated (§5.3) |
 | store listings | the Microsoft Store and Snap Store data declarations and privacy links |
-| `COMMERCIAL.md` | organizations can switch telemetry off for good (§5.4), and telemetry is never used to check a licence |
 
 **The law, to be confirmed by a lawyer.** This is not legal advice. Consent is the basis, which is why nothing is sent
 until the notice is answered. Under the GDPR and the UK GDPR, consent has to be free, informed, specific and as easy to
@@ -964,7 +963,7 @@ One feature in the plan's numbering, WP4.42, in parts like WP4.17. Each part lan
 | 4.42.4 | **Sending from the app**: ids, queue, sender, levels, the notice, Settings → Privacy, the telemetry log, the ways off, `quickai-run` | public | L | 4.42.2 | RP runtime tests, GUI cases, network audit |
 | 4.42.5 | **Crashes and errors**: the hook, the marker, engine exits and the other error events, the crash window at Off, Report a problem | public | M | 4.42.4 | RP tests, GUI cases |
 | 4.42.6 | **The admin**: Access, overview, systems, engines and models, features, errors, crashes, versions, installs and blocks, switches, site, audit | services | L | 4.42.3 | Worker tests, Playwright |
-| 4.42.7 | **The words**: PRIVACY.md, the site's policy, SECURITY.md, About, Help, README, COMMERCIAL.md, store listings; a lawyer's review | public, everybodyai, base | S | before the release of 4.42.4 | TC-ABT cases, a read-through |
+| 4.42.7 | **The words**: PRIVACY.md, the site's policy, SECURITY.md, About, Help, README, store listings; a lawyer's review | public, everybodyai, base | S | before the release of 4.42.4 | TC-ABT cases, a read-through |
 | | *the first release that can send: telemetry levels and crash reports* | | | | |
 | 4.42.8 | **One copy of each**: the canonical form and the identity in `quickai-core`; `identity = false` on the engine documents' ports and `aliases` of their flags (and the generated reference pages); `quickai configuration identity <file>` | public | M | 4.42.2 | CM canonical tests, shared vectors |
 | 4.42.9 | **The community's back end**: accounts, configurations, versions, the checks (S-R1), duplicates, moderation, the list | services | L | 4.42.3, 4.42.8, S-R1 | Worker tests incl. hostile files and duplicates |

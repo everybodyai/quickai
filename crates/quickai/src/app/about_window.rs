@@ -128,10 +128,8 @@ impl App {
 
                         ui.label(egui::RichText::new("License").strong());
                         ui.label(
-                            "QuickAI's own source code is licensed under the PolyForm Noncommercial \
-                         License 1.0.0: free for personal use, study and research, and for \
-                         charities, schools and public institutions. Using it in or for a business \
-                         needs a commercial license: see quickai.everybodyai.dev/commercial.",
+                            "QuickAI's own source code is licensed under the MIT License: free to \
+                         use for any purpose, at home or at work, and free to change and share.",
                         );
                         ui.add_space(4.0);
                         ui.label(
