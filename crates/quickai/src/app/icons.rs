@@ -742,6 +742,49 @@ pub(super) fn menu_item(
     .inner
 }
 
+/// An item of a menu with the key that does the same at its right end (`Ctrl+,`), or none (`""`); `icon` may be none,
+/// and the words keep their place either way.
+pub(super) fn menu_item_keyed(
+    ui: &mut egui::Ui,
+    icon: Option<Icon>,
+    text: &str,
+    key: &str,
+) -> egui::Response {
+    let p = theme::palette();
+    let width = ui.available_width();
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 30.0), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        if response.hovered() {
+            ui.painter().rect_filled(rect, 5.0, p.raised_hover);
+        }
+        let color = if response.hovered() { p.text } else { p.body };
+        let square = Rect::from_min_size(
+            Pos2::new(rect.left() + 8.0, rect.center().y - 7.0),
+            egui::vec2(14.0, 14.0),
+        );
+        if let Some(icon) = icon {
+            paint(ui.painter(), square, icon, color);
+        }
+        ui.painter().text(
+            Pos2::new(square.right() + 10.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            text,
+            egui::TextStyle::Button.resolve(ui.style()),
+            color,
+        );
+        if !key.is_empty() {
+            ui.painter().text(
+                Pos2::new(rect.right() - 8.0, rect.center().y),
+                egui::Align2::RIGHT_CENTER,
+                key,
+                egui::TextStyle::Small.resolve(ui.style()),
+                p.faint,
+            );
+        }
+    }
+    response
+}
+
 /// A copy button: a picture of two sheets, a tick for a moment once it has copied `text`. `salt` tells it from the
 /// other copy buttons of the window.
 pub(super) fn copy_button(ui: &mut egui::Ui, salt: &str, text: &str) {

@@ -34,7 +34,7 @@ impl App {
     }
 
     /// Why the engine cannot be changed now, when it cannot.
-    fn engine_lock_reason(&self) -> Option<&'static str> {
+    pub(super) fn engine_lock_reason(&self) -> Option<&'static str> {
         if !self.engine_locked() {
             None
         } else if self.session.is_active() {
@@ -66,60 +66,45 @@ impl App {
         .is_file()
     }
 
-    /// The engine's menu at the right of the menu bar: its name and a chevron, with no label (it says "Engine" when the
-    /// pointer rests on it). Each engine of the menu says whether it is ready; Manage engines opens Settings.
-    pub(super) fn show_engine_dropdown(&mut self, ui: &mut egui::Ui) {
-        let engines = self.engine_choices();
-        if engines.len() < 2 {
-            return;
+    /// The items of the engine's menu (the sidebar's engine row, C203): each engine with whether it is ready, and Manage
+    /// engines, which opens Settings. What was chosen comes back.
+    pub(super) fn engine_menu_items(&mut self, ui: &mut egui::Ui) -> Option<EngineChoice> {
+        let mut chosen = None;
+        for (id, name, summary) in self.engine_choices() {
+            let on = id == self.engine;
+            let ready = self.engine_ready(&id);
+            let said = match (on, ready) {
+                (true, true) => "In use",
+                (true, false) => "In use · Not installed",
+                (false, true) => "Ready",
+                (false, false) => "Not installed",
+            };
+            let row = engine_row(ui, &name, said, on, ready);
+            let row = if summary.is_empty() {
+                row
+            } else {
+                row.on_hover_text(summary.as_str())
+            };
+            if row.clicked() && !on {
+                chosen = Some(EngineChoice::Engine(id));
+            }
         }
-        let lock = self.engine_lock_reason();
-        let name = self.engine_name();
-        let button = engine_button(ui, &name, lock.is_none());
-        super::help::mark_spot(ui, super::help::Spot::EngineMenu, button.rect);
-        let button = match lock {
-            Some(why) => button.on_hover_text(format!("Engine. {why}")),
-            None => button.on_hover_text(
-                "Engine: the program that runs the models. Each keeps its own models and settings.",
-            ),
-        };
-        let mut picked: Option<String> = None;
-        let mut manage = false;
-        egui::Popup::menu(&button)
-            .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
-            .width(260.0)
-            .show(|ui| {
-                ui.set_width(260.0);
-                for (id, name, summary) in &engines {
-                    let on = *id == self.engine;
-                    let ready = self.engine_ready(id);
-                    let said = match (on, ready) {
-                        (true, true) => "In use",
-                        (true, false) => "In use · Not installed",
-                        (false, true) => "Ready",
-                        (false, false) => "Not installed",
-                    };
-                    let row = engine_row(ui, name, said, on, ready);
-                    let row = if summary.is_empty() {
-                        row
-                    } else {
-                        row.on_hover_text(summary.as_str())
-                    };
-                    if row.clicked() && !on {
-                        picked = Some(id.clone());
-                    }
-                }
-                ui.separator();
-                if ui.button("Manage engines…").clicked() {
-                    manage = true;
-                }
-            });
-        if let Some(id) = picked {
-            self.switch_engine(&id);
+        ui.separator();
+        if ui.button("Manage engines…").clicked() {
+            chosen = Some(EngineChoice::Manage);
         }
-        if manage {
-            self.advanced_section_wanted = true;
-            self.open_settings();
+        chosen
+    }
+
+    /// Does what the engine's menu was asked to.
+    pub(super) fn do_engine_choice(&mut self, chosen: Option<EngineChoice>) {
+        match chosen {
+            Some(EngineChoice::Engine(id)) => self.switch_engine(&id),
+            Some(EngineChoice::Manage) => {
+                self.advanced_section_wanted = true;
+                self.open_settings();
+            }
+            None => {}
         }
     }
 
@@ -336,38 +321,12 @@ impl App {
     }
 }
 
-/// The button of the engine's menu: the name of the engine in use and a chevron, on a raised ground.
-fn engine_button(ui: &mut egui::Ui, name: &str, enabled: bool) -> egui::Response {
-    let p = theme::palette();
-    let font = egui::TextStyle::Button.resolve(ui.style());
-    let color = if enabled { p.text } else { p.faint };
-    let galley = ui.painter().layout_no_wrap(name.to_string(), font, color);
-    let size = egui::vec2(galley.size().x + 40.0, 26.0);
-    let sense = if enabled {
-        egui::Sense::click()
-    } else {
-        egui::Sense::hover()
-    };
-    let (rect, response) = ui.allocate_exact_size(size, sense);
-    if ui.is_rect_visible(rect) {
-        let fill = if response.hovered() && enabled {
-            p.raised_hover
-        } else {
-            p.raised
-        };
-        ui.painter().rect_filled(rect, 6.0, fill);
-        ui.painter().galley(
-            egui::pos2(rect.left() + 11.0, rect.center().y - galley.size().y / 2.0),
-            galley,
-            color,
-        );
-        let chevron = egui::Rect::from_min_size(
-            egui::pos2(rect.right() - 22.0, rect.center().y - 6.0),
-            egui::vec2(12.0, 12.0),
-        );
-        super::icons::paint(ui.painter(), chevron, super::icons::Icon::Chevron, p.muted);
-    }
-    response
+/// What the engine's menu was asked to do.
+pub(super) enum EngineChoice {
+    /// Switch to this engine.
+    Engine(String),
+    /// Open Settings at the engine's builds.
+    Manage,
 }
 
 /// One engine of the menu: a tick when it is the one in use, its name, and under it whether it is ready.

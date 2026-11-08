@@ -7,7 +7,6 @@
 
 use eframe::egui;
 
-use crate::events::ServerState;
 use crate::run_file::RunStep;
 
 use super::icons::{self, Icon};
@@ -49,7 +48,7 @@ impl App {
                     })
                     .show(ui, |ui| self.show_remote_head(ui));
             });
-        self.show_tabs(ui);
+        self.show_page_body(ui);
     }
 
     /// The head: the name, what the run is doing, the buttons, the computer, and the steps or the addresses.
@@ -213,45 +212,6 @@ impl App {
         if let Some(url) = page.filter(|_| pressed.page) {
             let _ = webbrowser::open(&url);
         }
-    }
-}
-
-impl App {
-    /// What the status bar says of the run on the computer QuickAI set up that is shown: its state as a server's, and
-    /// in words. `None` when this computer, or one the window attaches to, is shown.
-    pub(super) fn remote_run_status(&self) -> Option<(ServerState, String)> {
-        let spec = self.setup_in_use()?;
-        let run = self.setup_run();
-        let configuration = run
-            .map(|r| r.configuration.clone())
-            .filter(|c| !c.is_empty())
-            .unwrap_or_else(|| self.selected_configuration_name());
-        let said = match run {
-            Some(r) if r.running() => {
-                let api = r
-                    .endpoint("api")
-                    .map(|e| format!(" · {}", e.url))
-                    .unwrap_or_default();
-                (
-                    ServerState::Running,
-                    format!("Running · \"{configuration}\" on {}{api}", spec.name),
-                )
-            }
-            Some(r) if r.working() && r.doing.starts_with("Stopping") => (
-                ServerState::Stopping,
-                format!("Stopping \"{configuration}\" on {}", spec.name),
-            ),
-            Some(r) if r.working() => (
-                ServerState::Starting,
-                format!("Getting ready · \"{configuration}\" on {}", spec.name),
-            ),
-            Some(r) if r.failed.is_some() => (
-                ServerState::Crashed,
-                format!("Stopped · \"{configuration}\" on {}", spec.name),
-            ),
-            _ => (ServerState::Idle, format!("Nothing runs on {}", spec.name)),
-        };
-        Some(said)
     }
 }
 

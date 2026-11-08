@@ -69,7 +69,7 @@ impl App {
     fn show_llamacpp_crash_panel(&mut self, ui: &mut egui::Ui, _state: ServerState) {
         let mut builds = false;
         theme::alert(ui, Tone::Bad, |ui| {
-            ui.label("llama-server stopped before it was ready. The Log tab says why.");
+            ui.label("llama-server stopped before it was ready. The log under the page says why.");
             let path = self.binary.display().to_string();
             let backend = self
                 .registry
@@ -146,7 +146,7 @@ impl App {
         let mut asked: Option<String> = None;
         let mut use_port: Option<(String, u16)> = None;
         theme::alert(ui, Tone::Bad, |ui| {
-            ui.label(format!("{what}. The Log tab says why."));
+            ui.label(format!("{what}. The log under the page says why."));
             for Advice { text, action } in &hints {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(text).small());

@@ -209,14 +209,14 @@ const PAGES: &[Page] = &[
         }),
         steps: &[
             step(
-                "Choose an **engine** at the top right. llama.cpp is ready to use; Ollama and ComfyUI install with \
-                 one click.",
+                "Choose an **engine** under **This computer**, at the top of the sidebar. llama.cpp is ready to use; \
+                 Ollama and ComfyUI install with one click.",
             )
             .at(Spot::EngineMenu),
-            step("**Add a model** with the button at the top of the list. The suggestions suit this computer.")
+            step("**Add a model** with the {plus} beside **MODELS**. The suggestions suit this computer.")
                 .at(Spot::AddModel)
                 .does(Deed::AddModel),
-            step("Press the play button {play} beside the model's name, then type a message under **Chat**.")
+            step("Press **Start** in the bar over the page, then type a message in the box at the bottom.")
                 .at(Spot::Play),
         ],
         numbered: true,
@@ -234,7 +234,7 @@ const PAGES: &[Page] = &[
             ring: Some([681.0, 165.0, 24.0, 24.0]),
         }),
         steps: &[
-            step("Press **Add a model** at the top of the list, or Ctrl+K.")
+            step("Press {plus} beside **MODELS**, then **Add a model…**, or Ctrl+K.")
                 .at(Spot::AddModel)
                 .does(Deed::AddModel),
             step(
@@ -250,7 +250,7 @@ const PAGES: &[Page] = &[
                 "Or find one yourself: **Hugging Face** under the list opens its page of models in the browser. Paste \
                  the link of the one you choose in the box.",
             ),
-            step("**Recommended…** in the Models menu has the whole list QuickAI checked, by kind and size.")
+            step("**Recommended** in the sidebar has the whole list QuickAI checked, by kind and size.")
                 .does(Deed::Recommended),
         ],
         numbered: true,
@@ -270,14 +270,14 @@ const PAGES: &[Page] = &[
             ring: None,
         }),
         steps: &[
-            step("Start the model with the play button {play}.").at(Spot::Play),
+            step("Start the model with **Start**, in the bar over the page.").at(Spot::Play),
             step("Type in the box at the bottom. **Enter** sends; **Shift+Enter** starts a new line.").at(Spot::ChatBox),
             step("The paper clip {clip} adds a picture, for a model that sees them, or a text file to read.")
                 .at(Spot::Clip),
             step("Under each answer: **Copy**, **Regenerate**, and how fast it came."),
             step(
-                "The {more} beside **New chat**: keep chats on this computer, set instructions and how free the \
-                 answers are, or save a chat as a file.",
+                "The {more} at the right end of the bar: keep chats on this computer, set instructions and how free \
+                 the answers are, or save a chat as a file. The {pencil} beside it starts a new chat.",
             )
             .at(Spot::ChatMenu),
         ],
@@ -297,11 +297,14 @@ const PAGES: &[Page] = &[
             ring: Some([667.0, 6.0, 32.0, 32.0]),
         }),
         steps: &[
-            step("Press **Connect an app**, the plug button {plug} beside the model's name. It shows once the model runs.")
-                .at(Spot::Plug),
+            step(
+                "Start the model: the panel at the right of the page becomes **Connect an app**. The {panel} of the \
+                 bar shows and hides it.",
+            )
+            .at(Spot::Plug),
             step("Copy the **Address** into the other app. It may call it the base URL or the endpoint."),
             step("Copy the **Model** name too. Type anything as the **API key**, or leave it blank."),
-            step("The globe button {globe} beside it opens a chat in your browser, when the engine has one."),
+            step("**Open Chat UI** {globe} under it opens a chat in your browser, when the engine has one."),
         ],
         numbered: true,
         tip: Some(
@@ -321,13 +324,13 @@ const PAGES: &[Page] = &[
             ring: None,
         }),
         steps: &[
-            step("Open the engine menu at the top right.").at(Spot::EngineMenu),
+            step("Open the engine menu under **This computer**, at the top of the sidebar.").at(Spot::EngineMenu),
             step(
                 "Choose **ComfyUI**. The first time, it installs with one click: about 17 GB, most of it the \
                  library it computes with.",
             ),
             step("Get a model: **Recommended** lists the ones QuickAI checked, **Look up online** searches for more."),
-            step("Press the play button {play}, then **Open ComfyUI**: its page opens in your browser."),
+            step("Press **Start**, then **Open ComfyUI**: its page opens in your browser."),
             step("The **Download** button of that page puts a model straight into QuickAI's models folder."),
         ],
         numbered: true,
@@ -350,7 +353,7 @@ const PAGES: &[Page] = &[
                  with ssh from here.",
             ),
             step(
-                "Click **This computer** at the top of the list of models, then **Add a computer…**, and add it \
+                "Click **This computer** at the top of the sidebar, then **Add a computer…**, and add it \
                  by its SSH address (user@host, or a Host of your SSH config). QuickAI tests it and says what to do about \
                  anything that fails.",
             )
@@ -366,19 +369,19 @@ const PAGES: &[Page] = &[
         icon: Icon::Plug,
         title: "Give your model tools",
         lead: "MCP servers let a model read your files, fetch a web page and more. They work with llama.cpp, in its \
-               chat page in your browser, and not in the Chat tab.",
+               chat page in your browser, and not in QuickAI's own chat yet.",
         picture: None,
         steps: &[
             step(
-                "Open **Settings** and choose **MCP servers**. Give the server a name and the command or address from \
-                 its instructions, then press **Add**.",
+                "Press **MCP servers** in the sidebar. Give the server a name and the command or address from its \
+                 instructions, then press **Add**.",
             )
             .does(Deed::Settings),
             step(
-                "Start the model with {play}. If it is already running, stop it and start it again: servers are read \
+                "Start the model with **Start**. If it is already running, stop it and start it again: servers are read \
                  when it starts.",
             ),
-            step("Press the globe button {globe} to open the chat page. Your servers' tools are under **+**, then **Tools**."),
+            step("Press **Open Chat UI** {globe} in the panel at the right. Your servers' tools are under **+**, then **Tools**."),
             step(
                 "Ask for what you need, with exact paths and addresses. When the model calls a tool, check its \
                  **Input** and press **Allow once** or **Deny**.",
@@ -387,7 +390,7 @@ const PAGES: &[Page] = &[
         numbered: true,
         tip: Some(
             "A server can do whatever its program does on this computer, so add only ones you trust. If one does not \
-             work, look in the **Log** tab for a line with MCP in it.",
+             work, open the log {log} and look for a line with MCP in it.",
         ),
     },
     Page {
@@ -402,7 +405,7 @@ const PAGES: &[Page] = &[
             ring: None,
         }),
         steps: &[
-            step("The menu at the top right chooses the engine.").at(Spot::EngineMenu),
+            step("The engine is chosen under **This computer**, at the top of the sidebar.").at(Spot::EngineMenu),
             step("**llama.cpp** runs .gguf files from a folder. It comes with QuickAI."),
             step("**Ollama** gets models by name and keeps them itself."),
             step("**ComfyUI** makes pictures and video."),
@@ -423,12 +426,13 @@ const PAGES: &[Page] = &[
             ring: None,
         }),
         steps: &[
-            step("Press **Change** under the model's name.").at(Spot::Change),
+            step("The panel at the right of the page says how the model runs. The {panel} of the bar shows it.")
+                .at(Spot::Change),
             step("Choose how it runs: **Balanced**, **Long chats**, **Light**, or **Custom** for numbers of your own."),
             step(
                 "**Save as…** keeps it under a name, and **Configuration** switches between the ones you kept.",
             ),
-            step("**File → Configurations…** has them all: use, rename or delete one, or save it as a file to share.")
+            step("**Configurations…** in the **QuickAI** menu has them all: use, rename or delete one, or save it as a file to share.")
                 .does(Deed::Configurations),
         ],
         numbered: true,
@@ -439,7 +443,7 @@ const PAGES: &[Page] = &[
         group: Group::Further,
         icon: Icon::Gear,
         title: "What the settings do",
-        lead: "The settings are the engine's. The gear {gear} at the top right opens them, and so does Ctrl+,.",
+        lead: "The settings are the engine's. **Settings…** in the **QuickAI** menu at the top left opens them, and so does Ctrl+,.",
         picture: Some(Picture {
             name: "settings",
             marks: &[(1, 196.0, 85.0), (2, 196.0, 127.0), (3, 196.0, 169.0), (4, 196.0, 211.0)],
@@ -471,14 +475,14 @@ const PAGES: &[Page] = &[
             ring: None,
         }),
         steps: &[
-            step("Read the **Log** tab beside **Chat**: the engine says there why it stopped.")
+            step("Open the log with {log} in the bar: the engine says there why it stopped.")
                 .at(Spot::LogTab)
                 .does(Deed::Log),
             step(
                 "**Port is taken**: another program listens there. **Use port** picks the next free one, **Stop it** \
                  stops the other program, **Override** stops it and starts QuickAI's.",
             ),
-            step("**Not enough memory**: choose **Light** under **Change**, or a smaller model.").at(Spot::Change),
+            step("**Not enough memory**: choose **Light** in the panel at the right, or a smaller model.").at(Spot::Change),
             step("**The program is missing**: the **Program** page of the Settings lists the builds. Use one.")
                 .does(Deed::Settings),
         ],
@@ -497,7 +501,7 @@ const PAGES: &[Page] = &[
             ring: None,
         }),
         steps: &[
-            step("Under **Change**, **Light** uses the least memory. It remembers less of a long chat.").at(Spot::Change),
+            step("In the panel at the right, **Light** uses the least memory. It remembers less of a long chat.").at(Spot::Change),
             step(
                 "A smaller model is faster: fewer billions of parameters (4B rather than 9B), or a smaller file of \
                  the same one (Q4 rather than Q8).",
@@ -589,7 +593,7 @@ const TOUR: &[(Spot, &str, &str)] = &[
     (
         Spot::AddModel,
         "Add a model",
-        "Suggestions that fit this computer, a search online, or a file you already have. Ctrl+K opens it too.",
+        "The + of the list: suggestions that fit this computer, a search online, or a file you already have. Ctrl+K too.",
     ),
     (
         Spot::Play,
@@ -599,7 +603,7 @@ const TOUR: &[(Spot, &str, &str)] = &[
     (
         Spot::Change,
         "How it runs",
-        "Faster, longer chats or less memory. Keep what you choose as a configuration.",
+        "The panel at the right: faster, longer chats or less memory. Keep what you choose as a configuration.",
     ),
     (
         Spot::ChatBox,
@@ -614,7 +618,7 @@ const TOUR: &[(Spot, &str, &str)] = &[
     (
         Spot::Help,
         "Help",
-        "Everything is explained here, with pictures. F1 opens it too.",
+        "In the QuickAI menu, with Settings: everything is explained, with pictures. F1 opens it too.",
     ),
 ];
 
@@ -1226,7 +1230,7 @@ impl App {
                     ),
                     _ => (
                         Some(Tone::Warn),
-                        "Start a model first: press the play button beside its name.".to_string(),
+                        "Start a model first: press Start in the bar over the page.".to_string(),
                     ),
                 })
             }
@@ -1257,7 +1261,7 @@ impl App {
             )),
             HelpPage::WontStart if state == ServerState::Crashed => Some((
                 Some(Tone::Bad),
-                "The last start failed. The Log tab says why.".to_string(),
+                "The last start failed. The log says why.".to_string(),
             )),
             HelpPage::Slow if self.total_ram_bytes > 0 => Some((
                 None,
@@ -1686,6 +1690,10 @@ fn button_icon(name: &str) -> Option<Icon> {
         "clip" => Icon::Clip,
         "more" => Icon::More,
         "gear" => Icon::Gear,
+        "panel" => Icon::Sliders,
+        "log" => Icon::Terminal,
+        "plus" => Icon::Plus,
+        "pencil" => Icon::Pencil,
         "folder" => Icon::Folder,
         "download" => Icon::Download,
         _ => return None,

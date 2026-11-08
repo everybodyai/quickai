@@ -14,7 +14,6 @@ use eframe::egui;
 use quickai_core::form;
 use quickai_core::form::FormField;
 
-use super::icons::{self, Icon};
 use super::theme;
 use super::App;
 
@@ -177,55 +176,6 @@ impl App {
         words.join(" · ")
     }
 
-    /// The line under the model's name: how it will run, with *Change* (and the panel it opens), and the configuration
-    /// when it is not the Default, with *Modified* when what the window holds is not what it saved.
-    pub(super) fn show_run_line(&mut self, ui: &mut egui::Ui) {
-        let summary = self.run_summary();
-        let configuration = self
-            .active_entry()
-            .filter(|e| e.id != crate::configurations::DEFAULT_ID)
-            .map(|e| e.name);
-        // the Default changes with every model picked: only a configuration the person saved is said to be modified
-        // here (Change has the Default's Save and Revert)
-        let modified = configuration.is_some() && self.configuration_modified();
-        let mut toggle = false;
-        ui.add_space(4.0);
-        // wrapped: a configuration with a long name, in a narrow window, would push Done (and the page with it) out of the
-        // window
-        ui.horizontal_wrapped(|ui| {
-            let p = theme::palette();
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-            icons::paint(ui.painter(), rect, Icon::Sliders, p.faint);
-            ui.label(theme::muted(summary.as_str()));
-            if let Some(name) = &configuration {
-                ui.label(theme::muted(format!("· {name}")));
-            }
-            if modified {
-                theme::chip(ui, "Modified", Some(theme::Tone::Warn)).on_hover_text(
-                    "What is set here is no longer what the configuration saved. Change has Save and Revert.",
-                );
-            }
-            let link = ui
-                .link(if self.change_open { "Done" } else { "Change" })
-                .on_hover_text("How the model runs, where, and the configuration in use.");
-            super::help::mark_spot(ui, super::help::Spot::Change, link.rect);
-            toggle = link.clicked();
-        });
-        if toggle {
-            self.change_open = !self.change_open;
-        }
-        if self.change_open {
-            ui.add_space(6.0);
-            theme::card(ui, |ui| self.show_change_panel(ui));
-        } else {
-            // a choice that is wrong for the others (ComfyUI's Memory with the GPU off: the two flags cannot be used together)
-            // is said here as well: Change is shut, and nothing else on the page would say it before Start met it as a crash
-            for problem in self.field_problems() {
-                ui.colored_label(super::widgets::problem_color(), problem);
-            }
-        }
-    }
-
     /// What is wrong with the fields of Change (the rules of the engine's document that a value breaks), a line each.
     pub(super) fn field_problems(&self) -> Vec<String> {
         let Some(form) = self.form() else {
@@ -245,7 +195,7 @@ impl App {
 
     /// What *Change* opens: the configuration in use, the presets (or the fields, for an engine with none), and where the
     /// models run.
-    fn show_change_panel(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn show_change_panel(&mut self, ui: &mut egui::Ui) {
         let running = self.session.is_active();
         let presets = self.context_field().is_some() && self.remote_in_use().is_none();
         // the configuration first: it is what the rest belongs to (and so it is in one place whatever is under it)

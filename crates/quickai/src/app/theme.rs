@@ -22,6 +22,10 @@ static DARK: AtomicBool = AtomicBool::new(true);
 pub(super) struct Palette {
     /// The page: the face of the window behind its group boxes.
     pub page: Color32,
+    /// The sidebar and the panel at the right (UI v3, C203): a shade off the page, darker in the dark theme.
+    pub side: Color32,
+    /// A chosen row of the sidebar.
+    pub selected: Color32,
     /// The bars round the page: the menu bar, the toolbar, the status bar and the list of models.
     pub bar: Color32,
     /// A group box, and the panels of a window that is not the main one.
@@ -58,6 +62,8 @@ pub(super) struct Palette {
 
 const DARK_PALETTE: Palette = Palette {
     page: Color32::from_rgb(31, 32, 35),
+    side: Color32::from_rgb(26, 27, 30),
+    selected: Color32::from_rgb(48, 50, 55),
     bar: Color32::from_rgb(43, 45, 49),
     card: Color32::from_rgb(38, 39, 43),
     raised: Color32::from_rgb(58, 60, 65),
@@ -87,6 +93,8 @@ const DARK_PALETTE: Palette = Palette {
 
 const LIGHT_PALETTE: Palette = Palette {
     page: Color32::from_rgb(247, 247, 247),
+    side: Color32::from_rgb(239, 239, 240),
+    selected: Color32::from_rgb(224, 225, 227),
     bar: Color32::from_rgb(238, 238, 238),
     card: Color32::from_rgb(255, 255, 255),
     raised: Color32::from_rgb(240, 240, 240),
@@ -478,9 +486,14 @@ pub(super) fn page_frame() -> egui::Frame {
         .inner_margin(Margin::symmetric(12, 10))
 }
 
-/// The frame of a bar round the page (the menu bar, the toolbar, the status bar).
+/// The frame of a bar round the page (a window's footer).
 pub(super) fn bar_frame(margin: Margin) -> egui::Frame {
     egui::Frame::new().fill(palette().bar).inner_margin(margin)
+}
+
+/// The frame of the sidebar and of the panel at the right (UI v3, C203).
+pub(super) fn side_frame(margin: Margin) -> egui::Frame {
+    egui::Frame::new().fill(palette().side).inner_margin(margin)
 }
 
 /// The widest the page of the Main tab is drawn. In a window wider than this the group boxes keep this width, in the
@@ -759,36 +772,6 @@ pub(super) fn button_sized(
 pub(super) fn dot(ui: &mut egui::Ui, side: f32, radius: f32, color: Color32) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
     ui.painter().circle_filled(rect.center(), radius, color);
-}
-
-/// The state of the server as the status bar says it: a dot in the colour of the state (one that pulses while the
-/// state is on its way) and the state in words.
-pub(super) fn state_indicator(ui: &mut egui::Ui, state: ServerState, text: &str) -> egui::Response {
-    let color = state_color(state);
-    let font = egui::TextStyle::Body.resolve(ui.style());
-    let galley = ui.painter().layout_no_wrap(text.to_string(), font, color);
-    let size = egui::vec2(galley.size().x + 16.0, galley.size().y.max(16.0));
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
-    if ui.is_rect_visible(rect) {
-        let busy = matches!(state, ServerState::Starting | ServerState::Stopping);
-        let pulse = if busy {
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(60));
-            let t = ui.input(|i| i.time) as f32;
-            0.55 + 0.45 * (t * 5.0).sin()
-        } else {
-            1.0
-        };
-        let centre = egui::pos2(rect.left() + 4.0, rect.center().y);
-        ui.painter()
-            .circle_filled(centre, 4.0, color.gamma_multiply(pulse));
-        ui.painter().galley(
-            egui::pos2(rect.left() + 16.0, rect.center().y - galley.size().y / 2.0),
-            galley,
-            color,
-        );
-    }
-    response
 }
 
 #[cfg(test)]

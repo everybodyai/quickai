@@ -41,6 +41,7 @@ mod foreign_program;
 mod header;
 mod help;
 mod icons;
+mod inspector;
 mod live_traffic;
 mod log_pane;
 mod lookup_view;
@@ -66,6 +67,7 @@ mod run_settings;
 mod runtime_manager;
 mod settings_window;
 mod shell;
+mod sidebar;
 mod stall;
 mod theme;
 mod values;
@@ -239,6 +241,10 @@ pub struct App {
     help: help::HelpState,
     /// *Change* is open under the model's name.
     change_open: bool,
+    /// The panel at the right of the page (how it runs; Connect an app while it runs) is open (UI v3, C203).
+    panel_open: bool,
+    /// The log is open under the page (the bar's log button).
+    dock_open: bool,
     /// Custom was chosen among the presets: the fields are shown whatever the context size is.
     change_custom: bool,
     /// A run went wrong since the log was last looked at: its tab has a red dot.
@@ -472,6 +478,8 @@ impl App {
             focus_add_box: false,
             help: help::HelpState::default(),
             change_open: false,
+            panel_open: true,
+            dock_open: false,
             change_custom: false,
             log_unread: false,
             mcp_checks: Vec::new(),
@@ -695,6 +703,7 @@ impl App {
                 } else {
                     self.change_open = true;
                     self.change_custom = true;
+                    self.panel_open = true;
                 }
                 self.push_log(format!("[quickai] Look at the `{id}` setting."));
             }
@@ -965,6 +974,9 @@ impl eframe::App for App {
             && self.seen_state != Some(crate::events::ServerState::Crashed)
         {
             self.log_unread = true;
+            // what went wrong is in the log: it opens under the page
+            self.dock_open = true;
+            self.active_tab = Tab::Main;
         }
         self.seen_state = Some(state);
 

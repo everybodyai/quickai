@@ -245,7 +245,7 @@ impl App {
         })
         .response
         .on_hover_text(
-            "These are the settings of the engine in use. Switch engines in the menu bar.",
+            "These are the settings of the engine in use. Switch engines at the top of the sidebar.",
         );
         ui.add_space(8.0);
         let line = ui.cursor().top();
@@ -372,9 +372,9 @@ impl App {
         ui.add_space(8.0);
         let p = theme::palette();
         for line in [
-            "They are used from the next Start, in the chat page and not in the Chat tab. The page lists their tools under + and Tools, where each can be switched off, and asks you before the model uses one.",
+            "They are used from the next Start, in the chat page and not in QuickAI's own chat. The page lists their tools under + and Tools, where each can be switched off, and asks you before the model uses one.",
             "A server that is a command is started by llama-server on this computer and can do whatever its program does: add only ones you trust. One at an address is reached through QuickAI.",
-            "Commands such as npx and uvx need Node.js or uv on this computer. If a server does not start, the Log tab says why.",
+            "Commands such as npx and uvx need Node.js or uv on this computer. If a server does not start, the log says why.",
         ] {
             ui.add(egui::Label::new(egui::RichText::new(line).small().color(p.muted)).wrap());
         }
@@ -413,7 +413,7 @@ impl App {
                 "Set up other computers and run configurations there",
                 Some(
                     "QuickAI copies its headless program to a computer you add and runs the configuration you \
-                     select there; the status bar switches between the runs.",
+                     select there; the computer at the top of the sidebar switches between the runs.",
                 ),
                 Some(
                     "Off, the computers you add are ones you run an engine on yourself. Switching it off stops \

@@ -25,21 +25,31 @@ impl App {
 
     /// The logo, drawn from the application's icon, `points` wide: made once.
     pub(super) fn show_logo(&mut self, ui: &mut egui::Ui, points: f32) {
-        let texture = self.logo.get_or_insert_with(|| {
-            let icon = crate::app_icon();
-            let pixels = shrink(
-                &icon.rgba,
-                icon.width as usize,
-                icon.height as usize,
-                LOGO_PIXELS,
-            );
-            ui.ctx().load_texture(
-                "quickai-logo",
-                egui::ColorImage::from_rgba_unmultiplied([LOGO_PIXELS, LOGO_PIXELS], &pixels),
-                egui::TextureOptions::LINEAR,
-            )
-        });
-        ui.add(egui::Image::new(&*texture).fit_to_exact_size(egui::Vec2::splat(points)));
+        let texture = self.logo_texture(ui.ctx());
+        ui.add(
+            egui::Image::new((texture, egui::Vec2::splat(points)))
+                .fit_to_exact_size(egui::Vec2::splat(points)),
+        );
+    }
+
+    /// The logo's texture, made once from the application's icon.
+    pub(super) fn logo_texture(&mut self, ctx: &egui::Context) -> egui::TextureId {
+        self.logo
+            .get_or_insert_with(|| {
+                let icon = crate::app_icon();
+                let pixels = shrink(
+                    &icon.rgba,
+                    icon.width as usize,
+                    icon.height as usize,
+                    LOGO_PIXELS,
+                );
+                ctx.load_texture(
+                    "quickai-logo",
+                    egui::ColorImage::from_rgba_unmultiplied([LOGO_PIXELS, LOGO_PIXELS], &pixels),
+                    egui::TextureOptions::LINEAR,
+                )
+            })
+            .id()
     }
 }
 

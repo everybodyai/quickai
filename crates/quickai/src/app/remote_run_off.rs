@@ -5,7 +5,6 @@
 
 use eframe::egui;
 
-use crate::events::ServerState;
 use crate::provision::EndpointInfo;
 
 use super::App;
@@ -72,10 +71,6 @@ impl App {
 
     pub(super) fn listed_there(&self, _id: &str) -> bool {
         false
-    }
-
-    pub(super) fn remote_run_status(&self) -> Option<(ServerState, String)> {
-        None
     }
 
     /// The name of the configuration selected in the window.

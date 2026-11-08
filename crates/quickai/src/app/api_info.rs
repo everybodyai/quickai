@@ -152,6 +152,7 @@ impl App {
 
 /// The plug button beside the running model, `size` big: Connect an app opens and closes under it (where it is drawn
 /// is kept for the popover to hang from). `hover` is said when the pointer rests on it.
+#[cfg_attr(not(feature = "remote-setup"), allow(dead_code))]
 pub(super) fn connect_button(ui: &mut egui::Ui, size: egui::Vec2, hover: &str) -> bool {
     let plug =
         icons::framed_icon_button(ui, Role::Normal, true, Icon::Plug, size).on_hover_text(hover);
@@ -166,7 +167,7 @@ fn anchor_id() -> egui::Id {
 }
 
 /// The rows (the address, the other addresses, the model's name, the key) and the example, a tab for each language.
-fn show_connection_details(ui: &mut egui::Ui, panel: &ApiPanel) {
+pub(super) fn show_connection_details(ui: &mut egui::Ui, panel: &ApiPanel) {
     let p = theme::palette();
     // what a row is, at its left; the engine's note on a value (Ollama's: name exactly this model) is said when the
     // pointer rests on it
@@ -179,15 +180,26 @@ fn show_connection_details(ui: &mut egui::Ui, panel: &ApiPanel) {
             label.on_hover_text(note);
         }
     };
+    // in the narrow panel at the right of the page (C203), what a row is goes over its value, which has the width
+    let narrow = ui.available_width() < 380.0;
     let row = |ui: &mut egui::Ui, key: &str, value: &str, note: Option<&str>| {
         ui.separator();
+        if narrow {
+            let label = ui.label(egui::RichText::new(key).color(p.muted).small());
+            if let Some(note) = note {
+                label.on_hover_text(note);
+            }
+        }
         ui.horizontal(|ui| {
-            key_label(ui, key, note);
+            if !narrow {
+                key_label(ui, key, note);
+            }
             let room = ui.available_width() - 36.0;
             ui.add_sized(
                 egui::vec2(room, 22.0),
                 egui::Label::new(egui::RichText::new(value).monospace().color(p.text)).truncate(),
-            );
+            )
+            .on_hover_text(value);
             icons::copy_button(ui, key, value);
         });
     };

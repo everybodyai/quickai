@@ -812,10 +812,10 @@ mod tests {
             shown.contains("Memory is about the graphics card: choose auto, or turn the GPU on."),
             "the rule of the Memory field is said: {shown}"
         );
-        // and with Change shut, the line of how it runs says it under itself: nothing else on the page would
+        // and the panel at the right of the page (C203) says it under the fields: nothing else on the page would
         app.change_open = false;
         let line = painted(&ctx, |ui| {
-            egui::CentralPanel::default().show(ui, |ui| app.show_run_line(ui));
+            egui::CentralPanel::default().show(ui, |ui| app.show_inspector(ui));
         })
         .join("\n");
         assert!(
@@ -827,7 +827,7 @@ mod tests {
         let shown = controls(&mut app, &ctx);
         assert!(!shown.contains("graphics card: choose auto"), "{shown}");
         let line = painted(&ctx, |ui| {
-            egui::CentralPanel::default().show(ui, |ui| app.show_run_line(ui));
+            egui::CentralPanel::default().show(ui, |ui| app.show_inspector(ui));
         })
         .join("\n");
         assert!(!line.contains("graphics card: choose auto"), "{line}");

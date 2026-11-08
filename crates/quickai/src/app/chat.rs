@@ -1038,79 +1038,63 @@ impl App {
         }
     }
 
-    /// What is beside the tabs while the chat is open: New chat, and a menu of the rest (Keep chats, Options, Export).
-    /// Drawn in a layout that runs from right to left.
-    pub(super) fn show_chat_actions(&mut self, ui: &mut egui::Ui) {
-        let more = icons::icon_button(ui, Icon::More, egui::vec2(28.0, 24.0), true, false)
-            .on_hover_text("Keep chats, options, export");
-        super::help::mark_spot(ui, super::help::Spot::ChatMenu, more.rect);
-        let mut export = false;
+    /// The chat's part of the bar's ⋯ menu (UI v3, C203): Keep chats, Options and Export. New chat is the bar's pencil.
+    pub(super) fn chat_menu_items(&mut self, ui: &mut egui::Ui) {
         let mut keep = self.chat.keep;
-        let mut keep_changed = false;
-        let mut options = false;
-        egui::Popup::menu(&more)
-            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-            .show(|ui| {
-                ui.set_min_width(200.0);
-                keep_changed = ui
-                    .checkbox(&mut keep, "Keep chats")
-                    .on_hover_text(
-                        "Keep each conversation on this computer (in QuickAI's own folder), listed beside it. Off, \
-                         nothing is kept. Nothing leaves this computer either way.",
-                    )
-                    .changed();
-                let set = !self.chat.instructions.trim().is_empty()
-                    || self.chat.temperature.is_some()
-                    || self.chat.max_tokens.is_some();
-                if ui
-                    .button(if set { "Options... •" } else { "Options..." })
-                    .on_hover_text(
-                        "Instructions the model reads before every message, how free its answers are, and how long \
-                         they may be. Each is left to the model unless set.",
-                    )
-                    .clicked()
-                {
-                    options = true;
-                    ui.close();
-                }
-                if ui
-                    .add_enabled(
-                        !self.chat.turns.is_empty() && !self.chat.replying(),
-                        egui::Button::new("Export..."),
-                    )
-                    .on_hover_text("Save this conversation as a Markdown file.")
-                    .clicked()
-                {
-                    export = true;
-                    ui.close();
-                }
-            });
-        if icons::labelled_button(
-            ui,
-            Role::Quiet,
-            !self.chat.turns.is_empty() && !self.chat.replying(),
-            Icon::Plus,
-            "New chat",
-            24.0,
-        )
-        .on_hover_text(if self.chat.keep {
-            "Start a new conversation; this one stays in the list."
-        } else {
-            "Start a new conversation. This one is not kept."
-        })
-        .clicked()
+        if ui
+            .checkbox(&mut keep, "Keep chats")
+            .on_hover_text(
+                "Keep each conversation on this computer (in QuickAI's own folder), listed beside it. Off, nothing is \
+                 kept. Nothing leaves this computer either way.",
+            )
+            .changed()
         {
-            self.chat.new_conversation();
-        }
-        if keep_changed {
             self.set_keep_chats(keep);
         }
-        if options {
+        let set = !self.chat.instructions.trim().is_empty()
+            || self.chat.temperature.is_some()
+            || self.chat.max_tokens.is_some();
+        if ui
+            .button(if set { "Options... •" } else { "Options..." })
+            .on_hover_text(
+                "Instructions the model reads before every message, how free its answers are, and how long they may \
+                 be. Each is left to the model unless set.",
+            )
+            .clicked()
+        {
             self.chat.show_instructions = !self.chat.show_instructions;
+            ui.close();
         }
-        if export {
+        if ui
+            .add_enabled(
+                !self.chat.turns.is_empty() && !self.chat.replying(),
+                egui::Button::new("Export..."),
+            )
+            .on_hover_text("Save this conversation as a Markdown file.")
+            .clicked()
+        {
+            ui.close();
             self.export_chat();
         }
+    }
+
+    /// Whether a new chat can be begun: there is one to leave, and no reply is on its way.
+    pub(super) fn can_begin_new_chat(&self) -> bool {
+        !self.chat.turns.is_empty() && !self.chat.replying()
+    }
+
+    /// What the bar's New chat says when the pointer rests on it.
+    pub(super) fn new_chat_hover(&self) -> &'static str {
+        if self.chat.keep {
+            "New chat: this one stays in the list."
+        } else {
+            "New chat. This one is not kept."
+        }
+    }
+
+    /// Begins a new conversation.
+    pub(super) fn begin_new_chat(&mut self) {
+        self.chat.new_conversation();
     }
 
     fn show_chat_conversation(&mut self, ui: &mut egui::Ui) {
@@ -1155,7 +1139,7 @@ impl App {
                 format!("{server} runs with no model loaded: choose one, then Load model.")
             }
             _ => match self.models.get(self.selected) {
-                Some(m) => format!("Press the play button to chat with {}.", m.display),
+                Some(m) => format!("Press Start to chat with {}.", m.display),
                 None => format!("Start {server} with a model to chat with it here."),
             },
         };

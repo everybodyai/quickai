@@ -977,8 +977,8 @@ mod tests {
             app.show_window(ui);
             // what the window draws only in a state the session is not in here
             egui::Area::new(egui::Id::new("in-this-state")).show(ui.ctx(), |ui| {
-                app.show_model_header(ui, state, false);
-                app.show_alone_header(ui, state, false);
+                app.show_top_bar(ui, state, false);
+                app.show_inspector(ui);
                 app.show_diagnostics(ui, state);
             });
             // (the question of a delete is asked in the Settings window, where its button is)

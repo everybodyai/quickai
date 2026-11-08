@@ -472,7 +472,7 @@ fn intro(kind: Kind) -> &'static str {
             "QuickAI closed because of an error the last time it ran. A report helps us find it and fix it."
         }
         Kind::EngineStopped => {
-            "The engine ended on its own. The Log tab says why when it can; if it is not something you can change, a \
+            "The engine ended on its own. The log says why when it can; if it is not something you can change, a \
              report helps us fix it."
         }
         Kind::WindowStalled => {

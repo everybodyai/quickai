@@ -663,7 +663,7 @@ impl App {
 
     /// What is known of whether the computer `id` answers: a test that passed, one that did not, or none yet (the
     /// connection of the run in use counts as a test).
-    fn answers(&self, id: &str) -> Option<bool> {
+    pub(super) fn answers(&self, id: &str) -> Option<bool> {
         // a computer QuickAI set up whose run goes on, or did not come up
         match self.setup_run_of(id) {
             Some(run) if run.running() => return Some(true),
@@ -741,7 +741,7 @@ impl App {
     }
 
     /// The line under the name of the computer at the top of the list: what it is, and how many models it has.
-    fn switch_line(&self) -> String {
+    pub(super) fn switch_line(&self) -> String {
         let Some(spec) = self.runner_spec() else {
             let line = self.this_computer_line();
             if self.lists_models() {
@@ -768,182 +768,16 @@ impl App {
 
     // ---- what is drawn -------------------------------------------------------------------------------------
 
-    /// The top of the list of models (option D of `the mockups`, the user: "option D it is"): the computer
-    /// whose models the list shows, whether it answers and what it is, and the menu that changes it, under it. The
-    /// status bar then only says it (`show_where_label`).
-    pub(super) fn show_computer_switch(&mut self, ui: &mut egui::Ui) {
-        let p = theme::palette();
-        let (name, dot) = match self.runner_spec() {
+    /// The computer the models run on now, by name, and whether it answers (none for this computer).
+    pub(super) fn computer_now(&self) -> (String, Option<bool>) {
+        match self.runner_spec() {
             Some(r) => (r.name.clone(), self.answers(&r.id)),
             None => ("This computer".to_string(), None),
-        };
-        let line = self.switch_line();
-        ui.horizontal(|ui| {
-            ui.add_space(10.0);
-            let width = ui.available_width() - 10.0;
-            let (rect, response) =
-                ui.allocate_exact_size(egui::vec2(width, 46.0), egui::Sense::click());
-            super::help::mark_spot(ui, super::help::Spot::Computer, rect);
-            let open =
-                egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
-            if ui.is_rect_visible(rect) {
-                let painter = ui.painter();
-                let lit = open || response.hovered();
-                painter.rect(
-                    rect,
-                    6.0,
-                    if lit { p.raised_hover } else { p.raised },
-                    egui::Stroke::new(1.0, p.outline),
-                    egui::StrokeKind::Inside,
-                );
-                let icon = egui::Rect::from_center_size(
-                    egui::pos2(rect.left() + 20.0, rect.center().y),
-                    egui::vec2(18.0, 18.0),
-                );
-                icons::paint(painter, icon, Icon::Computer, p.text);
-                let left = rect.left() + 38.0;
-                let room = (rect.right() - 26.0 - left).max(10.0);
-                let family = theme::semibold(ui);
-                let title = egui::WidgetText::from(
-                    egui::RichText::new(&name).family(family).color(p.text),
-                )
-                .into_galley(
-                    ui,
-                    Some(egui::TextWrapMode::Truncate),
-                    room - 14.0,
-                    egui::TextStyle::Body,
-                );
-                let small = egui::WidgetText::from(egui::RichText::new(&line).color(p.faint))
-                    .into_galley(
-                        ui,
-                        Some(egui::TextWrapMode::Truncate),
-                        room,
-                        egui::TextStyle::Small,
-                    );
-                let top = rect.top() + (46.0 - title.size().y - small.size().y - 1.0) / 2.0;
-                let title_right = left + title.size().x;
-                let title_mid = top + title.size().y / 2.0;
-                let below = top + title.size().y + 1.0;
-                let painter = ui.painter();
-                painter.galley(egui::pos2(left, top), title, p.text);
-                painter.galley(egui::pos2(left, below), small, p.faint);
-                if let Some(answers) = dot {
-                    painter.circle_filled(
-                        egui::pos2(title_right + 8.0, title_mid),
-                        3.5,
-                        if answers { p.ok } else { p.bad },
-                    );
-                }
-                let chevron = egui::Rect::from_center_size(
-                    egui::pos2(rect.right() - 14.0, rect.center().y),
-                    egui::vec2(13.0, 13.0),
-                );
-                icons::paint(painter, chevron, Icon::Chevron, p.muted);
-            }
-            let response = response.on_hover_text(
-                "Where the models run: this computer, or a more powerful one you added (reached over SSH). The list \
-                 under it is that computer's models; the chat and Connect an app work the same either way.",
-            );
-            egui::Popup::menu(&response)
-                .align(egui::RectAlign::BOTTOM_START)
-                .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
-                .width(300.0)
-                .show(|ui| {
-                    ui.set_width(300.0);
-                    self.show_where_menu(ui);
-                });
-        });
-        ui.add_space(10.0);
-    }
-
-    /// The right end of the status bar while the list of models is shown: where the models run, said; it is chosen
-    /// at the top of the list.
-    pub(super) fn show_where_label(&mut self, ui: &mut egui::Ui) {
-        let p = theme::palette();
-        let (label, dot) = match self.runner_spec() {
-            Some(r) => (r.name.clone(), self.answers(&r.id)),
-            None => ("This computer".to_string(), None),
-        };
-        ui.add_space(6.0);
-        if let Some(answers) = dot {
-            theme::dot(ui, 8.0, 3.5, if answers { p.ok } else { p.bad });
         }
-        let words = ui.label(egui::RichText::new(label).size(13.0).color(p.muted));
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(15.0, 15.0), egui::Sense::hover());
-        icons::paint(ui.painter(), rect, Icon::Computer, p.muted);
-        words.on_hover_text("Where the models run. Change it at the top of the list of models.");
     }
 
-    /// The right end of the status bar: where the models run, and the menu that changes it (option D of the samples,
-    /// C183), for an engine without the list of models (ComfyUI); with the list it is at its top (C199). It opens upwards, with this computer, the computers added (each with whether it answered) and the ways to
-    /// add and manage them. Under an engine that cannot run elsewhere the computers are there, greyed, with why.
-    pub(super) fn show_where_switch(&mut self, ui: &mut egui::Ui) {
-        let p = theme::palette();
-        let (label, dot) = match self.runner_spec() {
-            Some(r) => (r.name.clone(), self.answers(&r.id)),
-            None => ("This computer".to_string(), None),
-        };
-        let font = egui::FontId::proportional(13.0);
-        let galley = ui.painter().layout_no_wrap(label, font, p.muted);
-        let width =
-            8.0 + 15.0 + 6.0 + galley.size().x + if dot.is_some() { 14.0 } else { 0.0 } + 18.0;
-        let (rect, response) =
-            ui.allocate_exact_size(egui::vec2(width, 22.0), egui::Sense::click());
-        super::help::mark_spot(ui, super::help::Spot::Computer, rect);
-        let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
-        if ui.is_rect_visible(rect) {
-            let lit = open || response.hovered();
-            if lit {
-                ui.painter().rect(
-                    rect,
-                    4.0,
-                    p.raised_hover,
-                    egui::Stroke::new(1.0, p.outline),
-                    egui::StrokeKind::Inside,
-                );
-            }
-            let color = if lit { p.text } else { p.muted };
-            let mut x = rect.left() + 8.0;
-            let icon = egui::Rect::from_min_size(
-                egui::pos2(x, rect.center().y - 7.5),
-                egui::vec2(15.0, 15.0),
-            );
-            icons::paint(ui.painter(), icon, Icon::Computer, color);
-            x += 15.0 + 6.0;
-            let text_at = egui::pos2(x, rect.center().y - galley.size().y / 2.0);
-            x += galley.size().x;
-            ui.painter().galley(text_at, galley, color);
-            if let Some(answers) = dot {
-                x += 8.0;
-                ui.painter().circle_filled(
-                    egui::pos2(x, rect.center().y),
-                    3.5,
-                    if answers { p.ok } else { p.bad },
-                );
-                x += 6.0;
-            }
-            let chevron = egui::Rect::from_min_size(
-                egui::pos2(x + 4.0, rect.center().y - 6.0),
-                egui::vec2(12.0, 12.0),
-            );
-            icons::paint(ui.painter(), chevron, Icon::Chevron, color);
-        }
-        let response = response.on_hover_text(
-            "Where the models run: this computer, or a more powerful one you added (reached over SSH). The chat, the \
-             models and Connect an app work the same either way.",
-        );
-        egui::Popup::menu(&response)
-            .align(egui::RectAlign::TOP_END)
-            .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
-            .width(320.0)
-            .show(|ui| {
-                ui.set_width(320.0);
-                self.show_where_menu(ui);
-            });
-    }
-
-    /// The menu of the status bar's place: the choices, and the ways to the window.
-    fn show_where_menu(&mut self, ui: &mut egui::Ui) {
+    /// The menu of the computer the models run on: the choices, and the ways to the window.
+    pub(super) fn show_where_menu(&mut self, ui: &mut egui::Ui) {
         let lock_why = self.where_lock_reason();
         let mut chosen: Option<Option<String>> = None;
         let here = self.runner_spec().is_none();

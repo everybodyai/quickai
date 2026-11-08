@@ -287,8 +287,8 @@ impl App {
                     }
                     ServerState::Stopping => "The server is stopping.",
                     _ => {
-                        "The server is not running. Start it on the Main tab: requests show up here while \
-                         it runs."
+                        "The server is not running. Start it in the bar over the page: requests show up \
+                         here while it runs."
                     }
                 };
                 let stopped = matches!(state, ServerState::Idle | ServerState::Crashed);
@@ -344,7 +344,7 @@ impl App {
                     ui,
                     Role::Normal,
                     true,
-                    "Open the Main tab",
+                    "Show the log",
                     egui::vec2(0.0, 28.0),
                 )
                 .clicked()
@@ -1005,11 +1005,11 @@ mod tests {
             at(&found, text);
         }
         // the server is not running, so what to do first is a button, and it goes to the Main tab
-        let go = at(&found, "Open the Main tab");
+        let go = at(&found, "Show the log");
         click(&mut app, &ctx, go.center());
         assert!(
             app.active_tab == Tab::Main,
-            "the button did not open the Main tab"
+            "the button did not show the log"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
