@@ -204,7 +204,7 @@ const PAGES: &[Page] = &[
         lead: "Three steps to a first answer from a model that runs on this computer.",
         picture: Some(Picture {
             name: "main",
-            marks: &[(1, 754.0, 16.0), (2, 36.0, 59.0), (3, 918.0, 62.0)],
+            marks: &[(1, 754.0, 16.0), (2, 36.0, 121.0), (3, 918.0, 62.0)],
             ring: None,
         }),
         steps: &[
@@ -341,7 +341,7 @@ const PAGES: &[Page] = &[
         lead: "Run big models on another computer of yours, and use them from here.",
         picture: Some(Picture {
             name: "computer-menu",
-            marks: &[(2, 70.0, 96.0), (3, 268.0, 124.0)],
+            marks: &[(2, 180.0, 132.0), (3, 226.0, 31.0)],
             ring: None,
         }),
         steps: &[
