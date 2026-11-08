@@ -1035,6 +1035,83 @@ mod tests {
     }
 
     #[test]
+    fn p3_i41_a_row_whose_facts_do_not_fit_on_one_line_has_a_second_and_cuts_none_of_them() {
+        let dir = scratch("i41");
+        let mut app = app_in(&dir, "llamacpp");
+        let ctx = egui::Context::default();
+        // the shipped model's row said `1.1 GB · fast · recommended…`, "bundled" cut off; here a mode word makes sure the
+        // facts are longer than the list is wide
+        let mut shipped = listed("Ternary-Bonsai-2-4B-Q2_0.gguf", "");
+        shipped.display = "Bonsai 2 4B (ternary Q2_0)".to_string();
+        shipped.bundled = true;
+        shipped.size_bytes = 1_200_000_000;
+        shipped.note =
+            "It is meant to start in the mode `rerank`, which this engine does not have."
+                .to_string();
+        app.models = vec![shipped, listed("other.gguf", "")];
+        app.selected = 1;
+        app.recommended_filename = Some("Ternary-Bonsai-2-4B-Q2_0.gguf".to_string());
+        let detail: Vec<String> = app
+            .row_facts(&app.models[0], false, app.speed_basis())
+            .into_iter()
+            .map(|(word, _)| word)
+            .collect();
+        assert!(
+            detail.iter().any(|w| w == "bundled") && detail.iter().any(|w| w == "recommended"),
+            "{detail:?}"
+        );
+        let output = settled(&mut app, &ctx, true);
+        // every text drawn in the list of models, with whether it was cut short (a galley cut short still says its whole
+        // text: `elided` is what tells)
+        fn walk(shape: &egui::epaint::Shape, into: &mut Vec<(String, egui::Rect, bool)>) {
+            match shape {
+                egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, into)),
+                egui::epaint::Shape::Text(t) => into.push((
+                    t.galley.text().to_string(),
+                    t.galley.rect.translate(t.pos.to_vec2()),
+                    t.galley.elided,
+                )),
+                _ => {}
+            }
+        }
+        let mut texts = Vec::new();
+        for clipped in &output.shapes {
+            walk(&clipped.shape, &mut texts);
+        }
+        texts.retain(|(_, rect, _)| rect.left() < 220.0 && rect.top() > 120.0);
+        // the lines of the row are the texts made of its facts: together they are all of them, in order, each whole
+        let mut lines: Vec<&(String, egui::Rect, bool)> = texts
+            .iter()
+            .filter(|(text, _, _)| text.split(" · ").all(|w| detail.iter().any(|d| d == w)))
+            .collect();
+        lines.sort_by(|a, b| a.1.top().total_cmp(&b.1.top()));
+        assert!(lines.len() >= 2, "one line for {detail:?}: {texts:?}");
+        let drawn: Vec<&str> = lines
+            .iter()
+            .flat_map(|(text, _, _)| text.split(" · "))
+            .collect();
+        assert_eq!(drawn, detail.iter().map(String::as_str).collect::<Vec<_>>());
+        assert!(lines.iter().all(|(_, _, elided)| !elided), "{lines:?}");
+        // the row is a line taller than one of a line, and the next one starts under it
+        let top_of = |name: &str| {
+            texts
+                .iter()
+                .find(|(text, _, _)| text == name)
+                .unwrap_or_else(|| panic!("{name} in the list: {texts:?}"))
+                .1
+                .top()
+        };
+        let (first, next) = (top_of("Bonsai 2 4B (ternary Q2_0)"), top_of("other.gguf"));
+        let last_line = lines.last().unwrap().1;
+        assert!(next > last_line.bottom(), "{next} under {last_line:?}");
+        assert!(
+            next - first > super::super::shell::MODEL_ROW + last_line.height() - 1.0,
+            "{first} {next}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn getting_started_ticks_its_steps_as_they_are_done() {
         let dir = scratch("v2-steps");
         let mut app = app_in(&dir, "llamacpp");

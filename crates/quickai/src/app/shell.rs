@@ -26,8 +26,11 @@ pub(super) const WEBSITE_URL: &str = "https://quickai.everybodyai.dev";
 /// Where Help → Report a problem files an issue.
 pub(super) const NEW_ISSUE_URL: &str = "https://github.com/everybodyai/quickai/issues/new";
 
-/// The height of a row of the list of models: the name, and under it its size and what else is known.
-const MODEL_ROW: f32 = 42.0;
+/// The height of a row of the list of models: the name, and under it its size and what else is known (one line of it: a
+/// row whose facts need two lines is a line taller).
+pub(super) const MODEL_ROW: f32 = 42.0;
+/// What the … at the right end of a row takes of its width, with the gap before it: the facts never reach under it.
+const MORE_ROOM: f32 = 37.0;
 
 /// From how many models on the list it has a box that narrows it.
 const FILTER_FROM: usize = 8;
@@ -988,7 +991,8 @@ pub(super) fn size_text(bytes: u64) -> String {
 }
 
 /// A model of the list: its name (a green dot after it when it runs), and under it what is known of it as words, a
-/// few of them coloured (`fast` and `recommended` green, `slower` amber). Chosen, it is green at its left edge. On the
+/// few of them coloured (`fast` and `recommended` green, `slower` amber), on a second line too when they do not fit
+/// on one (the shipped model is `1.1 GB · fast · recommended`, then `bundled`). Chosen, it is green at its left edge. On the
 /// chosen row and the one the pointer is on there is a … at its right end, whose response comes back with the row's
 /// for the menu of what can be done with the model.
 pub(super) fn model_row(
@@ -1000,8 +1004,12 @@ pub(super) fn model_row(
 ) -> (egui::Response, Option<egui::Response>) {
     let p = theme::palette();
     let width = ui.available_width();
-    let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(width, MODEL_ROW), egui::Sense::click());
+    // the facts are measured as if the … were there, so that a row keeps its height when the pointer comes onto it
+    let facts = fact_lines(ui, detail, (width - 12.0 - MORE_ROOM).max(10.0));
+    let facts_height: f32 = facts.iter().map(|g| g.size().y).sum();
+    let line = facts.first().map_or(0.0, |g| g.size().y);
+    let height = MODEL_ROW + facts_height - line;
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
     let more_rect = egui::Rect::from_center_size(
         egui::pos2(rect.right() - 20.0, rect.center().y),
         egui::vec2(26.0, 24.0),
@@ -1036,26 +1044,16 @@ pub(super) fn model_row(
             room,
             egui::TextStyle::Body,
         );
-        let font = egui::TextStyle::Small.resolve(ui.style());
-        let mut job = egui::text::LayoutJob::default();
-        for (i, (text, color)) in detail.iter().enumerate() {
-            if i > 0 {
-                job.append(" · ", 0.0, egui::TextFormat::simple(font.clone(), p.muted));
-            }
-            job.append(
-                text,
-                0.0,
-                egui::TextFormat::simple(font.clone(), color.unwrap_or(p.muted)),
-            );
-        }
-        job.wrap = egui::text::TextWrapping::truncate_at_width(room);
-        let small = painter.layout_job(job);
-        let top = rect.top() + (MODEL_ROW - title.size().y - small.size().y - 2.0) / 2.0;
-        let below = top + title.size().y + 2.0;
+        let top = rect.top() + (height - title.size().y - facts_height - 2.0) / 2.0;
+        let mut below = top + title.size().y + 2.0;
         let title_right = left + title.size().x;
         let title_mid = top + title.size().y / 2.0;
         painter.galley(egui::pos2(left, top), title, p.text);
-        painter.galley(egui::pos2(left, below), small, p.muted);
+        for galley in facts {
+            let y = galley.size().y;
+            painter.galley(egui::pos2(left, below), galley, p.muted);
+            below += y;
+        }
         // the model that runs has a green dot after its name
         if running {
             painter.circle_filled(egui::pos2(title_right + 8.0, title_mid), 3.5, p.ok);
@@ -1078,6 +1076,56 @@ pub(super) fn model_row(
         response,
         more.map(|m| m.on_hover_text("Details, Show in folder, Copy name, Delete")),
     )
+}
+
+/// The facts under a model's name, laid out in lines no wider than `room`: as many to a line as fit, with " · " between
+/// them, and a fact never cut between two lines ("1.1 GB · fast · recommended" then "bundled", where one line cut
+/// "bundled" off). Only a fact wider than the room by itself is cut short. There is always at least one line.
+fn fact_lines(
+    ui: &egui::Ui,
+    detail: &[(String, Option<egui::Color32>)],
+    room: f32,
+) -> Vec<std::sync::Arc<egui::Galley>> {
+    let p = theme::palette();
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let job_of = |facts: &[(String, Option<egui::Color32>)], wrap: egui::text::TextWrapping| {
+        let mut job = egui::text::LayoutJob::default();
+        for (i, (text, color)) in facts.iter().enumerate() {
+            if i > 0 {
+                job.append(" · ", 0.0, egui::TextFormat::simple(font.clone(), p.muted));
+            }
+            job.append(
+                text,
+                0.0,
+                egui::TextFormat::simple(font.clone(), color.unwrap_or(p.muted)),
+            );
+        }
+        job.wrap = wrap;
+        job
+    };
+    let painter = ui.painter();
+    let fits = |facts: &[(String, Option<egui::Color32>)]| {
+        painter
+            .layout_job(job_of(facts, egui::text::TextWrapping::default()))
+            .size()
+            .x
+            <= room
+    };
+    let mut lines = Vec::new();
+    let mut start = 0;
+    while start < detail.len() {
+        let mut end = start + 1;
+        while end < detail.len() && fits(&detail[start..=end]) {
+            end += 1;
+        }
+        let cut = egui::text::TextWrapping::truncate_at_width(room);
+        lines.push(painter.layout_job(job_of(&detail[start..end], cut)));
+        start = end;
+    }
+    if lines.is_empty() {
+        lines.push(painter.layout_job(job_of(&[], egui::text::TextWrapping::default())));
+    }
+    lines
 }
 
 /// A tab with a dot after its name, when `marked`: something new is there, in green, or something went wrong, in red

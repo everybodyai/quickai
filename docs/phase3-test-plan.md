@@ -1014,6 +1014,7 @@ Asked for on 2026-10-23 ("Lets stick to classic, but lets turn things around a b
 | I38 | 4.41 | ready | **Add a model, the recommended models, a model's details and About are windows of their own** (C194, which replaces C192's button that made Add a model as big as the main window): a display that opens windows is asked for one of each, with its title, the application's name and its icon, and the main window draws none of them; Escape closes Add a model and the recommended models; the window manager's close button closes each; asked for again while open, each comes to the front. | `app/header.rs` |
 | I39 | 4.39 | ready | **Add a model leads to the site its box searches** (C192): under the suggestions, *Hugging Face* and *and paste its link in the box*, to the hub's page of GGUF models; for Ollama, ollama.com's search. | `app/header.rs` |
 | I40 | 4.39 | ready | **The Help menu is Help and About** (C192): *Help…* and *About QuickAI*, and none of Getting started, Keyboard shortcuts, Online documentation, Privacy policy, QuickAI on the web. | `app/header.rs` |
+| I41 | 4.22 | ready | **A row whose facts do not fit on one line has a second, and cuts none of them** (C200): the shipped model's `1.1 GB · fast · recommended` cut `bundled` off; with a mode word too, the facts of the row are drawn in two lines or more, together all of them in order, none elided, and the next row starts under the last line. | `app/header.rs` |
 
 ### N. llama.cpp must not change
 
@@ -1027,7 +1028,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 709 / 0 / 16 / 5 (total 730). The test kit has 29 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 710 / 0 / 16 / 5 (total 731). The test kit has 29 tests of its own and the Python fake
 22, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 
