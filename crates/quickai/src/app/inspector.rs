@@ -67,8 +67,12 @@ impl App {
                 n => format!("{n} servers on"),
             }));
             ui.label(
-                theme::muted("Used in llama.cpp's chat page (Open Chat UI), from the next Start.")
-                    .small(),
+                theme::muted(if self.engine == crate::settings::DEFAULT_ENGINE {
+                    "Used when you chat here, and in Open Chat UI. QuickAI asks before a tool runs."
+                } else {
+                    "Used when you chat here. QuickAI asks before a tool runs."
+                })
+                .small(),
             );
             if manage {
                 self.open_mcp_servers();
@@ -166,10 +170,7 @@ impl App {
         ui.label(theme::muted("How it runs").small());
         ui.label(self.run_summary());
         ui.label(theme::muted("Stop the model to change these.").small());
-        if let Some(count) = self
-            .mcp_server_count()
-            .filter(|_| self.remote_in_use().is_none())
-        {
+        if let Some(count) = self.mcp_server_count().filter(|_| !self.runs_alone()) {
             rule(ui);
             let mut manage = false;
             ui.horizontal(|ui| {
@@ -183,7 +184,14 @@ impl App {
                 1 => "1 server on".to_string(),
                 n => format!("{n} servers on"),
             });
-            ui.label(theme::muted("The model can use them in Open Chat UI.").small());
+            ui.label(
+                theme::muted(if self.engine == crate::settings::DEFAULT_ENGINE && self.remote_in_use().is_none() {
+                    "Used when you chat here, and in Open Chat UI. Apps you connect bring their own."
+                } else {
+                    "Used when you chat here. Apps you connect bring their own."
+                })
+                .small(),
+            );
             if manage {
                 self.open_mcp_servers();
             }

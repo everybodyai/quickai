@@ -19,7 +19,7 @@
 //!   is killed outright, and is stopped by Stop and by the exit path.
 
 use std::io::{BufRead, BufReader, Read};
-use std::process::{Child, ChildStderr, ChildStdout, Command, ExitStatus, Stdio};
+use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -253,16 +253,31 @@ impl Daemon {
     /// Starts `cmd` with the hygiene of every program QuickAI starts (output piped, a process group
     /// of its own when `group`, the parent-death signal on Linux, a job and no console window on
     /// Windows). The program, its arguments and its environment are the caller's.
-    pub fn start(mut cmd: Command, group: bool) -> std::io::Result<Daemon> {
+    pub fn start(cmd: Command, group: bool) -> std::io::Result<Daemon> {
+        Daemon::start_inner(cmd, group, false)
+    }
+
+    /// `start`, with the program's input a pipe of QuickAI's (`take_input`): an MCP server is talked to over its input
+    /// and output (C204).
+    pub fn start_with_input(cmd: Command, group: bool) -> std::io::Result<Daemon> {
+        Daemon::start_inner(cmd, group, true)
+    }
+
+    fn start_inner(mut cmd: Command, group: bool, input: bool) -> std::io::Result<Daemon> {
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        if input {
+            cmd.stdin(Stdio::piped());
+        }
 
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
             if group {
                 // A program in a group of its own is a background group: it must not read the
-                // terminal QuickAI may have been started from.
-                cmd.stdin(Stdio::null());
+                // terminal QuickAI may have been started from (one QuickAI talks to reads its pipe).
+                if !input {
+                    cmd.stdin(Stdio::null());
+                }
                 cmd.process_group(0);
             }
             #[cfg(target_os = "linux")]
@@ -295,6 +310,11 @@ impl Daemon {
     #[cfg(test)]
     pub fn id(&self) -> u32 {
         self.child.id()
+    }
+
+    /// The program's input, when it was started with one (`start_with_input`).
+    pub fn take_input(&mut self) -> Option<ChildStdin> {
+        self.child.stdin.take()
     }
 
     pub fn take_output(&mut self) -> (Option<ChildStdout>, Option<ChildStderr>) {

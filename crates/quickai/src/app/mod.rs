@@ -70,6 +70,7 @@ mod shell;
 mod sidebar;
 mod stall;
 mod theme;
+mod tools;
 mod values;
 mod widgets;
 mod workbench;
@@ -220,6 +221,8 @@ pub struct App {
     restart_with_selected: bool,
     /// The conversation of the Chat tab, with the model that runs.
     chat: chat::Chat,
+    /// The MCP servers QuickAI runs for the chat (C204).
+    tools: tools::Tools,
     /// The words the list of models is narrowed to (a box over it, when the list is long).
     model_filter: String,
     /// The model whose details are in a window of their own (`model_details.rs`), by its name.
@@ -481,6 +484,7 @@ impl App {
             delete_asked_in_window: false,
             restart_with_selected: false,
             chat: chat::Chat::default(),
+            tools: tools::Tools::default(),
             model_filter: String::new(),
             details_of: None,
             remote: remote_ui::RemoteState::default(),
@@ -975,6 +979,7 @@ impl eframe::App for App {
         self.poll_companion(ui.ctx());
         self.poll_named_models(ui.ctx());
         self.poll_chat();
+        self.poll_tools(ui.ctx());
         self.poll_remote(ui.ctx());
         self.poll_setup_run(ui.ctx());
         #[cfg(feature = "remote-setup")]

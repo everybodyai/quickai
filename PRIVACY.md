@@ -304,14 +304,16 @@ while it runs, not while you chat. It does so only when you press a button, or E
   connect sends then go to that computer and back, inside the SSH connection; nothing is opened to the network on either
   side. QuickAI keeps the address, the ports and the name of a key file you give in its settings, and never a password
   (it cannot ask for one). That computer, and whoever runs it, sees what you send to the models there.
-- **MCP servers you add.** Only servers you add yourself under **Settings, MCP servers** (llama.cpp), and only from the
-  next **Start**. A server that is a command is a program llama-server starts on your computer: what it reads, writes
-  and contacts is that program's, and the developer of QuickAI does not know it. A server at an address is contacted
-  by QuickAI itself (`quickai mcp-bridge`, started by llama-server) at each Start, to list its tools, and whenever a
-  model calls one of them in the chat page, with the headers you gave it (a key). What the model puts in a call goes
-  to that server, which sees your IP address and handles what it gets under its own terms. The list, with its keys,
-  stays on this computer (in QuickAI's settings and `~/.quickai/llamacpp/mcp-servers.json`, both readable by you
-  alone) and is never part of a configuration you share.
+- **MCP servers you add.** Only servers you add yourself under **MCP servers** in the sidebar, and only those that are
+  on. QuickAI starts them on your computer when you chat (or open that page), to list their tools, and llama-server
+  starts them too at each **Start** for its own chat page. A server that is a command is a program that runs on your
+  computer: what it reads, writes and contacts is that program's, and the developer of QuickAI does not know it. A
+  server at an address is contacted by QuickAI itself to list its tools and whenever a tool of it runs, with the headers
+  you gave it (a key). A tool runs only when you allow it, or always for a tool you set to **Always**. What the model
+  puts in a call goes to that server, which sees your IP address and handles what it gets under its own terms; what the
+  tool gives back goes to the model, so with a model on another computer of yours it goes there. The list, with its
+  keys, and what you said of each tool stay on this computer (in QuickAI's settings and
+  `~/.quickai/llamacpp/mcp-servers.json`, both readable by you alone) and are never part of a configuration you share.
 
 Each of these is an ordinary web request (HTTPS, or plain HTTP if you type an `http://` address), or for a remote
 computer an SSH connection, from your computer straight to that server. The developer of QuickAI is not involved in them

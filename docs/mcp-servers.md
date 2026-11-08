@@ -6,39 +6,43 @@ you keep the model you use and add tools to it.
 
 In QuickAI, MCP servers work:
 
-- with the **llama.cpp** engine,
-- on **this computer**,
-- in **llama.cpp's chat page** in your browser. **The Chat tab inside QuickAI does not use them.**
+- in **QuickAI's own chat**, with **llama.cpp** and **Ollama**, and with a model that runs on **another computer** you
+  added. QuickAI runs the servers itself, on this computer, and asks you before a tool runs;
+- in **llama.cpp's chat page** in your browser (**Open Chat UI**), which gets the same servers.
+
+ComfyUI has no chat, so it does not use them. Apps you connect to the model do not get them either: they bring their
+own tools.
 
 ## Try it: let a model read a file
 
-This example starts its server with `npx`, so it needs [Node.js](https://nodejs.org/). The model in QuickAI's full
-packages, Bonsai 2 4B, can do this.
+This example starts its server with `npx`, so it needs [Node.js](https://nodejs.org/). The model has to be one made for
+tool use; the one in QuickAI's full packages, Bonsai 2 4B, can do this.
 
 1. Put a small text file in a folder, for example `notes.txt` in your Documents.
-2. Open **Settings** (Ctrl+,) and choose **MCP servers**.
+2. Press **MCP servers** in the sidebar.
 3. Fill in the form and press **Add**:
    - **Name:** `files`
    - **Command or address:** `npx -y @modelcontextprotocol/server-filesystem ~/Documents`
-4. Close Settings and press the play button beside the model's name. If the model is already running, stop it and
-   start it again: servers are read when it starts.
-5. Press the **globe button** beside the model's name. The chat page opens in your browser.
+4. Under **What they offer**, the server says **Starting…**, then **Ready · 14 tools**. The first time, `npx` downloads
+   the server, which can take a minute.
+5. Press the back arrow, then **Start**. **Tools · 1** in the chat's box says the model may use one server.
 6. Ask for something that needs the tool, with the file's full path:
 
    > Read the file /home/me/Documents/notes.txt and tell me what it says.
 
-7. The page shows the tool the model chose (`files_read_text_file`) and what it wants to give it (**Input**), and asks
-   **Allow use of files_read_text_file from Server Tools?** Check the **Input** and press **Allow once**.
-8. The model gets the result and answers.
+7. A card shows the tool the model chose (**files · read_text_file**) and what it wants to give it. Check it and press
+   **Allow once**.
+8. The tool runs, the card says **Used** (**Show** opens what it was given and gave back), and the model answers with
+   the file.
 
-The first message takes the longest. `npx` may have to download the server, and the descriptions of this server's 14
-tools add about 2,500 tokens. On an 8-core CPU that message took over a minute; the same request again took a few
-seconds, because llama.cpp had already read that part.
+The first message takes the longest: the descriptions of this server's 14 tools go with it, about 2,500 tokens. On an
+8-core CPU that took over a minute; the same request again took a few seconds, because the engine had already read
+that part.
 
 ## Add a server
 
-Everything is under **Settings → MCP servers**. There are three ways, and a server's own instructions usually give you
-what you need for one of them.
+Everything is on the page of the **MCP servers**, in the sidebar. There are three ways, and a server's own instructions
+usually give you what you need for one of them.
 
 ### By its command
 
@@ -81,8 +85,9 @@ server's instructions**, paste it, and press **Add these**. A server with a name
 
 ### Change, switch off or remove one
 
-Each server in the list has a checkbox to switch it off without losing it, **Change** and **Remove**. Changes are used
-from the next Start: stop the model and start it again.
+Each server in the list has a checkbox to switch it off without losing it, **Change** and **Remove**. **Tools** in the
+chat's box switches servers on and off too. QuickAI's chat uses a change at once; llama.cpp's chat page uses it from
+the next Start.
 
 ## Servers to try
 
@@ -98,70 +103,79 @@ To find more, see the [list of servers](https://github.com/modelcontextprotocol/
 [MCP registry](https://registry.modelcontextprotocol.io/). Most are made by other people, so read
 [Stay safe](#stay-safe) first.
 
-## Use the tools in the chat page
+## Use the tools in QuickAI's chat
 
-**See which tools are on.** Press **+** beside the message box and choose **Tools**. **Server** is the tools of your
-servers, with a count such as `14/14`. Open it to see each one, and use its checkbox to switch tools off. Their names
-start with the server's name: `files_read_text_file`. **Browser** is two small tools of the page's own, not from your
-servers.
+**See which tools are on.** **Tools** in the chat's box lists your servers, each with how many tools it has, and switches
+each on or off. The page of the MCP servers lists every tool of a server under **What they offer**.
 
-**Ask plainly.** The model decides whether to use a tool, so say what you want and give exact paths and addresses. Asked
-for `shopping.txt` in a folder, Bonsai 2 4B passed the folder instead of the file. Given the file's full path, it got it
-right.
+**Choose what is asked.** Each tool is **Ask** (QuickAI asks each time the model wants it), **Always** (it runs without
+asking) or **Off** (the model is not offered it). A new tool is **Ask**.
 
-**Answer the question.** The page stops at each call until you answer, and the tool shows *Waiting for result...* until
-then.
+**Answer the card.** When the model wants a tool, a card shows the tool and what it would be given:
 
 | Button | What it does |
 | --- | --- |
 | **Allow once** | Runs this one call. |
-| The arrow beside it, then **Always allow** | Stops asking about this tool, or about all tools of your servers. |
+| **Always allow** | Runs it, and this tool from now on, without asking (**What they offer** changes it back). |
 | **Deny** | Does not run it. The model is told and goes on without it. |
 
-**Ignore the page's own MCP Servers screen.** The icon in the page's left bar opens a screen that says *Add your first
-MCP server*, even when your servers are working. That is a separate list kept by the page. The servers you added in
-QuickAI do not appear there, and you do not need to add them again.
+**Ask plainly.** The model decides whether to use a tool, so say what you want and give exact paths and addresses.
+Asked for `shopping.txt` in a folder, Bonsai 2 4B passed the folder instead of the file. Given the file's full path, it
+got it right.
 
-**If it is slow,** switch off the tools you do not need. The description of every tool that is on goes with each
-message. If a long chat runs out of room, press **Change** beside the model in QuickAI for a larger context.
+**If it is slow,** switch off the tools you do not need. The description of every tool that is offered goes with each
+message. If a long chat runs out of room, choose **Long chats** in the panel at the right of the page.
 
 **If the model does not use a tool,** ask it directly and check that the tool is on. If it still ignores tools, or keeps
-calling them wrongly, try another model: it has to be one made for tool use, and small models make more mistakes.
+calling them wrongly, try another model: it has to be one made for tool use, and small models make more mistakes. A
+model can ask for tools eight times in a row after one message of yours; then the chat stops and waits for you.
+
+**If the engine does not take tools,** the chat says so under the conversation and answers without them.
+
+## Use the tools in llama.cpp's chat page
+
+With llama.cpp, **Open Chat UI** in the panel at the right (while the model runs) opens llama.cpp's own chat page, which
+has the same servers. Press **+** beside its message box and choose **Tools**: **Server** is the tools of your servers,
+and the page asks **Allow once** or **Deny** at each call. Its own **MCP Servers** screen is a separate list that the
+page keeps: the servers you added in QuickAI do not appear there, and you do not need to add them again.
 
 ## Stay safe
 
 - **A command server runs as you.** It can do whatever its program does on your computer. Add only servers you trust.
   `npx -y` and `uvx` download the server from the internet and can pick up a newer version later.
 - **Give a server as little as it needs.** Name one folder, not your whole home folder. The filesystem server can also
-  write, edit and move files in that folder; switch those tools off under **Tools** if you only want it to read.
+  write, edit and move files in that folder; set those tools to **Off** if you only want it to read.
 - **Text from a tool can try to steer the model.** A web page could contain instructions aimed at the model, such as
-  reading your files and sending them somewhere. Read the **Input** before you allow a call, and be careful with
-  **Always allow** when a web tool and a file tool are both on.
-- **The question is the chat page's, not a lock.** Any program on this computer can run a tool directly through
-  `http://127.0.0.1:<port>/tools`, and it is not asked. QuickAI's server listens on this computer only, so keep it that
-  way: do not add `--host 0.0.0.0` under extra arguments while MCP servers are on. llama.cpp itself marks this feature
-  experimental and says not to expose it to untrusted environments.
+  reading your files and sending them somewhere. Read what a call would be given before you allow it, and be careful
+  with **Always** when a web tool and a file tool are both on.
+- **llama.cpp's own question is the chat page's, not a lock.** While llama.cpp runs with servers, any program on this
+  computer can run a tool directly through `http://127.0.0.1:<port>/tools`, and it is not asked. QuickAI's server
+  listens on this computer only, so keep it that way: do not add `--host 0.0.0.0` under extra arguments while MCP
+  servers are on. llama.cpp itself marks this feature experimental and says not to expose it to untrusted environments.
 - **Some of what you send can leave your computer.** Your prompts normally stay here, but what the model puts in a call
   goes to the server. A server at an address sees it, and your IP address, under its own terms. So does whatever service
-  a command server contacts. See [PRIVACY.md](../PRIVACY.md).
+  a command server contacts. With a model on another computer, what a tool gives back is sent there with the next
+  message. See [PRIVACY.md](../PRIVACY.md).
 - **Keys stay on this computer.** They are kept in QuickAI's settings, which only your account can read, and are never
   part of a configuration you share. Versions up to 0.2.1 left the settings file readable by other accounts on the
   computer: if you share a computer, update QuickAI before adding a key.
 
 ## If something does not work
 
-Start with the **Log** tab under the model, and look for the lines that say `MCP`. A server that works says
-`MCP warmup: 'files' discovered 14 tools`.
+Start with **What they offer** on the page of the MCP servers: a server that started says **Ready** and how many tools
+it has; one that did not says **Did not start** and why, in its own words when it gave some.
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| `MCP 'files': failed to spawn 'npx'` | The program was not found. Your other servers still work. | Install it. If you started QuickAI from a desktop launcher, it may not see a program set up by your shell (nvm, fnm): write the full path, which `which npx` prints. On Windows, try `cmd /c npx -y ...`. |
-| `'wiki' discovered 0 tools` | The server gave no tools: a wrong address, no connection, a missing or wrong key, or an older `/sse` address. | For a server at an address, a line starting `[MCP]` follows soon after and says why. Versions up to 0.2.1 do not have that line: run the check below. |
-| `MCP starting failed: ...` | llama-server could not read the list. | Correct it with **Edit the list as JSON**. |
-| `invalid argument: --mcp-servers-config` | This llama.cpp is too old to know MCP servers. | Choose a newer build under **Settings → Program**. |
-| No **Server** under **+ → Tools** | No server was loaded. | Stop the model and start it again, reload the page, and read the Log. |
-| *Waiting for result...* on a tool | The page is waiting for you. | Press **Allow once** or **Deny** under it. |
-| No **MCP servers** page in Settings | The engine in use is not llama.cpp. | Choose llama.cpp in the menu at the top right. |
+| **Did not start:** `npx could not be started` | The program was not found. Your other servers still work. | Install it. If you started QuickAI from a desktop launcher, it may not see a program set up by your shell (nvm, fnm): write the full path, which `which npx` prints. |
+| **Did not start:** `the server did not answer in 120 s` | The server is slow to come up, or waits for something. | Run its command in a terminal to see what it says. |
+| **Ready · 0 tools** | The server gave no tools: a wrong address, a missing or wrong key, or an older `/sse` address. | Check the address and the key. |
+| A card that says **Failed** | The tool ran and said it failed, or could not run. | The card says why. |
+| No card when you ask | The model chose not to use a tool, or the server is off. | See *If the model does not use a tool* above. |
+
+For llama.cpp's chat page, the log under the page (the log button of the bar) has llama-server's own lines: a server
+that works says `MCP warmup: 'files' discovered 14 tools`; `invalid argument: --mcp-servers-config` means that build of
+llama.cpp is too old for MCP servers (choose a newer one under **Settings → Program**).
 
 To ask a server at an address yourself, run this in a terminal, with its address at the end:
 
@@ -176,14 +190,13 @@ A reply with `"result"` means it answered. Otherwise the output says why. For a 
 
 ## What it does not do
 
-- **Other engines.** Ollama and ComfyUI have no MCP servers page.
-- **Other computers.** The list stays on this computer and does not travel with a configuration, so a run on another
-  computer does not have these servers.
-- **QuickAI's Chat tab, or apps you connect.** They do not get the tools by themselves. An app can use them only if it
-  does the work: `GET /tools` lists them, it sends them with its own request as `tools`, and
-  `POST /tools` with `{"tool": "files_read_text_file", "params": {...}}` runs one. It is then responsible for asking you.
+- **ComfyUI.** It has no chat.
+- **Apps you connect.** They do not get the tools by themselves. With llama.cpp, an app can use them only if it does the
+  work: `GET /tools` lists them, it sends them with its own request as `tools`, and `POST /tools` with
+  `{"tool": "files_read_text_file", "params": {...}}` runs one. It is then responsible for asking you.
+- **Resources and prompts.** QuickAI uses a server's tools, not the other things MCP can offer.
 
 ---
 
-The steps and servers above were tried with QuickAI 0.2.1 (llama.cpp b11889) on Linux. Windows and macOS have not been
-tried.
+The chat page's steps and the servers above were tried with QuickAI 0.2.1 (llama.cpp b11889) on Linux. QuickAI's own
+chat with tools was tried with a stand-in engine and server on Linux. Windows and macOS have not been tried.

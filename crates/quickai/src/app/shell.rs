@@ -433,27 +433,7 @@ impl App {
                 egui::Frame::new()
                     .inner_margin(egui::Margin::symmetric(24, 18))
                     .show(ui, |ui| {
-                        theme::column(ui, 760.0, |ui| {
-                            if self.mcp_server_count().is_some() {
-                                let form = self.form();
-                                self.show_tools_page(ui, &form);
-                            } else {
-                                super::settings_window::page_head(
-                                    ui,
-                                    "MCP servers",
-                                    Some(&format!(
-                                        "Tools the model can use work with llama.cpp for now. {} has none.",
-                                        self.engine_name()
-                                    )),
-                                );
-                                if self.engine_choices().iter().any(|(id, _, _)| id == crate::settings::DEFAULT_ENGINE)
-                                    && self.engine_lock_reason().is_none()
-                                    && ui.button("Use llama.cpp").clicked()
-                                {
-                                    self.switch_engine(crate::settings::DEFAULT_ENGINE);
-                                }
-                            }
-                        });
+                        theme::column(ui, 760.0, |ui| self.show_mcp_page(ui));
                     });
             });
     }

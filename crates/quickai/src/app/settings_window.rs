@@ -12,12 +12,12 @@ use std::path::PathBuf;
 
 use eframe::egui;
 
-use quickai_core::form::{Edit, FormField, FormModel};
+use quickai_core::form::{FormField, FormModel};
 
 use super::icons::{self, Icon};
 use super::runtime_manager::INSTALL_PYTHON_FIELD;
 use super::theme;
-use super::widgets::{self, Reply};
+use super::widgets;
 use super::{App, PendingDelete};
 use crate::hardware;
 
@@ -271,7 +271,7 @@ impl App {
             SettingsPage::General => self.show_general_page(ui, form),
             SettingsPage::Program => self.show_program_page(ui, form),
             SettingsPage::Start => self.show_start_page(ui, form),
-            SettingsPage::Tools => self.show_tools_page(ui, form),
+            SettingsPage::Tools => self.show_mcp_page(ui),
             SettingsPage::Companion => self.show_companion_page(ui),
             SettingsPage::Computers => self.show_computers_page(ui),
         }
@@ -335,72 +335,10 @@ impl App {
         self.show_command_line(ui);
     }
 
-    /// MCP servers: the tools a model may use in the engine's chat page, as a list to add to, switch off and change.
-    pub(super) fn show_tools_page(&mut self, ui: &mut egui::Ui, form: &Option<FormModel>) {
-        let Some(field) = form
-            .as_ref()
-            .and_then(|f| f.section("advanced"))
-            .and_then(|s| s.fields.iter().find(|f| is_mcp_field(f)))
-            .cloned()
-        else {
-            return;
-        };
-        page_head(
-            ui,
-            &field.label,
-            Some(&format!(
-                "Tools the model can use in {}'s chat page (Open Chat UI, in the panel at the right while it runs), from servers of the Model Context Protocol.",
-                self.engine_name()
-            )),
-        );
-        ui.hyperlink_to(
-            "How to add and use them",
-            "https://github.com/everybodyai/quickai/blob/main/docs/mcp-servers.md",
-        );
-        ui.add_space(6.0);
-        let reply = group(ui, |ui| {
-            ui.add_enabled_ui(field.enabled, |ui| widgets::show(ui, &field))
-                .inner
-        });
-        if let Some(Reply::Set(value)) = reply {
-            self.values.apply(vec![Edit {
-                key: field.key.clone(),
-                value,
-            }]);
-            self.save_settings();
-        }
-        ui.add_space(8.0);
-        let p = theme::palette();
-        for line in [
-            "They are used from the next Start, in the chat page and not in QuickAI's own chat. The page lists their tools under + and Tools, where each can be switched off, and asks you before the model uses one.",
-            "A server that is a command is started by llama-server on this computer and can do whatever its program does: add only ones you trust. One at an address is reached through QuickAI.",
-            "Commands such as npx and uvx need Node.js or uv on this computer. If a server does not start, the log says why.",
-        ] {
-            ui.add(egui::Label::new(egui::RichText::new(line).small().color(p.muted)).wrap());
-        }
-        if self.session.is_active() {
-            ui.add_space(4.0);
-            ui.colored_label(
-                p.warn,
-                "The server is running: a change is used after Stop and Start.",
-            );
-        }
-    }
-
-    /// How many MCP servers the engine in use has, when it takes them at all.
+    /// How many MCP servers are on: the list is QuickAI's, for every engine that chats (C204).
     pub(super) fn mcp_server_count(&self) -> Option<usize> {
-        let engine = self.engine_doc()?;
-        let field = engine
-            .doc
-            .fields
-            .iter()
-            .find(|f| f.ui.widget.as_deref() == Some(widgets::MCP_SERVERS))?;
-        let text = self.values.text(&field.id).unwrap_or_default();
-        Some(
-            quickai_core::mcp::parse(text)
-                .map(|s| s.iter().filter(|s| !s.disabled).count())
-                .unwrap_or(0),
-        )
+        // the list is QuickAI's, whatever the engine (C204): its servers that are on
+        Some(self.mcp_list().iter().filter(|s| !s.disabled).count())
     }
 
     /// Other computers: whether QuickAI sets them up (WP4.33).

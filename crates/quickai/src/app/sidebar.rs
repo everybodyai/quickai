@@ -349,29 +349,11 @@ impl App {
                 }
             }
         }
-        let count = self.mcp_server_count();
-        let said = match count {
-            Some(n) => format!("{n} on"),
-            None => "llama.cpp only".to_string(),
-        };
+        let said = format!("{} on", self.mcp_server_count().unwrap_or(0));
         let on = self.view == super::MainView::Tools;
-        let row = nav_row(
-            ui,
-            Icon::Wrench,
-            "MCP servers",
-            Some(&said),
-            count.is_some(),
-            on,
+        let row = nav_row(ui, Icon::Wrench, "MCP servers", Some(&said), true, on).on_hover_text(
+            "Tools the model can use when you chat, with any engine: read files, fetch a web page, the time.",
         );
-        let row = if count.is_some() {
-            row.on_hover_text(
-                "Tools the model can use: read files, fetch a web page, the time. Used in llama.cpp's chat page.",
-            )
-        } else {
-            row.on_hover_text(
-                "MCP servers work with llama.cpp for now: choose it under the computer.",
-            )
-        };
         if row.clicked() {
             self.open_mcp_servers();
         }

@@ -122,6 +122,19 @@ pub(super) fn editor(ui: &mut egui::Ui, field: &FormField) -> Option<Reply> {
     reply
 }
 
+/// The list and the ways to change it, for a list kept elsewhere than in a field (the page of the MCP servers, C204):
+/// what comes back is its new text, when the person changed it. `salt` tells its boxes from another's.
+pub(super) fn editor_text(ui: &mut egui::Ui, salt: &str, text: &str) -> Option<String> {
+    let id = ui.id().with(("mcp_servers", salt));
+    let mut boxes: Boxes = ui.data_mut(|d| d.get_temp(id).unwrap_or_default());
+    let reply = draw(ui, text, &mut boxes);
+    ui.data_mut(|d| d.insert_temp(id, boxes));
+    match reply {
+        Some(Reply::Set(value)) => value.as_str().map(str::to_string),
+        _ => None,
+    }
+}
+
 fn draw(ui: &mut egui::Ui, text: &str, boxes: &mut Boxes) -> Option<Reply> {
     let p = theme::palette();
     // the text as it is, when that is how it is being edited, or when it cannot be read as a list

@@ -113,6 +113,8 @@ enum Deed {
     Log,
     ModelsFolder,
     Privacy,
+    /// The page of the MCP servers.
+    Tools,
 }
 
 impl Deed {
@@ -125,6 +127,7 @@ impl Deed {
             Deed::Log => "Show the log",
             Deed::ModelsFolder => "Open the folder",
             Deed::Privacy => "Read the privacy policy",
+            Deed::Tools => "Open MCP servers",
         }
     }
 
@@ -137,6 +140,7 @@ impl Deed {
             Deed::Log => Icon::Document,
             Deed::ModelsFolder => Icon::Folder,
             Deed::Privacy => Icon::Lock,
+            Deed::Tools => Icon::Wrench,
         }
     }
 }
@@ -368,29 +372,33 @@ const PAGES: &[Page] = &[
         group: Group::Further,
         icon: Icon::Plug,
         title: "Give your model tools",
-        lead: "MCP servers let a model read your files, fetch a web page and more. They work with llama.cpp, in its \
-               chat page in your browser, and not in QuickAI's own chat yet.",
+        lead: "MCP servers let a model read your files, fetch a web page and more. QuickAI runs them on this \
+               computer and offers their tools when you chat, with llama.cpp or Ollama, and with a model on another \
+               computer too.",
         picture: None,
         steps: &[
             step(
                 "Press **MCP servers** in the sidebar. Give the server a name and the command or address from its \
                  instructions, then press **Add**.",
             )
-            .does(Deed::Settings),
+            .does(Deed::Tools),
             step(
-                "Start the model with **Start**. If it is already running, stop it and start it again: servers are read \
-                 when it starts.",
+                "Start a model and chat. **Tools** in the chat's box says which servers the model may use, and switches \
+                 each on or off.",
             ),
-            step("Press **Open Chat UI** {globe} in the panel at the right. Your servers' tools are under **+**, then **Tools**."),
             step(
-                "Ask for what you need, with exact paths and addresses. When the model calls a tool, check its \
-                 **Input** and press **Allow once** or **Deny**.",
+                "When the model wants a tool, a card shows what it would be given: press **Allow once**, **Always \
+                 allow** or **Deny**. The model answers with what the tool gave back.",
+            ),
+            step(
+                "Under **What they offer** on the same page, each tool can be set to **Ask**, **Always** or **Off**. \
+                 With llama.cpp, its own chat page (**Open Chat UI**) has the servers too.",
             ),
         ],
         numbered: true,
         tip: Some(
-            "A server can do whatever its program does on this computer, so add only ones you trust. If one does not \
-             work, open the log {log} and look for a line with MCP in it.",
+            "A server can do whatever its program does on this computer, so add only ones you trust. One that does not \
+             start says why on the page of the MCP servers.",
         ),
     },
     Page {
@@ -1317,7 +1325,12 @@ impl App {
             Deed::Recommended => {
                 if self.can_recommend() {
                     self.open_catalog();
+                    main();
                 }
+            }
+            Deed::Tools => {
+                self.open_mcp_servers();
+                main();
             }
             Deed::Settings => self.open_settings(),
             Deed::Configurations => {
@@ -1325,7 +1338,9 @@ impl App {
                 self.raise_configurations = true;
             }
             Deed::Log => {
+                // the log opens under the page (C203)
                 self.active_tab = super::Tab::Main;
+                self.dock_open = true;
                 main();
             }
             Deed::ModelsFolder => super::workbench::open_folder(&self.models_dir),

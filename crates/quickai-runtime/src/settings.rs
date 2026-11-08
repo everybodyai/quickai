@@ -46,6 +46,14 @@ const TELEMETRY_KEYS: [&str; 2] = ["app.telemetry_level", "app.telemetry_asked"]
 /// The tab the window shows under the model (`chat`, `log` or `live`); absent, the chat (UI v2).
 pub const TAB_KEY: &str = "app.tab";
 
+/// Where the person's MCP servers are kept: llama.cpp's field (its chat page is given them), read and written by the
+/// window whatever the engine, since QuickAI's own chat uses them with every engine (C204).
+pub const MCP_SERVERS_KEY: &str = "llamacpp.mcp_servers";
+
+/// What the person said of each tool of an MCP server, `<server>.<tool>` to `always` or `off`; a tool not in it is asked
+/// about each time (C204).
+pub const TOOL_PERMISSIONS_KEY: &str = "app.tool_permissions";
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub last_model_filename: Option<String>,
@@ -357,6 +365,49 @@ impl Settings {
         self.set_app_value(
             KEEP_CHATS_KEY,
             keep.then_some(serde_json::Value::Bool(true)),
+        );
+    }
+
+    /// The person's MCP servers, as llama.cpp's field keeps them (`{"mcpServers": {...}}`); empty when there are none.
+    pub fn mcp_servers_text(&self) -> String {
+        self.app_value(MCP_SERVERS_KEY)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    /// Keeps the list of MCP servers; an empty one takes the key away.
+    pub fn set_mcp_servers_text(&mut self, text: &str) {
+        self.set_app_value(
+            MCP_SERVERS_KEY,
+            (!text.trim().is_empty()).then(|| serde_json::Value::from(text)),
+        );
+    }
+
+    /// What the person said of the tools: `<server>.<tool>` to `always` or `off`.
+    pub fn tool_permissions(&self) -> std::collections::BTreeMap<String, String> {
+        self.app_value(TOOL_PERMISSIONS_KEY)
+            .and_then(serde_json::Value::as_object)
+            .map(|map| {
+                map.iter()
+                    .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Keeps what the person said of the tools; none takes the key away.
+    pub fn set_tool_permissions(
+        &mut self,
+        permissions: &std::collections::BTreeMap<String, String>,
+    ) {
+        let map: serde_json::Map<String, serde_json::Value> = permissions
+            .iter()
+            .map(|(k, v)| (k.clone(), serde_json::Value::from(v.as_str())))
+            .collect();
+        self.set_app_value(
+            TOOL_PERMISSIONS_KEY,
+            (!map.is_empty()).then_some(serde_json::Value::Object(map)),
         );
     }
 

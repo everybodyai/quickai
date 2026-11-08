@@ -25,11 +25,11 @@ const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// What the bridge remembers between requests.
 #[derive(Default)]
-struct Session {
+pub(crate) struct Session {
     /// The session the server gave (`Mcp-Session-Id`).
-    id: Option<String>,
+    pub(crate) id: Option<String>,
     /// The version of the protocol agreed on at `initialize`.
-    protocol: Option<String>,
+    pub(crate) protocol: Option<String>,
 }
 
 /// Runs the bridge for `args` (`<url>`) until the engine closes its input. The exit code.
@@ -150,7 +150,7 @@ pub fn check(url: &str, headers: &BTreeMap<String, String>) -> Result<usize, Str
 }
 
 /// The answer to one request; an error the server sent is an error here.
-fn answer_to(
+pub(crate) fn answer_to(
     agent: &ureq::Agent,
     url: &str,
     headers: &BTreeMap<String, String>,
@@ -174,7 +174,7 @@ fn answer_to(
 
 /// POSTs one message and gives the messages the server answers with: none for a notification it accepted, the
 /// response (and whatever the server says before it) for a request.
-fn exchange(
+pub(crate) fn exchange(
     agent: &ureq::Agent,
     url: &str,
     headers: &BTreeMap<String, String>,

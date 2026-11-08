@@ -8,6 +8,7 @@
 //! is kept unless "Keep chats" is on (WP4.28): then each conversation is a file of this computer (`chats.rs`), listed
 //! beside the conversation, opened, deleted and exported as Markdown.
 
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,6 +31,8 @@ pub struct Turn {
     pub text: String,
     pub stats: Option<Stats>,
     pub pictures: Vec<Picture>,
+    /// For a reply, the tools the model asked to use (C204), and what came of each.
+    pub calls: Vec<ToolCall>,
 }
 
 impl Turn {
@@ -39,8 +42,69 @@ impl Turn {
             text: text.into(),
             stats: None,
             pictures: Vec::new(),
+            calls: Vec::new(),
         }
     }
+}
+
+/// A tool the model asked to use in a reply (C204): the name it gave it (and the server and tool that is), with what, and
+/// what came of it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    /// The server and its tool; the server is empty for a name the model was not offered.
+    pub server: String,
+    pub tool: String,
+    /// What the model gave it, as JSON text.
+    pub arguments: String,
+    pub state: CallState,
+    /// What it was given and gave back is shown under it.
+    pub open: bool,
+    /// The ticket of its run, once it runs.
+    pub ticket: Option<u64>,
+}
+
+/// What came of a call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CallState {
+    /// It waits for the person to allow it, or not.
+    Asking,
+    Running,
+    /// It ran: what it gave back.
+    Done(String),
+    /// It could not run, or said it failed: why.
+    Failed(String),
+    /// The person did not allow it.
+    Denied,
+}
+
+impl ToolCall {
+    /// It ran, failed or was not allowed: the model can be told.
+    pub fn settled(&self) -> bool {
+        matches!(
+            self.state,
+            CallState::Done(_) | CallState::Failed(_) | CallState::Denied
+        )
+    }
+
+    /// What the model is told came of it.
+    pub fn answer(&self) -> String {
+        match &self.state {
+            CallState::Done(text) => text.clone(),
+            CallState::Failed(why) => format!("The tool failed: {why}"),
+            CallState::Denied => "The person did not allow this tool to run.".to_string(),
+            CallState::Asking | CallState::Running => "The tool did not run.".to_string(),
+        }
+    }
+}
+
+/// A tool call as the stream gave it: its id, the name of the tool, and its arguments as JSON text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AskedCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
 }
 
 /// A picture sent with a message: its name, its kind (`image/png`) and its bytes in base64.
@@ -159,6 +223,10 @@ pub enum ChatEvent {
     /// A piece of the model's thinking came (`reasoning_content`, or Ollama's `reasoning`): it is not shown, but the
     /// reply is on its way.
     Thinking,
+    /// The reply asks to use tools (C204): they come before its end.
+    Calls(Vec<AskedCall>),
+    /// Something to say under the conversation: the engine did not take the tools, and the reply came without them.
+    Notice(String),
     Done,
     Failed(String),
 }
@@ -203,6 +271,16 @@ pub struct Chat {
     pub kept: Vec<ChatSummary>,
     /// The pictures that go with the next message.
     pub pictures: Vec<Picture>,
+    /// The tools offered with the reply that is coming (C204): the name the model knows each by, to its server and tool.
+    pub tool_names: BTreeMap<String, (String, String)>,
+    /// How many replies in a row asked for tools since the person's last message.
+    pub tool_rounds: u32,
+    /// The calls of the last reply wait to be settled: then the model is asked to go on.
+    pub tools_waiting: bool,
+    /// The message waits for the MCP servers to start before the reply is asked for.
+    pub waiting_for_tools: bool,
+    /// Said under the conversation (the engine did not take the tools).
+    pub notice: Option<String>,
 }
 
 impl Chat {
@@ -234,11 +312,22 @@ impl Chat {
             && self
                 .turns
                 .last()
-                .is_some_and(|t| !t.from_person && t.text.is_empty())
+                .is_some_and(|t| !t.from_person && t.text.is_empty() && t.calls.is_empty())
         {
             self.turns.pop();
         }
         self.thinking = None;
+        self.waiting_for_tools = false;
+        self.tools_waiting = false;
+        // a call that waits for the person, or runs, is left as it is: nothing is sent of it
+        for call in self
+            .turns
+            .iter_mut()
+            .flat_map(|t| t.calls.iter_mut())
+            .filter(|c| !c.settled())
+        {
+            call.state = CallState::Denied;
+        }
     }
 
     fn options(&self) -> Options {
@@ -255,15 +344,31 @@ impl Chat {
         self.turns.clear();
         self.error = None;
         self.saved_id = None;
+        self.notice = None;
+        self.tool_rounds = 0;
     }
 }
 
 /// Asks the engine on `port` for the reply to `turns`, streamed, on a thread of its own.
+#[cfg(test)]
 pub fn spawn_reply(
     port: u16,
     model: String,
     options: Options,
     turns: Vec<Turn>,
+    wake: impl Fn() + Send + Sync + 'static,
+) -> (Receiver<ChatEvent>, Arc<AtomicBool>) {
+    spawn_reply_with_tools(port, model, options, turns, None, wake)
+}
+
+/// `spawn_reply`, offering the model `tools` (the request's `tools`, C204). An engine that refuses the request with them
+/// is asked again without them, and that is said.
+pub fn spawn_reply_with_tools(
+    port: u16,
+    model: String,
+    options: Options,
+    turns: Vec<Turn>,
+    tools: Option<serde_json::Value>,
     wake: impl Fn() + Send + Sync + 'static,
 ) -> (Receiver<ChatEvent>, Arc<AtomicBool>) {
     let (tx, rx) = crossbeam_channel::unbounded();
@@ -280,9 +385,27 @@ pub fn spawn_reply(
                 Piece::Thinking => ChatEvent::Thinking,
             })
         };
-        match stream_reply(port, &model, &options, &turns, &stop, &said) {
-            Ok(()) => send(ChatEvent::Done),
-            Err(why) => send(ChatEvent::Failed(why)),
+        let mut outcome =
+            stream_reply(port, &model, &options, &turns, tools.as_ref(), &stop, &said);
+        if tools.is_some() {
+            if let Err(failure) = &outcome {
+                if failure.refused {
+                    send(ChatEvent::Notice(format!(
+                        "The engine did not take the tools ({}): this reply is without them.",
+                        failure.why
+                    )));
+                    outcome = stream_reply(port, &model, &options, &turns, None, &stop, &said);
+                }
+            }
+        }
+        match outcome {
+            Ok(calls) => {
+                if !calls.is_empty() {
+                    send(ChatEvent::Calls(calls));
+                }
+                send(ChatEvent::Done);
+            }
+            Err(failure) => send(ChatEvent::Failed(failure.why)),
         }
     });
     (rx, cancel)
@@ -290,7 +413,19 @@ pub fn spawn_reply(
 
 /// The body of the request: the model, the instructions as the system's word, the conversation, and what the
 /// person set (and nothing else, so that the model's own defaults stand).
+#[cfg(test)]
 pub fn request_body(model: &str, options: &Options, turns: &[Turn]) -> serde_json::Value {
+    request_body_with(model, options, turns, None)
+}
+
+/// `request_body`, with the tools offered (C204). A reply that asked for tools is said as it was asked, followed by what
+/// came of each call.
+pub fn request_body_with(
+    model: &str,
+    options: &Options,
+    turns: &[Turn],
+    tools: Option<&serde_json::Value>,
+) -> serde_json::Value {
     let system = options
         .instructions
         .as_deref()
@@ -299,10 +434,29 @@ pub fn request_body(model: &str, options: &Options, turns: &[Turn]) -> serde_jso
         .map(|i| serde_json::json!({"role": "system", "content": i}));
     let messages: Vec<serde_json::Value> = system
         .into_iter()
-        .chain(turns.iter().map(|t| {
+        .chain(turns.iter().flat_map(|t| {
             let role = if t.from_person { "user" } else { "assistant" };
+            if !t.from_person && !t.calls.is_empty() {
+                // the reply as it asked for the tools, then what came of each, in the order asked
+                let asked: Vec<serde_json::Value> = t
+                    .calls
+                    .iter()
+                    .map(|c| {
+                        serde_json::json!({
+                            "id": c.id,
+                            "type": "function",
+                            "function": {"name": c.name, "arguments": c.arguments},
+                        })
+                    })
+                    .collect();
+                let mut said = vec![serde_json::json!({"role": "assistant", "content": t.text, "tool_calls": asked})];
+                said.extend(t.calls.iter().map(|c| {
+                    serde_json::json!({"role": "tool", "tool_call_id": c.id, "content": c.answer()})
+                }));
+                return said;
+            }
             if t.pictures.is_empty() {
-                return serde_json::json!({"role": role, "content": t.text});
+                return vec![serde_json::json!({"role": role, "content": t.text})];
             }
             // the words and the pictures, as the OpenAI chat API takes them (llama-server and Ollama both do)
             let mut content = vec![serde_json::json!({"type": "text", "text": t.text})];
@@ -312,10 +466,13 @@ pub fn request_body(model: &str, options: &Options, turns: &[Turn]) -> serde_jso
                     "image_url": {"url": format!("data:{};base64,{}", p.mime, p.base64)},
                 })
             }));
-            serde_json::json!({"role": role, "content": content})
+            vec![serde_json::json!({"role": role, "content": content})]
         }))
         .collect();
     let mut body = serde_json::json!({"model": model, "messages": messages, "stream": true});
+    if let Some(tools) = tools {
+        body["tools"] = tools.clone();
+    }
     if let Some(t) = options.temperature {
         body["temperature"] = serde_json::json!((f64::from(t) * 100.0).round() / 100.0);
     }
@@ -335,15 +492,31 @@ enum Piece {
 /// in the body of a refusal or in the stream, is the failure's sentence. A model that thinks first sends its thinking
 /// apart from its reply (llama-server as `reasoning_content`, Ollama as `reasoning`): that it thinks is said, so the
 /// window can show the reply is on its way.
+/// Why a reply did not come: the words, and whether the engine refused the request before any of it came.
+struct Failure {
+    why: String,
+    refused: bool,
+}
+
+impl Failure {
+    fn on_the_way(why: String) -> Failure {
+        Failure {
+            why,
+            refused: false,
+        }
+    }
+}
+
 fn stream_reply(
     port: u16,
     model: &str,
     options: &Options,
     turns: &[Turn],
+    tools: Option<&serde_json::Value>,
     stop: &AtomicBool,
     said: &dyn Fn(Piece),
-) -> Result<(), String> {
-    let body = request_body(model, options, turns);
+) -> Result<Vec<AskedCall>, Failure> {
+    let body = request_body_with(model, options, turns, tools);
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .timeout_connect(Some(Duration::from_secs(10)))
@@ -353,19 +526,24 @@ fn stream_reply(
         .post(format!("http://127.0.0.1:{port}/v1/chat/completions"))
         .header("Content-Type", "application/json")
         .send(body.to_string())
-        .map_err(|e| format!("could not reach the server: {e}"))?;
+        .map_err(|e| Failure::on_the_way(format!("could not reach the server: {e}")))?;
     let status = response.status().as_u16();
     let reader = response.into_body().into_reader();
     if !(200..300).contains(&status) {
         let said: serde_json::Value =
             serde_json::from_reader(reader).unwrap_or(serde_json::Value::Null);
-        return Err(error_words(&said).unwrap_or_else(|| format!("the server answered {status}")));
+        return Err(Failure {
+            why: error_words(&said).unwrap_or_else(|| format!("the server answered {status}")),
+            refused: true,
+        });
     }
+    // the tool calls, as they come in pieces: by their index, the id, the name and the arguments so far
+    let mut calls: Vec<AskedCall> = Vec::new();
     for line in BufReader::new(reader).lines() {
         if stop.load(Ordering::SeqCst) {
-            return Ok(());
+            return Ok(Vec::new());
         }
-        let line = line.map_err(|e| format!("the reply stopped: {e}"))?;
+        let line = line.map_err(|e| Failure::on_the_way(format!("the reply stopped: {e}")))?;
         let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else {
             continue;
         };
@@ -376,8 +554,9 @@ fn stream_reply(
             continue;
         };
         if let Some(why) = error_words(&event) {
-            return Err(why);
+            return Err(Failure::on_the_way(why));
         }
+        gather_calls(&event, &mut calls);
         let delta = |key: &str| {
             event
                 .pointer(&format!("/choices/0/delta/{key}"))
@@ -397,7 +576,56 @@ fn stream_reply(
             break;
         }
     }
-    Ok(())
+    for (i, call) in calls.iter_mut().enumerate() {
+        if call.id.is_empty() {
+            call.id = format!("call_{i}");
+        }
+        if call.arguments.trim().is_empty() {
+            call.arguments = "{}".to_string();
+        }
+    }
+    Ok(calls.into_iter().filter(|c| !c.name.is_empty()).collect())
+}
+
+/// The pieces of tool calls a line of the stream brings (`choices[0].delta.tool_calls`), put with what came before by
+/// their index: the id and the name come once, the arguments in pieces (or whole, as an object, from some engines).
+fn gather_calls(event: &serde_json::Value, calls: &mut Vec<AskedCall>) {
+    let Some(pieces) = event
+        .pointer("/choices/0/delta/tool_calls")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return;
+    };
+    for (n, piece) in pieces.iter().enumerate() {
+        let index = piece
+            .get("index")
+            .and_then(serde_json::Value::as_u64)
+            .map_or(n, |i| i as usize);
+        while calls.len() <= index {
+            calls.push(AskedCall {
+                id: String::new(),
+                name: String::new(),
+                arguments: String::new(),
+            });
+        }
+        let call = &mut calls[index];
+        if let Some(id) = piece.get("id").and_then(serde_json::Value::as_str) {
+            if !id.is_empty() {
+                call.id = id.to_string();
+            }
+        }
+        if let Some(name) = piece
+            .pointer("/function/name")
+            .and_then(serde_json::Value::as_str)
+        {
+            call.name.push_str(name);
+        }
+        match piece.pointer("/function/arguments") {
+            Some(serde_json::Value::String(more)) => call.arguments.push_str(more),
+            Some(whole @ serde_json::Value::Object(_)) => call.arguments = whole.to_string(),
+            _ => {}
+        }
+    }
 }
 
 /// The parts of a message: text, and code between lines of three backticks (```` ```rust ````), which is set in
@@ -628,7 +856,7 @@ impl App {
     }
 
     /// The chat talks to a run now: the one here, or the one on the computer QuickAI set up that is shown.
-    fn chat_running(&self) -> bool {
+    pub(super) fn chat_running(&self) -> bool {
         if self.setup_in_use().is_some() {
             return self.setup_run().is_some_and(|r| r.running());
         }
@@ -674,7 +902,17 @@ impl App {
         let mut turn = Turn::said(true, text);
         turn.pictures = std::mem::take(&mut self.chat.pictures);
         self.chat.turns.push(turn);
-        self.ask_for_reply(ctx);
+        self.chat.tool_rounds = 0;
+        // the MCP servers that are on start with the first message, and the reply waits for them (C204)
+        if !self.tools.started && self.mcp_list().iter().any(|s| !s.disabled) {
+            self.start_tools(ctx);
+        }
+        if self.tools_starting() {
+            self.chat.waiting_for_tools = true;
+            self.chat.error = None;
+        } else {
+            self.ask_for_reply(ctx);
+        }
     }
 
     /// Where a reply is asked for: the port of the run, and the model that is loaded. With a computer QuickAI set up
@@ -690,18 +928,21 @@ impl App {
         Some((port, self.session.model_name()?.to_string()))
     }
 
-    /// Asks for the reply to the conversation as it stands.
-    fn ask_for_reply(&mut self, ctx: &egui::Context) {
+    /// Asks for the reply to the conversation as it stands, offering the tools of the MCP servers that are ready.
+    pub(super) fn ask_for_reply(&mut self, ctx: &egui::Context) {
         let Some((port, model)) = self.chat_target() else {
             return;
         };
         self.chat.error = None;
+        let (tools, names) = self.offered_tools();
+        self.chat.tool_names = names;
         let ctx = ctx.clone();
-        let (rx, cancel) = spawn_reply(
+        let (rx, cancel) = spawn_reply_with_tools(
             port,
             model,
             self.chat.options(),
             self.chat.turns.clone(),
+            tools,
             move || ctx.request_repaint(),
         );
         self.chat.turns.push(Turn::said(false, ""));
@@ -793,6 +1034,33 @@ impl App {
                         last.text.push_str(&piece);
                     }
                 }
+                ChatEvent::Calls(asked) => {
+                    let calls: Vec<ToolCall> = asked
+                        .into_iter()
+                        .map(|a| {
+                            let (server, tool) = self
+                                .chat
+                                .tool_names
+                                .get(&a.name)
+                                .cloned()
+                                .unwrap_or_default();
+                            ToolCall {
+                                id: a.id,
+                                name: a.name,
+                                server,
+                                tool,
+                                arguments: a.arguments,
+                                state: CallState::Asking,
+                                open: false,
+                                ticket: None,
+                            }
+                        })
+                        .collect();
+                    if let Some(last) = self.chat.turns.last_mut().filter(|t| !t.from_person) {
+                        last.calls = calls;
+                    }
+                }
+                ChatEvent::Notice(said) => self.chat.notice = Some(said),
                 ChatEvent::Done => ended = true,
                 ChatEvent::Failed(why) => {
                     self.chat.error = Some(why);
@@ -809,7 +1077,7 @@ impl App {
                     .chat
                     .turns
                     .last()
-                    .is_some_and(|t| !t.from_person && t.text.is_empty());
+                    .is_some_and(|t| !t.from_person && t.text.is_empty() && t.calls.is_empty());
                 if nothing && self.chat.error.is_none() {
                     self.chat.error = Some(format!(
                         "It thought for {} s and stopped before it answered. Allow longer answers in the \
@@ -827,13 +1095,17 @@ impl App {
                 _ => None,
             };
             match self.chat.turns.last_mut() {
-                // a reply that said nothing is not kept as a turn
-                Some(last) if !last.from_person && last.text.is_empty() => {
+                // a reply that said nothing (and asked for no tool) is not kept as a turn
+                Some(last)
+                    if !last.from_person && last.text.is_empty() && last.calls.is_empty() =>
+                {
                     self.chat.turns.pop();
                 }
                 Some(last) if !last.from_person => last.stats = stats,
                 _ => {}
             }
+            // the tools it asked for: those allowed always run, the others wait for the person (C204)
+            self.settle_new_calls();
             self.keep_conversation();
             // a first reply is the last step of Getting started, remembered once
             if self.chat.error.is_none()
@@ -1147,6 +1419,9 @@ impl App {
         let room = (ui.available_height() - box_height).max(40.0);
         let mut regenerate = false;
         let mut edit = false;
+        // what was pressed on the card of a tool the model asked for: the turn, the call, and what
+        let mut card: Option<(usize, usize, super::tools::CardAction)> = None;
+        let asker = model.clone().unwrap_or_else(|| "The model".to_string());
         let last_reply = self.chat.turns.iter().rposition(|t| !t.from_person);
         let last_message = self.chat.turns.iter().rposition(|t| t.from_person);
         if empty {
@@ -1255,19 +1530,33 @@ impl App {
                             });
                         });
                     } else {
-                        // the model's is read as Markdown, at the left
-                        ui.horizontal(|ui| {
-                            ui.add_space(8.0);
-                            bubble.show(ui, |ui| {
-                                ui.set_max_width(width * 0.78);
-                                ui.vertical(|ui| {
-                                    show_message(ui, &text);
-                                    if let Some(with) = &with {
-                                        ui.label(theme::muted(with.as_str()));
-                                    }
+                        // the model's is read as Markdown, at the left; a reply that only asked for tools has no bubble
+                        if !text.is_empty() || turn.calls.is_empty() {
+                            ui.horizontal(|ui| {
+                                ui.add_space(8.0);
+                                bubble.show(ui, |ui| {
+                                    ui.set_max_width(width * 0.78);
+                                    ui.vertical(|ui| {
+                                        show_message(ui, &text);
+                                        if let Some(with) = &with {
+                                            ui.label(theme::muted(with.as_str()));
+                                        }
+                                    });
                                 });
                             });
-                        });
+                        }
+                        // the tools it asked for (C204), each with what came of it
+                        for (c, call) in turn.calls.iter().enumerate() {
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                ui.add_space(8.0);
+                                if let Some(action) =
+                                    super::tools::tool_card(ui, call, &asker, width * 0.78)
+                                {
+                                    card = Some((i, c, action));
+                                }
+                            });
+                        }
                     }
                     let idle = !self.chat.replying();
                     if !turn.from_person && !typing && !turn.text.is_empty() {
@@ -1328,13 +1617,43 @@ impl App {
                     }
                     ui.add_space(6.0);
                 }
+                if self.chat.waiting_for_tools {
+                    ui.horizontal(|ui| {
+                        ui.add_space(8.0);
+                        ui.add(egui::Spinner::new().size(12.0));
+                        ui.label(theme::muted("Starting the MCP servers…"));
+                    });
+                }
                 if let Some(why) = &self.chat.error {
                     ui.horizontal_wrapped(|ui| {
                         ui.add_space(8.0);
                         ui.colored_label(p.bad, why);
                     });
                 }
+                if let Some(notice) = &self.chat.notice {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add_space(8.0);
+                        ui.label(egui::RichText::new(notice).small().color(p.warn));
+                    });
+                }
             });
+        }
+        if let Some((turn, call, action)) = card {
+            match action {
+                super::tools::CardAction::Allow => self.allow_call(turn, call, false),
+                super::tools::CardAction::Always => self.allow_call(turn, call, true),
+                super::tools::CardAction::Deny => self.deny_call(turn, call),
+                super::tools::CardAction::Toggle => {
+                    if let Some(c) = self
+                        .chat
+                        .turns
+                        .get_mut(turn)
+                        .and_then(|t| t.calls.get_mut(call))
+                    {
+                        c.open = !c.open;
+                    }
+                }
+            }
         }
         if regenerate {
             self.regenerate_chat(ui.ctx());
@@ -1393,6 +1712,8 @@ impl App {
                         );
                     super::help::mark_spot(ui, super::help::Spot::Clip, clip.rect);
                     attach = clip.clicked();
+                    // the tools the model can use here: the MCP servers that are on (C204)
+                    self.show_tools_button(ui);
                     // Enter sends and Shift+Enter is a new line: the key is taken before the box sees it, so that it
                     // does not put a line break in the message wherever the cursor is
                     let input_id = egui::Id::new("chat_input");
@@ -1528,7 +1849,7 @@ mod tests {
         loop {
             match rx.recv_timeout(Duration::from_secs(20)).expect("an answer") {
                 ChatEvent::Text(piece) => text.push_str(&piece),
-                ChatEvent::Thinking => {}
+                ChatEvent::Thinking | ChatEvent::Calls(_) | ChatEvent::Notice(_) => {}
                 ChatEvent::Done => break,
                 ChatEvent::Failed(why) => {
                     failed = Some(why);
@@ -1725,5 +2046,107 @@ mod tests {
             failed.is_some_and(|w| w.starts_with("could not reach the server")),
             "a server that is gone was not said"
         );
+    }
+
+    /// C204: a reply that asked for tools goes back to the model as it was asked, each call followed by what came of it
+    /// (what the tool gave back, why it failed, or that the person did not allow it), with the tools offered again.
+    #[test]
+    fn a_reply_that_asked_for_tools_is_sent_back_with_what_came_of_each_call() {
+        let call = |id: &str, state: CallState| ToolCall {
+            id: id.to_string(),
+            name: "files_read".to_string(),
+            server: "files".to_string(),
+            tool: "read".to_string(),
+            arguments: "{\"path\":\"a.txt\"}".to_string(),
+            state,
+            open: false,
+            ticket: None,
+        };
+        let mut reply = Turn::said(false, "");
+        reply.calls = vec![
+            call("call_1", CallState::Done("text of a".to_string())),
+            call("call_2", CallState::Denied),
+            call("call_3", CallState::Failed("no such file".to_string())),
+        ];
+        let turns = vec![Turn::said(true, "read a.txt"), reply];
+        let tools = serde_json::json!([{"type": "function", "function": {"name": "files_read"}}]);
+        let body = request_body_with("m", &Options::default(), &turns, Some(&tools));
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 5, "{messages:?}");
+        assert_eq!(messages[1]["role"], "assistant");
+        assert_eq!(messages[1]["tool_calls"][0]["id"], "call_1");
+        assert_eq!(
+            messages[1]["tool_calls"][0]["function"]["name"],
+            "files_read"
+        );
+        assert_eq!(
+            messages[1]["tool_calls"][0]["function"]["arguments"],
+            "{\"path\":\"a.txt\"}"
+        );
+        assert_eq!(messages[2]["role"], "tool");
+        assert_eq!(messages[2]["tool_call_id"], "call_1");
+        assert_eq!(messages[2]["content"], "text of a");
+        assert_eq!(
+            messages[3]["content"],
+            "The person did not allow this tool to run."
+        );
+        assert_eq!(messages[4]["content"], "The tool failed: no such file");
+        assert_eq!(body["tools"], tools);
+        // and without tools, the body has none
+        assert!(request_body("m", &Options::default(), &turns[..1])
+            .get("tools")
+            .is_none());
+    }
+
+    /// C204: the calls of a streamed reply come in pieces, put together by their index; an engine that gives the
+    /// arguments as an object (and not as text) is read too.
+    #[test]
+    fn tool_calls_that_come_in_pieces_are_put_together_by_their_index() {
+        let mut calls = Vec::new();
+        for event in [
+            serde_json::json!({"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "c1", "function": {"name": "files_", "arguments": ""}}]}}]}),
+            serde_json::json!({"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"name": "read", "arguments": "{\"pa"}}]}}]}),
+            serde_json::json!({"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "th\":\"a\"}"}}]}}]}),
+            serde_json::json!({"choices": [{"delta": {"tool_calls": [{"index": 1, "id": "c2", "function": {"name": "time_now", "arguments": {"tz": "UTC"}}}]}}]}),
+            serde_json::json!({"choices": [{"delta": {"content": "no call here"}}]}),
+        ] {
+            gather_calls(&event, &mut calls);
+        }
+        assert_eq!(
+            calls,
+            vec![
+                AskedCall {
+                    id: "c1".to_string(),
+                    name: "files_read".to_string(),
+                    arguments: "{\"path\":\"a\"}".to_string(),
+                },
+                AskedCall {
+                    id: "c2".to_string(),
+                    name: "time_now".to_string(),
+                    arguments: "{\"tz\":\"UTC\"}".to_string(),
+                },
+            ]
+        );
+    }
+
+    /// C204: a call is settled once it ran, failed or was not allowed, and what the model is told says which.
+    #[test]
+    fn what_the_model_is_told_of_a_call_says_what_came_of_it() {
+        let mut call = ToolCall {
+            id: "c".to_string(),
+            name: "n".to_string(),
+            server: "s".to_string(),
+            tool: "t".to_string(),
+            arguments: "{}".to_string(),
+            state: CallState::Asking,
+            open: false,
+            ticket: None,
+        };
+        assert!(!call.settled());
+        call.state = CallState::Running;
+        assert!(!call.settled());
+        call.state = CallState::Done("ok".to_string());
+        assert!(call.settled());
+        assert_eq!(call.answer(), "ok");
     }
 }

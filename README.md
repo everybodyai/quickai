@@ -106,11 +106,11 @@ Settings.
 
 ## Give your model tools
 
-**Settings → MCP servers** (llama.cpp) adds servers of the Model Context Protocol, which let a model read files, fetch
-web pages and more. Add one by its command or address, or paste the JSON from its instructions. Then start the model and
-open its chat page with the globe button: the tools work there, not in the **Chat** tab, and the page asks you before
-each call. [docs/mcp-servers.md](docs/mcp-servers.md) has a worked example, servers to try, and what to do when one does
-not start.
+**MCP servers** in the sidebar adds servers of the Model Context Protocol, which let a model read files, fetch web pages
+and more. Add one by its command or address, or paste the JSON from its instructions. QuickAI runs them on this computer
+and offers their tools in its chat, with llama.cpp or Ollama, and with a model on another computer too; a card asks you
+before each call (**Allow once**, **Always allow**, **Deny**). llama.cpp's own chat page has them as well.
+[docs/mcp-servers.md](docs/mcp-servers.md) has a worked example, servers to try, and what to do when one does not start.
 
 ## Run models on another computer
 
