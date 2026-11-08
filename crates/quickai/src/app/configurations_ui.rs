@@ -198,6 +198,39 @@ impl App {
         )
     }
 
+    /// The working state as a configuration describes it, with `kept` (a model file a computer QuickAI sets up keeps,
+    /// called `name` in its list) as its model, in place of the one selected here.
+    #[cfg(feature = "remote-setup")]
+    pub(super) fn captured_with_model(
+        &self,
+        installed: &Installed,
+        kept: &crate::models::KeptModel,
+        name: &str,
+    ) -> Captured {
+        let mut state = working_state(&self.registry, &self.settings_now(), installed);
+        state.values.insert(
+            quickai_core::profile::value_key(
+                &state.engine,
+                quickai_core::profile::state::MODEL_FIELD,
+            ),
+            Value::Str(kept.file.clone()),
+        );
+        let facts = ModelFacts {
+            size: Some(kept.size).filter(|s| *s > 0),
+            sha256: None,
+            display: Some(name.to_string()).filter(|d| *d != kept.file),
+            source: None,
+            path: None,
+            revision: None,
+        };
+        capture(
+            &self.registry,
+            &state,
+            &self.configs.first_run,
+            Some(&facts),
+        )
+    }
+
     /// The configuration in use as the window can be compared with it: what it names and this computer
     /// cannot hold is not counted as a difference. A model that is not among the models the window has
     /// (not here yet, or not listed because the engine is stopped), and a build that is not installed

@@ -186,6 +186,59 @@ pub fn discover_models(models_dir: &Path, hide: &[String]) -> Vec<ModelEntry> {
     discover_models_of(models_dir, &[".gguf".to_string()], hide)
 }
 
+/// A model file a computer keeps, as `quickai-run models --json` says it: the window lists them under that computer.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct KeptModel {
+    /// The file's name, which a configuration names.
+    pub file: String,
+    /// What people call it: what the file says, else its name.
+    pub display: String,
+    pub size: u64,
+    /// Where it is on that computer.
+    pub path: String,
+    /// It is in a folder a run looks in by itself. One elsewhere (copied there for a run, or in a folder of another
+    /// disk) is named to `up` with `--models-from` and its folder.
+    pub own: bool,
+}
+
+/// The patterns of the files that go with a model of `engine` and are not models themselves (`mmproj*.gguf`).
+pub fn companion_patterns_of(engine: &quickai_core::registry::Engine) -> Vec<String> {
+    quickai_core::lookup::bundle::companion_patterns(quickai_core::models::bundles(engine))
+}
+
+/// The model files this computer keeps for runs: those of the folders a run looks in by itself (the ones that come
+/// with QuickAI and `models`), those copied here for a run (`remote/models`, next to `models`), and those of `extra`
+/// (folders of another disk a run was told to keep them in). A file name once; `hide` are the patterns of files that
+/// go with a model and are not one (`mmproj*.gguf`).
+pub fn kept(
+    dirs: &crate::config::ConfigDirs,
+    extra: &[PathBuf],
+    hide: &[String],
+) -> Vec<KeptModel> {
+    let (bundled, user) = crate::resolve::models_dirs(dirs);
+    let copied = user.parent().map(|data| data.join("remote").join("models"));
+    let mut places: Vec<(PathBuf, bool)> = vec![(bundled, true), (user, true)];
+    places.extend(copied.map(|dir| (dir, false)));
+    places.extend(extra.iter().map(|dir| (dir.clone(), false)));
+    let mut kept: Vec<KeptModel> = Vec::new();
+    for (dir, own) in places {
+        for m in discover_models(&dir, hide) {
+            if kept.iter().any(|k| k.file == m.filename) {
+                continue;
+            }
+            kept.push(KeptModel {
+                file: m.filename,
+                display: m.display,
+                size: m.size_bytes,
+                path: m.path.display().to_string(),
+                own,
+            });
+        }
+    }
+    kept.sort_by_key(|k| k.display.to_lowercase());
+    kept
+}
+
 /// The models of the places an engine's document names (`[[models.sources]]`), each with the endings
 /// of its own, in the order the document gives them, a file name once.
 pub fn discover_in_sources(

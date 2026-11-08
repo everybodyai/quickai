@@ -150,7 +150,8 @@ multiple remotes. The user has option to switch as he chooses the computer - the
 connected (running cfg) etc".
 
 - **Each computer has a run of its own**, and this computer's goes on beside them: a run here, one on Studio and one on
-  a rented server can all go on at once. Choosing a computer in the status bar changes what the page shows, and stops
+  a rented server can all go on at once. Choosing a computer at the top of the list of models (C199; the status bar
+  until then) changes what the page and the list show, and stops
   nothing. Only a computer the window attaches to (C171) shares the window's one session with this computer, and
   waits for it to be free.
 - **The page of a computer QuickAI sets up** (option A): the configuration's name in the head, with what its run is
@@ -162,6 +163,9 @@ connected (running cfg) etc".
 - **The chat attaches to the run that is shown**: its API here, through the tunnel, and the model it runs. Connect an
   app gives the same address. The status bar says what the run there does, and the menu marks a computer whose run
   goes on with a green dot.
+- **The list is that computer's** (C199): the model files it keeps (`quickai-run models --json`), the one picked is what
+  its next run starts with, and the one that runs has its green dot. This computer's models are under them, folded: one
+  picked there is copied over when the run starts.
 - **When the window starts**, each computer QuickAI sets up is asked what runs there, and a run that goes on is found
   again with its ports brought here.
 

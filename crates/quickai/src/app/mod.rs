@@ -50,6 +50,8 @@ mod model_details;
 mod named_models;
 mod port_taken;
 #[cfg(feature = "remote-setup")]
+mod remote_models;
+#[cfg(feature = "remote-setup")]
 mod remote_page;
 #[cfg(feature = "remote-setup")]
 mod remote_run;
@@ -961,6 +963,8 @@ impl eframe::App for App {
         self.poll_chat();
         self.poll_remote(ui.ctx());
         self.poll_setup_run(ui.ctx());
+        #[cfg(feature = "remote-setup")]
+        self.poll_setup_traffic();
 
         self.poll_restart(ui.ctx());
         self.telemetry_frame();

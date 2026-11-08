@@ -182,9 +182,14 @@ impl App {
                 ));
             }
             Shown::Idle => {
+                // with the model picked in the list of that computer
+                let with = self
+                    .picked_there_name()
+                    .map(|model| format!(" with {model}"))
+                    .unwrap_or_default();
                 ui.label(theme::muted(format!(
-                    "The play button runs \"{configuration}\" on {}: QuickAI copies itself there when it needs to, \
-                     installs what is missing, and brings its ports here. It runs there until you stop it.",
+                    "The play button runs \"{configuration}\"{with} on {}: QuickAI copies itself there when it needs \
+                     to, installs what is missing, and brings its ports here. It runs there until you stop it.",
                     spec.name
                 )));
             }
@@ -410,17 +415,26 @@ fn show_addresses(ui: &mut egui::Ui, run: &SetupRun) {
             };
             ui.separator();
             ui.horizontal(|ui| {
-                ui.add_sized(
-                    egui::vec2(80.0, 22.0),
-                    egui::Label::new(egui::RichText::new(what).color(p.muted)),
-                )
-                .on_hover_text(&endpoint.program);
-                let room = ui.available_width() - 36.0;
-                ui.add_sized(
-                    egui::vec2(room, 22.0),
-                    egui::Label::new(egui::RichText::new(&endpoint.url).monospace().color(p.text))
+                // each word at the left of its column (sized labels are centred in theirs), so the names and the
+                // addresses line up under each other
+                let left = egui::Layout::left_to_right(egui::Align::Center);
+                ui.allocate_ui_with_layout(egui::vec2(80.0, 22.0), left, |ui| {
+                    ui.set_min_width(80.0);
+                    ui.label(egui::RichText::new(what).color(p.muted))
+                        .on_hover_text(&endpoint.program);
+                });
+                // the room of the address: what is left beside its two buttons
+                let room = (ui.available_width() - 72.0).max(40.0);
+                ui.allocate_ui_with_layout(egui::vec2(room, 22.0), left, |ui| {
+                    ui.set_min_width(room);
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(&endpoint.url).monospace().color(p.text),
+                        )
                         .truncate(),
-                );
+                    );
+                });
+                icons::open_button(ui, &endpoint.url);
                 icons::copy_button(ui, &format!("remote {what}"), &endpoint.url);
             });
         }

@@ -67,6 +67,11 @@ impl SetupRun {
         self.updates.is_some()
     }
 
+    /// The computer it runs on, in a few words, as the run said (`Linux, NVIDIA GeForce RTX 4090`).
+    pub fn computer(&self) -> Option<String> {
+        self.there.as_ref().and_then(|t| t.computer.clone())
+    }
+
     /// The address here of what it started that has `role` (`api`, `page`).
     pub fn endpoint(&self, role: &str) -> Option<&EndpointInfo> {
         self.endpoints.iter().find(|e| e.role == role)
@@ -137,16 +142,33 @@ impl App {
             .unwrap_or_default();
         let cancel = Arc::new(AtomicBool::new(false));
         let wake = ctx.clone();
+        let mut job = self.job_for(&spec);
+        job.traffic = self.remote_traffic(ctx);
+        let mut flags = spec
+            .accepted
+            .get(&remote::slug(&name))
+            .cloned()
+            .unwrap_or_default();
+        // a model it keeps outside the folder a run looks in (copied there for another configuration, or on another
+        // disk) is looked for where it is
+        if let Some(folder) = self
+            .kept_pick()
+            .filter(|t| !t.kept.own)
+            .and_then(|t| super::remote_models::folder_of(&t.kept.path))
+        {
+            if !flags
+                .windows(2)
+                .any(|w| w[0] == "--models-from" && w[1] == folder)
+            {
+                flags.extend(["--models-from".to_string(), folder]);
+            }
+        }
         let updates = job::start(
-            self.job_for(&spec),
+            job,
             Launching {
                 name: name.clone(),
                 text,
-                flags: spec
-                    .accepted
-                    .get(&remote::slug(&name))
-                    .cloned()
-                    .unwrap_or_default(),
+                flags,
                 override_first,
                 answers: answers.clone(),
                 local_models: self.local_model_files(),
@@ -203,7 +225,9 @@ impl App {
             return;
         }
         let wake = ctx.clone();
-        let updates = job::find(self.job_for(spec), move || wake.request_repaint());
+        let mut job = self.job_for(spec);
+        job.traffic = self.remote_traffic(ctx);
+        let updates = job::find(job, move || wake.request_repaint());
         self.remote.setup.insert(
             spec.id.clone(),
             SetupRun {
@@ -265,8 +289,10 @@ impl App {
                 self.find_setup_run(&spec, ctx);
             }
         }
+        self.poll_models_there();
         let mut log = Vec::new();
         let mut gone = Vec::new();
+        let mut listed: Vec<(String, Vec<crate::models::KeptModel>)> = Vec::new();
         let mut remembered: Vec<(String, String, Vec<String>)> = Vec::new();
         for (id, run) in self.remote.setup.iter_mut() {
             let name = self
@@ -275,8 +301,12 @@ impl App {
                 .iter()
                 .find(|r| &r.id == id)
                 .map_or_else(|| id.clone(), |r| r.name.clone());
-            if take_updates(run, &name, &mut log) {
+            let mut kept = None;
+            if take_updates(run, &name, &mut log, &mut kept) {
                 gone.push(id.clone());
+            }
+            if let Some(models) = kept {
+                listed.push((id.clone(), models));
             }
             if !run.remember.is_empty() {
                 remembered.push((
@@ -288,6 +318,9 @@ impl App {
         }
         for id in gone {
             self.remote.setup.remove(&id);
+        }
+        for (id, models) in listed {
+            self.keep_models_there(&id, models);
         }
         // what the person accepted for a computer is kept with it, so that the next run does not ask again
         if !remembered.is_empty() {
@@ -495,12 +528,16 @@ impl App {
             .unwrap_or_else(|| "Default".to_string())
     }
 
-    /// The selected configuration as a file to run elsewhere: its name, and the text of what the window holds now.
+    /// The selected configuration as a file to run elsewhere: its name, and the text of what the window holds now, with
+    /// the model picked in the list of the computer shown when it is one that computer keeps.
     fn selected_configuration_text(&self) -> (String, String) {
         let id = self.configs.active.clone();
         let name = self.selected_configuration_name();
         let installed = self.installed_now();
-        let captured = self.captured_now(&installed);
+        let captured = match self.kept_pick() {
+            Some(there) => self.captured_with_model(&installed, &there.kept, &there.name),
+            None => self.captured_now(&installed),
+        };
         let (text, _) = crate::configurations::export_captured(
             &self.registry,
             captured,
@@ -512,19 +549,65 @@ impl App {
     }
 
     /// The job for `spec`: this window's ssh and scp, and the headless program of this release.
-    fn job_for(&self, spec: &RemoteSpec) -> Job {
+    pub(super) fn job_for(&self, spec: &RemoteSpec) -> Job {
         Job {
             ssh: self.remote.ssh.clone(),
             scp: remote::ssh::scp_program(),
             spec: spec.clone(),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            traffic: None,
+        }
+    }
+
+    /// What the Live traffic tab is given of a run there, when it is on (Settings): the readers of the APIs the
+    /// engines' documents say it reads, and the window's channel for what they see, so the conversations of the run
+    /// show as those of a run here do. Off, `None`: the ports come straight through the tunnel.
+    fn remote_traffic(&self, ctx: &egui::Context) -> Option<job::Traffic> {
+        if !self.enable_traffic_proxy {
+            return None;
+        }
+        // the configuration's engine is the run's, not necessarily the one chosen here: the readers of every engine
+        // (a path none of them claims is passed on and not shown)
+        let mut read: Vec<String> = Vec::new();
+        for engine in self.registry.engines() {
+            let apis = match &engine.doc.traffic {
+                Some(traffic) => &traffic.apis,
+                None => &engine.doc.provides.apis,
+            };
+            for api in apis {
+                if !read.contains(api) {
+                    read.push(api.clone());
+                }
+            }
+        }
+        let wake = super::calm_wake(ctx.clone());
+        Some(job::Traffic {
+            decoders: self.registry.decoders_for(&read),
+            events: self.remote.traffic.0.clone(),
+            wake: Arc::new(wake),
+        })
+    }
+
+    /// What the Live traffic proxies of the runs there saw since the last frame, into the Live traffic tab.
+    pub(super) fn poll_setup_traffic(&mut self) {
+        let seen: Vec<crate::events::Event> = self.remote.traffic.1.try_iter().collect();
+        for event in seen {
+            if let crate::events::Event::Traffic(traffic) = event {
+                self.apply_traffic_event(traffic);
+            }
         }
     }
 }
 
 /// What the steps of `run` (on the computer `name`) said since the last frame, kept in it; what is to be logged is
-/// added to `log`. Whether the run is gone (nothing runs there, or it was stopped).
-fn take_updates(run: &mut SetupRun, name: &str, log: &mut Vec<String>) -> bool {
+/// added to `log`, and what the computer said it keeps to `kept`. Whether the run is gone (nothing runs there, or it
+/// was stopped).
+fn take_updates(
+    run: &mut SetupRun,
+    name: &str,
+    log: &mut Vec<String>,
+    kept: &mut Option<Vec<crate::models::KeptModel>>,
+) -> bool {
     let mut said = Vec::new();
     if let Some(updates) = &run.updates {
         loop {
@@ -594,6 +677,7 @@ fn take_updates(run: &mut SetupRun, name: &str, log: &mut Vec<String>) -> bool {
                 run.alternatives = Some(issues);
             }
             Update::Remember(words) => run.remember.extend(words),
+            Update::Models(models) => *kept = Some(models),
             Update::Nothing | Update::Stopped => gone = true,
             Update::Failed(why) => {
                 log.push(format!("[remote] {why}"));

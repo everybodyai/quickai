@@ -247,20 +247,54 @@ impl App {
     fn show_nothing_yet(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette();
         let state = self.session.state();
-        let address = (state == ServerState::Running)
-            .then(|| self.connection_panel())
-            .flatten()
-            .map(|panel| panel.base_url);
-        let words = match state {
-            ServerState::Running => {
-                "Waiting for the first request. Whatever talks to this server, the chat page \
-                 or an app of yours, shows up here as it happens."
+        let (words, address, stopped) = match self.setup_in_use().map(|spec| spec.name.clone()) {
+            // the run on a computer QuickAI set up, which is what the page shows: this computer's server says
+            // nothing of it
+            Some(computer) => match self
+                .setup_run()
+                .filter(|r| r.running())
+                .and_then(|r| r.endpoint("api"))
+            {
+                Some(api) => (
+                    format!(
+                        "Waiting for the first request. Whatever talks to the run on {computer}, the chat or an \
+                         app of yours, shows up here as it happens."
+                    ),
+                    Some(api.url.clone()),
+                    false,
+                ),
+                None => (
+                    format!(
+                        "Nothing runs on {computer} yet. Start it with the play button: requests show up here \
+                         while it runs."
+                    ),
+                    None,
+                    false,
+                ),
+            },
+            None => {
+                let address = (state == ServerState::Running)
+                    .then(|| self.connection_panel())
+                    .flatten()
+                    .map(|panel| panel.base_url);
+                let words = match state {
+                    ServerState::Running => {
+                        "Waiting for the first request. Whatever talks to this server, the chat page \
+                         or an app of yours, shows up here as it happens."
+                    }
+                    ServerState::Starting => {
+                        "The server is starting. Requests show up here once it is up."
+                    }
+                    ServerState::Stopping => "The server is stopping.",
+                    _ => {
+                        "The server is not running. Start it on the Main tab: requests show up here while \
+                         it runs."
+                    }
+                };
+                let stopped = matches!(state, ServerState::Idle | ServerState::Crashed);
+                (words.to_string(), address, stopped)
             }
-            ServerState::Starting => "The server is starting. Requests show up here once it is up.",
-            ServerState::Stopping => "The server is stopping.",
-            _ => "The server is not running. Start it on the Main tab: requests show up here while it runs.",
         };
-        let stopped = matches!(state, ServerState::Idle | ServerState::Crashed);
         let room = ui.available_height();
         ui.vertical_centered(|ui| {
             ui.add_space(((room - 250.0) / 2.0).max(20.0));

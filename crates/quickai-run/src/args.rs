@@ -24,6 +24,10 @@ quickai-run: run a QuickAI configuration with no window
       What runs on this computer (the configuration, since when, where it listens), or how the last run
       ended; `--json` adds the last things a run in the background said.
 
+  quickai-run models [--json] [--models-dir DIR]...
+      The model files this computer keeps for runs: in QuickAI's models folder, copied here for a run
+      (from the window of another computer), and in each DIR given (a folder of another disk).
+
   quickai-run down [--no-wait]
       Stop what runs on this computer, in the background or in another terminal, and wait until it has.
 
@@ -141,6 +145,11 @@ pub enum Parsed {
     Status {
         json: bool,
     },
+    /// `models`: the folders of another disk to look in too, said as JSON or not.
+    Models {
+        dirs: Vec<PathBuf>,
+        json: bool,
+    },
     /// `down`, waiting until it has stopped or not.
     Down {
         wait: bool,
@@ -165,6 +174,7 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
         "check" => (false, true),
         "init" => return parse_init(&args[1..]),
         "status" => return parse_status(&args[1..]),
+        "models" => return parse_models(&args[1..]),
         "down" => return parse_down(&args[1..]),
         "free" => return parse_free(&args[1..]),
         other => return Err(format!("`{other}` is not something this does")),
@@ -300,6 +310,23 @@ fn parse_status(args: &[String]) -> Result<Parsed, String> {
         }
     }
     Ok(Parsed::Status { json })
+}
+
+fn parse_models(args: &[String]) -> Result<Parsed, String> {
+    let mut dirs = Vec::new();
+    let mut json = false;
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--help" | "-h" => return Ok(Parsed::Help),
+            "--json" => json = true,
+            "--models-dir" => dirs.push(PathBuf::from(
+                it.next().ok_or("`--models-dir` needs a value")?,
+            )),
+            other => return Err(format!("`{other}` is not an option of `models`")),
+        }
+    }
+    Ok(Parsed::Models { dirs, json })
 }
 
 fn parse_free(args: &[String]) -> Result<Parsed, String> {

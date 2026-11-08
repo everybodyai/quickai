@@ -67,6 +67,24 @@ pub struct RemoteState {
     /// The runs on computers QuickAI set up, by the computer's id (WP4.33, `remote_run`).
     #[cfg(feature = "remote-setup")]
     pub setup: BTreeMap<String, super::remote_run::SetupRun>,
+    /// The model files each of those computers keeps, as it last said them (`remote_models`), by the computer's id.
+    #[cfg(feature = "remote-setup")]
+    pub kept: BTreeMap<String, Vec<super::remote_models::There>>,
+    /// The model picked in a computer's list for its next run, by the computer's id.
+    #[cfg(feature = "remote-setup")]
+    pub picked: BTreeMap<String, super::remote_models::PickThere>,
+    /// A Refresh of a computer's list that is going: the computer's id, and what it says.
+    #[cfg(feature = "remote-setup")]
+    pub listing: Option<(String, Receiver<crate::remote::job::Update>)>,
+    /// This computer's models are shown under those of the computer QuickAI sets up (they are folded at first).
+    #[cfg(feature = "remote-setup")]
+    pub here_open: bool,
+    /// What the Live traffic proxies of those runs saw (`job::Traffic`), for the Live traffic tab.
+    #[cfg(feature = "remote-setup")]
+    pub traffic: (
+        crossbeam_channel::Sender<crate::events::Event>,
+        Receiver<crate::events::Event>,
+    ),
     /// The runs that go on there are to be looked for: when the window starts, and when a computer is chosen.
     pub find_wanted: bool,
 }
@@ -106,6 +124,16 @@ impl Default for RemoteState {
             checked: BTreeMap::new(),
             #[cfg(feature = "remote-setup")]
             setup: BTreeMap::new(),
+            #[cfg(feature = "remote-setup")]
+            traffic: crossbeam_channel::unbounded(),
+            #[cfg(feature = "remote-setup")]
+            kept: BTreeMap::new(),
+            #[cfg(feature = "remote-setup")]
+            picked: BTreeMap::new(),
+            #[cfg(feature = "remote-setup")]
+            listing: None,
+            #[cfg(feature = "remote-setup")]
+            here_open: false,
             find_wanted: true,
         }
     }
@@ -650,7 +678,12 @@ impl App {
                 return Some(true);
             }
         }
-        self.remote.checked.get(id).map(Checked::passed)
+        self.remote
+            .checked
+            .get(id)
+            .map(Checked::passed)
+            // a computer QuickAI sets up that said what it keeps answered
+            .or_else(|| self.listed_there(id).then_some(true))
     }
 
     /// The line under a computer's name: where it is and what its last test found.
@@ -683,10 +716,166 @@ impl App {
         line
     }
 
+    /// How many models, in words (`1 model`, `3 models`).
+    fn models_count(n: usize) -> String {
+        match n {
+            1 => "1 model".to_string(),
+            n => format!("{n} models"),
+        }
+    }
+
+    /// What the menu of computers says of this computer: its models (when the list is this computer's files), what it
+    /// has, and what runs here.
+    fn this_summary(&self) -> String {
+        let mut line = self.this_computer_line();
+        let here = self.remote_in_use().is_none();
+        if here && !self.lists_models() {
+            line = format!("{} · {line}", Self::models_count(self.models.len()));
+        }
+        if here && self.session.state() == crate::events::ServerState::Running {
+            if let Some(model) = self.session.model_name() {
+                line.push_str(&format!(" · runs {model}"));
+            }
+        }
+        line
+    }
+
+    /// The line under the name of the computer at the top of the list: what it is, and how many models it has.
+    fn switch_line(&self) -> String {
+        let Some(spec) = self.runner_spec() else {
+            let line = self.this_computer_line();
+            if self.lists_models() {
+                return line;
+            }
+            return format!("{} · {line}", Self::models_count(self.models.len()));
+        };
+        if spec.way == Way::Attach {
+            return self.computer_line(spec);
+        }
+        // a computer QuickAI sets up: how many models it keeps, and what its run said it is
+        let what = self
+            .setup_run_of(&spec.id)
+            .and_then(|r| r.computer())
+            .unwrap_or_else(|| spec.host.clone());
+        match self
+            .there_summary(&spec.id)
+            .and_then(|s| s.split_once(" · ").map(|(count, _)| count.to_string()))
+        {
+            Some(count) => format!("{count} · {what}"),
+            None => what,
+        }
+    }
+
     // ---- what is drawn -------------------------------------------------------------------------------------
 
+    /// The top of the list of models (option D of `the mockups`, the user: "option D it is"): the computer
+    /// whose models the list shows, whether it answers and what it is, and the menu that changes it, under it. The
+    /// status bar then only says it (`show_where_label`).
+    pub(super) fn show_computer_switch(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette();
+        let (name, dot) = match self.runner_spec() {
+            Some(r) => (r.name.clone(), self.answers(&r.id)),
+            None => ("This computer".to_string(), None),
+        };
+        let line = self.switch_line();
+        ui.horizontal(|ui| {
+            ui.add_space(10.0);
+            let width = ui.available_width() - 10.0;
+            let (rect, response) =
+                ui.allocate_exact_size(egui::vec2(width, 46.0), egui::Sense::click());
+            super::help::mark_spot(ui, super::help::Spot::Computer, rect);
+            let open =
+                egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
+            if ui.is_rect_visible(rect) {
+                let painter = ui.painter();
+                let lit = open || response.hovered();
+                painter.rect(
+                    rect,
+                    6.0,
+                    if lit { p.raised_hover } else { p.raised },
+                    egui::Stroke::new(1.0, p.outline),
+                    egui::StrokeKind::Inside,
+                );
+                let icon = egui::Rect::from_center_size(
+                    egui::pos2(rect.left() + 20.0, rect.center().y),
+                    egui::vec2(18.0, 18.0),
+                );
+                icons::paint(painter, icon, Icon::Computer, p.text);
+                let left = rect.left() + 38.0;
+                let room = (rect.right() - 26.0 - left).max(10.0);
+                let family = theme::semibold(ui);
+                let title = egui::WidgetText::from(
+                    egui::RichText::new(&name).family(family).color(p.text),
+                )
+                .into_galley(
+                    ui,
+                    Some(egui::TextWrapMode::Truncate),
+                    room - 14.0,
+                    egui::TextStyle::Body,
+                );
+                let small = egui::WidgetText::from(egui::RichText::new(&line).color(p.faint))
+                    .into_galley(
+                        ui,
+                        Some(egui::TextWrapMode::Truncate),
+                        room,
+                        egui::TextStyle::Small,
+                    );
+                let top = rect.top() + (46.0 - title.size().y - small.size().y - 1.0) / 2.0;
+                let title_right = left + title.size().x;
+                let title_mid = top + title.size().y / 2.0;
+                let below = top + title.size().y + 1.0;
+                let painter = ui.painter();
+                painter.galley(egui::pos2(left, top), title, p.text);
+                painter.galley(egui::pos2(left, below), small, p.faint);
+                if let Some(answers) = dot {
+                    painter.circle_filled(
+                        egui::pos2(title_right + 8.0, title_mid),
+                        3.5,
+                        if answers { p.ok } else { p.bad },
+                    );
+                }
+                let chevron = egui::Rect::from_center_size(
+                    egui::pos2(rect.right() - 14.0, rect.center().y),
+                    egui::vec2(13.0, 13.0),
+                );
+                icons::paint(painter, chevron, Icon::Chevron, p.muted);
+            }
+            let response = response.on_hover_text(
+                "Where the models run: this computer, or a more powerful one you added (reached over SSH). The list \
+                 under it is that computer's models; the chat and Connect an app work the same either way.",
+            );
+            egui::Popup::menu(&response)
+                .align(egui::RectAlign::BOTTOM_START)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+                .width(300.0)
+                .show(|ui| {
+                    ui.set_width(300.0);
+                    self.show_where_menu(ui);
+                });
+        });
+        ui.add_space(10.0);
+    }
+
+    /// The right end of the status bar while the list of models is shown: where the models run, said; it is chosen
+    /// at the top of the list.
+    pub(super) fn show_where_label(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette();
+        let (label, dot) = match self.runner_spec() {
+            Some(r) => (r.name.clone(), self.answers(&r.id)),
+            None => ("This computer".to_string(), None),
+        };
+        ui.add_space(6.0);
+        if let Some(answers) = dot {
+            theme::dot(ui, 8.0, 3.5, if answers { p.ok } else { p.bad });
+        }
+        let words = ui.label(egui::RichText::new(label).size(13.0).color(p.muted));
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(15.0, 15.0), egui::Sense::hover());
+        icons::paint(ui.painter(), rect, Icon::Computer, p.muted);
+        words.on_hover_text("Where the models run. Change it at the top of the list of models.");
+    }
+
     /// The right end of the status bar: where the models run, and the menu that changes it (option D of the samples,
-    /// C183). It opens upwards, with this computer, the computers added (each with whether it answered) and the ways to
+    /// C183), for an engine without the list of models (ComfyUI); with the list it is at its top (C199). It opens upwards, with this computer, the computers added (each with whether it answered) and the ways to
     /// add and manage them. Under an engine that cannot run elsewhere the computers are there, greyed, with why.
     pub(super) fn show_where_switch(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette();
@@ -764,7 +953,7 @@ impl App {
             here,
             !locked,
             "This computer",
-            &self.this_computer_line(),
+            &self.this_summary(),
             None,
         );
         if this.clicked() {
@@ -778,10 +967,13 @@ impl App {
         for spec in &self.remote.remotes {
             let can = self.usable_with_engine(spec);
             let locked = self.runner_change_locked(Some(&spec.id));
-            let line = if can {
-                self.computer_line(spec)
-            } else {
-                spec.host.clone()
+            // a computer QuickAI sets up says what it keeps and what runs there, once it has said it
+            let line = match (can, spec.way) {
+                (true, Way::SetUp) => self
+                    .there_summary(&spec.id)
+                    .unwrap_or_else(|| self.computer_line(spec)),
+                (true, Way::Attach) => self.computer_line(spec),
+                (false, _) => spec.host.clone(),
             };
             let dot = if can { self.answers(&spec.id) } else { None };
             let on = self.in_use(&spec.id);
@@ -806,6 +998,12 @@ impl App {
             }
         }
         ui.separator();
+        if icons::menu_item(ui, Icon::Plus, "Add a computer…", true, false).clicked() {
+            self.open_computers();
+            if self.remote.form.is_none() {
+                self.new_remote_form();
+            }
+        }
         if icons::menu_item(ui, Icon::Gear, "Manage computers…", true, false).clicked() {
             self.open_computers();
         }

@@ -212,9 +212,23 @@ pub struct Tunnel {
     close: Sender<()>,
     keeper: Option<std::thread::JoinHandle<()>>,
     said: Arc<Mutex<Vec<String>>>,
+    /// The Live traffic proxy in front of one of its ports (`job::Traffic`), closed with it.
+    proxy: Option<crate::proxy::ProxyHandle>,
 }
 
 impl Tunnel {
+    /// Keeps `proxy`, which listens on `shown` in front of the forward `index`: that port is where the forward is
+    /// reached here from now on.
+    pub fn hold(&mut self, proxy: crate::proxy::ProxyHandle, index: usize, shown: u16) {
+        if let Some(forward) = self.forwards.get_mut(index) {
+            forward.0 = shown;
+        }
+        if index == 0 {
+            self.local_port = shown;
+        }
+        self.proxy = Some(proxy);
+    }
+
     /// Whether `ssh` still holds it.
     pub fn alive(&mut self) -> bool {
         self.alive.load(Ordering::SeqCst)
@@ -227,6 +241,9 @@ impl Tunnel {
 
     /// Closes it, and waits (a little) for its `ssh` to be gone.
     pub fn close(&mut self) {
+        if let Some(proxy) = self.proxy.take() {
+            proxy.stop();
+        }
         let _ = self.close.send(());
         if let Some(keeper) = self.keeper.take() {
             let _ = keeper.join();
@@ -355,6 +372,7 @@ pub fn open_forwards(
         close: close_tx,
         keeper: Some(keeper),
         said,
+        proxy: None,
     };
     match started_rx.recv() {
         Ok(Ok(())) => {}

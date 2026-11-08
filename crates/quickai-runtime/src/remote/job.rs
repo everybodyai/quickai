@@ -17,9 +17,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender};
+use quickai_core::decode::ApiDecoder;
 
+use crate::events::Event;
 use crate::provision::{EndpointInfo, PortUse};
 use crate::run_file::{RunFile, Status};
+use crate::runtime::process::ephemeral_port;
 
 use super::alternatives::{self, Found, Issue, Remedy};
 use super::probe::Computer;
@@ -51,6 +54,8 @@ pub enum Update {
         endpoints: Vec<EndpointInfo>,
         run: Box<RunFile>,
     },
+    /// The model files the computer keeps, for the window's list of that computer.
+    Models(Vec<crate::models::KeptModel>),
     /// Nothing runs there (what `find` found).
     Nothing,
     /// What ran there has stopped (what `stop` did).
@@ -67,6 +72,19 @@ pub struct Job {
     pub scp: PathBuf,
     pub spec: RemoteSpec,
     pub version: String,
+    /// The Live traffic tab is on: what it needs to see the run's conversations (`None`: the ports come straight
+    /// through the tunnel).
+    pub traffic: Option<Traffic>,
+}
+
+/// What the Live traffic tab is given of a run there: the readers of the APIs it shows, where what they read is sent,
+/// and what wakes the window. With it, the port of the run's API comes here through the same proxy as a run here has:
+/// the tunnel brings it to a free port of this computer, and the proxy listens on the one the person is shown.
+#[derive(Clone)]
+pub struct Traffic {
+    pub decoders: Vec<ApiDecoder>,
+    pub events: Sender<Event>,
+    pub wake: Arc<dyn Fn() + Send + Sync>,
 }
 
 /// What a start runs: the configuration's name and text (the window's export of what it holds), flags of
@@ -164,18 +182,44 @@ pub fn find(job: Job, wake: impl Fn() + Send + 'static) -> Receiver<Update> {
     spawn(wake, move |say| {
         let computer = probe::probe(&job.ssh, &job.spec, &job.version)?;
         if computer.headless.is_none() {
+            // QuickAI of this release is not there yet: it keeps no model QuickAI knows of
+            say(Update::Models(Vec::new()));
             say(Update::Nothing);
             return Ok(());
         }
         let here = run::status(&job.ssh, &job.spec, &computer, &job.version)?;
         match here.running {
+            // its models are said once its ports are here
             Some(_) => follow(&job, &computer, say, &AtomicBool::new(false)),
             None => {
+                say_models(&job, &computer, say);
                 say(Update::Nothing);
                 Ok(())
             }
         }
     })
+}
+
+/// Asks the job's computer which model files it keeps (the Refresh of its list), and says them.
+pub fn models(job: Job, wake: impl Fn() + Send + 'static) -> Receiver<Update> {
+    spawn(wake, move |say| {
+        let computer = probe::probe(&job.ssh, &job.spec, &job.version)?;
+        if computer.headless.is_none() {
+            say(Update::Models(Vec::new()));
+            return Ok(());
+        }
+        let models = run::models(&job.ssh, &job.spec, &computer, &job.version)?;
+        say(Update::Models(models));
+        Ok(())
+    })
+}
+
+/// The model files the computer keeps, said for the window's list; a listing that fails says nothing, and the list
+/// stays as it was.
+fn say_models(job: &Job, computer: &Computer, say: &dyn Fn(Update)) {
+    if let Ok(models) = run::models(&job.ssh, &job.spec, computer, &job.version) {
+        say(Update::Models(models));
+    }
 }
 
 /// Stops the programs QuickAI did not start that listen on `ports` of the job's computer.
@@ -341,14 +385,15 @@ fn follow(
                     "Bringing the ports of {} here",
                     job.spec.name
                 )));
-                let forwards = run::forwards(&running, &job.spec)?;
-                let tunnel = open_forwards(&job.ssh, &job.spec, &forwards, OPEN_TIMEOUT)?;
+                let tunnel = bring_here(job, &running)?;
                 let endpoints = run::local_endpoints(&running, &tunnel);
                 say(Update::Running {
                     tunnel,
                     endpoints,
                     run: Box::new(running),
                 });
+                // what it keeps now: the run may have fetched or been sent its model
+                say_models(job, computer, say);
                 return Ok(());
             }
             Some(_) => say(Update::Status(Box::new(status))),
@@ -365,6 +410,48 @@ fn follow(
         }
         std::thread::sleep(FOLLOW_EVERY);
     }
+}
+
+/// Opens the tunnel of `running`. With the Live traffic tab on, the port of its API is brought to a free port here,
+/// and the proxy that shows its conversations listens on the port the person is shown, in front of it.
+fn bring_here(job: &Job, running: &RunFile) -> Result<Tunnel, String> {
+    let mut forwards = run::forwards(running, &job.spec)?;
+    let api = running
+        .endpoints
+        .iter()
+        .find(|e| e.role == "api")
+        .and_then(|e| run::url_port(&e.url));
+    let proxied = job.traffic.as_ref().zip(api).and_then(|(traffic, there)| {
+        forwards
+            .iter()
+            .position(|(_, t)| *t == there)
+            .map(|i| (traffic, i))
+    });
+    let Some((traffic, i)) = proxied else {
+        return open_forwards(&job.ssh, &job.spec, &forwards, OPEN_TIMEOUT);
+    };
+    // the port the person is shown: the one the tunnel would have had, else any free one
+    let shown = match forwards[i].0 {
+        Some(port) => port,
+        None => ephemeral_port().map_err(|e| format!("No free port on this computer: {e}"))?,
+    };
+    forwards[i].0 = None;
+    let mut tunnel = open_forwards(&job.ssh, &job.spec, &forwards, OPEN_TIMEOUT)?;
+    let wake = traffic.wake.clone();
+    let proxy = crate::proxy::spawn(
+        shown,
+        tunnel.forwards[i].0,
+        traffic.decoders.clone(),
+        traffic.events.clone(),
+        Arc::new(move || wake()),
+    )
+    .map_err(|e| {
+        format!(
+            "Port {shown} of this computer was taken as the run's API was brought here ({e}). Start it again."
+        )
+    })?;
+    tunnel.hold(proxy, i, shown);
+    Ok(tunnel)
 }
 
 /// Runs `steps` on a thread of its own: what it says goes to the receiver (and wakes the window), and a failure is

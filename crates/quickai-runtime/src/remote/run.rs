@@ -66,6 +66,42 @@ pub fn status(
     })
 }
 
+/// The model files `spec` keeps (`quickai-run models --json`), with the folders of another disk the person accepted
+/// to keep them in for one configuration or another (`--models-dir`).
+pub fn models(
+    ssh: &Path,
+    spec: &RemoteSpec,
+    computer: &Computer,
+    version: &str,
+) -> Result<Vec<crate::models::KeptModel>, String> {
+    let mut command = format!("{} models --json", computer.program_command(version));
+    let mut folders: Vec<&String> = Vec::new();
+    for flags in spec.accepted.values() {
+        let mut words = flags.iter();
+        while let Some(word) = words.next() {
+            if word == "--models-dir" {
+                if let Some(folder) = words.next().filter(|f| !folders.contains(f)) {
+                    folders.push(folder);
+                }
+            }
+        }
+    }
+    for folder in folders {
+        command.push_str(" --models-dir ");
+        command.push_str(&word(computer, folder));
+    }
+    let said = ssh::run(ssh, spec, &command, STATUS_TIMEOUT)?;
+    if !said.ok() {
+        return Err(failed(spec, "list its models", &said));
+    }
+    serde_json::from_str(said.stdout.trim()).map_err(|e| {
+        format!(
+            "What {} said of its models could not be read: {e}",
+            spec.host.trim()
+        )
+    })
+}
+
 /// Copies what `launch` names to `spec` and starts the run there in the background, with its headless program of
 /// `version`.
 pub fn start(
@@ -254,7 +290,7 @@ pub fn local_endpoints(run: &RunFile, tunnel: &Tunnel) -> Vec<EndpointInfo> {
 }
 
 /// The port of an address (`http://127.0.0.1:8080/v1` is 8080).
-fn url_port(url: &str) -> Option<u16> {
+pub(super) fn url_port(url: &str) -> Option<u16> {
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
     let authority = rest.split('/').next()?;
     authority.rsplit_once(':')?.1.parse().ok()

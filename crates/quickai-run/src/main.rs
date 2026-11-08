@@ -147,6 +147,46 @@ fn run_init(init: InitInvocation) -> i32 {
     }
 }
 
+/// `models`: the model files this computer keeps for runs, as JSON (for the window of another computer) or a line
+/// each.
+fn list_models(extra: &[std::path::PathBuf], json: bool) -> i32 {
+    let dirs = ConfigDirs::from_environment();
+    let registry = quickai_runtime::config::build_registry(&dirs);
+    let mut hide: Vec<String> = Vec::new();
+    for engine in registry.engines() {
+        for pattern in quickai_runtime::models::companion_patterns_of(engine) {
+            if !hide.contains(&pattern) {
+                hide.push(pattern);
+            }
+        }
+    }
+    let kept = quickai_runtime::models::kept(&dirs, extra, &hide);
+    if json {
+        return match serde_json::to_string(&kept) {
+            Ok(text) => {
+                println!("{text}");
+                0
+            }
+            Err(e) => {
+                eprintln!("quickai-run: {e}");
+                1
+            }
+        };
+    }
+    if kept.is_empty() {
+        println!("No model files here yet.");
+    }
+    for model in &kept {
+        println!(
+            "{}  {}  {}",
+            model.display,
+            quickai_runtime::hardware::format_bytes(model.size),
+            model.path
+        );
+    }
+    0
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // QuickAI's other headless commands are the same code in both programs
@@ -173,6 +213,7 @@ fn main() {
             std::process::exit(background::status(&dir, json))
         }
         Ok(Parsed::Free { ports, json }) => std::process::exit(free::run(&ports, json)),
+        Ok(Parsed::Models { dirs, json }) => std::process::exit(list_models(&dirs, json)),
         Ok(Parsed::Down { wait }) => {
             let dir = run_file::run_dir(&ConfigDirs::from_environment());
             std::process::exit(background::down(&dir, wait))

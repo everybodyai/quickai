@@ -60,6 +60,9 @@ pub(super) enum Icon {
     Terminal,
     Keyboard,
     Route,
+    /// An address opened in the browser: a box, and an arrow out of its corner.
+    #[cfg_attr(not(feature = "remote-setup"), allow(dead_code))]
+    External,
 }
 
 /// Draws `icon` in `rect` (it is drawn in the largest square that fits, in the middle) in `color`.
@@ -280,6 +283,17 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
                 (4.5, 15.5),
                 (8.5, 15.5),
             ]);
+        }
+        Icon::External => {
+            line(&[
+                (13.0, 5.0),
+                (5.0, 5.0),
+                (5.0, 19.0),
+                (19.0, 19.0),
+                (19.0, 11.0),
+            ]);
+            line(&[(14.0, 4.0), (20.0, 4.0), (20.0, 10.0)]);
+            line(&[(20.0, 4.0), (11.0, 13.0)]);
         }
         Icon::Play => {
             painter.add(Shape::convex_polygon(
@@ -746,6 +760,23 @@ pub(super) fn copy_button(ui: &mut egui::Ui, salt: &str, text: &str) {
     } else if just {
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(200));
+    }
+}
+
+/// A button the size of `copy_button` that opens `url` in the browser.
+#[cfg_attr(not(feature = "remote-setup"), allow(dead_code))]
+pub(super) fn open_button(ui: &mut egui::Ui, url: &str) {
+    if framed_icon_button(
+        ui,
+        theme::Role::Normal,
+        true,
+        Icon::External,
+        egui::vec2(28.0, 24.0),
+    )
+    .on_hover_text("Open in the browser")
+    .clicked()
+    {
+        let _ = webbrowser::open(url);
     }
 }
 

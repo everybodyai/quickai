@@ -156,6 +156,9 @@ impl Stats {
 #[derive(Debug, PartialEq, Eq)]
 pub enum ChatEvent {
     Text(String),
+    /// A piece of the model's thinking came (`reasoning_content`, or Ollama's `reasoning`): it is not shown, but the
+    /// reply is on its way.
+    Thinking,
     Done,
     Failed(String),
 }
@@ -179,6 +182,8 @@ pub struct Chat {
     started: Option<Instant>,
     first: Option<Instant>,
     pieces: usize,
+    /// When the model began to think before its reply, while it has said no word of it yet.
+    thinking: Option<Instant>,
     /// Why the last reply did not come, in the engine's words when it gave some.
     pub error: Option<String>,
     /// The tab has been opened since the application started: the dot that points to it is not drawn again.
@@ -220,12 +225,20 @@ impl Chat {
         }
     }
 
-    /// Stops the reply that is coming; what came of it stays.
+    /// Stops the reply that is coming; what came of it stays. A reply that had said nothing yet is not kept as a turn.
     pub fn stop(&mut self) {
         if let Some(cancel) = self.cancel.take() {
             cancel.store(true, Ordering::SeqCst);
         }
-        self.reply = None;
+        if self.reply.take().is_some()
+            && self
+                .turns
+                .last()
+                .is_some_and(|t| !t.from_person && t.text.is_empty())
+        {
+            self.turns.pop();
+        }
+        self.thinking = None;
     }
 
     fn options(&self) -> Options {
@@ -261,9 +274,13 @@ pub fn spawn_reply(
             let _ = tx.send(event);
             wake();
         };
-        match stream_reply(port, &model, &options, &turns, &stop, &|text| {
-            send(ChatEvent::Text(text))
-        }) {
+        let said = |piece: Piece| {
+            send(match piece {
+                Piece::Text(text) => ChatEvent::Text(text),
+                Piece::Thinking => ChatEvent::Thinking,
+            })
+        };
+        match stream_reply(port, &model, &options, &turns, &stop, &said) {
             Ok(()) => send(ChatEvent::Done),
             Err(why) => send(ChatEvent::Failed(why)),
         }
@@ -308,15 +325,23 @@ pub fn request_body(model: &str, options: &Options, turns: &[Turn]) -> serde_jso
     body
 }
 
+/// What a line of the stream brings: words of the reply, or a piece of the thinking before it.
+enum Piece {
+    Text(String),
+    Thinking,
+}
+
 /// The request and its stream of events (`data: {...}` lines, then `data: [DONE]`). An `error` the engine sends,
-/// in the body of a refusal or in the stream, is the failure's sentence.
+/// in the body of a refusal or in the stream, is the failure's sentence. A model that thinks first sends its thinking
+/// apart from its reply (llama-server as `reasoning_content`, Ollama as `reasoning`): that it thinks is said, so the
+/// window can show the reply is on its way.
 fn stream_reply(
     port: u16,
     model: &str,
     options: &Options,
     turns: &[Turn],
     stop: &AtomicBool,
-    text: &dyn Fn(String),
+    said: &dyn Fn(Piece),
 ) -> Result<(), String> {
     let body = request_body(model, options, turns);
     let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -353,12 +378,17 @@ fn stream_reply(
         if let Some(why) = error_words(&event) {
             return Err(why);
         }
-        if let Some(piece) = event
-            .pointer("/choices/0/delta/content")
-            .and_then(serde_json::Value::as_str)
-            .filter(|p| !p.is_empty())
-        {
-            text(piece.to_string());
+        let delta = |key: &str| {
+            event
+                .pointer(&format!("/choices/0/delta/{key}"))
+                .and_then(serde_json::Value::as_str)
+                .filter(|p| !p.is_empty())
+        };
+        if delta("reasoning_content").or(delta("reasoning")).is_some() {
+            said(Piece::Thinking);
+        }
+        if let Some(piece) = delta("content") {
+            said(Piece::Text(piece.to_string()));
         }
         if event
             .pointer("/choices/0/finish_reason")
@@ -608,11 +638,13 @@ impl App {
     /// The model the chat talks to: the one loaded here, or the one the run on the computer shown runs.
     fn chat_model(&self) -> Option<String> {
         if self.setup_in_use().is_some() {
+            // as the list of that computer names it (`Qwen3.5 9B (Q4_K_M)`), not by its file
             return self
                 .setup_run()
                 .and_then(|r| r.chat_target())
                 .map(|(_, model)| model)
-                .filter(|m| !m.is_empty());
+                .filter(|m| !m.is_empty())
+                .map(|m| self.model_there_name(&m));
         }
         self.session.model_name().map(str::to_string)
     }
@@ -678,6 +710,7 @@ impl App {
         self.chat.started = Some(Instant::now());
         self.chat.first = None;
         self.chat.pieces = 0;
+        self.chat.thinking = None;
     }
 
     /// A file the person gave the next message: a picture goes with it, text goes in it.
@@ -734,7 +767,9 @@ impl App {
 
     /// Each frame: what the reply has said since, and its end. A server that stopped ends it.
     pub(super) fn poll_chat(&mut self) {
-        if self.chat.reply.is_some() && self.session.state() != ServerState::Running {
+        // the run the chat talks to stopped: the one here, or the one on the computer QuickAI set up (where nothing
+        // runs here, so this computer's server being stopped says nothing of it)
+        if self.chat.reply.is_some() && !self.chat_running() {
             self.chat.stop();
         }
         let Some(rx) = &self.chat.reply else {
@@ -743,10 +778,16 @@ impl App {
         let mut ended = false;
         while let Ok(event) = rx.try_recv() {
             match event {
+                ChatEvent::Thinking => {
+                    if self.chat.first.is_none() && self.chat.thinking.is_none() {
+                        self.chat.thinking = Some(Instant::now());
+                    }
+                }
                 ChatEvent::Text(piece) => {
                     if self.chat.first.is_none() {
                         self.chat.first = Some(Instant::now());
                     }
+                    self.chat.thinking = None;
                     self.chat.pieces += 1;
                     if let Some(last) = self.chat.turns.last_mut().filter(|t| !t.from_person) {
                         last.text.push_str(&piece);
@@ -762,6 +803,21 @@ impl App {
         if ended {
             self.chat.reply = None;
             self.chat.cancel = None;
+            // a model that only thought ran out of room before its answer: an empty reply would be dropped unsaid
+            if let Some(since) = self.chat.thinking.take() {
+                let nothing = self
+                    .chat
+                    .turns
+                    .last()
+                    .is_some_and(|t| !t.from_person && t.text.is_empty());
+                if nothing && self.chat.error.is_none() {
+                    self.chat.error = Some(format!(
+                        "It thought for {} s and stopped before it answered. Allow longer answers in the \
+                         chat's Options..., then send again.",
+                        since.elapsed().as_secs()
+                    ));
+                }
+            }
             let stats = match (self.chat.started, self.chat.first) {
                 (Some(started), Some(first)) => Some(Stats {
                     tokens: self.chat.pieces,
@@ -1153,7 +1209,14 @@ impl App {
                     let typing =
                         !turn.from_person && self.chat.replying() && i + 1 == self.chat.turns.len();
                     let text = if typing && turn.text.is_empty() {
-                        "…".to_string()
+                        match self.chat.thinking {
+                            // a model that thinks first: the reply is on its way, and for how long it has been
+                            Some(since) => {
+                                ui.ctx().request_repaint_after(Duration::from_secs(1));
+                                format!("Thinking… {} s", since.elapsed().as_secs())
+                            }
+                            None => "…".to_string(),
+                        }
                     } else {
                         turn.text.clone()
                     };
@@ -1481,6 +1544,7 @@ mod tests {
         loop {
             match rx.recv_timeout(Duration::from_secs(20)).expect("an answer") {
                 ChatEvent::Text(piece) => text.push_str(&piece),
+                ChatEvent::Thinking => {}
                 ChatEvent::Done => break,
                 ChatEvent::Failed(why) => {
                     failed = Some(why);

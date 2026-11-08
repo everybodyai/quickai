@@ -26,6 +26,10 @@ impl SetupRun {
         false
     }
 
+    pub fn computer(&self) -> Option<String> {
+        None
+    }
+
     pub fn endpoint(&self, _role: &str) -> Option<&EndpointInfo> {
         None
     }
@@ -55,6 +59,20 @@ impl App {
     pub(super) fn show_alternatives_dialog(&mut self, _ctx: &egui::Context) {}
 
     pub(super) fn show_remote_page(&mut self, _ui: &mut egui::Ui) {}
+
+    pub(super) fn show_models_there(&mut self, _ui: &mut egui::Ui) {}
+
+    pub(super) fn model_there_name(&self, named: &str) -> String {
+        named.to_string()
+    }
+
+    pub(super) fn there_summary(&self, _id: &str) -> Option<String> {
+        None
+    }
+
+    pub(super) fn listed_there(&self, _id: &str) -> bool {
+        false
+    }
 
     pub(super) fn remote_run_status(&self) -> Option<(ServerState, String)> {
         None

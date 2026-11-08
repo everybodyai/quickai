@@ -362,9 +362,14 @@ impl App {
                 ui.separator();
                 ui.colored_label(theme::state_color(companion_state), text);
             }
-            // where the models run, at the right end, and the menu that changes it
+            // where the models run, at the right end: with the list of models shown it is chosen at the top of the
+            // list, and said here; an engine without the list (ComfyUI) keeps the menu here
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                self.show_where_switch(ui);
+                if self.runs_alone() {
+                    self.show_where_switch(ui);
+                } else {
+                    self.show_where_label(ui);
+                }
             });
         });
     }
@@ -374,15 +379,23 @@ impl App {
     fn show_models_list(&mut self, ui: &mut egui::Ui, active: bool) {
         let p = theme::palette();
         ui.add_space(10.0);
+        // the computer whose models are listed, and the menu that changes it (option D of the mockups)
+        self.show_computer_switch(ui);
         // the one way to add a model, wherever it comes from: a search, a link, or a file of this computer
         let ready = !self.needs_install();
         let server = self.server_name();
+        let there = self.setup_in_use().map(|spec| spec.name.clone());
         ui.horizontal(|ui| {
             ui.add_space(10.0);
             let width = ui.available_width() - 10.0;
             let button = add_model_button(ui, width, ready);
             mark_spot(ui, Spot::AddModel, button.rect);
-            let button = if ready {
+            let button = if let (true, Some(computer)) = (ready, &there) {
+                button.on_hover_text(format!(
+                    "Search for a model, paste a link, or add a file you already have (Ctrl+K). It comes to this \
+                     computer: pick it under On this computer, and it is copied to {computer} when you start it there."
+                ))
+            } else if ready {
                 button.on_hover_text(
                     "Search for a model, paste a link, or add a file you already have (Ctrl+K).",
                 )
@@ -394,6 +407,11 @@ impl App {
             }
         });
         ui.add_space(10.0);
+        // a computer QuickAI sets up: the list is the models it keeps
+        if there.is_some() {
+            self.show_models_there(ui);
+            return;
+        }
         ui.horizontal(|ui| {
             ui.add_space(12.0);
             let family = theme::semibold(ui);
@@ -973,7 +991,7 @@ pub(super) fn size_text(bytes: u64) -> String {
 /// few of them coloured (`fast` and `recommended` green, `slower` amber). Chosen, it is green at its left edge. On the
 /// chosen row and the one the pointer is on there is a … at its right end, whose response comes back with the row's
 /// for the menu of what can be done with the model.
-fn model_row(
+pub(super) fn model_row(
     ui: &mut egui::Ui,
     name: &str,
     detail: &[(String, Option<egui::Color32>)],

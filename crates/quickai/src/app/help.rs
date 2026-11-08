@@ -350,8 +350,8 @@ const PAGES: &[Page] = &[
                  with ssh from here.",
             ),
             step(
-                "Click **This computer** at the bottom right, then **Manage computers…**, and add it by its SSH \
-                 address (user@host, or a Host of your SSH config). QuickAI tests it and says what to do about \
+                "Click **This computer** at the top of the list of models, then **Add a computer…**, and add it \
+                 by its SSH address (user@host, or a Host of your SSH config). QuickAI tests it and says what to do about \
                  anything that fails.",
             )
             .at(Spot::Computer),

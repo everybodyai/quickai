@@ -78,6 +78,7 @@ impl Computer {
             scp: fake_ssh::scp_of(&self.ssh),
             spec: self.spec.clone(),
             version: VERSION.into(),
+            traffic: None,
         }
     }
 
@@ -133,6 +134,7 @@ fn name(update: &Update) -> &'static str {
         Update::Occupied(_) => "Occupied",
         Update::Alternatives(_) => "Alternatives",
         Update::Remember(_) => "Remember",
+        Update::Models(_) => "Models",
         Update::Running { .. } => "Running",
         Update::Nothing => "Nothing",
         Update::Stopped => "Stopped",
