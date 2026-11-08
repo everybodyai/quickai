@@ -219,6 +219,24 @@ mod tests {
         into
     }
 
+    /// Every place `text` is drawn, in the order drawn: "This computer" is at the top of the list and in the status bar.
+    fn rects_of(output: &egui::FullOutput, text: &str) -> Vec<egui::Rect> {
+        fn walk(shape: &egui::epaint::Shape, text: &str, into: &mut Vec<egui::Rect>) {
+            match shape {
+                egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, text, into)),
+                egui::epaint::Shape::Text(t) if t.galley.text() == text => {
+                    into.push(t.galley.rect.translate(t.pos.to_vec2()));
+                }
+                _ => {}
+            }
+        }
+        let mut into = Vec::new();
+        for clipped in &output.shapes {
+            walk(&clipped.shape, text, &mut into);
+        }
+        into
+    }
+
     /// Where the page draws `name` as its heading: the name is in the list on the left too, and the heading is the one
     /// further right.
     fn heading_of(found: &BTreeMap<String, egui::Rect>, name: &str) -> egui::Rect {
@@ -275,13 +293,16 @@ mod tests {
         for live in [false, true] {
             app.enable_traffic_proxy = live;
             app.active_tab = if live { Tab::Live } else { Tab::Main };
-            let found = rects(&settled(&mut app, &ctx, false));
-            let at = |text: &str| {
-                *found
-                    .get(text)
-                    .unwrap_or_else(|| panic!("{text} on the {live} tab: {:?}", found.keys()))
-            };
-            let (state, place) = (at("Stopped"), at("This computer"));
+            let output = settled(&mut app, &ctx, false);
+            let found = rects(&output);
+            let state = *found
+                .get("Stopped")
+                .unwrap_or_else(|| panic!("Stopped on the {live} tab: {:?}", found.keys()));
+            // the computer is named at the top of the list of models too (C199): the status bar's is the lowest
+            let place = rects_of(&output, "This computer")
+                .into_iter()
+                .max_by(|a, b| a.center().y.total_cmp(&b.center().y))
+                .unwrap_or_else(|| panic!("This computer on the {live} tab: {:?}", found.keys()));
             // in the status bar: the last row of the window, the state at its left and where the models run at its
             // right (the engine is in the menu bar now)
             assert!(
