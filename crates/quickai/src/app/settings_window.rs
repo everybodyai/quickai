@@ -1062,7 +1062,10 @@ mod tests {
         let out = frame(&mut app, &ctx, &display);
         assert!(display.0.borrow().windows.is_empty());
         assert!(!out.viewport_output.contains_key(&settings_viewport()));
-        assert!(said(&out.shapes).contains("Add a model"), "the main window");
+        assert!(
+            said(&out.shapes).contains("Add your first model"),
+            "the main window"
+        );
 
         // open, it is asked for one window, named and sized, with the icon of the application...
         app.toggle_settings();
@@ -1109,10 +1112,7 @@ mod tests {
             ] {
                 assert!(!main.contains(text), "{text:?} in the main window: {main}");
             }
-            assert!(
-                main.contains("Add a model") && main.contains("Add your first model"),
-                "{main}"
-            );
+            assert!(main.contains("Add your first model"), "{main}");
         }
 
         // closed again, the window is not asked for and so goes

@@ -52,12 +52,15 @@ impl App {
                         pressed.more = self.bar_menu(ui, model_page);
                     });
                 if self.panel_possible() {
-                    let panel = icons::icon_button(ui, Icon::Sliders, ICON, true, self.panel_open)
+                    let panel = icons::icon_button(ui, Icon::Sliders, ICON, true, self.panel_shown)
                         .on_hover_text(
                             "The panel at the right: how the model runs, and Connect an app while it runs.",
                         );
                     help::mark_spot(ui, Spot::Change, panel.rect);
-                    help::mark_spot(ui, Spot::Plug, panel.rect);
+                    // Connect an app is the panel while the model runs
+                    if state == ServerState::Running {
+                        help::mark_spot(ui, Spot::Plug, panel.rect);
+                    }
                     pressed.panel = panel.clicked();
                 }
                 if !self.needs_install() {
@@ -92,19 +95,34 @@ impl App {
                 }
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.add_space(18.0);
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(&title)
-                                .size(16.0)
-                                .family(theme::semibold(ui))
-                                .color(theme::palette().text),
+                    // the name and what it is doing share what the buttons leave: the name keeps at least half of it, and
+                    // the state is drawn only where there is room for its dot and some of its words
+                    let p = theme::palette();
+                    let state_width = if said.is_empty() {
+                        0.0
+                    } else {
+                        let font = egui::TextStyle::Body.resolve(ui.style());
+                        ui.painter().layout_no_wrap(said.clone(), font, p.muted).size().x + 8.0 + 8.0 + 8.0
+                    };
+                    let room = ui.available_width();
+                    let name_room = (room - state_width).max(room * 0.5).max(10.0);
+                    ui.scope(|ui| {
+                        ui.set_max_width(name_room);
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(&title)
+                                    .size(16.0)
+                                    .family(theme::semibold(ui))
+                                    .color(p.text),
+                            )
+                            .truncate(),
                         )
-                        .truncate(),
-                    );
-                    if !said.is_empty() {
+                        .on_hover_text(&title);
+                    });
+                    if !said.is_empty() && ui.available_width() >= 40.0 {
                         ui.add_space(8.0);
                         theme::dot(ui, 8.0, 4.0, color);
-                        ui.add(egui::Label::new(egui::RichText::new(&said).color(theme::palette().muted)).truncate())
+                        ui.add(egui::Label::new(egui::RichText::new(&said).color(p.muted)).truncate())
                             .on_hover_text(&status);
                     }
                 });
@@ -357,7 +375,14 @@ impl App {
             }
         }
         if pressed.panel {
-            self.panel_open = !self.panel_open;
+            // shown, it is put away; not shown (shut, or a window too narrow), it is opened and stays
+            if self.panel_shown {
+                self.panel_open = false;
+                self.panel_asked = false;
+            } else {
+                self.panel_open = true;
+                self.panel_asked = true;
+            }
         }
         if pressed.log {
             self.dock_open = !self.dock_open;
@@ -385,7 +410,11 @@ impl App {
     /// Whether the panel at the right has something to show: an engine that is installed, and a model to run (or an
     /// engine that runs on its own).
     pub(super) fn panel_possible(&self) -> bool {
-        !self.needs_install() && (self.runs_alone() || !self.models.is_empty())
+        // (an engine that lists its models and has listed none yet has Connect an app while it runs)
+        !self.needs_install()
+            && (self.runs_alone()
+                || !self.models.is_empty()
+                || self.session.state() == ServerState::Running)
     }
 
     /// Stop, pressed in the bar: the server stops. Not the second click of a double-click on Start (within 0.8 s), as Stop

@@ -437,10 +437,11 @@ mod tests {
         assert!(tool_of(&json!({ "description": "no name" })).is_none());
     }
 
-    /// A server that is a command: a little program in Python that speaks the protocol on its input and output.
+    /// I48 (C204): a server that is a command (here a little program in Python that speaks the protocol on its input and
+    /// output) is started, asked for its tools and called.
     #[cfg(unix)]
     #[test]
-    fn a_command_server_is_started_asked_for_its_tools_and_called() {
+    fn p3_i48_a_command_server_is_started_asked_for_its_tools_and_called() {
         let dir = std::env::temp_dir().join(format!("quickai-mcp-client-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let script = dir.join("server.py");

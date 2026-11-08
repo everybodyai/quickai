@@ -862,6 +862,470 @@ fn pretty(arguments: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::path::Path;
+    #[cfg(unix)]
+    use std::time::{Duration, Instant};
+
+    use quickai_core::value::Value;
+
+    use crate::config::{build_registry, ConfigDirs};
+    use crate::events::ServerState;
+    use crate::settings::Settings;
+    #[cfg(unix)]
+    use crate::testkit::fake_ollama::{FakeOllama, ToolsBehave};
+    use crate::testkit::scratch;
+
+    const GB: u64 = 1024 * 1024 * 1024;
+
+    /// A program that speaks MCP on its input and output: `say` gives back the words it is given, louder; `count`
+    /// counts their letters. In Python, which the computer that runs the tests may not have: `None` then.
+    #[cfg(unix)]
+    fn echo_server(dir: &Path) -> Option<Server> {
+        let python = ["python3", "python"].into_iter().find(|p| {
+            std::process::Command::new(p)
+                .arg("--version")
+                .output()
+                .is_ok_and(|o| o.status.success())
+        })?;
+        let script = dir.join("echo_mcp.py");
+        std::fs::write(
+            &script,
+            r#"import json, sys
+for line in sys.stdin:
+    m = json.loads(line)
+    if "id" not in m:
+        continue
+    if m["method"] == "initialize":
+        r = {"protocolVersion": "2025-03-26", "capabilities": {"tools": {}}, "serverInfo": {"name": "echo"}}
+    elif m["method"] == "tools/list":
+        r = {"tools": [
+            {"name": "say", "description": "Says the words back, louder", "inputSchema": {"type": "object", "properties": {"words": {"type": "string"}}}},
+            {"name": "count", "description": "Counts letters", "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}}}]}
+    elif m["method"] == "tools/call":
+        a = m["params"]["arguments"]
+        if m["params"]["name"] == "say":
+            r = {"content": [{"type": "text", "text": a.get("words", "").upper() + "!"}]}
+        else:
+            r = {"content": [{"type": "text", "text": str(len(a.get("text", "")))}]}
+    else:
+        r = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": m["id"], "result": r}), flush=True)
+"#,
+        )
+        .unwrap();
+        Some(Server {
+            name: "echo".into(),
+            reach: mcp::Reach::Command {
+                command: python.into(),
+                args: vec![script.display().to_string()],
+                env: BTreeMap::new(),
+            },
+            disabled: false,
+        })
+    }
+
+    /// An application with `engine`, its settings in `dir`, the MCP servers given (and, for Ollama, attached to the
+    /// fake on `ollama_port`).
+    fn app_with(dir: &Path, engine: &str, ollama_port: Option<u16>, servers: &[Server]) -> App {
+        let mut settings = Settings::default();
+        settings.set_chosen_engine(engine);
+        settings.models_dir_override = Some(dir.join("models").display().to_string());
+        if let Some(port) = ollama_port {
+            let registry = build_registry(&ConfigDirs::default());
+            let values: BTreeMap<String, Value> = [
+                ("ollama.port".to_string(), Value::Int(port as i64)),
+                ("ollama.mode".to_string(), Value::Str("attach".into())),
+            ]
+            .into_iter()
+            .collect();
+            settings
+                .set_engine_values(registry.engine("ollama").unwrap(), &values)
+                .unwrap();
+        }
+        settings.set_mcp_servers_text(&mcp::to_text(servers));
+        settings.save_to(&dir.join("settings.json"));
+        let mut app = App::build(
+            settings,
+            build_registry(&ConfigDirs::default()),
+            16 * GB,
+            Vec::new(),
+            Some(dir.join("settings.json")),
+        );
+        app.data_dir_override = Some(dir.join("data").display().to_string());
+        app.load_engine_state();
+        app
+    }
+
+    /// Starts Ollama as Start does, attached to the fake, with `model` loaded.
+    #[cfg(unix)]
+    fn start_with(app: &mut App, model: &str) {
+        let selection = crate::launch::selection_from_values(
+            "ollama",
+            Some(quickai_core::plan::ModelInfo {
+                id: model.to_string(),
+                display: model.to_string(),
+                path: String::new(),
+                size_bytes: 0,
+            }),
+            app.values.map(),
+            false,
+        );
+        let plan = crate::launch::plan_selection(
+            &app.registry,
+            &selection,
+            Path::new("/nowhere/ollama"),
+            app.machine.clone(),
+            None,
+        )
+        .unwrap_or_else(|e| panic!("{e:#?}"));
+        app.session.start(&plan, model, || {});
+    }
+
+    /// What a frame does for the server, the chat and the tools.
+    #[cfg(unix)]
+    fn frame(app: &mut App, ctx: &egui::Context) {
+        let mut said = Vec::new();
+        app.session.poll(&mut |line| said.push(line), &mut |_| {});
+        for line in said {
+            app.push_log(line);
+        }
+        app.poll_named_models(ctx);
+        app.poll_chat();
+        app.poll_tools(ctx);
+    }
+
+    #[cfg(unix)]
+    fn until(app: &mut App, ctx: &egui::Context, what: &str, done: impl Fn(&App) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !done(app) {
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for {what}; chat: {:#?}, error: {:?}, tools: {:?}",
+                app.chat.turns,
+                app.chat.error,
+                app.tools.status
+            );
+            frame(app, ctx);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// The last call of the conversation.
+    fn last_call(app: &App) -> Option<&ToolCall> {
+        app.chat.turns.iter().rev().find_map(|t| t.calls.last())
+    }
+
+    /// The text of the last reply, when it has ended.
+    fn last_reply(app: &App) -> Option<&str> {
+        app.chat
+            .turns
+            .last()
+            .filter(|t| !t.from_person && !app.chat.replying())
+            .map(|t| t.text.as_str())
+    }
+
+    /// What the whole window draws, as text, at the width the suites use.
+    fn painted(app: &mut App, ctx: &egui::Context) -> String {
+        fn walk(shape: &egui::epaint::Shape, into: &mut Vec<String>) {
+            match shape {
+                egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, into)),
+                egui::epaint::Shape::Text(t) => into.push(t.galley.text().to_string()),
+                _ => {}
+            }
+        }
+        let mut texts = Vec::new();
+        for _ in 0..3 {
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(980.0, 680.0),
+                )),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(raw, |ui| app.show_window(ui));
+            output.textures_delta.clear();
+            texts.clear();
+            for clipped in &output.shapes {
+                walk(&clipped.shape, &mut texts);
+            }
+        }
+        texts.join("\n")
+    }
+
+    /// I46 (C204): with Ollama, the chat offers the tools of the MCP servers QuickAI runs, named by their server; a call
+    /// is a card that waits for the person; allowed, the tool runs on its server and the model is told what it gave back,
+    /// and answers with it. Always runs it without asking; Off takes it out of what is offered; Deny tells the model.
+    #[cfg(unix)]
+    #[test]
+    fn p3_i46_with_ollama_a_tool_is_asked_for_allowed_run_and_answered_with() {
+        let dir = scratch("u05");
+        let Some(echo) = echo_server(&dir) else {
+            return; // no Python on this computer to run the MCP server with
+        };
+        let fake = FakeOllama::start();
+        fake.add_model("qwen3:4b", 2 * GB);
+        fake.behave(|b| b.tools = ToolsBehave::Call);
+        let mut app = app_with(&dir, "ollama", Some(fake.port()), &[echo]);
+        let ctx = egui::Context::default();
+        start_with(&mut app, "qwen3:4b");
+        until(&mut app, &ctx, "Ollama to run", |a| {
+            a.session.state() == ServerState::Running
+        });
+
+        // the first message starts the server, and waits for it
+        app.chat.input = "hello".into();
+        app.send_chat(&ctx);
+        until(&mut app, &ctx, "the card that asks", |a| {
+            last_call(a).is_some_and(|c| c.state == CallState::Asking)
+        });
+        let call = last_call(&app).unwrap().clone();
+        assert_eq!((call.server.as_str(), call.tool.as_str()), ("echo", "say"));
+        assert_eq!(call.arguments, "{\"words\":\"hello\"}");
+        let asked = fake.requests_to("/v1/chat/completions");
+        let tools = asked[0].body.as_ref().unwrap()["tools"].clone();
+        let names: Vec<&str> = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["function"]["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["echo_say", "echo_count"]);
+        // nothing runs until the person says so
+        std::thread::sleep(Duration::from_millis(200));
+        frame(&mut app, &ctx);
+        assert_eq!(last_call(&app).unwrap().state, CallState::Asking);
+        assert_eq!(fake.requests_to("/v1/chat/completions").len(), 1);
+
+        // allowed once: it runs, and the model answers with what it gave back
+        let at = app.chat.turns.len() - 1;
+        app.allow_call(at, 0, false);
+        until(
+            &mut app,
+            &ctx,
+            "the reply with what the tool gave back",
+            |a| last_reply(a).is_some_and(|t| t.contains("HELLO!")),
+        );
+        assert_eq!(
+            app.chat.turns[at].calls[0].state,
+            CallState::Done("HELLO!".into())
+        );
+        let second = fake.requests_to("/v1/chat/completions")[1]
+            .body
+            .clone()
+            .unwrap();
+        let messages = second["messages"].as_array().unwrap();
+        assert_eq!(
+            messages[messages.len() - 2]["tool_calls"][0]["id"],
+            "call_fake_1"
+        );
+        assert_eq!(messages[messages.len() - 1]["role"], "tool");
+        assert_eq!(messages[messages.len() - 1]["content"], "HELLO!");
+        assert_eq!(
+            app.tool_permission("echo", "say"),
+            Permission::Ask,
+            "once is once"
+        );
+
+        // always: the next call runs without asking
+        app.set_tool_permission("echo", "say", Permission::Always);
+        app.chat.input = "again".into();
+        app.send_chat(&ctx);
+        until(&mut app, &ctx, "the reply, without asking", |a| {
+            a.chat.turns.len() > at + 3 && last_reply(a).is_some_and(|t| t.contains("HELLO!"))
+        });
+
+        // denied: the model is told so, and goes on
+        app.set_tool_permission("echo", "say", Permission::Ask);
+        app.chat.input = "once more".into();
+        app.send_chat(&ctx);
+        until(&mut app, &ctx, "the card", |a| {
+            last_call(a).is_some_and(|c| c.state == CallState::Asking)
+        });
+        let at = app.chat.turns.len() - 1;
+        app.deny_call(at, 0);
+        until(&mut app, &ctx, "the reply after a no", |a| {
+            last_reply(a).is_some_and(|t| t.contains("did not allow"))
+        });
+
+        // off: what is off is not offered, and with every tool off the request has none
+        app.set_tool_permission("echo", "say", Permission::Off);
+        app.set_tool_permission("echo", "count", Permission::Off);
+        let before = fake.requests_to("/v1/chat/completions").len();
+        app.chat.input = "no tools".into();
+        app.send_chat(&ctx);
+        until(&mut app, &ctx, "a plain reply", |a| {
+            last_reply(a).is_some_and(|t| t.starts_with("Hello!"))
+        });
+        let plain = fake.requests_to("/v1/chat/completions")[before]
+            .body
+            .clone()
+            .unwrap();
+        assert!(plain.get("tools").is_none(), "{plain}");
+        app.session.stop_blocking();
+    }
+
+    /// I47 (C204): an engine that refuses the tools (Ollama, for a model whose template has none) is asked again without
+    /// them, and the chat says so under the conversation.
+    #[cfg(unix)]
+    #[test]
+    fn p3_i47_an_engine_that_refuses_the_tools_is_asked_again_without_them() {
+        let dir = scratch("u06");
+        let Some(echo) = echo_server(&dir) else {
+            return;
+        };
+        let fake = FakeOllama::start();
+        fake.add_model("gemma3:270m", GB);
+        fake.behave(|b| b.tools = ToolsBehave::Refuse);
+        let mut app = app_with(&dir, "ollama", Some(fake.port()), &[echo]);
+        let ctx = egui::Context::default();
+        start_with(&mut app, "gemma3:270m");
+        until(&mut app, &ctx, "Ollama to run", |a| {
+            a.session.state() == ServerState::Running
+        });
+        app.chat.input = "hello".into();
+        app.send_chat(&ctx);
+        until(&mut app, &ctx, "the reply without tools", |a| {
+            last_reply(a).is_some_and(|t| t.starts_with("Hello!"))
+        });
+        let notice = app.chat.notice.clone().expect("the chat says so");
+        assert!(
+            notice.contains("did not take the tools") && notice.contains("does not support tools"),
+            "{notice}"
+        );
+        assert!(app.chat.error.is_none(), "{:?}", app.chat.error);
+        let asked = fake.requests_to("/v1/chat/completions");
+        assert_eq!(asked.len(), 2);
+        assert!(asked[1].body.as_ref().unwrap().get("tools").is_none());
+        app.session.stop_blocking();
+    }
+
+    /// I49 (C204): the MCP servers are one list, whatever the engine: what is added with Ollama is llama.cpp's field (its
+    /// chat page has them too), and a server switched off in the chat's menu is off there.
+    #[test]
+    fn p3_i49_the_mcp_servers_are_one_list_whatever_the_engine() {
+        let dir = scratch("u08");
+        let mut app = app_with(&dir, "ollama", None, &[]);
+        let ctx = egui::Context::default();
+        assert!(app.mcp_list().is_empty());
+        let wiki = Server {
+            name: "wiki".into(),
+            reach: mcp::Reach::Url {
+                url: "https://mcp.deepwiki.com/mcp".into(),
+                headers: BTreeMap::new(),
+            },
+            disabled: false,
+        };
+        app.set_mcp_text(mcp::to_text(std::slice::from_ref(&wiki)), &ctx);
+        assert_eq!(app.mcp_list(), std::slice::from_ref(&wiki));
+        assert_eq!(app.mcp_server_count(), Some(1));
+        let file: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                .unwrap();
+        assert!(
+            file["values"]["llamacpp.mcp_servers"]
+                .as_str()
+                .is_some_and(|t| t.contains("mcp.deepwiki.com")),
+            "{file}"
+        );
+        // llama.cpp, chosen, has it in its field
+        app.switch_engine("llamacpp");
+        assert_eq!(app.engine, "llamacpp");
+        assert_eq!(app.mcp_list(), std::slice::from_ref(&wiki));
+        assert!(app
+            .values
+            .text("mcp_servers")
+            .is_some_and(|t| t.contains("mcp.deepwiki.com")));
+        // switched off (the chat's menu), it is kept and off, and counted out
+        app.set_server_on("wiki", false, &ctx);
+        assert!(app.mcp_list()[0].disabled);
+        assert_eq!(app.mcp_server_count(), Some(0));
+    }
+
+    /// I50 (C204): what the person said of a tool is kept: a window started again knows it.
+    #[test]
+    fn p3_i50_what_the_person_said_of_a_tool_is_kept() {
+        let dir = scratch("u09");
+        let mut app = app_with(&dir, "llamacpp", None, &[]);
+        assert_eq!(app.tool_permission("files", "write_file"), Permission::Ask);
+        app.set_tool_permission("files", "write_file", Permission::Off);
+        app.set_tool_permission("files", "read_text_file", Permission::Always);
+        let again = App::build(
+            Settings::load_from(&dir.join("settings.json")),
+            build_registry(&ConfigDirs::default()),
+            16 * GB,
+            Vec::new(),
+            Some(dir.join("settings.json")),
+        );
+        assert_eq!(
+            again.tool_permission("files", "write_file"),
+            Permission::Off
+        );
+        assert_eq!(
+            again.tool_permission("files", "read_text_file"),
+            Permission::Always
+        );
+        assert_eq!(
+            again.tool_permission("files", "list_directory"),
+            Permission::Ask
+        );
+        // and Ask again takes it out of what is kept
+        app.set_tool_permission("files", "write_file", Permission::Ask);
+        assert!(!app
+            .stored
+            .tool_permissions()
+            .contains_key("files.write_file"));
+    }
+
+    /// I51 (C203, C204): while the model runs, the panel at the right is Connect an app (with Ollama's own address), and
+    /// the chat's box has Tools with how many servers are on, whose menu lists them.
+    #[cfg(unix)]
+    #[test]
+    fn p3_i51_while_it_runs_the_panel_is_connect_an_app_and_the_box_has_tools() {
+        let dir = scratch("u10");
+        let Some(echo) = echo_server(&dir) else {
+            return;
+        };
+        let fake = FakeOllama::start();
+        fake.add_model("qwen3:4b", 2 * GB);
+        let mut app = app_with(&dir, "ollama", Some(fake.port()), &[echo]);
+        // Ollama's program is there (a file is all the window looks for): the page is the model's, not the installer
+        std::fs::write(dir.join("ollama"), "").unwrap();
+        app.binary = dir.join("ollama");
+        app.models = vec![crate::models::ModelEntry {
+            filename: "qwen3:4b".into(),
+            path: std::path::PathBuf::new(),
+            display: "qwen3:4b".into(),
+            note: String::new(),
+            bundled: false,
+            size_bytes: 2 * GB,
+            companions: Vec::new(),
+            mode: None,
+        }];
+        app.selected = 0;
+        let ctx = egui::Context::default();
+        let stopped = painted(&mut app, &ctx);
+        assert!(stopped.contains("How it runs"), "{stopped}");
+        start_with(&mut app, "qwen3:4b");
+        until(&mut app, &ctx, "Ollama to run", |a| {
+            a.session.state() == ServerState::Running
+        });
+        until(&mut app, &ctx, "the server to be ready", |a| {
+            matches!(a.tools.status.get("echo"), Some(ServerStatus::Ready(_)))
+        });
+        let running = painted(&mut app, &ctx);
+        for text in [
+            "Connect an app",
+            "Address",
+            "Ollama API",
+            "Tools · 1",
+            "MCP servers",
+            "1 on",
+        ] {
+            assert!(running.contains(text), "{text}: {running}");
+        }
+        app.session.stop_blocking();
+    }
 
     #[test]
     fn a_tool_is_named_by_its_server_and_itself_in_the_letters_a_function_may_have() {

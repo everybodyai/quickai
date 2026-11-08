@@ -35,6 +35,10 @@ const MORE_ROOM: f32 = 37.0;
 /// Where the words of a row begin: after its mark.
 const ROW_TEXT: f32 = 28.0;
 
+/// How wide the window is at least for the panel at the right to show by itself: narrower, the chat would have too little
+/// room, and the bar's button opens it.
+pub(super) const PANEL_FROM: f32 = 900.0;
+
 /// From how many models on the list it has a box that narrows it.
 pub(super) const FILTER_FROM: usize = 8;
 
@@ -56,6 +60,12 @@ impl App {
             .show(ui, |ui| self.show_sidebar(ui, active));
         // a computer QuickAI sets up, chosen in the sidebar: the page of its run (WP4.33), which has its own head
         let remote_view = self.setup_in_use().is_some();
+        let wide = ui.ctx().content_rect().width() >= PANEL_FROM;
+        self.panel_shown = !remote_view
+            && self.view == MainView::Model
+            && self.panel_possible()
+            && self.panel_open
+            && (wide || self.panel_asked);
         if !remote_view {
             egui::Panel::top("bar")
                 .exact_size(super::model_bar::BAR_HEIGHT)
@@ -65,7 +75,7 @@ impl App {
                         .inner_margin(egui::Margin::symmetric(8, 0)),
                 )
                 .show(ui, |ui| self.show_top_bar(ui, state, active));
-            if self.view == MainView::Model && self.panel_open && self.panel_possible() {
+            if self.panel_shown {
                 egui::Panel::right("inspector")
                     .resizable(true)
                     .default_size(300.0)
@@ -134,6 +144,8 @@ impl App {
             self.open_add_model();
         }
         if chat && self.can_chat() {
+            // the chat is the page of the model: from a page of the sidebar, Ctrl+L goes back to it
+            self.view = MainView::Model;
             ctx.memory_mut(|m| m.request_focus(egui::Id::new("chat_input")));
         }
         if settings {

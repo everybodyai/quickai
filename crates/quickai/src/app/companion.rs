@@ -1016,11 +1016,13 @@ mod tests {
         let button = app.chat_button().unwrap();
         assert!(button.enabled && button.label == "Open Chat UI");
         assert!(matches!(button.action, ChatAction::Open(ref u) if *u == url));
-        // the window draws the pair: the globe beside the running model opens the page (its words are said when the
-        // pointer rests on it), and the status bar says what the page is doing
+        // the window draws the pair: Open Chat UI in the panel at the right of the running model opens the page, and the
+        // panel says what the page is doing (C203: there is no status bar; the panel opened with the bar's button)
         assert!(app
             .browser_chat()
             .is_some_and(|chat| chat.label == "Open Chat UI" && chat.enabled));
+        app.panel_open = true;
+        app.panel_asked = true;
         painted(&ctx, |ui| app.show_window(ui));
         let drawn = painted(&ctx, |ui| app.show_window(ui));
         assert!(

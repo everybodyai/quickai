@@ -246,6 +246,10 @@ pub struct App {
     change_open: bool,
     /// The panel at the right of the page (how it runs; Connect an app while it runs) is open (UI v3, C203).
     panel_open: bool,
+    /// The panel was opened with the bar's button: it shows in a window too narrow for it to show by itself.
+    panel_asked: bool,
+    /// The panel is drawn this frame (worked out before the bar, whose button is lit with it).
+    panel_shown: bool,
     /// The log is open under the page (the bar's log button).
     dock_open: bool,
     /// What the page shows: the model, or a page of the sidebar.
@@ -497,6 +501,8 @@ impl App {
             help: help::HelpState::default(),
             change_open: false,
             panel_open: true,
+            panel_asked: false,
+            panel_shown: false,
             dock_open: false,
             view: MainView::Model,
             change_custom: false,
@@ -723,6 +729,7 @@ impl App {
                     self.change_open = true;
                     self.change_custom = true;
                     self.panel_open = true;
+                    self.panel_asked = true;
                 }
                 self.push_log(format!("[quickai] Look at the `{id}` setting."));
             }
@@ -788,6 +795,20 @@ impl App {
             Some(path) => settings.save_to(path),
             None => settings.save(),
         }
+    }
+
+    /// A run that ends in a crash puts a dot on the log, once, and opens the log under the page (C203): what went wrong
+    /// is in it.
+    pub(super) fn follow_the_run(&mut self) {
+        let state = self.session.state();
+        if state == crate::events::ServerState::Crashed
+            && self.seen_state != Some(crate::events::ServerState::Crashed)
+        {
+            self.log_unread = true;
+            self.dock_open = true;
+            self.active_tab = Tab::Main;
+        }
+        self.seen_state = Some(state);
     }
 
     /// Applies one proxy `TrafficEvent` to the Live traffic tab's turn list.
@@ -988,17 +1009,7 @@ impl eframe::App for App {
         self.poll_restart(ui.ctx());
         self.reports_frame();
 
-        // a run that ends in a crash puts a dot on the log, once
-        let state = self.session.state();
-        if state == crate::events::ServerState::Crashed
-            && self.seen_state != Some(crate::events::ServerState::Crashed)
-        {
-            self.log_unread = true;
-            // what went wrong is in the log: it opens under the page
-            self.dock_open = true;
-            self.active_tab = Tab::Main;
-        }
-        self.seen_state = Some(state);
+        self.follow_the_run();
 
         self.show_window(ui);
         // the ring of Help's Show me and the tour, over what the main window drew

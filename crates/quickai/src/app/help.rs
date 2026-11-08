@@ -661,7 +661,7 @@ fn spot_id(spot: Spot) -> egui::Id {
 }
 
 /// Where `spot` is in the main window, if the main window drew it in this frame.
-fn spot_rect(ctx: &egui::Context, spot: Spot) -> Option<egui::Rect> {
+pub(super) fn spot_rect(ctx: &egui::Context, spot: Spot) -> Option<egui::Rect> {
     let now = ctx.cumulative_pass_nr_for(egui::ViewportId::ROOT);
     ctx.data(|d| d.get_temp::<(egui::Rect, u64)>(spot_id(spot)))
         .filter(|(_, pass)| *pass == now)
@@ -1856,6 +1856,29 @@ mod tests {
         seen.expect("the frame was drawn")
     }
 
+    /// Where `text` is drawn in a frame of the main window, if it is.
+    fn text_at(app: &mut App, ctx: &egui::Context, text: &str) -> Option<egui::Rect> {
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(980.0, 680.0),
+            )),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(raw, |ui| app.show_window(ui));
+        output.textures_delta.clear();
+        fn walk(shape: &egui::Shape, text: &str) -> Option<egui::Rect> {
+            match shape {
+                egui::Shape::Vec(inner) => inner.iter().find_map(|s| walk(s, text)),
+                egui::Shape::Text(t) if t.galley.text() == text => {
+                    Some(t.galley.rect.translate(t.pos.to_vec2()))
+                }
+                _ => None,
+            }
+        }
+        output.shapes.iter().find_map(|c| walk(&c.shape, text))
+    }
+
     fn key(key: egui::Key) -> Vec<egui::Event> {
         vec![egui::Event::Key {
             key,
@@ -1880,8 +1903,8 @@ mod tests {
         ]
     }
 
-    /// I33 (C191): the ? at the right of the menu bar opens Help, and so does F1; it is a window of its own, called
-    /// so, and not a menu; the Help menu opens it on a page.
+    /// I33 (C191, C203): Help… of the QuickAI menu at the top of the sidebar opens Help, and so does F1; it is a window of
+    /// its own, called so, and not a menu; asked for again, it opens on the page it is on.
     #[test]
     fn p3_i33_the_question_mark_and_f1_open_help_in_a_window_of_its_own() {
         let dir = scratch("i33");
@@ -1913,7 +1936,7 @@ mod tests {
             output.textures_delta.clear();
         });
         let help = frame(&mut app, &ctx, Vec::new(), |ctx| spot_rect(ctx, Spot::Help))
-            .expect("the ? is on the menu bar");
+            .expect("the QuickAI menu is at the top of the sidebar");
         assert!(
             titles.borrow().is_empty(),
             "no window before it is asked for"
@@ -1921,7 +1944,11 @@ mod tests {
         for events in click(help.center()) {
             frame(&mut app, &ctx, events, |_| ());
         }
-        assert!(app.help.open, "the ? opens Help");
+        let item = text_at(&mut app, &ctx, "Help…").expect("Help… in the QuickAI menu");
+        for events in click(item.center()) {
+            frame(&mut app, &ctx, events, |_| ());
+        }
+        assert!(app.help.open, "Help… opens Help");
         frame(&mut app, &ctx, Vec::new(), |_| ());
         assert!(
             titles.borrow().iter().any(|t| t == HELP_TITLE),

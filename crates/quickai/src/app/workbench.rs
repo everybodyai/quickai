@@ -710,7 +710,7 @@ mod tests {
         }
         assert!(
             shown.contains("MODELS")
-                && shown.contains("Add a model")
+                && shown.contains("Add your first model")
                 && shown.contains("Search, or paste a link or file path"),
             "{shown}"
         );
@@ -1029,8 +1029,9 @@ mod tests {
         for _ in 0..3 {
             texts = painted(&ctx, |ui| app.show_catalog_page(ui));
         }
+        // (the page's title is in the bar over it, C203)
         assert!(
-            texts.iter().any(|t| t.contains("Recommended models")),
+            texts.iter().any(|t| t.contains("What do you want to do")),
             "{texts:?}"
         );
         assert!(

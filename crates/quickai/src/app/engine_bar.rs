@@ -463,19 +463,21 @@ mod tests {
         painted(app, ctx, width, Vec::new())
     }
 
-    /// Where `text` is in the band of the menu bar.
-    fn in_menu_bar(found: &[(String, egui::Rect)], text: &str) -> Option<egui::Rect> {
+    /// Where `text` is in the box of the computer and the engine, at the top of the sidebar (C203).
+    fn in_sidebar_box(found: &[(String, egui::Rect)], text: &str) -> Option<egui::Rect> {
         found
             .iter()
-            .find(|(t, r)| t == text && r.center().y < 30.0)
+            .find(|(t, r)| {
+                t == text && r.left() < 240.0 && r.center().y > 40.0 && r.center().y < 150.0
+            })
             .map(|(_, r)| *r)
     }
 
-    /// Where `text` is under the menu bar (in the menu of the engines, once it is open).
-    fn under_menu_bar(found: &[(String, egui::Rect)], text: &str) -> Option<egui::Rect> {
+    /// Where `text` is under the box (in the menu of the engines, once it is open).
+    fn under_sidebar_box(found: &[(String, egui::Rect)], text: &str) -> Option<egui::Rect> {
         found
             .iter()
-            .find(|(t, r)| t == text && r.center().y > 30.0)
+            .find(|(t, r)| t == text && r.center().y > 150.0)
             .map(|(_, r)| *r)
     }
 
@@ -497,7 +499,8 @@ mod tests {
     }
 
     #[test]
-    fn the_engine_is_a_menu_at_the_right_of_the_menu_bar_and_a_choice_in_it_changes_the_engine() {
+    fn the_engine_is_a_menu_in_the_sidebar_under_the_computer_and_a_choice_in_it_changes_the_engine(
+    ) {
         let dir = scratch("eb-switch");
         let mut app = app_in(&dir, "llamacpp");
         // llama.cpp's program is there (a file is all the window looks for): the engine in use is ready, and its row
@@ -507,12 +510,12 @@ mod tests {
         let ctx = egui::Context::default();
         let found = settled(&mut app, &ctx, 980.0);
         let at = |text: &str| {
-            in_menu_bar(&found, text)
-                .unwrap_or_else(|| panic!("{text} is not in the menu bar: {found:?}"))
+            in_sidebar_box(&found, text)
+                .unwrap_or_else(|| panic!("{text} is not at the top of the sidebar: {found:?}"))
         };
-        // the engine in use, after the menus, with no label beside it
-        let (help, engine) = (at("Help"), at("llama.cpp"));
-        assert!(help.right() < engine.left(), "{help:?} {engine:?}");
+        // the engine in use, under the computer, with no label beside it
+        let (computer, engine) = (at("This computer"), at("llama.cpp"));
+        assert!(computer.bottom() < engine.top(), "{computer:?} {engine:?}");
         assert!(
             !found.iter().any(|(t, _)| t == "Engine"),
             "the word is the menu's hover now"
@@ -520,7 +523,7 @@ mod tests {
         // its menu has the others, each with whether it is ready; a choice changes the engine
         click(&mut app, &ctx, 980.0, engine.center());
         let found = settled(&mut app, &ctx, 980.0);
-        let ollama = under_menu_bar(&found, "Ollama")
+        let ollama = under_sidebar_box(&found, "Ollama")
             .unwrap_or_else(|| panic!("the menu of the engines: {found:?}"));
         assert!(found.iter().any(|(t, _)| t == "Not installed"));
         assert!(found.iter().any(|(t, _)| t == "In use"));
@@ -537,22 +540,24 @@ mod tests {
         // while something of the engine in use is going on the menu does not open
         app.named.queued = Some(super::super::engine::Queued::Pull("qwen3:4b".into()));
         let found = settled(&mut app, &ctx, 980.0);
-        let engine = in_menu_bar(&found, "Ollama").expect("the engine is still shown");
+        let engine = in_sidebar_box(&found, "Ollama").expect("the engine is still shown");
         click(&mut app, &ctx, 980.0, engine.center());
         let found = settled(&mut app, &ctx, 980.0);
-        assert!(under_menu_bar(&found, "ComfyUI").is_none(), "{found:?}");
+        assert!(under_sidebar_box(&found, "ComfyUI").is_none(), "{found:?}");
         assert_eq!(app.engine, "ollama");
         app.named.queued = None;
         click(&mut app, &ctx, 980.0, engine.center());
         let found = settled(&mut app, &ctx, 980.0);
-        let comfy = under_menu_bar(&found, "ComfyUI").expect("the menu, open again");
+        let comfy = under_sidebar_box(&found, "ComfyUI").expect("the menu, open again");
         click(&mut app, &ctx, 980.0, comfy.center());
         assert_eq!(app.engine, "comfyui");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// C203: at every width the window can have, the texts of the bar over the page keep apart, and the engine's name is
+    /// whole in the sidebar's box.
     #[test]
-    fn at_every_width_the_engines_menu_keeps_clear_of_the_menus_and_of_the_buttons_after_it() {
+    fn at_every_width_the_bar_keeps_its_texts_apart_and_the_engine_is_whole_in_the_sidebar() {
         for engine in ["llamacpp", "ollama", "comfyui"] {
             let dir = scratch(&format!("eb-widths-{engine}"));
             let mut app = app_in(&dir, engine);
@@ -562,20 +567,20 @@ mod tests {
                 let found = settled(&mut app, &ctx, width);
                 let mut row: Vec<(String, egui::Rect)> = found
                     .iter()
-                    .filter(|(_, r)| r.center().y < 30.0)
+                    .filter(|(t, r)| r.center().y < 56.0 && r.left() > 240.0 && !t.is_empty())
                     .cloned()
                     .collect();
                 row.sort_by(|a, b| a.1.left().total_cmp(&b.1.left()));
                 assert!(
                     row.windows(2).all(|p| p[0].1.right() <= p[1].1.left()),
-                    "{engine} at {width}: texts of the menu bar over one another: {row:?}"
+                    "{engine} at {width}: texts of the bar over one another: {row:?}"
                 );
-                // and room after it for the theme, the guides and Settings, three buttons of 30 points
-                let menu = in_menu_bar(&found, &name).expect("the engine's menu");
                 assert!(
-                    menu.right() <= width - 3.0 * 30.0,
-                    "{engine} at {width}: {menu:?}"
+                    row.iter().all(|(_, r)| r.right() <= width),
+                    "{engine} at {width}: out of the window: {row:?}"
                 );
+                let menu = in_sidebar_box(&found, &name).expect("the engine's row");
+                assert!(menu.right() < 230.0, "{engine} at {width}: {menu:?}");
             }
             let _ = std::fs::remove_dir_all(&dir);
         }
@@ -826,41 +831,6 @@ mod tests {
         app.selected = 0;
     }
 
-    /// The buttons of the head of the page, from left to right: the pictures in frames of 30 points beside the model's
-    /// name, under the menu bar, as a frame of the whole window draws them.
-    #[cfg(unix)]
-    fn buttons_of_the_head(app: &mut App, ctx: &egui::Context, width: f32) -> Vec<egui::Rect> {
-        let raw = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(width, 680.0),
-            )),
-            ..Default::default()
-        };
-        let mut output = ctx.run_ui(raw, |ui| app.show_window(ui));
-        output.textures_delta.clear();
-        fn walk(shape: &egui::epaint::Shape, into: &mut Vec<egui::Rect>) {
-            match shape {
-                egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, into)),
-                egui::epaint::Shape::Rect(r)
-                    if (r.rect.width() - 30.0).abs() < 2.5
-                        && (r.rect.height() - 30.0).abs() < 2.5
-                        && r.rect.center().y > 30.0
-                        && r.rect.center().y < 120.0 =>
-                {
-                    into.push(r.rect)
-                }
-                _ => {}
-            }
-        }
-        let mut into = Vec::new();
-        for clipped in &output.shapes {
-            walk(&clipped.shape, &mut into);
-        }
-        into.sort_by(|a, b| a.left().total_cmp(&b.left()));
-        into
-    }
-
     /// The window once the pointer has rested at a place for long enough for what is there to say what it does.
     #[cfg(unix)]
     fn rest_on(
@@ -1062,29 +1032,31 @@ mod tests {
             "the model that runs is not deleted"
         );
 
-        // beta is chosen: the button starts the server again with it. It is the picture beside the name, the first of
-        // the head's buttons (play, then the globe, the plug and Stop while it runs), and says so when the pointer rests
-        // on it
+        // beta is chosen: the button starts the server again with it. It is the button with words in the bar, after the
+        // name (C203), and says what it does when the pointer rests on it
         app.selected = beta;
         assert!(app.can_switch_selected());
         let found = settled(&mut app, &ctx, 980.0);
         let name = found
             .iter()
-            .find(|(t, r)| t == "beta-Q4_K_M.gguf" && r.center().y < 120.0 && r.left() > 170.0)
+            .find(|(t, r)| t == "beta-Q4_K_M.gguf" && r.center().y < 56.0 && r.left() > 240.0)
             .map(|(_, r)| *r)
-            .unwrap_or_else(|| panic!("the name in the head of the page: {found:?}"));
-        let buttons = buttons_of_the_head(&mut app, &ctx, 980.0);
-        let play = *buttons
-            .first()
-            .unwrap_or_else(|| panic!("the head has no buttons: {found:?}"));
+            .unwrap_or_else(|| panic!("the name in the bar: {found:?}"));
+        let play = found
+            .iter()
+            .find(|(t, r)| t == "Use this model" && r.center().y < 56.0)
+            .map(|(_, r)| *r)
+            .unwrap_or_else(|| panic!("Use this model in the bar: {found:?}"));
         assert!(
             name.right() < play.left() && (name.center().y - play.center().y).abs() < 12.0,
-            "the button beside the name: {name:?} {buttons:?}"
+            "the button after the name: {name:?} {play:?}"
         );
         let hover = rest_on(&mut app, &ctx, 980.0, play.center());
         assert!(
-            hover.iter().any(|(t, _)| t.starts_with("Use this model")),
-            "the button beside the name: {hover:?}"
+            hover
+                .iter()
+                .any(|(t, _)| t.contains("again with this model")),
+            "the button says what it does: {hover:?}"
         );
         app.switch_to_selected();
         let mut log = Vec::new();
@@ -1153,7 +1125,7 @@ mod tests {
         };
         let found = settled(&mut app, &ctx, 980.0);
         assert!(
-            !found.iter().any(|(t, _)| t == "Filter models..."),
+            !found.iter().any(|(t, _)| t == "Search models"),
             "three models need no box"
         );
 
@@ -1166,7 +1138,7 @@ mod tests {
         app.models = app.scan_models();
         let found = settled(&mut app, &ctx, 980.0);
         assert!(
-            found.iter().any(|(t, _)| t == "Filter models..."),
+            found.iter().any(|(t, _)| t == "Search models"),
             "ten models have a box"
         );
         app.model_filter = "model-7".into();

@@ -983,7 +983,10 @@ mod tests {
             });
             // (the question of a delete is asked in the Settings window, where its button is)
             app.show_settings_window(ui.ctx());
-            app.show_catalog_page(ui);
+            // the page of the recommended models, when it is open (the main window shows it in place of the chat)
+            if app.catalog.open {
+                app.show_catalog_page(ui);
+            }
             app.show_add_model_window(ui.ctx());
             app.show_connect_popover(ui.ctx());
             app.show_help_window(ui.ctx());
@@ -3180,11 +3183,12 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
             }
             let output = frame(&ctx, size, |ui| app.show_catalog_page(ui));
             let painted = painted_texts(&output.shapes);
+            // the page's own words: its title is in the bar over it (C203)
             assert!(
                 painted
                     .iter()
-                    .any(|p| p.text.contains("Recommended models")),
-                "{scope:?}: the window was not drawn"
+                    .any(|p| p.text.contains("What do you want to do") || p.text == "Search:"),
+                "{scope:?}: the page was not drawn"
             );
             for p in &painted {
                 eprintln!(

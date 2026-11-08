@@ -294,37 +294,38 @@ mod tests {
             .find(|r| (r.center().y - name.center().y).abs() < 12.0 && r.left() > name.right())
     }
 
+    /// I10 (C203): what the server is doing is said in the bar over the page, after the name, and where the models run at
+    /// the top of the sidebar, with the log or the live traffic open under the page or not. There is no status bar.
     #[test]
-    fn p3_i10_the_status_bar_says_what_the_server_is_doing_at_the_foot_of_the_window_on_both_tabs()
-    {
+    fn p3_i10_the_bar_says_what_the_server_is_doing_and_the_sidebar_where_it_runs() {
         let dir = scratch("z10");
         let mut app = app_in(&dir, "llamacpp");
+        only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
         let ctx = egui::Context::default();
-        for live in [false, true] {
+        for (live, dock) in [(false, false), (false, true), (true, true)] {
             app.enable_traffic_proxy = live;
+            app.dock_open = dock;
             app.active_tab = if live { Tab::Live } else { Tab::Main };
             let output = settled(&mut app, &ctx, false);
             let found = rects(&output);
             let state = *found
                 .get("Stopped")
-                .unwrap_or_else(|| panic!("Stopped on the {live} tab: {:?}", found.keys()));
-            // the computer is named at the top of the list of models too (C199): the status bar's is the lowest
-            let place = rects_of(&output, "This computer")
-                .into_iter()
-                .max_by(|a, b| a.center().y.total_cmp(&b.center().y))
-                .unwrap_or_else(|| panic!("This computer on the {live} tab: {:?}", found.keys()));
-            // in the status bar: the last row of the window, the state at its left and where the models run at its
-            // right (the engine is in the menu bar now)
+                .unwrap_or_else(|| panic!("Stopped ({live}, {dock}): {:?}", found.keys()));
+            let name = heading_of(&found, "Small-Q4_K_M.gguf");
             assert!(
-                state.center().y > 530.0,
-                "{live}: {state:?} is not in the status bar"
+                state.center().y < 56.0 && (state.center().y - name.center().y).abs() < 6.0,
+                "{live}, {dock}: {state:?} is not in the bar beside {name:?}"
             );
-            assert!(state.left() < 40.0, "{live}: {state:?}");
+            assert!(state.left() > name.right(), "{state:?} {name:?}");
+            // where the models run: the box at the top of the sidebar, and nowhere at the foot of the window
+            let places = rects_of(&output, "This computer");
+            assert!(!places.is_empty(), "{:?}", found.keys());
             assert!(
-                (place.center().y - state.center().y).abs() < 4.0 && place.left() > 600.0,
-                "{live}: {place:?} {state:?}"
+                places
+                    .iter()
+                    .all(|r| r.left() < 240.0 && r.center().y < 120.0),
+                "{live}, {dock}: {places:?}"
             );
-            // (the menu bar, the first row, is held to its order by A70 of the configurations)
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -431,10 +432,15 @@ mod tests {
             .get("Add your first model")
             .unwrap_or_else(|| panic!("the box that adds a model: {:?}", found.keys()));
         assert!(start.bottom() < title.top(), "{start:?} {title:?}");
-        // and its log under the box: the crash panel sends the person to it
+        // and its log under the page, with the bar's log button (C203): the crash panel sends the person to it
+        app.dock_open = true;
+        let found = rects(&settled(&mut app, &ctx, true));
+        let title = *found
+            .get("Add your first model")
+            .unwrap_or_else(|| panic!("the box that adds a model: {:?}", found.keys()));
         let log = found
             .get("Log")
-            .unwrap_or_else(|| panic!("the Log tab: {:?}", found.keys()));
+            .unwrap_or_else(|| panic!("the log under the page: {:?}", found.keys()));
         assert!(log.top() > title.bottom(), "{log:?} {title:?}");
         // llama.cpp's first run has no Start: there is nothing to start until a model is added
         let mut llama = app_in(&dir, "llamacpp");
@@ -504,8 +510,10 @@ mod tests {
         }
     }
 
+    /// I24 (C185, C203): what is said of a listed model is in its row of the list; the bar is its name and what it is
+    /// doing, and how it runs is in the panel at the right.
     #[test]
-    fn p3_i24_what_is_said_of_a_listed_model_is_in_its_row_and_the_head_of_the_page_is_two_lines() {
+    fn p3_i24_what_is_said_of_a_listed_model_is_in_its_row_and_how_it_runs_in_the_panel() {
         let dir = scratch("z24");
         let mut app = app_in(&dir, "ollama");
         // an Ollama that is installed (a page of its own installs one that is not)
@@ -516,17 +524,20 @@ mod tests {
         app.selected = 0;
         app.recommended_filename = Some("qwen3-vl:8b".to_string());
         app.named.stale = true;
+        // the panel opened with the bar's button (the window of these tests is too narrow for it to show by itself)
+        app.panel_open = true;
+        app.panel_asked = true;
         let found = rects(&settled(&mut app, &ctx, true));
         let heading = heading_of(&found, "qwen3-vl:8b");
+        assert!(heading.center().y < 56.0, "{heading:?} is not in the bar");
         let get = *found
             .iter()
             .find(|(text, _)| text.contains(" context · "))
             .unwrap_or_else(|| panic!("the line of how it runs: {:?}", found.keys()))
             .1;
-        // the head of the page: its name, and under it how it runs; nothing between them (C185)
         assert!(
-            get.top() > heading.bottom() && get.top() - heading.bottom() < 24.0,
-            "{get:?} is not right under {heading:?}"
+            get.left() > heading.left() + 200.0 && get.top() > 56.0,
+            "{get:?} is not in the panel at the right"
         );
         for text in [
             "vision",
@@ -549,7 +560,7 @@ mod tests {
             .1;
         assert!(row.left() < 170.0, "{row:?} is not in the list");
         let stale = found
-            .get("from the last run")
+            .get("· from the last run")
             .unwrap_or_else(|| panic!("from the last run: {:?}", found.keys()));
         assert!(
             stale.left() < 170.0 && stale.top() < row.top(),
@@ -736,30 +747,258 @@ mod tests {
         }]
     }
 
+    /// C203: there is no menu bar; what it had is in the QuickAI menu at the top of the sidebar (and the Models menu's in
+    /// the + of the list).
     #[test]
-    fn the_menu_bar_has_three_menus_and_the_view_and_server_menus_are_gone() {
-        let dir = scratch("v2-menus");
+    fn p3_i45_the_quickai_menu_has_what_the_menu_bar_had() {
+        let dir = scratch("v3-menu");
         let mut app = app_in(&dir, "llamacpp");
+        only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
         let ctx = egui::Context::default();
         let found = rects(&settled(&mut app, &ctx, true));
-        let menus: Vec<egui::Rect> = ["File", "Models", "Help"]
-            .iter()
-            .map(|m| {
-                *found
-                    .get(*m)
-                    .unwrap_or_else(|| panic!("{m}: {:?}", found.keys()))
-            })
-            .collect();
-        assert!(menus.iter().all(|r| r.center().y < 30.0), "{menus:?}");
-        assert!(
-            menus.windows(2).all(|p| p[0].right() < p[1].left()),
-            "{menus:?}"
-        );
-        assert!(!found.contains_key("View") && !found.contains_key("Server"));
-        // nor what the View menu and the toolbar had
-        for gone in ["Dark theme", "Settings", "Set up chat UI...", "Refresh"] {
+        for gone in ["File", "Models", "View", "Server", "Help"] {
             assert!(!found.contains_key(gone), "{gone} is still drawn");
         }
+        let menu = *found
+            .get("QuickAI")
+            .unwrap_or_else(|| panic!("QuickAI: {:?}", found.keys()));
+        assert!(menu.left() < 240.0 && menu.center().y < 40.0, "{menu:?}");
+        click(&mut app, &ctx, menu.center());
+        let found = rects(&settled(&mut app, &ctx, true));
+        for item in [
+            "Settings…",
+            "Configurations…",
+            "Theme",
+            "Light",
+            "Dark",
+            "Help…",
+            "Report a problem…",
+            "About QuickAI",
+            "Quit",
+        ] {
+            assert!(found.contains_key(item), "{item}: {:?}", found.keys());
+        }
+        // the theme changes from it at once
+        let dark = app.dark_mode;
+        click(
+            &mut app,
+            &ctx,
+            found[if dark { "Light" } else { "Dark" }].center(),
+        );
+        assert_eq!(app.dark_mode, !dark);
+        app.set_dark_mode(&ctx, dark);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// C203: the + of the list has what the Models menu had: Add a model, Recommended, the models folder and Refresh.
+    #[test]
+    fn p3_i45b_the_plus_of_the_list_has_what_the_models_menu_had() {
+        let dir = scratch("v3-plus");
+        let mut app = app_in(&dir, "llamacpp");
+        only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
+        let ctx = egui::Context::default();
+        let found = rects(&settled(&mut app, &ctx, true));
+        let models = *found
+            .get("MODELS")
+            .unwrap_or_else(|| panic!("MODELS: {:?}", found.keys()));
+        // the + is at the right end of the row of MODELS, in the sidebar
+        click(
+            &mut app,
+            &ctx,
+            egui::pos2(240.0 - 10.0 - 13.0, models.center().y),
+        );
+        let found = rects(&settled(&mut app, &ctx, true));
+        for item in [
+            "Add a model…",
+            "Recommended…",
+            "Open the models folder",
+            "Refresh the list",
+        ] {
+            assert!(found.contains_key(item), "{item}: {:?}", found.keys());
+        }
+        click(&mut app, &ctx, found["Add a model…"].center());
+        assert!(app.add_model_open, "Add a model opens");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// One frame of the whole window at `width` (and 680 high, as the suites have it): what it drew, by text.
+    fn at_width(app: &mut App, ctx: &egui::Context, width: f32) -> BTreeMap<String, egui::Rect> {
+        let mut found = BTreeMap::new();
+        for _ in 0..3 {
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(width, 680.0),
+                )),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(raw, |ui| app.show_window(ui));
+            output.textures_delta.clear();
+            found = rects(&output);
+        }
+        found
+    }
+
+    /// Where the window marks `spot` in a frame of these tests (760 points wide): read in the frame, which is the only
+    /// time a spot is known.
+    fn spot(app: &mut App, ctx: &egui::Context, spot: super::super::help::Spot) -> egui::Rect {
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(760.0, 560.0),
+            )),
+            ..Default::default()
+        };
+        let mut seen = None;
+        let mut output = ctx.run_ui(raw, |ui| {
+            app.show_window(ui);
+            seen = super::super::help::spot_rect(ui.ctx(), spot);
+        });
+        output.textures_delta.clear();
+        seen.unwrap_or_else(|| panic!("{spot:?} is not drawn"))
+    }
+
+    /// I42 (C203): the panel at the right (how the model runs) shows by itself in a window wide enough for it, as the
+    /// suites' 980 points are, and not in a narrower one, where the chat would have too little room; there the bar's
+    /// button opens it, and in a wide window puts it away.
+    #[test]
+    fn p3_i42_the_panel_shows_by_itself_in_a_wide_window_and_the_bars_button_opens_it_in_a_narrow_one(
+    ) {
+        use super::super::help::Spot;
+        let dir = scratch("u01");
+        let mut app = app_in(&dir, "llamacpp");
+        only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
+        let ctx = egui::Context::default();
+        assert!(at_width(&mut app, &ctx, 980.0).contains_key("How it runs"));
+        let narrow = at_width(&mut app, &ctx, 760.0);
+        assert!(!narrow.contains_key("How it runs"), "{:?}", narrow.keys());
+        // the bar's button opens it in the narrow window
+        let button = spot(&mut app, &ctx, Spot::Change);
+        assert!(button.center().y < 56.0, "{button:?} is not in the bar");
+        click(&mut app, &ctx, button.center());
+        let opened = at_width(&mut app, &ctx, 760.0);
+        let title = *opened
+            .get("How it runs")
+            .unwrap_or_else(|| panic!("the panel, opened: {:?}", opened.keys()));
+        assert!(
+            title.left() > 760.0 - 460.0,
+            "{title:?} is not at the right"
+        );
+        // and the same button puts it away, in the wide window too
+        let button = spot(&mut app, &ctx, Spot::Change);
+        click(&mut app, &ctx, button.center());
+        assert!(!at_width(&mut app, &ctx, 760.0).contains_key("How it runs"));
+        assert!(!at_width(&mut app, &ctx, 980.0).contains_key("How it runs"));
+        let button = spot(&mut app, &ctx, Spot::Change);
+        click(&mut app, &ctx, button.center());
+        assert!(at_width(&mut app, &ctx, 980.0).contains_key("How it runs"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// I43 (C203): the log is under the page: the bar's log button opens it (with the live traffic beside it when that is
+    /// on) and its close button puts it away; a run that ends in a crash opens it by itself, with a dot on the button.
+    #[test]
+    fn p3_i43_the_log_opens_under_the_page_from_the_bar_and_by_itself_after_a_crash() {
+        use super::super::help::Spot;
+        let dir = scratch("u02");
+        let mut app = app_in(&dir, "llamacpp");
+        only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
+        app.enable_traffic_proxy = true;
+        let ctx = egui::Context::default();
+        let found = rects(&settled(&mut app, &ctx, true));
+        assert!(!found.contains_key("Log") && !found.contains_key("Live traffic"));
+        let button = spot(&mut app, &ctx, Spot::LogTab);
+        assert!(button.center().y < 56.0, "{button:?} is not in the bar");
+        click(&mut app, &ctx, button.center());
+        let found = rects(&settled(&mut app, &ctx, true));
+        let (log, live) = (found["Log"], found["Live traffic"]);
+        assert!(
+            log.top() > 280.0 && log.left() > 240.0,
+            "{log:?} is not under the page"
+        );
+        assert!((log.center().y - live.center().y).abs() < 4.0 && log.right() < live.left());
+        // the bar's button again puts it away
+        click(&mut app, &ctx, button.center());
+        assert!(!app.dock_open);
+        // a run that ends in a crash: the log opens by itself, on the log
+        app.active_tab = Tab::Live;
+        app.session.report_start_failure(
+            8080,
+            "Small",
+            "llama-server could not be found".into(),
+            || {},
+        );
+        app.session.poll(&mut |_| {}, &mut |_| {});
+        assert_eq!(app.session.state(), crate::events::ServerState::Crashed);
+        app.follow_the_run();
+        assert!(app.dock_open && app.active_tab == Tab::Main && app.log_unread);
+        let found = rects(&settled(&mut app, &ctx, true));
+        assert!(found.contains_key("Log"), "{:?}", found.keys());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// I44 (C203): Recommended and MCP servers in the sidebar are pages of the main window, in place of the chat, with the
+    /// way back in the bar; Escape goes back too, and so does a model picked in the list.
+    #[test]
+    fn p3_i44_recommended_and_mcp_servers_are_pages_with_the_way_back_in_the_bar() {
+        let dir = scratch("u03");
+        let mut app = app_in(&dir, "llamacpp");
+        only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
+        let ctx = egui::Context::default();
+        let found = at_width(&mut app, &ctx, 980.0);
+        click(&mut app, &ctx, found["Recommended"].center());
+        let page = at_width(&mut app, &ctx, 980.0);
+        assert!(app.view == super::super::MainView::Recommended);
+        assert!(
+            page.contains_key("Recommended models") && page.contains_key("What do you want to do?"),
+            "{:?}",
+            page.keys()
+        );
+        assert!(
+            page["Recommended models"].center().y < 56.0,
+            "the page's name is in the bar"
+        );
+        assert!(!page.contains_key("How it runs"), "no panel on a page");
+        // the way back, in the bar
+        let back = egui::pos2(240.0 + 8.0 + 6.0 + 16.0, 28.0);
+        click(&mut app, &ctx, back);
+        assert!(
+            app.view == super::super::MainView::Model,
+            "the bar's way back"
+        );
+        // MCP servers, and Escape
+        let found = at_width(&mut app, &ctx, 980.0);
+        click(&mut app, &ctx, found["MCP servers"].center());
+        let page = at_width(&mut app, &ctx, 980.0);
+        assert!(app.view == super::super::MainView::Tools);
+        assert!(
+            page.contains_key("How to add and use them"),
+            "{:?}",
+            page.keys()
+        );
+        frame_with(
+            &mut app,
+            &ctx,
+            true,
+            vec![egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert!(app.view == super::super::MainView::Model, "Escape");
+        // a model picked in the list shows its page
+        app.view = super::super::MainView::Recommended;
+        let found = at_width(&mut app, &ctx, 980.0);
+        let row = found
+            .iter()
+            .find(|(t, r)| t.as_str() == "Small-Q4_K_M.gguf" && r.left() < 240.0)
+            .map(|(_, r)| *r)
+            .expect("the model in the list");
+        click(&mut app, &ctx, row.center());
+        assert!(app.view == super::super::MainView::Model, "a model picked");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -797,8 +1036,13 @@ mod tests {
             found.keys()
         );
         app.add_model_open = false;
+        // the chat is the page of the model (C203): from a page of the sidebar, Ctrl+L goes back to it
+        app.view = super::super::MainView::Recommended;
         frame_with(&mut app, &ctx, true, command_key(egui::Key::L));
-        assert!(app.active_tab == Tab::Chat, "Ctrl+L opens the chat");
+        assert!(
+            app.view == super::super::MainView::Model,
+            "Ctrl+L goes to the chat"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1004,19 +1248,21 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// I40 (C192): the Help menu is Help and About; the rest is in Help's window (Getting started, the keys, the
-    /// documentation online, the privacy policy), and the website in About.
+    /// I40 (C192, C203): of Help, the QuickAI menu has Help, Report a problem and About; the rest is in Help's window
+    /// (Getting started, the keys, the documentation online, the privacy policy), and the website in About.
     #[test]
-    fn p3_i40_the_help_menu_is_help_and_about() {
+    fn p3_i40_the_quickai_menu_has_help_report_a_problem_and_about() {
         let dir = scratch("i40");
         let mut app = app_in(&dir, "llamacpp");
         only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
         let ctx = egui::Context::default();
         let found = rects(&settled(&mut app, &ctx, true));
-        click(&mut app, &ctx, found["Help"].center());
+        click(&mut app, &ctx, found["QuickAI"].center());
         let found = rects(&settled(&mut app, &ctx, true));
         assert!(
-            found.contains_key("Help…") && found.contains_key("About QuickAI"),
+            found.contains_key("Help…")
+                && found.contains_key("Report a problem…")
+                && found.contains_key("About QuickAI"),
             "{:?}",
             found.keys()
         );

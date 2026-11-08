@@ -88,6 +88,21 @@ pub struct Behave {
     /// How many lines of streams have been written (shared by every clone of this struct, so a
     /// test can ask after the fact whether the fake stopped writing when its client left).
     pub lines_sent: Arc<AtomicUsize>,
+    /// What a chat that offers tools (`tools` in its request, C204) is answered with.
+    pub tools: ToolsBehave,
+}
+
+/// What the fake does with the tools of a chat (QuickAI's own MCP, C204).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ToolsBehave {
+    /// It answers as if there were none.
+    #[default]
+    Ignore,
+    /// A message of the person's is answered by a call of the first tool, with its first argument "hello"; what the
+    /// tool gave back is answered by saying it: "The tool said: ...".
+    Call,
+    /// The request is refused, as Ollama refuses tools for a model whose template has none.
+    Refuse,
 }
 
 impl Default for Behave {
@@ -107,6 +122,7 @@ impl Default for Behave {
             hang_up_next: BTreeMap::new(),
             split_lines: false,
             lines_sent: Arc::new(AtomicUsize::new(0)),
+            tools: ToolsBehave::Ignore,
         }
     }
 }
@@ -776,13 +792,71 @@ fn v1_chat(shared: &Arc<Mutex<State>>, behave: &Behave, body: Option<Value>, res
         let _ = load(shared, behave, &name, false);
     }
     let created = 1_791_295_427u64;
+    // the tools the request offers, and the last message it says
+    let tools: Vec<Value> = body
+        .get("tools")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let last = body
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|m| m.last())
+        .cloned()
+        .unwrap_or(Value::Null);
+    let last_role = last.get("role").and_then(Value::as_str).unwrap_or_default();
+    let mut reply = behave.reply.clone();
+    match behave.tools {
+        ToolsBehave::Refuse if !tools.is_empty() => {
+            return resp.json(
+                400,
+                &json!({"error": {"message": format!("registry.ollama.ai/library/{name} does not support tools"), "type": "api_error", "param": null, "code": null}}),
+                "application/json",
+            );
+        }
+        ToolsBehave::Call if !tools.is_empty() && last_role == "user" => {
+            let function = tools[0].get("function").cloned().unwrap_or(Value::Null);
+            let first = function
+                .pointer("/parameters/properties")
+                .and_then(Value::as_object)
+                .and_then(|p| p.keys().next().cloned());
+            let arguments = match first {
+                Some(key) => json!({ key: "hello" }).to_string(),
+                None => "{}".to_string(),
+            };
+            let call = json!({"index": 0, "id": "call_fake_1", "type": "function",
+                "function": {"name": function.get("name").cloned().unwrap_or(Value::Null), "arguments": arguments}});
+            resp.status(200).header("Content-Type", "text/event-stream");
+            resp.begin_stream();
+            for event in [
+                json!({"id": "chatcmpl-236", "object": "chat.completion.chunk", "created": created, "model": name,
+                    "choices": [{"index": 0, "delta": {"role": "assistant", "content": "", "tool_calls": [call]}, "finish_reason": null}]}),
+                json!({"id": "chatcmpl-236", "object": "chat.completion.chunk", "created": created, "model": name,
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]}),
+            ] {
+                let _ = resp.chunk(format!("data: {event}\n\n").as_bytes());
+            }
+            let _ = resp.chunk(b"data: [DONE]\n\n");
+            resp.end_stream();
+            return;
+        }
+        ToolsBehave::Call if last_role == "tool" => {
+            reply = format!(
+                "The tool said: {}",
+                last.get("content")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+            );
+        }
+        _ => {}
+    }
     if body.get("stream").and_then(Value::as_bool) != Some(true) {
         return resp.json(
             200,
             &json!({
                 "id": "chatcmpl-539", "object": "chat.completion", "created": created, "model": name,
                 "system_fingerprint": "fp_ollama",
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": behave.reply}, "finish_reason": "stop"}],
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": reply}, "finish_reason": "stop"}],
                 "usage": {"prompt_tokens": 15, "prompt_tokens_details": {"cached_tokens": 14}, "completion_tokens": 12, "total_tokens": 27}
             }),
             "application/json",
@@ -790,7 +864,7 @@ fn v1_chat(shared: &Arc<Mutex<State>>, behave: &Behave, body: Option<Value>, res
     }
     resp.status(200).header("Content-Type", "text/event-stream");
     resp.begin_stream();
-    for (i, w) in words(&behave.reply).into_iter().enumerate() {
+    for (i, w) in words(&reply).into_iter().enumerate() {
         let delta = if i == 0 {
             json!({"role": "assistant", "content": w})
         } else {

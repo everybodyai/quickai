@@ -663,14 +663,13 @@ impl App {
     pub(super) fn show_configuration_section(&mut self, ui: &mut egui::Ui) {
         let modified = self.configuration_modified();
         let color = modified_color(ui.visuals().dark_mode);
-        // a box round it only when it has changes, in their amber (UI v3, C203: in the panel at the right of the page)
-        let frame = if modified {
-            egui::Frame::group(ui.style())
+        // the box is there with a change or not, so that nothing moves when one is made (A73); a change makes it amber
+        let mut frame = egui::Frame::group(ui.style());
+        if modified {
+            frame = frame
                 .stroke(egui::Stroke::new(1.0, color))
-                .fill(color.gamma_multiply(0.1))
-        } else {
-            egui::Frame::new()
-        };
+                .fill(color.gamma_multiply(0.1));
+        }
         frame.show(ui, |ui| {
             ui.set_width(ui.available_width());
             self.show_section_row(ui, modified, color);
@@ -1534,8 +1533,9 @@ mod tests {
     }
 
     #[test]
-    fn p3_a70_the_menu_bar_the_head_of_the_page_and_the_tabs_keep_their_parts_apart_at_every_width_the_window_can_have(
-    ) {
+    /// A70 (C203): the sidebar, the bar over the page, the panel at the right and the log under the page keep their parts
+    /// apart at every width the window can have; the panel shows by itself in a window wide enough for it.
+    fn p3_a70_the_sidebar_the_bar_the_panel_and_the_log_keep_their_parts_apart_at_every_width() {
         let dir = scratch("a70");
         let mut app = app_in(&dir, "llamacpp");
         model_file_of_another_size(&dir);
@@ -1591,6 +1591,8 @@ mod tests {
         let name = app.models[0].display.clone();
         for live in [false, true] {
             app.enable_traffic_proxy = live;
+            app.dock_open = true;
+            app.active_tab = super::super::Tab::Main;
             // from the least the window can be (main.rs) to a wide screen
             for width in [640.0, 680.0, 760.0, 1000.0, 1400.0] {
                 let found = painted(&mut app, width);
@@ -1602,46 +1604,45 @@ mod tests {
                         .map(|(_, r)| *r)
                         .unwrap_or_else(|| panic!("{text} at {width} {live}: {found:?}"))
                 };
-                // the menus, in their order along the first row, and the engine's menu after them, whole, with room at
-                // the right end for the theme, the guides and Settings (three buttons of 30 points)
-                let menus: Vec<egui::Rect> = ["File", "Models", "Help", "llama.cpp"]
+                // the sidebar: the QuickAI menu, then the computer and the engine, in its width
+                let (menu, computer, engine) = (
+                    at("QuickAI", 0.0, 40.0),
+                    at("This computer", 40.0, 120.0),
+                    at("llama.cpp", 40.0, 160.0),
+                );
+                assert!(
+                    menu.bottom() < computer.top() && computer.bottom() < engine.top(),
+                    "{width} {live}: {menu:?} {computer:?} {engine:?}"
+                );
+                assert!(engine.right() < 240.0, "{width} {live}: {engine:?}");
+                assert!(
+                    !found
+                        .iter()
+                        .any(|(t, _)| ["File", "Models", "View", "Help"].contains(&t.as_str())),
+                    "{width} {live}: a menu bar"
+                );
+                // the bar: the model's name, what it is doing, and Start at its right end, apart and in the window
+                let heading = at(&name, 0.0, 56.0);
+                let state = at("Stopped", 0.0, 56.0);
+                let start = at("<green>", 0.0, 56.0);
+                assert!(
+                    heading.left() > 240.0
+                        && heading.right() < state.left()
+                        && state.right() < start.left(),
+                    "{width} {live}: {heading:?} {state:?} {start:?}"
+                );
+                assert!(start.right() <= width, "{width} {live}: {start:?}");
+                // the panel at the right shows by itself once the window is wide enough for it
+                let panel = found
                     .iter()
-                    .map(|m| at(m, 0.0, 30.0))
-                    .collect();
-                assert!(
-                    menus
-                        .windows(2)
-                        .all(|pair| pair[0].right() < pair[1].left()),
-                    "{width} {live}: {menus:?}"
+                    .find(|(t, r)| t == "How it runs" && r.center().y > 56.0);
+                assert_eq!(
+                    panel.is_some(),
+                    width >= super::super::shell::PANEL_FROM,
+                    "{width} {live}: {panel:?}"
                 );
-                assert!(
-                    menus[3].right() <= width - 3.0 * 30.0,
-                    "{width} {live}: {:?}",
-                    menus[3]
-                );
-                assert!(
-                    !found.iter().any(|(t, _)| t == "View"),
-                    "{width} {live}: the View menu is gone"
-                );
-                // the head of the page: the model's name, and Start at the right end of its row, apart
-                let heading = found
-                    .iter()
-                    .filter(|(t, r)| *t == name && r.center().y > 30.0 && r.center().y < 120.0)
-                    .map(|(_, r)| *r)
-                    .max_by(|a, b| a.left().total_cmp(&b.left()))
-                    .unwrap_or_else(|| panic!("{name} at {width} {live}: {found:?}"));
-                let start = at("<green>", 30.0, 120.0);
-                assert!(
-                    heading.right() < start.left() && start.right() <= width,
-                    "{width} {live}: {heading:?} {start:?}"
-                );
-                // the tabs, the chat first, the log, and the live traffic's only when it is on
-                let chat = at("Chat", 100.0, 540.0);
-                let log = at("Log", 100.0, 540.0);
-                assert!(
-                    chat.right() < log.left() && (chat.center().y - log.center().y).abs() < 4.0,
-                    "{width} {live}: {chat:?} {log:?}"
-                );
+                // the log under the page, and the live traffic beside it only when it is on
+                let log = at("Log", 280.0, 560.0);
                 let tab = found.iter().find(|(t, r)| {
                     t == "Live traffic" && (r.center().y - log.center().y).abs() < 4.0
                 });
@@ -1649,14 +1650,10 @@ mod tests {
                 if let Some((_, tab)) = tab {
                     assert!(log.right() < tab.left(), "{width}: {log:?} {tab:?}");
                 }
-                // and the status bar under it all
-                let state = at("Stopped", 530.0, 560.0);
-                assert!(
-                    state.top() > log.bottom(),
-                    "{width} {live}: {state:?} {log:?}"
-                );
+                assert!(log.left() > 240.0, "{width} {live}: {log:?}");
             }
         }
+        app.dock_open = false;
         // Change open, with a change made (the widest the section is): nothing of it runs out of the window, at the
         // narrowest the buttons of the change under the dropdown and the badge (in the window's own type, which is wider
         // than egui's)
@@ -1664,6 +1661,9 @@ mod tests {
         app.enable_traffic_proxy = false;
         app.change_open = true;
         app.change_custom = true;
+        // the panel opened with the bar's button, at every width
+        app.panel_open = true;
+        app.panel_asked = true;
         // and the same with a configuration of the person's that has a long name, which the line of how it runs says before
         // Done (the line was one row, and put Done out of the window)
         let long = "Qwen3-VL 8B on Ollama with Open WebUI beside it for work!";
@@ -1707,7 +1707,6 @@ mod tests {
                     save.right() <= revert.left(),
                     "{configuration} {width}: {save:?} {revert:?}"
                 );
-                at("Done");
             }
         }
         let _ = std::fs::remove_dir_all(&dir);
