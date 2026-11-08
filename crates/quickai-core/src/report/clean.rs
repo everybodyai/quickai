@@ -1,6 +1,7 @@
-//! Cleaning text before it can be sent (docs/reports-and-community.md, section 7.3). The only free text telemetry
-//! carries is a crash's message, its location and its thread's name; this takes out of them what could name a person
-//! or a computer, or open something of theirs. It cannot be perfect, which is why logs are never sent.
+//! Cleaning the text of a problem report before the person sees it: a crash's message, its location and its thread's
+//! name, and the last lines of an engine's log. This takes out of them what could name a person or a computer, or open
+//! something of theirs. It cannot be perfect, which is why the person reads the report before posting it, and nothing
+//! leaves the computer unless they post it themselves.
 
 use std::sync::OnceLock;
 

@@ -1,10 +1,10 @@
 //! What the machine says of a moment: how its memory and its swap were, how much of the last ten seconds anything
 //! waited for memory or for the disk, how much QuickAI held, and what one thread of QuickAI was doing (its state, the
-//! kernel function it waited in, its system call). The stall watcher writes it down and sends it with `error.stall`;
-//! the panic hook sends the memory and the waits with `crash.panic`. Linux says all of it; the other systems say
-//! nothing here, and then nothing is sent.
+//! kernel function it waited in, its system call). The stall watcher writes it down for the report of a stall; the
+//! panic hook puts the memory and the waits in the report of a crash. Linux says all of it; the other systems say
+//! nothing here, and then a report says nothing of it.
 
-use quickai_core::telemetry::{measure, Event};
+use quickai_core::report::{measure, Report};
 
 /// The moment, as read. Everything is `None` that the system did not say.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -50,8 +50,8 @@ impl Syscall {
         }
     }
 
-    /// As telemetry sends it: the name, the number when it has no name here, `none` when it was running.
-    pub fn sent(&self) -> Option<String> {
+    /// As a report says it: the name, the number when it has no name here, `none` when it was running.
+    pub fn said(&self) -> Option<String> {
         match self {
             Syscall::Running => Some("none".to_string()),
             Syscall::Number(n) => {
@@ -113,36 +113,42 @@ pub fn now(thread: Option<u32>) -> MachineNow {
     }
 }
 
-/// `event` with what `machine` says of the memory and the waits, in the ranges telemetry sends; with what its thread
-/// was doing too when `thread` (a stall). A field the machine did not say is left out.
-pub fn with_machine(mut event: Event, machine: &MachineNow, thread: bool) -> Event {
+/// `report` with what `machine` says of the memory and the waits, in ranges; with what its thread was doing too when
+/// `thread` (a stall). What the machine did not say is left out.
+pub fn with_machine(mut report: Report, machine: &MachineNow, thread: bool) -> Report {
     if let Some(bytes) = machine.memory_available {
-        event = event.with("memory_available", measure::available_bucket(bytes));
+        report = report.detail("Memory available (GB)", measure::available_bucket(bytes));
     }
     if let (Some(free), Some(total)) = (machine.swap_free, machine.swap_total) {
-        event = event.with("swap_free", measure::swap_free_bucket(free, total));
+        report = report.detail("Swap free", measure::swap_free_bucket(free, total));
     }
     if let Some(p) = machine.memory_pressure {
-        event = event.with("memory_pressure", measure::pressure_bucket(p));
+        report = report.detail(
+            "Waiting for memory (% of 10 s)",
+            measure::pressure_bucket(p),
+        );
     }
     if let Some(p) = machine.io_pressure {
-        event = event.with("io_pressure", measure::pressure_bucket(p));
+        report = report.detail(
+            "Waiting for the disk (% of 10 s)",
+            measure::pressure_bucket(p),
+        );
     }
     if let Some(bytes) = machine.resident {
-        event = event.with("app_memory", measure::app_memory_bucket(bytes));
+        report = report.detail("QuickAI's memory", measure::app_memory_bucket(bytes));
     }
     if thread {
         if let Some(t) = &machine.thread {
-            event = event.with("thread_state", measure::thread_state(&t.state));
+            report = report.detail("Window thread", measure::thread_state(&t.state));
             if let Some(name) = t.waiting_in.as_deref().and_then(measure::kernel_function) {
-                event = event.with("waiting_in", name);
+                report = report.detail("Waiting in", name);
             }
-            if let Some(call) = t.syscall.sent() {
-                event = event.with("syscall", call);
+            if let Some(call) = t.syscall.said() {
+                report = report.detail("System call", call);
             }
         }
     }
-    event
+    report
 }
 
 #[cfg(target_os = "linux")]
@@ -216,10 +222,10 @@ mod linux {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quickai_core::telemetry::schema;
 
     #[test]
-    fn a_moment_becomes_fields_of_the_schema_and_nothing_else() {
+    fn a_moment_becomes_lines_of_the_report_in_ranges() {
+        use quickai_core::report::{Environment, Kind};
         let machine = MachineNow {
             memory_available: Some(3 * 1024 * 1024 * 1024),
             swap_free: Some(0),
@@ -234,29 +240,40 @@ mod tests {
                 syscall: Syscall::Number(0),
             }),
         };
-        let event = with_machine(
-            Event::new("error.stall", 0).with("seconds", "60+"),
-            &machine,
-            true,
+        let report = || Report::new(Kind::WindowStalled, Environment::default());
+        let stall = with_machine(report(), &machine, true);
+        let line = |r: &Report, name: &str| {
+            r.details
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, v)| v.clone())
+        };
+        assert_eq!(
+            line(&stall, "Memory available (GB)").as_deref(),
+            Some("2-4")
         );
-        assert_eq!(schema::check(&event), Ok(()));
-        assert_eq!(event.fields["memory_available"], "2-4");
-        assert_eq!(event.fields["swap_free"], "<10%");
-        assert_eq!(event.fields["io_pressure"], "60+");
-        assert_eq!(event.fields["thread_state"], "disk");
-        assert_eq!(event.fields["waiting_in"], "folio_wait_bit_common");
+        assert_eq!(line(&stall, "Swap free").as_deref(), Some("<10%"));
+        assert_eq!(
+            line(&stall, "Waiting for the disk (% of 10 s)").as_deref(),
+            Some("60+")
+        );
+        assert_eq!(line(&stall, "Window thread").as_deref(), Some("disk"));
+        assert_eq!(
+            line(&stall, "Waiting in").as_deref(),
+            Some("folio_wait_bit_common")
+        );
         if cfg!(target_arch = "x86_64") {
-            assert_eq!(event.fields["syscall"], "read");
+            assert_eq!(line(&stall, "System call").as_deref(), Some("read"));
         }
 
         // a crash says the memory and the waits, not a thread's state
-        let crash = with_machine(Event::new("crash.panic", 0), &machine, false);
-        assert!(!crash.fields.contains_key("thread_state"));
-        assert_eq!(schema::check(&crash), Ok(()));
+        let crash = with_machine(report(), &machine, false);
+        assert_eq!(line(&crash, "Window thread"), None);
 
-        // what the machine did not say is not sent
-        let nothing = with_machine(Event::new("error.stall", 0), &MachineNow::default(), true);
-        assert!(nothing.fields.is_empty());
+        // what the machine did not say is not said
+        assert!(with_machine(report(), &MachineNow::default(), true)
+            .details
+            .is_empty());
     }
 
     #[test]

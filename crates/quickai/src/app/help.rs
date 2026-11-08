@@ -535,7 +535,7 @@ const PAGES: &[Page] = &[
         steps: &[
             step("What you type and the answers stay on this computer: the engine listens on this computer only."),
             step("QuickAI uses the internet when you ask it to: to search for or download a model, or an engine."),
-            step("There is no account, no analytics, no crash report and no update check."),
+            step("There is no account, no analytics and no update check. When something breaks, QuickAI shows a report you can post if you want; it sends nothing by itself."),
             step("A model on another computer you added gets your messages through your own ssh.")
                 .does(Deed::Privacy),
         ],

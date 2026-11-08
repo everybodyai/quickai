@@ -60,13 +60,13 @@ mod remote_run;
 #[path = "remote_run_off.rs"]
 mod remote_run;
 mod remote_ui;
+mod report;
 mod run_bar;
 mod run_settings;
 mod runtime_manager;
 mod settings_window;
 mod shell;
 mod stall;
-mod telemetry;
 mod theme;
 mod values;
 mod widgets;
@@ -181,10 +181,8 @@ pub struct App {
     pending_delete: Option<PendingDelete>,
     /// Each frame beats, and a thread looks at how long ago (see `stall.rs`).
     heartbeat: stall::Heartbeat,
-    /// Telemetry for this start (WP4.42): inert in a test's window.
-    telemetry: quickai_runtime::telemetry::Telemetry,
-    /// What the window shows and keeps of telemetry.
-    tel: telemetry::TelemetryUi,
+    /// Problem reports (C202): what broke waits here to be shown, for the person to post if they want.
+    reports: report::ReportsUi,
     /// The program that goes with the engine in use (Open WebUI beside Ollama), if the engine has one:
     /// its settings, its builds and a run of its own (see `companion.rs`).
     companion: Option<companion::Companion>,
@@ -326,8 +324,7 @@ impl App {
         // the first start with configurations keeps what the person had set as their Default
         app.adopt_working_state();
         app.watch_the_window(cc.egui_ctx.clone());
-        let package_config = app.config_dirs.bundle.clone();
-        app.start_telemetry(package_config.as_deref());
+        app.start_reports();
         app
     }
 
@@ -449,8 +446,7 @@ impl App {
             runtime: RuntimeManager::default(),
             pending_delete: None,
             heartbeat: stall::Heartbeat::new(),
-            telemetry: quickai_runtime::telemetry::Telemetry::inert(),
-            tel: telemetry::TelemetryUi::default(),
+            reports: report::ReportsUi::default(),
             companion: None,
             in_companion: false,
             save_wanted: std::cell::Cell::new(false),
@@ -906,12 +902,6 @@ impl App {
                 self.rescan_models();
             }
             Some(Err(msg)) => {
-                self.note_download_failed(
-                    &msg,
-                    source.as_ref().map(|s| s.place.as_str()),
-                    job.downloaded,
-                    job.total,
-                );
                 self.push_log(format!("Download failed: {msg}"));
                 self.catalog.note = Some(format!("Download failed: {msg}"));
                 self.bench_failed(&msg);
@@ -967,7 +957,7 @@ impl eframe::App for App {
         self.poll_setup_traffic();
 
         self.poll_restart(ui.ctx());
-        self.telemetry_frame();
+        self.reports_frame();
 
         // a run that ends in a crash puts a dot on the log, once
         let state = self.session.state();
@@ -999,9 +989,7 @@ impl eframe::App for App {
         self.show_port_taken_dialog(ui.ctx());
         self.show_configuration_modals(ui.ctx(), false);
         self.show_configurations_window(ui.ctx());
-        self.show_telemetry_log(ui.ctx());
-        self.show_crash_offer(ui.ctx());
-        self.show_report_problem(ui.ctx());
+        self.show_report_window(ui.ctx());
     }
 
     fn on_exit(&mut self) {
@@ -1011,6 +999,5 @@ impl eframe::App for App {
         // the page goes first: it has no use without what it talks to
         self.stop_companion_blocking();
         self.session.stop_blocking();
-        self.telemetry_closing();
     }
 }

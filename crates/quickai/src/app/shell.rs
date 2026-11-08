@@ -51,12 +51,6 @@ impl App {
         egui::Panel::top("menu_bar")
             .frame(theme::bar_frame(egui::Margin::symmetric(6, 3)))
             .show(ui, |ui| self.show_menu_bar(ui));
-        // the first start asks about telemetry once, under the menu bar, over nothing (WP4.42)
-        if self.tel.notice {
-            egui::Panel::top("telemetry_notice")
-                .frame(theme::bar_frame(egui::Margin::symmetric(12, 8)))
-                .show(ui, |ui| self.show_telemetry_notice(ui));
-        }
         egui::Panel::bottom("status_bar")
             .frame(theme::bar_frame(egui::Margin::symmetric(10, 3)))
             .show(ui, |ui| self.show_status_bar(ui, state));
@@ -183,7 +177,7 @@ impl App {
                     self.raise_about = self.show_about;
                     self.show_about = true;
                 }
-                // last, so that the items above stay where they were (WP4.42)
+                // last, so that the items above stay where they were (C202: the window of a report, see `report.rs`)
                 if ui.button("Report a problem…").clicked() {
                     self.open_report_problem();
                 }

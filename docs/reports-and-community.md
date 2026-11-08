@@ -1,5 +1,15 @@
 # Reports and the community
 
+> **Telemetry was removed in 0.2.6** (C202, the user, 2026-11-08: "remove the telemetry completely - instead, when
+> something breaks, get a popup with relevant data to be voluntarily posted to quickai.everybodyai.dev or to github";
+> "No user/instance have to be identifiable"; "one click will open up the page with the data prefilled"). What this
+> document says of levels, the install id, the queue, the server's events and the admin's telemetry pages describes
+> 0.2.1 to 0.2.5 only. Since 0.2.6 the window shows a report that names no one when QuickAI crashed, an engine stopped
+> by itself or the window stopped answering, and opens QuickAI's report page (filled in from the address's `#`, which
+> no server sees) or GitHub's bug form with it; nothing is sent until the person presses the button there. The API
+> answers old versions so that they stop, and what it held was deleted. See `crates/quickai-core/src/report`,
+> `crates/quickai/src/app/report.rs` and PRIVACY.md's Problem reports.
+
 Telemetry and crash reports the way VS Code does them, the admin of everybodyai.dev, and the shared configurations of
 quickai.everybodyai.dev.
 

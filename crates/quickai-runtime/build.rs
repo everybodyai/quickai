@@ -1,5 +1,5 @@
-//! What a build says of itself in telemetry (`telemetry::identity`): the target it was built for, and the channel and
-//! commit the release scripts of `the packaging repository` set (`QUICKAI_CHANNEL=official`, `QUICKAI_COMMIT`).
+//! What a build says of itself in a problem report (`report::environment`): the target it was built for, and the
+//! channel and commit the release scripts of `the packaging repository` set (`QUICKAI_CHANNEL=official`, `QUICKAI_COMMIT`).
 fn main() {
     println!(
         "cargo:rustc-env=QUICKAI_TARGET={}",

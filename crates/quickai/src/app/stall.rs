@@ -14,7 +14,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use eframe::egui;
 
-use quickai_runtime::telemetry::machine::{self, MachineNow};
+use quickai_runtime::report::machine::{self, MachineNow};
 
 use crate::hardware::format_duration;
 
@@ -36,7 +36,7 @@ struct Shared {
     gone: AtomicBool,
     /// What the watcher has to say to the person, for the log pane.
     notices: Mutex<Vec<String>>,
-    /// The stalls that ended, for telemetry (`error.stall`).
+    /// The stalls that ended, for their problem report.
     stalls: Mutex<Vec<Stall>>,
 }
 
@@ -140,7 +140,7 @@ fn look(
 ) {
     // when the last frame before the stall was drawn
     let mut stalled_from: Option<Instant> = None;
-    // what was running and what the machine said when the stall was noticed, for telemetry when it ends
+    // what was running and what the machine said when the stall was noticed, for its report when it ends
     let mut noticed: Option<(&'static str, MachineNow)> = None;
     // the last time the window was seen covered or minimized
     let mut hidden_at: Option<Instant> = None;

@@ -64,8 +64,8 @@ pub fn advice(
 }
 
 /// Which of the engine's `[[diagnostic]]` rules applies to a run, counted from 1 in the document's order: the first
-/// whose conditions all hold, as `advice` holds them; 0 when none does or there is no such engine. Telemetry sends
-/// this number in place of the log.
+/// whose conditions all hold, as `advice` holds them; 0 when none does or there is no such engine. A problem
+/// report says this number beside the log's last lines.
 pub fn matching_rule(
     registry: &Registry,
     engine: &str,

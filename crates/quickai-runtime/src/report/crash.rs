@@ -1,12 +1,11 @@
-//! Crashes (section 7 of docs/reports-and-community.md): the panic hook that writes a report to disk when QuickAI
-//! panics, with no network and nothing slow, and the session markers that tell, at the next start, that the last
-//! session ended without closing.
+//! Crashes: the panic hook that writes a problem report to this computer's disk when QuickAI panics, with no network
+//! and nothing slow. The next start shows it (`super::pending_crashes`); it never leaves the computer by itself.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use quickai_core::telemetry::clean::Cleaner;
-use quickai_core::telemetry::{measure, schema, Batch, Common, Event};
+use quickai_core::report::clean::Cleaner;
+use quickai_core::report::{measure, Environment, Kind, Report};
 
 /// What the window was doing, kept up to date by it so that a crash report can say: the engine, its state and the
 /// windows that are open.
@@ -15,7 +14,7 @@ pub struct CrashContext {
     pub engine: Option<String>,
     /// One of `idle`, `starting`, `running`, `stopping`, `crashed`.
     pub engine_state: Option<&'static str>,
-    /// Of `schema::WINDOWS`.
+    /// The windows that are open (`add_model`, `settings`...).
     pub open_windows: Vec<&'static str>,
     /// What the window was showing that runs on without it, of `measure::RUNNING` (`none` is left out).
     pub running: Option<&'static str>,
@@ -32,7 +31,7 @@ const NOISE: &[&str] = &[
     "std::sys::backtrace",
     "std::rt::",
     "__rust",
-    "quickai_runtime::telemetry::crash",
+    "quickai_runtime::report::crash",
     "<alloc::boxed::Box<F,A> as core::ops::function::Fn",
 ];
 
@@ -67,28 +66,21 @@ fn strip_hash(name: &str) -> &str {
     }
 }
 
-/// What a panic says, made into the `crash.panic` event: the message and the location cleaned, the thread, the
-/// frames, and what the window was doing. `None` if it would not pass the schema (it then is not written at all).
+/// What a panic says, made into a report: the message and the location cleaned, the thread, the frames, how long
+/// QuickAI had been open, and what the window was doing.
 #[allow(clippy::too_many_arguments)]
-pub fn crash_event(
+pub fn crash_report(
+    environment: &Environment,
     message: &str,
     location: Option<(&str, u32, u32)>,
     thread: &str,
     backtrace: &str,
     context: &CrashContext,
     minutes_open: u64,
-    now: u64,
     cleaner: &Cleaner,
-) -> Option<Event> {
-    let mut event = Event::new("crash.panic", now)
-        .with("message", cleaner.clean(message))
-        .with(
-            "thread",
-            cleaner.clean(thread).chars().take(100).collect::<String>(),
-        )
-        .with("backtrace", frames(backtrace))
-        .with("minutes_open", measure::minutes_bucket(minutes_open))
-        .with("open_windows", context.open_windows.clone());
+) -> Report {
+    let mut report =
+        Report::new(Kind::Crash, environment.clone()).detail("Message", cleaner.clean(message));
     if let Some((file, line, column)) = location {
         let file: String = cleaner
             .clean(file)
@@ -100,34 +92,44 @@ pub fn crash_event(
                 c => c,
             })
             .collect();
-        event = event.with("location", format!("{file}:{line}:{column}"));
+        report = report.detail("Where", format!("{file}:{line}:{column}"));
     }
+    report = report
+        .detail(
+            "Thread",
+            cleaner.clean(thread).chars().take(100).collect::<String>(),
+        )
+        .detail("Open for (minutes)", measure::minutes_bucket(minutes_open));
     if let Some(engine) = context
         .engine
         .as_deref()
         .filter(|e| measure::is_plain_name(e))
     {
-        event = event.with("engine", engine);
+        report = report.detail("Engine", engine);
     }
     if let Some(state) = context.engine_state {
-        event = event.with("engine_state", state);
+        report = report.detail("Engine state", state);
     }
     if let Some(running) = context.running {
-        event = event.with("running", running);
+        report = report.detail("Going on", running);
+    }
+    if !context.open_windows.is_empty() {
+        report = report.detail("Windows open", context.open_windows.join(", "));
     }
     if let Some(machine) = &context.machine {
-        event = super::machine::with_machine(event, machine, false);
+        report = super::machine::with_machine(report, machine, false);
     }
-    schema::check(&event).ok().map(|()| event)
+    report.backtrace = frames(backtrace);
+    report
 }
 
-/// Writes `batch` to `dir/<its id>.json`, whole or not at all.
-pub fn write_report(dir: &Path, batch: &Batch) -> std::io::Result<PathBuf> {
+/// Writes a report to `dir/crash-<seconds>-<process>.txt`, whole or not at all.
+pub fn write_report(dir: &Path, report: &Report, now: u64) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
-    let path = dir.join(format!("{}.json", batch.id));
-    let part = dir.join(format!("{}.json.part", batch.id));
-    let json = serde_json::to_string_pretty(batch).map_err(std::io::Error::other)?;
-    std::fs::write(&part, json)?;
+    let name = format!("crash-{now}-{}", std::process::id());
+    let path = dir.join(format!("{name}.txt"));
+    let part = dir.join(format!("{name}.txt.part"));
+    std::fs::write(&part, report.text())?;
     std::fs::rename(&part, &path)?;
     Ok(path)
 }
@@ -135,11 +137,10 @@ pub fn write_report(dir: &Path, batch: &Batch) -> std::io::Result<PathBuf> {
 /// What the hook needs, prepared before anything can panic.
 pub(super) struct Hook {
     pub dir: PathBuf,
-    pub common: Common,
+    pub environment: Environment,
     pub cleaner: Cleaner,
     pub context: Arc<Mutex<CrashContext>>,
     pub started: u64,
-    pub id: Box<dyn Fn() -> String + Send + Sync>,
     pub clock: Arc<dyn Fn() -> u64 + Send + Sync>,
 }
 
@@ -167,19 +168,17 @@ impl Hook {
         context.machine = Some(super::machine::now(None));
         let now = (self.clock)();
         let minutes = now.saturating_sub(self.started) / 60;
-        if let Some(event) = crash_event(
+        let report = crash_report(
+            &self.environment,
             &message,
             location,
             thread,
             &backtrace,
             &context,
             minutes,
-            now,
             &self.cleaner,
-        ) {
-            let batch = Batch::new((self.id)(), self.common.clone(), vec![event]);
-            let _ = write_report(&self.dir, &batch);
-        }
+        );
+        let _ = write_report(&self.dir, &report, now);
     }
 }
 
@@ -190,7 +189,7 @@ mod tests {
     const BACKTRACE: &str = "   0: std::backtrace_rs::backtrace::libunwind::trace
              at /rustc/abc/library/std/src/../../backtrace/src/backtrace/libunwind.rs:117:9
    1: std::backtrace::Backtrace::force_capture
-   2: quickai_runtime::telemetry::crash::Hook::record
+   2: quickai_runtime::report::crash::Hook::record
    3: std::panicking::rust_panic_with_hook
    4: core::panicking::panic_fmt
    5: quickai::app::catalog_view::<impl quickai::app::App>::show_catalog_window::h0123456789abcdef
@@ -210,8 +209,16 @@ mod tests {
         );
     }
 
+    fn line<'a>(report: &'a Report, name: &str) -> Option<&'a str> {
+        report
+            .details
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.as_str())
+    }
+
     #[test]
-    fn a_panic_becomes_a_clean_event_of_the_schema() {
+    fn a_panic_becomes_a_clean_report() {
         let cleaner = Cleaner::new(Some("/home/grace"), Some("grace"), None, &[]);
         let context = CrashContext {
             engine: Some("ollama".into()),
@@ -223,66 +230,92 @@ mod tests {
                 ..Default::default()
             }),
         };
-        let event = crash_event(
+        let report = crash_report(
+            &Environment::default(),
             "cannot read /home/grace/.quickai/models/secret-model.gguf",
             Some(("crates/quickai/src/app/catalog_view.rs", 412, 31)),
             "main",
             BACKTRACE,
             &context,
             42,
-            1_793_351_564,
             &cleaner,
-        )
-        .expect("an event of the schema");
+        );
+        assert_eq!(report.kind, Kind::Crash);
         assert_eq!(
-            event.fields["message"],
-            "cannot read ~/.quickai/models/<model file>"
+            line(&report, "Message"),
+            Some("cannot read ~/.quickai/models/<model file>")
         );
         assert_eq!(
-            event.fields["location"],
-            "crates/quickai/src/app/catalog_view.rs:412:31"
+            line(&report, "Where"),
+            Some("crates/quickai/src/app/catalog_view.rs:412:31")
         );
-        assert_eq!(event.fields["engine"], "ollama");
-        assert_eq!(event.fields["minutes_open"], "30-60");
-        assert_eq!(event.fields["running"], "download");
-        assert_eq!(event.fields["memory_available"], "<1");
-        assert_eq!(event.time, "2026-10-30T09:00:00Z");
+        assert_eq!(line(&report, "Engine"), Some("ollama"));
+        assert_eq!(line(&report, "Open for (minutes)"), Some("30-60"));
+        assert_eq!(line(&report, "Going on"), Some("download"));
+        assert_eq!(line(&report, "Windows open"), Some("recommended"));
+        assert_eq!(line(&report, "Memory available (GB)"), Some("<1"));
+        assert_eq!(report.backtrace.len(), 3);
+        let text = report.text();
+        assert!(
+            !text.contains("grace") && !text.contains("secret-model"),
+            "{text}"
+        );
     }
 
     #[test]
     fn a_location_in_a_home_with_a_space_still_fits() {
-        let cleaner = Cleaner::default();
-        let event = crash_event(
+        let report = crash_report(
+            &Environment::default(),
             "x",
             Some(("/opt/my crate/src/lib.rs", 1, 2)),
             "worker",
             "",
             &CrashContext::default(),
             0,
-            0,
-            &cleaner,
-        )
-        .expect("an event");
-        assert_eq!(event.fields["location"], "/opt/my_crate/src/lib.rs:1:2");
+            &Cleaner::default(),
+        );
+        assert_eq!(line(&report, "Where"), Some("/opt/my_crate/src/lib.rs:1:2"));
     }
 
     #[test]
     fn a_location_on_windows_reads_as_it_does_on_the_other_systems() {
-        let cleaner = Cleaner::default();
-        let event = crash_event(
+        let report = crash_report(
+            &Environment::default(),
             "x",
             Some((r"crates\quickai\src\app\mod.rs", 1, 2)),
             "worker",
             "",
             &CrashContext::default(),
             0,
-            0,
-            &cleaner,
-        )
-        .expect("an event");
-        assert_eq!(
-            event.fields["location"],
-            "crates/quickai/src/app/mod.rs:1:2"
+            &Cleaner::default(),
         );
+        assert_eq!(
+            line(&report, "Where"),
+            Some("crates/quickai/src/app/mod.rs:1:2")
+        );
+    }
+
+    #[test]
+    fn a_report_is_written_whole_as_its_text() {
+        let dir = std::env::temp_dir().join(format!("quickai-crash-write-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let report = crash_report(
+            &Environment::default(),
+            "boom",
+            None,
+            "main",
+            "",
+            &CrashContext::default(),
+            0,
+            &Cleaner::default(),
+        );
+        let path = write_report(&dir, &report, 1_793_351_564).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), report.text());
+        assert!(path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("crash-1793351564-"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

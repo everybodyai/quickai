@@ -29,6 +29,6 @@ pub mod plan;
 pub mod prerequisite;
 pub mod profile;
 pub mod registry;
+pub mod report;
 pub mod stream;
-pub mod telemetry;
 pub mod value;

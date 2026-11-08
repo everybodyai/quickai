@@ -103,9 +103,8 @@ impl App {
                          \"Get\" box or \"Look up online\" (which contact the URL you gave or \
                          Hugging Face to fetch/search for a file) or Settings' \"Look up \
                          llama.cpp builds\" (which contacts GitHub to list/download \
-                         llama-server releases); telemetry, at the level you choose in Settings → \
-                         Privacy (nothing until you choose, and nothing at Off), goes to EverybodyAI \
-                         at api.everybodyai.dev, never with your prompts or files. Model output can be inaccurate, \
+                         llama-server releases). QuickAI sends no reports by itself: when \
+                         something breaks it shows one, and you choose whether to post it. Model output can be inaccurate, \
                          biased, or simply wrong; treat it as a draft, not a fact, and don't \
                          rely on it for medical, legal, financial, or other safety-critical \
                          decisions. This software is provided \"as is\", without warranty of \

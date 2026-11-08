@@ -33,17 +33,16 @@ QuickAI headless commands
       --strict      warnings (for example keys this version does not know) fail too
       --embedded    check only the documents compiled into the application
 
-  quickai config docs [vocab | catalog | profile | telemetry]
+  quickai config docs [vocab | catalog | profile]
       Print the reference page for engine documents (docs/reference/engine-fields.md), or with
       `vocab` the one for vocabulary documents (docs/reference/vocab-fields.md), with `catalog`
       the one for catalog documents (docs/reference/catalog-fields.md), or with `profile` the one
       for configuration documents (docs/reference/profile-fields.md), generated from the types the
-      loader reads; with `telemetry`, every event QuickAI can send
-      (docs/reference/telemetry-events.md).
+      loader reads.
 
   quickai --telemetry
-      Print, as JSON, every telemetry event this build can send: its level, why it is collected,
-      and each field with its shape and the kind of data it is.
+      Say that QuickAI sends no telemetry: since 0.2.6 it shows a report when something breaks,
+      for you to post if you want.
 
   quickai plan [--explain | --json] [--engine ID] [--model FILE|NAME] [--binary FILE] [--port N]
                [--ctx-size N] [--gpu-layers N] [--extra-args TEXT] [--proxy]
@@ -93,6 +92,11 @@ pub fn run(args: &[String]) -> Option<i32> {
     ))
 }
 
+/// What `quickai --telemetry` says: there is none (C202).
+pub const NO_TELEMETRY: &str =
+    "QuickAI sends no telemetry. Since 0.2.6, when something breaks it shows a report, \
+     which you can post on quickai.everybodyai.dev or GitHub if you want.";
+
 pub fn run_with(
     args: &[String],
     dirs: &ConfigDirs,
@@ -105,12 +109,7 @@ pub fn run_with(
             0
         }
         Some("--telemetry") if args.len() == 1 => {
-            let list = quickai_core::telemetry::schema::list_json();
-            let _ = writeln!(
-                out,
-                "{}",
-                serde_json::to_string_pretty(&list).unwrap_or_default()
-            );
+            let _ = writeln!(out, "{NO_TELEMETRY}");
             0
         }
         Some("config") => match args.get(1).map(String::as_str) {
@@ -125,10 +124,6 @@ pub fn run_with(
             }
             Some("docs") if args.len() == 3 && args[2] == "catalog" => {
                 let _ = write!(out, "{}", quickai_core::doc::reference::render_catalog());
-                0
-            }
-            Some("docs") if args.len() == 3 && args[2] == "telemetry" => {
-                let _ = write!(out, "{}", quickai_core::telemetry::schema::reference_page());
                 0
             }
             Some("docs") if args.len() == 3 && args[2] == "profile" => {
@@ -561,19 +556,12 @@ mod tests {
     }
 
     #[test]
-    fn telemetry_lists_every_event_as_json_and_as_a_page() {
+    fn telemetry_is_said_to_be_gone() {
         let (code, out, _) = run_capture(&["--telemetry"], &ConfigDirs::default());
         assert_eq!(code, 0);
-        let list: serde_json::Value = serde_json::from_str(&out).expect("JSON");
-        assert_eq!(
-            list["events"].as_array().map(Vec::len),
-            Some(quickai_core::telemetry::schema::EVENTS.len())
-        );
-        let (code, page, _) = run_capture(&["config", "docs", "telemetry"], &ConfigDirs::default());
-        assert_eq!(code, 0);
-        assert_eq!(page, quickai_core::telemetry::schema::reference_page());
-        // only alone
-        let (code, _, _) = run_capture(&["--telemetry", "x"], &ConfigDirs::default());
+        assert_eq!(out.trim(), NO_TELEMETRY);
+        // the page of its events is gone with it
+        let (code, _, _) = run_capture(&["config", "docs", "telemetry"], &ConfigDirs::default());
         assert_ne!(code, 0);
     }
 
