@@ -802,16 +802,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// I38 (C194): Add a model, the recommended models, a model's details and About are windows of their own, as Settings
-    /// and Help are, to be moved anywhere and made as big as the screen with the window manager's own buttons: a display that
-    /// can open windows is asked for one of each, with its title and the application's icon, and the main window draws none
-    /// of them. Escape in Add a model or in the recommended models closes it; the window manager's close button closes each;
-    /// asked for again while open, each comes to the front.
+    /// I38 (C194, C203): Add a model, a model's details and About are windows of their own, as Settings and Help are, to be
+    /// moved anywhere and made as big as the screen with the window manager's own buttons: a display that can open windows
+    /// is asked for one of each, with its title and the application's icon, and the main window draws none of them. The
+    /// recommended models are a page of the main window since UI v3 (C203). Escape in Add a model closes it; the window
+    /// manager's close button closes each; asked for again while open, each comes to the front.
     #[test]
     fn p3_i38_add_a_model_recommended_details_and_about_are_windows_of_their_own() {
         use super::super::about_window::about_viewport;
         use super::super::add_model::add_model_viewport;
-        use super::super::catalog_view::catalog_viewport;
         use super::super::model_details::details_viewport;
         use std::cell::RefCell;
         use std::collections::{HashMap, HashSet};
@@ -886,7 +885,6 @@ mod tests {
             let mut output = ctx.run_ui(raw, |ui| {
                 app.show_window(ui);
                 app.show_about_window(ui.ctx());
-                app.show_catalog_window(ui.ctx());
                 app.show_model_details(ui.ctx());
                 app.show_add_model_window(ui.ctx());
             });
@@ -914,11 +912,6 @@ mod tests {
                 "Add a model",
                 "SUGGESTED FOR THIS COMPUTER",
             ),
-            (
-                catalog_viewport(),
-                "Recommended models",
-                "What do you want to do",
-            ),
             (details_viewport(), "Details: ", "Quantization"),
             (about_viewport(), "About QuickAI", "Disclaimer"),
         ];
@@ -941,6 +934,10 @@ mod tests {
                 assert!(!main.contains(says), "{says} is in the main window");
             }
         }
+        assert!(
+            main.contains("What do you want to do"),
+            "the recommended models are a page of the main window: {main}"
+        );
 
         // Escape in Add a model closes it and nothing else; in the recommended models, the same
         display
@@ -950,23 +947,16 @@ mod tests {
         frame(&mut app);
         assert!(!app.add_model_open, "Escape closes Add a model");
         assert!(app.catalog.open && app.details_of.is_some() && app.show_about);
-        display
-            .borrow_mut()
-            .keys
-            .insert(catalog_viewport(), egui::Key::Escape);
-        frame(&mut app);
-        assert!(!app.catalog.open, "Escape closes the recommended models");
 
         // the window manager's close button closes each
         app.open_add_model();
-        app.open_catalog();
         frame(&mut app);
         for (id, _, _) in windows {
             display.borrow_mut().closed.insert(id);
         }
         frame(&mut app);
         assert!(
-            !app.add_model_open && !app.catalog.open && app.details_of.is_none() && !app.show_about,
+            !app.add_model_open && app.details_of.is_none() && !app.show_about,
             "each closed by its close button"
         );
         frame(&mut app);
@@ -974,11 +964,9 @@ mod tests {
 
         // asked for again while open, it comes to the front
         app.open_add_model();
-        app.open_catalog();
-        assert!(!app.raise_add_model && !app.catalog.raise, "just opened");
+        assert!(!app.raise_add_model, "just opened");
         app.open_add_model();
-        app.open_catalog();
-        assert!(app.raise_add_model && app.catalog.raise, "open already");
+        assert!(app.raise_add_model, "open already");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

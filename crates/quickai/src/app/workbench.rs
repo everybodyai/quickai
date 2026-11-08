@@ -1027,7 +1027,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut texts = Vec::new();
         for _ in 0..3 {
-            texts = painted(&ctx, |ui| app.show_catalog_window(ui.ctx()));
+            texts = painted(&ctx, |ui| app.show_catalog_page(ui));
         }
         assert!(
             texts.iter().any(|t| t.contains("Recommended models")),
@@ -1043,7 +1043,7 @@ mod tests {
         // and in the list, the row of the download with what goes with it
         app.catalog.page = super::super::catalog_view::Page::List;
         for _ in 0..3 {
-            texts = painted(&ctx, |ui| app.show_catalog_window(ui.ctx()));
+            texts = painted(&ctx, |ui| app.show_catalog_page(ui));
         }
         assert!(
             texts

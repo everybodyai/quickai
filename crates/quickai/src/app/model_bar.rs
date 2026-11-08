@@ -22,6 +22,10 @@ const ICON: egui::Vec2 = egui::vec2(32.0, 32.0);
 impl App {
     /// The bar over the page and the panel at its right.
     pub(super) fn show_top_bar(&mut self, ui: &mut egui::Ui, state: ServerState, active: bool) {
+        if self.view != super::MainView::Model {
+            self.show_page_bar(ui);
+            return;
+        }
         let title = self.bar_title();
         let (said, color) = self.bar_state(state);
         let status = self.run_status_text(state);
@@ -107,6 +111,43 @@ impl App {
             });
         });
         self.do_bar_press(ui.ctx(), pressed);
+    }
+
+    /// The bar over a page of the sidebar: the way back to the model, the page's name, and what it is about.
+    fn show_page_bar(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette();
+        let (title, said) = match self.view {
+            super::MainView::Recommended => (
+                super::catalog_view::CATALOG_TITLE.to_string(),
+                format!(
+                    "for this computer · {} of memory",
+                    crate::hardware::format_bytes(self.total_ram_bytes)
+                ),
+            ),
+            _ => (
+                "MCP servers".to_string(),
+                "tools the model can use".to_string(),
+            ),
+        };
+        let mut back = false;
+        ui.horizontal_centered(|ui| {
+            ui.add_space(6.0);
+            back = icons::icon_button(ui, Icon::Back, ICON, true, false)
+                .on_hover_text("Back to the model (Escape)")
+                .clicked();
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(&title)
+                    .size(16.0)
+                    .family(theme::semibold(ui))
+                    .color(p.text),
+            );
+            ui.add_space(8.0);
+            ui.add(egui::Label::new(egui::RichText::new(&said).color(p.muted)).truncate());
+        });
+        if back {
+            self.view = super::MainView::Model;
+        }
     }
 
     /// What the bar is named: the chosen model, or the engine when it runs on its own, is not installed or has no model.
@@ -320,7 +361,7 @@ impl App {
         }
         if pressed.log {
             self.dock_open = !self.dock_open;
-            if self.dock_open && self.active_tab == super::Tab::Chat {
+            if self.dock_open && matches!(self.active_tab, super::Tab::Chat) {
                 self.active_tab = super::Tab::Main;
             }
         }

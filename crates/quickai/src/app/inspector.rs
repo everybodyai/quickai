@@ -190,12 +190,9 @@ impl App {
         }
     }
 
-    /// Opens Settings at the MCP servers.
+    /// Shows the page of the MCP servers (MCP servers in the sidebar).
     pub(super) fn open_mcp_servers(&mut self) {
-        self.settings_page = super::settings_window::SettingsPage::Tools;
-        if !self.show_settings {
-            self.toggle_settings();
-        }
+        self.view = super::MainView::Tools;
     }
 }
 

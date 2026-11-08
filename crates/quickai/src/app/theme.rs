@@ -2,8 +2,8 @@
 //! panels share (a group box for a section, an alert, a tag, the state of the server as the status bar says it, and
 //! buttons that say which one matters).
 //!
-//! The look is a classic desktop tool's: neutral greys, one accent (the green of the brand), crisp 1 px lines, 4 px
-//! corners, IBM Plex for the words. The colours are chosen here and nowhere else. The state of the server keeps the
+//! The look is a calm, modern one (UI v3, C203): neutral greys, one accent (the green of the brand), crisp 1 px lines,
+//! 7 px corners, buttons outlined on the page and filled when the pointer is on them, IBM Plex for the words. The colours are chosen here and nowhere else. The state of the server keeps the
 //! meaning it always had (grey stopped, amber starting, green running, red crashed); the greens, ambers and reds are
 //! lighter on the dark theme and deeper on the light one, so that they read on both.
 
@@ -295,14 +295,14 @@ fn visuals(dark: bool) -> egui::Visuals {
     } else {
         egui::Visuals::light()
     };
-    let radius = CornerRadius::same(4);
+    let radius = CornerRadius::same(7);
     v.override_text_color = None;
     v.weak_text_color = Some(p.muted);
     v.panel_fill = p.page;
     v.window_fill = p.card;
     v.window_stroke = Stroke::new(1.0, p.outline);
-    v.window_corner_radius = CornerRadius::same(6);
-    v.menu_corner_radius = CornerRadius::same(4);
+    v.window_corner_radius = CornerRadius::same(10);
+    v.menu_corner_radius = CornerRadius::same(8);
     v.window_shadow = egui::Shadow {
         offset: [0, 6],
         blur: 18,
@@ -333,7 +333,8 @@ fn visuals(dark: bool) -> egui::Visuals {
     w.noninteractive.fg_stroke = Stroke::new(1.0, p.body);
     w.noninteractive.corner_radius = radius;
 
-    w.inactive.weak_bg_fill = p.raised;
+    // a button is its outline on the page until the pointer is on it (what is ticked or typed into keeps its fill)
+    w.inactive.weak_bg_fill = Color32::TRANSPARENT;
     w.inactive.bg_fill = p.raised;
     w.inactive.bg_stroke = Stroke::new(1.0, p.outline);
     w.inactive.fg_stroke = Stroke::new(1.0, p.text);
@@ -382,7 +383,7 @@ fn shape(style: &mut egui::Style) {
         egui::FontId::new(13.0, Monospace),
     );
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-    style.spacing.button_padding = egui::vec2(10.0, 4.0);
+    style.spacing.button_padding = egui::vec2(12.0, 5.0);
     style.spacing.interact_size = egui::vec2(40.0, 26.0);
     style.spacing.window_margin = Margin::same(12);
     style.spacing.menu_margin = Margin::same(4);

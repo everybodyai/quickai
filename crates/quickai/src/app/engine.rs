@@ -983,7 +983,7 @@ mod tests {
             });
             // (the question of a delete is asked in the Settings window, where its button is)
             app.show_settings_window(ui.ctx());
-            app.show_catalog_window(ui.ctx());
+            app.show_catalog_page(ui);
             app.show_add_model_window(ui.ctx());
             app.show_connect_popover(ui.ctx());
             app.show_help_window(ui.ctx());
@@ -3176,9 +3176,9 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
             // the first frames of a window only measure it
             let size = egui::vec2(760.0, 560.0);
             for _ in 0..2 {
-                frame(&ctx, size, |ui| app.show_catalog_window(ui.ctx()));
+                frame(&ctx, size, |ui| app.show_catalog_page(ui));
             }
-            let output = frame(&ctx, size, |ui| app.show_catalog_window(ui.ctx()));
+            let output = frame(&ctx, size, |ui| app.show_catalog_page(ui));
             let painted = painted_texts(&output.shapes);
             assert!(
                 painted
@@ -3211,9 +3211,7 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
         assert_eq!(app.catalog.page, Page::Tasks);
         let size = egui::vec2(980.0, 680.0);
         let draw = |app: &mut App, events: Vec<egui::Event>| {
-            painted_texts(
-                &frame_with(&ctx, size, events, |ui| app.show_catalog_window(ui.ctx())).shapes,
-            )
+            painted_texts(&frame_with(&ctx, size, events, |ui| app.show_catalog_page(ui)).shapes)
         };
         // a window needs a few frames to be measured
         let show = |app: &mut App| {
@@ -3349,9 +3347,7 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
         app.catalog.browse.scope = Scope::All;
         let size = egui::vec2(760.0, 560.0);
         let draw = |app: &mut App, events: Vec<egui::Event>| {
-            painted_texts(
-                &frame_with(&ctx, size, events, |ui| app.show_catalog_window(ui.ctx())).shapes,
-            )
+            painted_texts(&frame_with(&ctx, size, events, |ui| app.show_catalog_page(ui)).shapes)
         };
         // a window needs a few frames to be measured, and a list a few to be drawn from a new top
         let show = |app: &mut App| {

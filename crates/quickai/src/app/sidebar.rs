@@ -338,10 +338,15 @@ impl App {
     /// the tools the model can use, with how many servers are on (llama.cpp's for now).
     fn show_nav_rows(&mut self, ui: &mut egui::Ui) {
         if self.can_recommend() {
-            let row = nav_row(ui, Icon::Bulb, "Recommended", None, true)
+            let on = self.view == super::MainView::Recommended;
+            let row = nav_row(ui, Icon::Bulb, "Recommended", None, true, on)
                 .on_hover_text("The models that suit this computer, for what you want to do.");
             if row.clicked() {
-                self.open_catalog();
+                if self.catalog.open {
+                    self.view = super::MainView::Recommended;
+                } else {
+                    self.open_catalog();
+                }
             }
         }
         let count = self.mcp_server_count();
@@ -349,12 +354,14 @@ impl App {
             Some(n) => format!("{n} on"),
             None => "llama.cpp only".to_string(),
         };
+        let on = self.view == super::MainView::Tools;
         let row = nav_row(
             ui,
             Icon::Wrench,
             "MCP servers",
             Some(&said),
             count.is_some(),
+            on,
         );
         let row = if count.is_some() {
             row.on_hover_text(
@@ -365,7 +372,7 @@ impl App {
                 "MCP servers work with llama.cpp for now: choose it under the computer.",
             )
         };
-        if count.is_some() && row.clicked() {
+        if row.clicked() {
             self.open_mcp_servers();
         }
     }
@@ -503,6 +510,7 @@ impl App {
                     });
                     if row.clicked() {
                         picked = Some(i);
+                        self.view = super::MainView::Model;
                     }
                     row.context_menu(|ui| {
                         if let Some(action) = self.model_menu(ui, i, lists) {
@@ -614,6 +622,7 @@ fn nav_row(
     label: &str,
     said: Option<&str>,
     enabled: bool,
+    on: bool,
 ) -> egui::Response {
     let p = theme::palette();
     let width = ui.available_width();
@@ -624,8 +633,11 @@ fn nav_row(
     };
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 32.0), sense);
     if ui.is_rect_visible(rect) {
-        if enabled && response.hovered() {
+        if on {
             ui.painter().rect_filled(rect, 8.0, p.selected);
+        } else if response.hovered() {
+            ui.painter()
+                .rect_filled(rect, 8.0, p.selected.gamma_multiply(0.55));
         }
         let ink = if enabled { p.body } else { p.faint };
         let square = egui::Rect::from_center_size(

@@ -663,12 +663,14 @@ impl App {
     pub(super) fn show_configuration_section(&mut self, ui: &mut egui::Ui) {
         let modified = self.configuration_modified();
         let color = modified_color(ui.visuals().dark_mode);
-        let mut frame = egui::Frame::group(ui.style());
-        if modified {
-            frame = frame
+        // a box round it only when it has changes, in their amber (UI v3, C203: in the panel at the right of the page)
+        let frame = if modified {
+            egui::Frame::group(ui.style())
                 .stroke(egui::Stroke::new(1.0, color))
-                .fill(color.gamma_multiply(0.1));
-        }
+                .fill(color.gamma_multiply(0.1))
+        } else {
+            egui::Frame::new()
+        };
         frame.show(ui, |ui| {
             ui.set_width(ui.available_width());
             self.show_section_row(ui, modified, color);

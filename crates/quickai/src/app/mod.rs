@@ -245,6 +245,8 @@ pub struct App {
     panel_open: bool,
     /// The log is open under the page (the bar's log button).
     dock_open: bool,
+    /// What the page shows: the model, or a page of the sidebar.
+    view: MainView,
     /// Custom was chosen among the presets: the fields are shown whatever the context size is.
     change_custom: bool,
     /// A run went wrong since the log was last looked at: its tab has a red dot.
@@ -255,6 +257,18 @@ pub struct App {
     seen_state: Option<crate::events::ServerState>,
     /// When Start was last pressed: Stop, which takes its place, does not take the second click of a double-click.
     start_pressed_at: Option<std::time::Instant>,
+}
+
+/// What the page shows (UI v3, C203): the chosen model, or a page of the sidebar.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum MainView {
+    /// The chosen model: its chat, with the bar and the panel.
+    #[default]
+    Model,
+    /// The recommended models (`catalog_view.rs`).
+    Recommended,
+    /// The MCP servers of the engine.
+    Tools,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -480,6 +494,7 @@ impl App {
             change_open: false,
             panel_open: true,
             dock_open: false,
+            view: MainView::Model,
             change_custom: false,
             log_unread: false,
             mcp_checks: Vec::new(),
@@ -989,7 +1004,6 @@ impl eframe::App for App {
 
         self.show_settings_window(ui.ctx());
         self.show_about_window(ui.ctx());
-        self.show_catalog_window(ui.ctx());
         self.show_remotes_window(ui.ctx());
         self.show_model_details(ui.ctx());
         self.show_add_model_window(ui.ctx());

@@ -336,7 +336,7 @@ impl App {
     }
 
     /// MCP servers: the tools a model may use in the engine's chat page, as a list to add to, switch off and change.
-    fn show_tools_page(&mut self, ui: &mut egui::Ui, form: &Option<FormModel>) {
+    pub(super) fn show_tools_page(&mut self, ui: &mut egui::Ui, form: &Option<FormModel>) {
         let Some(field) = form
             .as_ref()
             .and_then(|f| f.section("advanced"))
@@ -349,7 +349,7 @@ impl App {
             ui,
             &field.label,
             Some(&format!(
-                "Tools the model can use in {}'s chat page (the globe button beside the model), from servers of the Model Context Protocol.",
+                "Tools the model can use in {}'s chat page (Open Chat UI, in the panel at the right while it runs), from servers of the Model Context Protocol.",
                 self.engine_name()
             )),
         );

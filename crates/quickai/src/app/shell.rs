@@ -14,7 +14,7 @@ use eframe::egui;
 
 use super::help::{mark_spot, Spot};
 use super::theme::{self, Tone};
-use super::{App, Tab};
+use super::{App, MainView, Tab};
 use crate::events::ServerState;
 use crate::hardware::SpeedTier;
 use crate::models::ModelEntry;
@@ -65,7 +65,7 @@ impl App {
                         .inner_margin(egui::Margin::symmetric(8, 0)),
                 )
                 .show(ui, |ui| self.show_top_bar(ui, state, active));
-            if self.panel_open && self.panel_possible() {
+            if self.view == MainView::Model && self.panel_open && self.panel_possible() {
                 egui::Panel::right("inspector")
                     .resizable(true)
                     .default_size(300.0)
@@ -77,7 +77,15 @@ impl App {
         if self.dock_open && !self.needs_install() {
             self.show_dock(ui);
         }
-        if remote_view {
+        if self.view != MainView::Model && !remote_view {
+            // a page of the sidebar: the recommended models, or the MCP servers
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(theme::palette().page))
+                .show(ui, |ui| match self.view {
+                    MainView::Recommended => self.show_catalog_page(ui),
+                    _ => self.show_tools_view(ui),
+                });
+        } else if remote_view {
             egui::CentralPanel::default()
                 .frame(egui::Frame::new().fill(theme::palette().page))
                 .show(ui, |ui| self.show_remote_page(ui));
@@ -409,6 +417,44 @@ impl App {
                     theme::card(ui, |ui| self.show_workbench(ui, active));
                     self.show_diagnostics(ui, state);
                 });
+            });
+    }
+
+    /// The page of the MCP servers (MCP servers in the sidebar): what Settings had for them, in the middle of the
+    /// window. Escape goes back to the model.
+    fn show_tools_view(&mut self, ui: &mut egui::Ui) {
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.view = MainView::Model;
+        }
+        egui::ScrollArea::vertical()
+            .id_salt("tools_page")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::symmetric(24, 18))
+                    .show(ui, |ui| {
+                        theme::column(ui, 760.0, |ui| {
+                            if self.mcp_server_count().is_some() {
+                                let form = self.form();
+                                self.show_tools_page(ui, &form);
+                            } else {
+                                super::settings_window::page_head(
+                                    ui,
+                                    "MCP servers",
+                                    Some(&format!(
+                                        "Tools the model can use work with llama.cpp for now. {} has none.",
+                                        self.engine_name()
+                                    )),
+                                );
+                                if self.engine_choices().iter().any(|(id, _, _)| id == crate::settings::DEFAULT_ENGINE)
+                                    && self.engine_lock_reason().is_none()
+                                    && ui.button("Use llama.cpp").clicked()
+                                {
+                                    self.switch_engine(crate::settings::DEFAULT_ENGINE);
+                                }
+                            }
+                        });
+                    });
             });
     }
 

@@ -27,12 +27,8 @@ use super::{theme, widgets, App};
 use crate::hardware::{self, Fit};
 
 /// The title of the window, which is one of its own (C194).
-const CATALOG_TITLE: &str = "Recommended models";
-
-/// Which window the recommended models are: the id the display knows it by.
-pub(super) fn catalog_viewport() -> egui::ViewportId {
-    egui::ViewportId::from_hash_of("quickai_recommended")
-}
+/// The name of the page, in the bar over it.
+pub(super) const CATALOG_TITLE: &str = "Recommended models";
 
 /// The page of the window that is shown.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -72,8 +68,6 @@ pub struct CatalogView {
     /// position of the list before it, and a page that opens at its end looks as if it had no more
     /// than its last few models.
     pub drawn: Option<Browse>,
-    /// The window was asked for again while open, somewhere behind the main window: it comes to the front.
-    pub raise: bool,
 }
 
 /// Whether what a button fetches is already there: every file in the models folders at the size the
@@ -166,13 +160,13 @@ impl App {
             focus_search: true,
             note: None,
             drawn: None,
-            raise: self.catalog.open,
         };
-        // what was said under the box of the page is not about what this window will pull
+        // what was said under the box of the page is not about what this page will pull
         if self.named.pull.is_none() && self.named.queued.is_none() {
             self.named.notice = None;
         }
         self.refresh_catalog_have();
+        self.view = super::MainView::Recommended;
     }
 
     /// Looks again at what the models folders hold.
@@ -201,15 +195,13 @@ impl App {
         }
     }
 
-    /// The window, each frame it is open.
-    pub(super) fn show_catalog_window(&mut self, ctx: &egui::Context) {
+    /// The page of the recommended models (UI v3, C203: a page of the main window, from Recommended in the sidebar; it
+    /// was a window of its own, C194), each frame it is shown.
+    pub(super) fn show_catalog_page(&mut self, ui: &mut egui::Ui) {
         if !self.catalog.open {
-            return;
+            self.open_catalog();
         }
-        let id = catalog_viewport();
-        if std::mem::take(&mut self.catalog.raise) {
-            ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);
-        }
+        let ctx = ui.ctx().clone();
         let engine_name = self.engine_name();
         let types = self.registry.vocabulary().model_types().to_vec();
         let sizes = self.registry.vocabulary().size_classes().to_vec();
@@ -247,242 +239,240 @@ impl App {
         };
         let mut cancel = false;
 
-        // a window of its own (C194): the eight tasks in one row and the three picks under them
-        let builder = theme::own_window(CATALOG_TITLE, [920.0, 640.0], [560.0, 400.0]);
-        ctx.show_viewport_immediate(id, builder, |ui, class| {
-            // Escape closes the window, and so does the window manager's close button
-            if ui.input(|i| i.key_pressed(egui::Key::Escape))
-                || (class != egui::ViewportClass::EmbeddedWindow
-                    && ui.input(|i| i.viewport().close_requested()))
-            {
-                open = false;
-                return;
-            }
-            theme::own_window_page(ui, class, |ui| {
-                super::theme::compact(ui);
-                if page == Page::Tasks {
-                    let installed_fn = |o: &Offer| installed(o, &have, &listed);
-                    let view = TaskView {
-                        entries: &entries,
-                        offered: picks::offered(&all_tasks, &entries),
-                        all_tasks: &all_tasks,
-                        ram,
-                        busy,
-                        installed: &installed_fn,
-                        verified: verified.as_deref(),
-                        note: note.as_deref(),
-                    };
-                    let mut state = TaskState {
-                        page: &mut page,
-                        chosen: &mut tasks_chosen,
-                        sizes_open: &mut sizes_open,
-                        browse: &mut what,
-                        focus_search: &mut focus_search,
-                        fetch: &mut chosen,
-                    };
-                    show_task_page(ui, &view, &mut state);
-                    return;
-                }
-                if !all_tasks.is_empty()
-                    && !picks::offered(&all_tasks, &entries).is_empty()
-                    && back_button(ui).clicked()
-                {
-                    page = Page::Tasks;
-                    what.tasks.clear();
-                }
-                if !what.tasks.is_empty() {
-                    let said: Vec<String> = what
-                        .tasks
-                        .iter()
-                        .map(|id| {
-                            all_tasks
-                                .iter()
-                                .find(|t| &t.id == id)
-                                .map_or_else(|| id.clone(), |t| t.label.clone())
-                        })
-                        .collect();
-                    ui.horizontal(|ui| {
+        // the tasks in a row and the three picks under them; Escape goes back to the model
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            open = false;
+        }
+        {
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(20, 14))
+                .show(ui, |ui| {
+                    super::theme::compact(ui);
+                    if page == Page::Tasks {
+                        let installed_fn = |o: &Offer| installed(o, &have, &listed);
+                        let view = TaskView {
+                            entries: &entries,
+                            offered: picks::offered(&all_tasks, &entries),
+                            all_tasks: &all_tasks,
+                            ram,
+                            busy,
+                            installed: &installed_fn,
+                            verified: verified.as_deref(),
+                            note: note.as_deref(),
+                        };
+                        let mut state = TaskState {
+                            page: &mut page,
+                            chosen: &mut tasks_chosen,
+                            sizes_open: &mut sizes_open,
+                            browse: &mut what,
+                            focus_search: &mut focus_search,
+                            fetch: &mut chosen,
+                        };
+                        show_task_page(ui, &view, &mut state);
+                        return;
+                    }
+                    if !all_tasks.is_empty()
+                        && !picks::offered(&all_tasks, &entries).is_empty()
+                        && back_button(ui).clicked()
+                    {
+                        page = Page::Tasks;
+                        what.tasks.clear();
+                    }
+                    if !what.tasks.is_empty() {
+                        let said: Vec<String> = what
+                            .tasks
+                            .iter()
+                            .map(|id| {
+                                all_tasks
+                                    .iter()
+                                    .find(|t| &t.id == id)
+                                    .map_or_else(|| id.clone(), |t| t.label.clone())
+                            })
+                            .collect();
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "Only the models that do: {}",
+                                    said.join(", ")
+                                ))
+                                .small(),
+                            );
+                            if ui
+                                .add(egui::Button::new("Show all").small())
+                                .on_hover_text("Show the models whatever they do.")
+                                .clicked()
+                            {
+                                what.tasks.clear();
+                            }
+                        });
+                    }
+                    let mut line = format!("{} models that run with {engine_name}.", entries.len());
+                    if let Some(day) = &verified {
+                        line.push_str(&format!(" The list was checked on {day}."));
+                    }
+                    line.push_str(" Nothing is downloaded until you click a size.");
+                    ui.label(
+                        egui::RichText::new(line)
+                            .small()
+                            .color(super::theme::palette().muted),
+                    );
+                    if ram > 0 {
                         ui.label(
                             egui::RichText::new(format!(
-                                "Only the models that do: {}",
-                                said.join(", ")
-                            ))
-                            .small(),
-                        );
-                        if ui
-                            .add(egui::Button::new("Show all").small())
-                            .on_hover_text("Show the models whatever they do.")
-                            .clicked()
-                        {
-                            what.tasks.clear();
-                        }
-                    });
-                }
-                let mut line = format!("{} models that run with {engine_name}.", entries.len());
-                if let Some(day) = &verified {
-                    line.push_str(&format!(" The list was checked on {day}."));
-                }
-                line.push_str(" Nothing is downloaded until you click a size.");
-                ui.label(
-                    egui::RichText::new(line)
-                        .small()
-                        .color(super::theme::palette().muted),
-                );
-                if ram > 0 {
-                    ui.label(
-                        egui::RichText::new(format!(
                             "This computer has {} of memory: sizes that would not fit are greyed.",
                             hardware::format_bytes(ram)
                         ))
-                        .small()
-                        .color(super::theme::palette().muted),
-                    );
-                }
-                if let Some(note) = &note {
-                    ui.label(
-                        egui::RichText::new(note)
                             .small()
-                            .color(super::theme::palette().bad),
-                    );
-                }
-                ui.add_space(4.0);
-                // two rows that stay as they are (a button that comes and goes would move the chips)
-                ui.horizontal(|ui| {
-                    ui.label("Search:");
-                    // the rest of the row, less the Clear button: the hint is the longest thing in it
-                    let room = (ui.available_width() - 64.0).max(160.0);
-                    let field = ui.add(
-                        egui::TextEdit::singleline(&mut what.words)
-                            .id(search_id())
-                            .hint_text(
-                                "a name, a maker, or what you need: image, code, thinking...",
-                            )
-                            .desired_width(room),
-                    );
-                    if std::mem::take(&mut focus_search) {
-                        field.request_focus();
+                            .color(super::theme::palette().muted),
+                        );
                     }
-                    let clear =
-                        ui.add_enabled(!what.words.is_empty(), egui::Button::new("Clear").small());
-                    if clear.clicked() {
-                        what.words.clear();
+                    if let Some(note) = &note {
+                        ui.label(
+                            egui::RichText::new(note)
+                                .small()
+                                .color(super::theme::palette().bad),
+                        );
                     }
-                });
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(egui::RichText::new("Size:").small());
-                    if ui.selectable_label(what.size.is_none(), "Any").clicked() {
-                        what.size = None;
-                    }
-                    for class in &sizes {
-                        let on = what.size.as_deref() == Some(class.id.as_str());
-                        let mut chip = ui.selectable_label(on, &class.label);
-                        if !class.help.is_empty() {
-                            chip = chip.on_hover_text(&class.help);
+                    ui.add_space(4.0);
+                    // two rows that stay as they are (a button that comes and goes would move the chips)
+                    ui.horizontal(|ui| {
+                        ui.label("Search:");
+                        // the rest of the row, less the Clear button: the hint is the longest thing in it
+                        let room = (ui.available_width() - 64.0).max(160.0);
+                        let field = ui.add(
+                            egui::TextEdit::singleline(&mut what.words)
+                                .id(search_id())
+                                .hint_text(
+                                    "a name, a maker, or what you need: image, code, thinking...",
+                                )
+                                .desired_width(room),
+                        );
+                        if std::mem::take(&mut focus_search) {
+                            field.request_focus();
                         }
-                        if chip.clicked() {
-                            what.size = Some(class.id.clone());
+                        let clear = ui.add_enabled(
+                            !what.words.is_empty(),
+                            egui::Button::new("Clear").small(),
+                        );
+                        if clear.clicked() {
+                            what.words.clear();
                         }
-                    }
-                });
-                ui.separator();
-
-                let shown = browse(&entries, &types, &what);
-                let new_list = drawn.as_ref() != Some(&what);
-                drawn_now = Some(what.clone());
-                let installed_fn = |o: &Offer| installed(o, &have, &listed);
-                let fit_fn = |o: &Offer| match o.bytes {
-                    Some(b) => hardware::fit(b, ram),
-                    None => Fit::Comfortable,
-                };
-                let decor = Decor {
-                    installed: &installed_fn,
-                    fit: &fit_fn,
-                    ram,
-                };
-                let height = (ui.available_height() - 26.0).max(160.0);
-                ui.horizontal_top(|ui| {
-                    ui.vertical(|ui| {
-                        ui.set_width(150.0);
-                        ui.set_min_height(height);
-                        let mut choose = |ui: &mut egui::Ui, scope: Scope, label: String| {
-                            if ui.selectable_label(what.scope == scope, label).clicked() {
-                                what.scope = scope;
+                    });
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(egui::RichText::new("Size:").small());
+                        if ui.selectable_label(what.size.is_none(), "Any").clicked() {
+                            what.size = None;
+                        }
+                        for class in &sizes {
+                            let on = what.size.as_deref() == Some(class.id.as_str());
+                            let mut chip = ui.selectable_label(on, &class.label);
+                            if !class.help.is_empty() {
+                                chip = chip.on_hover_text(&class.help);
                             }
-                        };
-                        if shown.counts.start > 0 {
-                            choose(
-                                ui,
-                                Scope::Start,
-                                format!("★ Start here ({})", shown.counts.start),
-                            );
-                        }
-                        choose(ui, Scope::All, format!("All ({})", shown.counts.all));
-                        ui.add_space(4.0);
-                        for (id, count) in &shown.counts.types {
-                            let label = types
-                                .iter()
-                                .find(|t| &t.id == id)
-                                .map_or(id.clone(), |t| t.label.clone());
-                            choose(ui, Scope::Type(id.clone()), format!("{label} ({count})"));
+                            if chip.clicked() {
+                                what.size = Some(class.id.clone());
+                            }
                         }
                     });
                     ui.separator();
-                    // A scroll area lays its content out the way the row it stands in does, and this row
-                    // goes from left to right: in a column of its own, each section and each card is under
-                    // the one before it (beside it, everything but the first was off to the right, where
-                    // a list that scrolls only down cannot be reached).
-                    ui.vertical(|ui| {
-                        // always there, and beside the text and not on it: a list of eighty has to say
-                        // that it goes on
-                        ui.spacing_mut().scroll = egui::style::ScrollStyle::thin();
-                        let mut area = egui::ScrollArea::vertical()
-                            .id_salt("catalog_entries")
-                            .auto_shrink([false, false])
-                            .max_height(height);
-                        if new_list {
-                            area = area.vertical_scroll_offset(0.0);
-                        }
-                        area.show(ui, |ui| {
-                            if shown.sections.is_empty() {
-                                ui.label(
-                                    egui::RichText::new(
-                                        "Nothing matches. Try other words, or another size.",
-                                    )
-                                    .small()
-                                    .color(super::theme::palette().muted),
+
+                    let shown = browse(&entries, &types, &what);
+                    let new_list = drawn.as_ref() != Some(&what);
+                    drawn_now = Some(what.clone());
+                    let installed_fn = |o: &Offer| installed(o, &have, &listed);
+                    let fit_fn = |o: &Offer| match o.bytes {
+                        Some(b) => hardware::fit(b, ram),
+                        None => Fit::Comfortable,
+                    };
+                    let decor = Decor {
+                        installed: &installed_fn,
+                        fit: &fit_fn,
+                        ram,
+                    };
+                    let height = (ui.available_height() - 26.0).max(160.0);
+                    ui.horizontal_top(|ui| {
+                        ui.vertical(|ui| {
+                            ui.set_width(150.0);
+                            ui.set_min_height(height);
+                            let mut choose = |ui: &mut egui::Ui, scope: Scope, label: String| {
+                                if ui.selectable_label(what.scope == scope, label).clicked() {
+                                    what.scope = scope;
+                                }
+                            };
+                            if shown.counts.start > 0 {
+                                choose(
+                                    ui,
+                                    Scope::Start,
+                                    format!("★ Start here ({})", shown.counts.start),
                                 );
                             }
-                            // a single type is a list; several are sections
-                            let single = matches!(what.scope, Scope::Type(_));
-                            for section in &shown.sections {
-                                if single {
-                                    for item in &section.entries {
-                                        show_entry(
+                            choose(ui, Scope::All, format!("All ({})", shown.counts.all));
+                            ui.add_space(4.0);
+                            for (id, count) in &shown.counts.types {
+                                let label = types
+                                    .iter()
+                                    .find(|t| &t.id == id)
+                                    .map_or(id.clone(), |t| t.label.clone());
+                                choose(ui, Scope::Type(id.clone()), format!("{label} ({count})"));
+                            }
+                        });
+                        ui.separator();
+                        // A scroll area lays its content out the way the row it stands in does, and this row
+                        // goes from left to right: in a column of its own, each section and each card is under
+                        // the one before it (beside it, everything but the first was off to the right, where
+                        // a list that scrolls only down cannot be reached).
+                        ui.vertical(|ui| {
+                            // always there, and beside the text and not on it: a list of eighty has to say
+                            // that it goes on
+                            ui.spacing_mut().scroll = egui::style::ScrollStyle::thin();
+                            let mut area = egui::ScrollArea::vertical()
+                                .id_salt("catalog_entries")
+                                .auto_shrink([false, false])
+                                .max_height(height);
+                            if new_list {
+                                area = area.vertical_scroll_offset(0.0);
+                            }
+                            area.show(ui, |ui| {
+                                if shown.sections.is_empty() {
+                                    ui.label(
+                                        egui::RichText::new(
+                                            "Nothing matches. Try other words, or another size.",
+                                        )
+                                        .small()
+                                        .color(super::theme::palette().muted),
+                                    );
+                                }
+                                // a single type is a list; several are sections
+                                let single = matches!(what.scope, Scope::Type(_));
+                                for section in &shown.sections {
+                                    if single {
+                                        for item in &section.entries {
+                                            show_entry(
+                                                ui,
+                                                &entries[item.entry],
+                                                &item.offers,
+                                                &bundle_labels,
+                                                busy,
+                                                &mut chosen,
+                                                Some(&decor),
+                                            );
+                                        }
+                                    } else {
+                                        show_section(
                                             ui,
-                                            &entries[item.entry],
-                                            &item.offers,
+                                            section,
+                                            &entries,
                                             &bundle_labels,
                                             busy,
                                             &mut chosen,
                                             Some(&decor),
                                         );
                                     }
-                                } else {
-                                    show_section(
-                                        ui,
-                                        section,
-                                        &entries,
-                                        &bundle_labels,
-                                        busy,
-                                        &mut chosen,
-                                        Some(&decor),
-                                    );
                                 }
-                            }
+                            });
                         });
                     });
                 });
-            });
             if let Some((line, fraction)) = &download {
                 egui::Window::new("Downloading")
                     .title_bar(false)
@@ -521,7 +511,7 @@ impl App {
                         }
                     });
             }
-        });
+        }
 
         self.catalog.entries = entries;
         self.catalog.browse = what;
@@ -532,13 +522,14 @@ impl App {
         self.catalog.focus_search |= focus_search;
         if !open {
             self.catalog.open = false;
+            self.view = super::MainView::Model;
         }
         if cancel {
             self.cancel_download();
         }
         if let Some(fetch) = chosen {
             self.catalog.note = None;
-            self.fetch_offer(&fetch, ctx);
+            self.fetch_offer(&fetch, &ctx);
         }
     }
 }
