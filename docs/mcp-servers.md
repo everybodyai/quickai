@@ -25,7 +25,8 @@ tool use; the one in QuickAI's full packages, Bonsai 2 4B, can do this.
    - **Command or address:** `npx -y @modelcontextprotocol/server-filesystem ~/Documents`
 4. Under **What they offer**, the server says **Starting…**, then **Ready · 14 tools**. The first time, `npx` downloads
    the server, which can take a minute.
-5. Press the back arrow, then **Start**. **Tools · 1** in the chat's box says the model may use one server.
+5. Press the back arrow, then **Start**. The wrench in the chat's box, beside the clip, has a **1** in its corner: the
+   model may use one server.
 6. Ask for something that needs the tool, with the file's full path:
 
    > Read the file /home/me/Documents/notes.txt and tell me what it says.
@@ -85,8 +86,8 @@ server's instructions**, paste it, and press **Add these**. A server with a name
 
 ### Change, switch off or remove one
 
-Each server in the list has a checkbox to switch it off without losing it, **Change** and **Remove**. **Tools** in the
-chat's box switches servers on and off too. QuickAI's chat uses a change at once; llama.cpp's chat page uses it from
+Each server in the list has a checkbox to switch it off without losing it, **Change** and **Remove**. The wrench in
+the chat's box switches servers on and off too. QuickAI's chat uses a change at once; llama.cpp's chat page uses it from
 the next Start.
 
 ## Servers to try
@@ -105,8 +106,9 @@ To find more, see the [list of servers](https://github.com/modelcontextprotocol/
 
 ## Use the tools in QuickAI's chat
 
-**See which tools are on.** **Tools** in the chat's box lists your servers, each with how many tools it has, and switches
-each on or off. The page of the MCP servers lists every tool of a server under **What they offer**.
+**See which tools are on.** The wrench in the chat's box has how many servers are on in its corner, in the warning colour
+when one did not start. Rest the pointer on it to see their names, or press it for the list of your servers, each with
+how many tools it has, to switch each on or off. The page of the MCP servers lists every tool of a server under **What they offer**.
 
 **Choose what is asked.** Each tool is **Ask** (QuickAI asks each time the model wants it), **Always** (it runs without
 asking) or **Off** (the model is not offered it). A new tool is **Ask**.

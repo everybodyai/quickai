@@ -394,8 +394,8 @@ const PAGES: &[Page] = &[
             )
             .does(Deed::Tools),
             step(
-                "Start a model and chat. **Tools** in the chat's box says which servers the model may use, and switches \
-                 each on or off.",
+                "Start a model and chat. The wrench in the chat's box has how many servers the model may use in its \
+                 corner; press it to switch each on or off.",
             ),
             step(
                 "When the model wants a tool, a card shows what it would be given: press **Allow once**, **Always \

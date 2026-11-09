@@ -250,6 +250,49 @@ fn cut(text: &str, most: usize) -> String {
     kept
 }
 
+/// The count in the corner of the Tools button: the servers that are on, and whether one of them did not start.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Badge {
+    pub count: usize,
+    pub failed: bool,
+}
+
+/// Draws `badge` over the bottom right of `button`, a small round of the accent (of a warning when a server did not
+/// start) with the number in it, ringed in the box's colour so that it stands off the wrench under it.
+fn paint_badge(ui: &egui::Ui, button: egui::Rect, badge: &Badge) {
+    let p = theme::palette();
+    let (fill, ink) = if badge.failed {
+        (p.warn, p.page)
+    } else {
+        (p.accent, p.on_accent)
+    };
+    let text = if badge.count > 9 {
+        "9+".to_string()
+    } else {
+        badge.count.to_string()
+    };
+    let font = egui::FontId::new(9.5, theme::semibold(ui));
+    let galley = ui.painter().layout_no_wrap(text, font, ink);
+    let high = 13.0;
+    let size = egui::vec2((galley.size().x + 6.0).max(high), high);
+    let rect = egui::Rect::from_center_size(
+        egui::pos2(
+            button.right() - size.x / 2.0,
+            button.bottom() - size.y / 2.0,
+        ),
+        size,
+    );
+    let painter = ui.painter();
+    painter.rect(
+        rect,
+        high / 2.0,
+        fill,
+        egui::Stroke::new(1.5, p.well),
+        egui::StrokeKind::Outside,
+    );
+    painter.galley(rect.center() - galley.size() / 2.0, galley, ink);
+}
+
 impl App {
     /// The person's MCP servers, as text, whatever the engine: what llama.cpp's field keeps.
     pub(super) fn mcp_text(&self) -> String {
@@ -521,19 +564,16 @@ impl App {
 
     // ---- what is drawn ------------------------------------------------------------------------------------
 
-    /// The Tools button of the chat's box: how many servers are on, and a menu that switches each on or off.
+    /// The tools of the chat's box: a wrench beside the clip, with how many servers are on in its corner (in the
+    /// colour of a warning when one of them did not start), and a menu that switches each on or off.
     pub(super) fn show_tools_button(&mut self, ui: &mut egui::Ui) {
         let servers = self.mcp_list();
-        let on = servers.iter().filter(|s| !s.disabled).count();
-        let label = if on > 0 {
-            format!("Tools · {on}")
-        } else {
-            "Tools".to_string()
-        };
-        let button = theme::button_sized(ui, Role::Quiet, true, label, egui::vec2(0.0, 26.0))
-            .on_hover_text(
-                "The tools the model can use in this chat: the MCP servers that are on.",
-            );
+        let badge = self.tools_badge(&servers);
+        let button = icons::icon_button(ui, Icon::Wrench, egui::vec2(30.0, 28.0), true, false);
+        if let Some(badge) = &badge {
+            paint_badge(ui, button.rect, badge);
+        }
+        let button = button.on_hover_text(self.tools_hover(&servers));
         let mut switch: Option<(String, bool)> = None;
         let mut manage = false;
         egui::Popup::menu(&button)
@@ -583,6 +623,51 @@ impl App {
         }
         if manage {
             self.open_mcp_servers();
+        }
+    }
+
+    /// What the corner of the Tools button says: nothing while no server is on, else how many are, and whether
+    /// one of them did not start.
+    pub(super) fn tools_badge(&self, servers: &[Server]) -> Option<Badge> {
+        let on: Vec<&Server> = servers.iter().filter(|s| !s.disabled).collect();
+        if on.is_empty() {
+            return None;
+        }
+        let failed = on.iter().any(|s| {
+            matches!(
+                self.tools.status.get(&s.name),
+                Some(ServerStatus::Failed(_))
+            )
+        });
+        Some(Badge {
+            count: on.len(),
+            failed,
+        })
+    }
+
+    /// What the Tools button says when the pointer rests on it: the servers that are on, with how many tools each
+    /// has, or that none is.
+    fn tools_hover(&self, servers: &[Server]) -> String {
+        let on: Vec<String> = servers
+            .iter()
+            .filter(|s| !s.disabled)
+            .map(|s| match self.tools.status.get(&s.name) {
+                Some(ServerStatus::Ready(tools)) => match tools.len() {
+                    1 => format!("{} (1 tool)", s.name),
+                    n => format!("{} ({n} tools)", s.name),
+                },
+                Some(ServerStatus::Failed(_)) => format!("{} (did not start)", s.name),
+                Some(ServerStatus::Starting) => format!("{} (starting)", s.name),
+                None => s.name.clone(),
+            })
+            .collect();
+        match on.len() {
+            0 => "Tools: no MCP server is on. Click to choose the ones the model can use in this chat.".to_string(),
+            1 => format!("Tools: 1 MCP server on, {}. Click to switch it off or choose others.", on[0]),
+            n => format!(
+                "Tools: {n} MCP servers on, {}. Click to switch them on or off.",
+                on.join(", ")
+            ),
         }
     }
 
@@ -1318,12 +1403,20 @@ for line in sys.stdin:
             "Connect an app",
             "Address",
             "Ollama API",
-            "Tools · 1",
             "MCP servers",
             "1 on",
         ] {
             assert!(running.contains(text), "{text}: {running}");
         }
+        // the wrench of the chat's box has the one server that is on in its corner
+        let servers = app.mcp_list();
+        assert_eq!(
+            app.tools_badge(&servers),
+            Some(Badge {
+                count: 1,
+                failed: false
+            })
+        );
         app.session.stop_blocking();
     }
 
