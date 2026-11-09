@@ -710,8 +710,23 @@ impl App {
                 }
             }
         });
-        if modified && two_rows {
-            ui.horizontal(|ui| self.show_change_buttons(ui, &mut command));
+        if two_rows {
+            // the row of the buttons of a change is there with a change or not (laid out, and drawn only with one), so that
+            // nothing under the section moves when one is made (A73): the panel at the right always has two rows (C203)
+            let row = if modified {
+                egui::UiBuilder::new()
+            } else {
+                egui::UiBuilder::new().invisible()
+            };
+            ui.scope_builder(row, |ui| {
+                ui.horizontal(|ui| {
+                    let mut asked = None;
+                    self.show_change_buttons(ui, &mut asked);
+                    if modified {
+                        command = command.or(asked);
+                    }
+                })
+            });
         }
 
         if chosen.is_some() || command.is_some() {
@@ -1902,6 +1917,23 @@ mod tests {
             assert_eq!(rects(&back), said, "{width}");
             assert!(!frames(&back).iter().any(|(_, color)| *color == amber));
         }
+        // as narrow as the panel at the right (C203): the buttons of a change have a row of their own under the dropdown,
+        // kept while there is no change, so that what is under the section stays where it is
+        app.values.set("port", 8080u16);
+        let quiet = rects(&settled_at(&mut app, &ctx, 300.0));
+        assert!(!quiet.contains_key("Revert"), "{:?}", quiet.keys());
+        app.values.set("port", 9000u16);
+        let loud = rects(&settled_at(&mut app, &ctx, 300.0));
+        assert!(
+            loud["Revert"].top() > loud["Default"].bottom(),
+            "the buttons are on a row of their own: {loud:?}"
+        );
+        assert_eq!(
+            quiet[UNDER], loud[UNDER],
+            "what is under the section moved when a change was made"
+        );
+        app.values.set("port", 8080u16);
+
         // the light theme has a colour of its own for it (the other is hard to read on white)
         assert_ne!(modified_color(true), modified_color(false));
 

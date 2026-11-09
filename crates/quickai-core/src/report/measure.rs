@@ -224,10 +224,11 @@ pub fn is_plain_name(text: &str) -> bool {
 
 /// How an engine ended, from the line the runtime logs (`Server process exited unexpectedly (exit status: 1).`, or
 /// `signal: 9 (SIGKILL)` on Unix, `exit code: 3221225477` on Windows): `exit 1`, `signal 9`, or `None` when the line
-/// says neither.
+/// says neither. The runtime's words wrap the status as Rust prints it, which on Unix says `exit status:` itself
+/// (`(exit status: exit status: 3)`): the number is the one after the last of them.
 pub fn exit_status(line: &str) -> Option<String> {
     let number_after = |key: &str| -> Option<String> {
-        let rest = &line[line.find(key)? + key.len()..];
+        let rest = &line[line.rfind(key)? + key.len()..];
         let digits: String = rest
             .trim_start()
             .chars()
@@ -333,6 +334,18 @@ mod tests {
             exit_status("Server process exited unexpectedly (exit status: 1)."),
             Some("exit 1".to_string())
         );
+        // what the runtime writes on Unix, where the status prints its own `exit status:`
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            let status = std::process::ExitStatus::from_raw(3 << 8);
+            assert_eq!(
+                exit_status(&format!(
+                    "Server process exited unexpectedly (exit status: {status})."
+                )),
+                Some("exit 3".to_string())
+            );
+        }
         assert_eq!(
             exit_status("Server process exited unexpectedly (exit status: signal: 9 (SIGKILL))."),
             Some("signal 9".to_string())

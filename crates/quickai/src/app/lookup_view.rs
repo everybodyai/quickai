@@ -289,11 +289,14 @@ impl App {
                     });
                 }
                 let sections = arrange(&entries, &types, size.as_deref());
-                // in the window of Add a model, the rest of its height but the line under them: as big as the person makes it
+                // in the window of Add a model, the rest of its height but the line under them: as big as the person makes it;
+                // in a page of the main window (a first run's, ComfyUI's), which scrolls itself, all of them: a list that
+                // scrolled in a page that scrolls had the page's room and showed a part of it (UI v3, whose page is narrower
+                // and whose rows wrap)
                 let room = if ui.ctx().viewport_id() == super::add_model::add_model_viewport() {
                     (ui.available_height() - 40.0).max(160.0)
                 } else {
-                    260.0
+                    f32::INFINITY
                 };
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, true])

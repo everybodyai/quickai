@@ -514,12 +514,12 @@ impl App {
         // the other computers the models can run on, and the one they run on
         app.remote.remotes = app.stored.remotes();
         app.remote.runner = app.stored.runner();
-        // and whether the conversations are kept, and the tab that was shown under the model
+        // and whether the conversations are kept, and whether the log was open under the page (on which of its tabs)
         app.chat.keep = app.stored.keep_chats();
-        app.active_tab = match app.stored.tab().as_deref() {
-            Some("log") => Tab::Main,
-            Some("live") => Tab::Live,
-            _ => Tab::Chat,
+        (app.active_tab, app.dock_open) = match app.stored.tab().as_deref() {
+            Some("log") => (Tab::Main, true),
+            Some("live") => (Tab::Live, true),
+            _ => (Tab::Chat, false),
         };
         // the executable, the models and the panels' state of the engine in use
         app.load_engine_state();
@@ -746,10 +746,11 @@ impl App {
     fn settings_now(&self) -> Settings {
         let mut settings = self.stored.clone();
         settings.dark_mode = self.dark_mode;
-        settings.set_tab(match self.active_tab {
-            Tab::Chat => "chat",
-            Tab::Main => "log",
-            Tab::Live => "live",
+        // the log under the page is kept open for the next start, on the tab it was on (C203)
+        settings.set_tab(match (self.dock_open, self.active_tab) {
+            (false, _) | (true, Tab::Chat) => "chat",
+            (true, Tab::Main) => "log",
+            (true, Tab::Live) => "live",
         });
         settings.enable_traffic_proxy = self.enable_traffic_proxy;
         if let Some(engine) = self.registry.engine(&self.engine) {

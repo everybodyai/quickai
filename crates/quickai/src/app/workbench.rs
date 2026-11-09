@@ -179,7 +179,8 @@ impl App {
     pub(super) fn show_workbench(&mut self, ui: &mut egui::Ui, _active: bool) {
         let engine = self.engine_name();
         ui.scope(|ui| {
-            ui.horizontal(|ui| {
+            // its buttons go on to a second line in a narrow page (between the sidebar and the panel, C203)
+            ui.horizontal_wrapped(|ui| {
                 ui.label("Models:").on_hover_text(format!(
                     "The files {engine}'s workflows use: the weights of a model, its text encoder, its \
                      VAE. They are kept in the folders {engine} looks in, under the models folder, and a \
@@ -304,8 +305,8 @@ impl App {
             ui.add_space(2.0);
             ui.label(
                 egui::RichText::new(format!(
-                    "{engine} makes pictures and video from workflows built in its own page: press the play \
-                     button, then Open {engine}."
+                    "{engine} makes pictures and video from workflows built in its own page: press Start, then \
+                     Open {engine}."
                 ))
                 .small()
                 .color(super::theme::palette().muted),
@@ -322,7 +323,10 @@ impl App {
             .map(quickai_core::models::folders)
             .unwrap_or_default();
         let given = read_box(&self.model_input);
-        ui.horizontal(|ui| {
+        // the box takes what the row leaves it, up to 260; the folder and the button go on to a second line when they
+        // do not fit beside it (a narrow page, between the sidebar and the panel, C203)
+        let box_width = (ui.available_width() - 90.0).clamp(140.0, 260.0);
+        ui.horizontal_wrapped(|ui| {
             ui.add_enabled_ui(!busy, |ui| {
                 ui.label("Get:").on_hover_text(
                     "One box, three things it can mean: the address of a model file (a link to it on \
@@ -333,7 +337,7 @@ impl App {
                 let field = ui.add(
                     egui::TextEdit::singleline(&mut self.model_input)
                         .hint_text("link to a file, or search by name...")
-                        .desired_width(260.0),
+                        .desired_width(box_width),
                 );
                 if ui
                     .button("...")
@@ -656,7 +660,7 @@ mod tests {
             "{shown}"
         );
         assert!(
-            shown.contains("press the play button, then Open ComfyUI"),
+            shown.contains("press Start, then Open ComfyUI"),
             "the next step is said: {shown}"
         );
         // it is not llama.cpp's picker (no `.gguf` to find in a folder, no picker), but it has the ways

@@ -84,7 +84,7 @@ impl App {
                     .show(ui, |ui| self.show_inspector(ui));
             }
         }
-        if self.dock_open && !self.needs_install() {
+        if self.dock_open {
             self.show_dock(ui);
         }
         if self.view != MainView::Model && !remote_view {
@@ -392,19 +392,22 @@ impl App {
             .auto_shrink([false, false]);
         area.show(ui, |ui| {
             ui.add_space(if lists { 24.0 } else { 48.0 });
-            theme::column(ui, 640.0, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.label(
-                        egui::RichText::new("Add your first model")
-                            .size(22.0)
-                            .family(theme::semibold(ui))
-                            .color(theme::palette().text),
-                    );
-                    ui.add_space(4.0);
-                    ui.label(theme::muted(self.first_run_sentence()));
-                });
-                ui.add_space(14.0);
-                self.show_add_model_body(ui);
+            // a margin at each side in a page narrower than the column (between the sidebar and the panel, C203)
+            page_margin(ui, |ui| {
+                theme::column(ui, 640.0, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            egui::RichText::new("Add your first model")
+                                .size(22.0)
+                                .family(theme::semibold(ui))
+                                .color(theme::palette().text),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(theme::muted(self.first_run_sentence()));
+                    });
+                    ui.add_space(14.0);
+                    self.show_add_model_body(ui);
+                })
             });
         });
     }
@@ -415,19 +418,21 @@ impl App {
             .id_salt("page")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                theme::column(ui, theme::PAGE_WIDTH, |ui| {
-                    // its files can be got before it is installed (they are kept in a folder of their own): the models
-                    // area stays under the button that installs it
-                    if self.needs_install() {
-                        ui.add_space(24.0);
-                        self.show_engine_setup(ui);
-                        ui.add_space(24.0);
+                page_margin(ui, |ui| {
+                    theme::column(ui, theme::PAGE_WIDTH, |ui| {
+                        // its files can be got before it is installed (they are kept in a folder of their own): the models
+                        // area stays under the button that installs it
+                        if self.needs_install() {
+                            ui.add_space(24.0);
+                            self.show_engine_setup(ui);
+                            ui.add_space(24.0);
+                            theme::card(ui, |ui| self.show_workbench(ui, active));
+                            return;
+                        }
+                        ui.add_space(6.0);
                         theme::card(ui, |ui| self.show_workbench(ui, active));
-                        return;
-                    }
-                    ui.add_space(6.0);
-                    theme::card(ui, |ui| self.show_workbench(ui, active));
-                    self.show_diagnostics(ui, state);
+                        self.show_diagnostics(ui, state);
+                    })
                 });
             });
     }
@@ -588,6 +593,15 @@ pub(super) fn first_sentence(note: &str) -> &str {
         Some(end) => &note[..=end],
         None => note,
     }
+}
+
+/// Room at each side of a page's column, which a column narrower than the page has already but one in a page between
+/// the sidebar and the panel (C203) would not: what it shows would touch them both.
+fn page_margin<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    egui::Frame::new()
+        .inner_margin(egui::Margin::symmetric(16, 0))
+        .show(ui, add)
+        .inner
 }
 
 /// A size in the words a person reads: "1.1 GB", "250 MB".

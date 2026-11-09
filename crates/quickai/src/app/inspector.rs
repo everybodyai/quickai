@@ -53,7 +53,11 @@ impl App {
             icons::paint(ui.painter(), rect, Icon::Sliders, p.faint);
             ui.label(theme::muted(self.run_summary()).small());
         });
-        if let Some(count) = self.mcp_server_count() {
+        // the tools are the chat's: an engine that does not chat (ComfyUI) has none to show
+        if let Some(count) = self
+            .mcp_server_count()
+            .filter(|_| !self.runs_alone() && self.can_chat())
+        {
             rule(ui);
             let mut manage = false;
             ui.horizontal(|ui| {
@@ -63,6 +67,7 @@ impl App {
                 });
             });
             ui.label(egui::RichText::new(match count {
+                0 => "None on".to_string(),
                 1 => "1 server on".to_string(),
                 n => format!("{n} servers on"),
             }));

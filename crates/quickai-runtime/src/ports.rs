@@ -36,9 +36,20 @@ pub fn holder(port: u16) -> Option<String> {
     })
 }
 
-/// Whether something listens on `port` of the loopback.
+/// Whether something listens on `port` of the loopback. A port this user may not listen on is not taken by that alone
+/// (one under 1024 on Linux, as an ordinary user): it is taken when something answers there. The engine's own start
+/// then says why it cannot listen, rather than the window blaming a program that is not there.
 pub fn taken(port: u16) -> bool {
-    std::net::TcpListener::bind(("127.0.0.1", port)).is_err()
+    match std::net::TcpListener::bind(("127.0.0.1", port)) {
+        Ok(_) => false,
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => true,
+        // (Windows says this too of a port another program holds alone)
+        Err(_) => std::net::TcpStream::connect_timeout(
+            &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+            Duration::from_millis(300),
+        )
+        .is_ok(),
+    }
 }
 
 /// Waits a little for `port` to be let go of.
@@ -391,6 +402,24 @@ pub fn free_port(port: u16) -> Freed {
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_port_is_taken_when_something_listens_and_not_because_this_user_may_not_listen_there() {
+        let held = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = held.local_addr().unwrap().port();
+        assert!(taken(port), "a port something listens on");
+        drop(held);
+        assert!(!taken(port), "the same port let go of");
+        // a port under 1024 that this user may not bind, where nothing listens (as an ordinary user on Linux)
+        #[cfg(target_os = "linux")]
+        if let Some(port) = (1..1024u16).find(|&p| {
+            std::net::TcpListener::bind(("127.0.0.1", p))
+                .is_err_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied)
+                && std::net::TcpStream::connect(("127.0.0.1", p)).is_err()
+        }) {
+            assert!(!taken(port), "port {port}: not allowed is not taken");
+        }
+    }
 
     #[test]
     fn a_service_is_named_by_its_control_group_and_a_session_or_a_container_is_not_one() {

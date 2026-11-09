@@ -63,7 +63,8 @@ impl App {
                     }
                     pressed.panel = panel.clicked();
                 }
-                if !self.needs_install() {
+                // the log is there before the engine is installed too: it is where its install says what it does
+                {
                     let log = icons::icon_button(ui, Icon::Terminal, ICON, true, self.dock_open)
                         .on_hover_text("The log, and the live traffic when it is on: under the page.");
                     help::mark_spot(ui, Spot::LogTab, log.rect);
@@ -339,6 +340,21 @@ impl App {
             }
             ui.separator();
         }
+        // the chat page of an engine without one of its own (Open WebUI beside Ollama): set it up, or open it while it runs.
+        // It is in the panel too while the model runs; here it is also before, as the Server menu had it (UI v2)
+        if let Some(chat) = self.chat_button().filter(|_| !self.runs_alone()) {
+            let hover = format!("{}: {}", chat.label.trim_end_matches('.'), chat.hover);
+            if ui
+                .add_enabled(chat.enabled, egui::Button::new(&chat.label))
+                .on_hover_text(&hover)
+                .on_disabled_hover_text(&hover)
+                .clicked()
+            {
+                asked = Some(BarMenu::BrowserChat);
+                ui.close();
+            }
+            ui.separator();
+        }
         if ui.button("Configurations…").clicked() {
             asked = Some(BarMenu::Configurations);
             ui.close();
@@ -403,6 +419,7 @@ impl App {
                 self.advanced_section_wanted = true;
                 self.open_settings();
             }
+            Some(BarMenu::BrowserChat) => self.open_browser_chat(),
             None => {}
         }
     }
@@ -448,6 +465,7 @@ enum BarMenu {
     Row(super::shell::RowAction),
     Configurations,
     Engines,
+    BrowserChat,
 }
 
 /// The thin upright line between the buttons with words and the pictures.
