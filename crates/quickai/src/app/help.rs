@@ -1,4 +1,4 @@
-//! Help (C191): a window of its own, which the ? at the right of the menu bar and F1 open, and the Help menu on a page.
+//! Help (C191): a window of its own, which **Help…** in the QuickAI menu at the top left of the sidebar and F1 open.
 //! Its pages are in a sidebar under a search box and Getting started; each is a title, a line on what it is for, a
 //! line on what is so now, a picture of the part of QuickAI it is about with numbered marks on it, and its steps under
 //! the picture with the same numbers. A step that names a button can **Show me** it: the button is ringed in the main
@@ -208,7 +208,7 @@ const PAGES: &[Page] = &[
         lead: "Three steps to a first answer from a model that runs on this computer.",
         picture: Some(Picture {
             name: "main",
-            marks: &[(1, 754.0, 16.0), (2, 36.0, 121.0), (3, 918.0, 62.0)],
+            marks: &[(1, 165.0, 124.0), (2, 188.0, 257.0), (3, 703.0, 28.0)],
             ring: None,
         }),
         steps: &[
@@ -270,7 +270,7 @@ const PAGES: &[Page] = &[
         lead: "Talk to the model that runs, and give it a picture or a document to read.",
         picture: Some(Picture {
             name: "chat",
-            marks: &[(2, 345.0, 494.0), (3, 37.0, 470.0), (4, 33.0, 238.0), (5, 714.0, 21.0)],
+            marks: &[(2, 420.0, 647.0), (3, 37.0, 612.0), (4, 450.0, 229.0), (5, 714.0, 52.0)],
             ring: None,
         }),
         steps: &[
@@ -297,8 +297,8 @@ const PAGES: &[Page] = &[
                works with OpenAI's API can talk to it.",
         picture: Some(Picture {
             name: "connect",
-            marks: &[(1, 664.0, 40.0), (2, 186.0, 135.0), (3, 186.0, 179.0), (4, 611.0, 22.0)],
-            ring: Some([667.0, 6.0, 32.0, 32.0]),
+            marks: &[(1, 233.0, 66.0), (2, 85.0, 162.0), (3, 75.0, 230.0), (4, 165.0, 568.0)],
+            ring: Some([218.0, 12.0, 32.0, 32.0]),
         }),
         steps: &[
             step(
@@ -324,7 +324,7 @@ const PAGES: &[Page] = &[
         lead: "ComfyUI makes pictures and video from workflows you build in its own page.",
         picture: Some(Picture {
             name: "engine-menu",
-            marks: &[(1, 195.0, 16.0), (2, 26.0, 140.0)],
+            marks: &[(1, 165.0, 68.0), (2, 140.0, 205.0)],
             ring: None,
         }),
         steps: &[
@@ -348,21 +348,21 @@ const PAGES: &[Page] = &[
         lead: "Run big models on another computer of yours, and use them from here.",
         picture: Some(Picture {
             name: "computer-menu",
-            marks: &[(2, 180.0, 132.0), (3, 226.0, 31.0)],
+            marks: &[(2, 180.0, 126.0), (3, 175.0, 63.0)],
             ring: None,
         }),
         steps: &[
-            step(
-                "Install Ollama on the other computer, start it there, and check that you can reach that computer \
-                 with ssh from here.",
-            ),
+            step("Check that you can reach the other computer with ssh from here, with your own key."),
             step(
                 "Click **This computer** at the top of the sidebar, then **Add a computer…**, and add it \
                  by its SSH address (user@host, or a Host of your SSH config). QuickAI tests it and says what to do about \
                  anything that fails.",
             )
             .at(Spot::Computer),
-            step("Choose it in the same menu. Start then runs the model there."),
+            step(
+                "Choose it in the same menu. **Start** then runs the model there: QuickAI copies itself there and \
+                 installs what is missing, or uses an engine that already runs there.",
+            ),
         ],
         numbered: true,
         tip: Some("Nothing is opened to the network: QuickAI uses your own ssh and keys."),
@@ -409,7 +409,7 @@ const PAGES: &[Page] = &[
         lead: "The engine is the program that runs the models. Each is good at something.",
         picture: Some(Picture {
             name: "engine-menu",
-            marks: &[(1, 195.0, 16.0)],
+            marks: &[(1, 165.0, 68.0)],
             ring: None,
         }),
         steps: &[
@@ -430,7 +430,7 @@ const PAGES: &[Page] = &[
         lead: "A configuration is a model and how it runs, kept under a name, to use again or to give to someone.",
         picture: Some(Picture {
             name: "change",
-            marks: &[(1, 355.0, 60.0), (2, 14.0, 181.0), (3, 390.0, 114.0)],
+            marks: &[(1, 233.0, 64.0), (2, 140.0, 287.0), (3, 264.0, 155.0)],
             ring: None,
         }),
         steps: &[
@@ -438,7 +438,8 @@ const PAGES: &[Page] = &[
                 .at(Spot::Change),
             step("Choose how it runs: **Balanced**, **Long chats**, **Light**, or **Custom** for numbers of your own."),
             step(
-                "**Save as…** keeps it under a name, and **Configuration** switches between the ones you kept.",
+                "Once something is changed, **Save as…** keeps it under a name. The list over it (**Default** at \
+                 first) switches between the ones you kept.",
             ),
             step("**Configurations…** in the **QuickAI** menu has them all: use, rename or delete one, or save it as a file to share.")
                 .does(Deed::Configurations),
@@ -454,7 +455,13 @@ const PAGES: &[Page] = &[
         lead: "The settings are the engine's. **Settings…** in the **QuickAI** menu at the top left opens them, and so does Ctrl+,.",
         picture: Some(Picture {
             name: "settings",
-            marks: &[(1, 196.0, 85.0), (2, 196.0, 127.0), (3, 196.0, 169.0), (4, 196.0, 211.0)],
+            marks: &[
+                (1, 196.0, 85.0),
+                (2, 196.0, 127.0),
+                (3, 196.0, 169.0),
+                (4, 196.0, 211.0),
+                (5, 196.0, 253.0),
+            ],
             ring: None,
         }),
         steps: &[
@@ -466,6 +473,7 @@ const PAGES: &[Page] = &[
                 "**Starting it**: what the program is given besides what QuickAI gives it, and the whole command \
                  line Start runs.",
             ),
+            step("**MCP servers**: the servers whose tools a model may use, as on **MCP servers** in the sidebar."),
             step("**Other computers**: whether QuickAI may set up a computer you add, to run models there."),
         ],
         numbered: true,
@@ -479,7 +487,7 @@ const PAGES: &[Page] = &[
         lead: "What to look at when the model doesn't start, or stops by itself.",
         picture: Some(Picture {
             name: "port-taken",
-            marks: &[(2, 317.0, 92.0)],
+            marks: &[(2, 312.0, 90.0)],
             ring: None,
         }),
         steps: &[
@@ -505,7 +513,7 @@ const PAGES: &[Page] = &[
         lead: "A model is quick when it fits in the memory of the graphics card, or of the computer.",
         picture: Some(Picture {
             name: "change",
-            marks: &[(1, 14.0, 277.0)],
+            marks: &[(1, 100.0, 367.0)],
             ring: None,
         }),
         steps: &[
@@ -531,7 +539,7 @@ const PAGES: &[Page] = &[
             step("**Models**: .quickai/models, for llama.cpp. The **General** page of the Settings can move it.")
                 .does(Deed::ModelsFolder),
             step("**Ollama, ComfyUI and Open WebUI**: each in a folder of its own beside it, with its models and builds."),
-            step("**Chats**: in .quickai/chats, and only when **Keep chats** is on, under the {more} beside **New chat**."),
+            step("**Chats**: in .quickai/chats, and only when **Keep chats** is on, under the {more} at the right end of the bar."),
             step("**Settings and configurations**: in your system's folder of settings (.config/quickai on Linux)."),
         ],
         numbered: false,

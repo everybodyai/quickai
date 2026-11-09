@@ -60,7 +60,12 @@ impl App {
                     .map_or_else(|| "this computer".to_string(), |r| r.name.clone())
             )
         } else {
-            "Pick one below or search. It downloads once and stays on this computer.".to_string()
+            // the folder is said here, where it is on the screen: the foot of the suggestions is under the window's edge
+            format!(
+                "Pick one below or search. It downloads once and stays on this computer. A .gguf file you put in {} \
+                 shows up by itself.",
+                super::runtime_manager::display_root(&self.models_dir, &self.host_facts.home)
+            )
         }
     }
 
@@ -355,12 +360,14 @@ impl App {
         }
         ui.add_space(8.0);
         let mut all = false;
-        ui.horizontal(|ui| {
+        // on two lines in a narrow window rather than past its edge
+        ui.horizontal_wrapped(|ui| {
             all = ui
                 .link("See all recommended models")
                 .on_hover_text("The whole list QuickAI checked, by kind and size. Nothing is downloaded until you choose.")
                 .clicked();
-            if !self.lists_models() {
+            // the page of a first run says it under its title
+            if !self.lists_models() && !self.models.is_empty() {
                 ui.label(theme::muted(format!(
                     "· A .gguf file in {} shows up by itself.",
                     super::runtime_manager::display_root(&self.models_dir, &self.host_facts.home)
