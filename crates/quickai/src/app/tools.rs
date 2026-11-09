@@ -569,7 +569,7 @@ impl App {
     pub(super) fn show_tools_button(&mut self, ui: &mut egui::Ui) {
         let servers = self.mcp_list();
         let badge = self.tools_badge(&servers);
-        let button = icons::icon_button(ui, Icon::Wrench, egui::vec2(30.0, 28.0), true, false);
+        let button = icons::icon_button(ui, Icon::Wrench, egui::vec2(28.0, 28.0), true, false);
         if let Some(badge) = &badge {
             paint_badge(ui, button.rect, badge);
         }

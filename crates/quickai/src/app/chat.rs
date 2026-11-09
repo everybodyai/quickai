@@ -1731,15 +1731,20 @@ impl App {
             })
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let clip = icons::icon_button(ui, Icon::Clip, egui::vec2(30.0, 28.0), ready, false)
-                        .on_hover_text(
-                            "Add a picture (PNG, JPEG, WebP, GIF) for a model that sees them, or a text file to put \
-                             in the message.",
-                        );
-                    super::help::mark_spot(ui, super::help::Spot::Clip, clip.rect);
-                    attach = clip.clicked();
-                    // the tools the model can use here: the MCP servers that are on (C204)
-                    self.show_tools_button(ui);
+                    // the clip and the tools side by side, with no room between them (the user: "get it closer to
+                    // the attachment icon - so it doesnt waste space")
+                    ui.scope(|ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        let clip = icons::icon_button(ui, Icon::Clip, egui::vec2(24.0, 28.0), ready, false)
+                            .on_hover_text(
+                                "Add a picture (PNG, JPEG, WebP, GIF) for a model that sees them, or a text file to \
+                                 put in the message.",
+                            );
+                        super::help::mark_spot(ui, super::help::Spot::Clip, clip.rect);
+                        attach = clip.clicked();
+                        // the tools the model can use here: the MCP servers that are on (C204, C210)
+                        self.show_tools_button(ui);
+                    });
                     // Enter sends and Shift+Enter is a new line: the key is taken before the box sees it, so that it
                     // does not put a line break in the message wherever the cursor is
                     let input_id = egui::Id::new("chat_input");

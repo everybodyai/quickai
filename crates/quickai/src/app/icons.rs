@@ -491,19 +491,7 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
                 (20.5, 14.5),
             ]);
         }
-        Icon::Wrench => {
-            // the head, open at the top right, and the handle down to the bottom left
-            let head: Vec<(f32, f32)> = (0..=10)
-                .map(|i| {
-                    let a = (80.0 + i as f32 * 30.0).to_radians();
-                    (15.0 + 5.0 * a.cos(), 9.0 + 5.0 * a.sin())
-                })
-                .collect();
-            line(&head);
-            line(&[(11.5, 12.5), (4.5, 19.5)]);
-            line(&[(13.5, 14.0), (6.5, 21.0)]);
-            line(&[(4.5, 19.5), (6.5, 21.0)]);
-        }
+        Icon::Wrench => line(&wrench()),
         Icon::Bolt => line(&[
             (13.5, 2.5),
             (4.5, 13.5),
@@ -625,6 +613,53 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
             ]);
         }
     }
+}
+
+/// The outline of a wrench, in the square of 24: a round head at the top right with its jaw open away from the handle,
+/// and the handle down to a round end at the bottom left, drawn along the diagonal (as the usual icon sets draw it).
+fn wrench() -> Vec<(f32, f32)> {
+    // along the wrench (u, toward the jaw) and across it (v), from the middle of the head
+    let head = (15.4_f32, 8.6_f32);
+    let (along, across) = (
+        (
+            std::f32::consts::FRAC_1_SQRT_2,
+            -std::f32::consts::FRAC_1_SQRT_2,
+        ),
+        (
+            std::f32::consts::FRAC_1_SQRT_2,
+            std::f32::consts::FRAC_1_SQRT_2,
+        ),
+    );
+    let place = |u: f32, v: f32| {
+        (
+            head.0 + u * along.0 + v * across.0,
+            head.1 + u * along.1 + v * across.1,
+        )
+    };
+    let round: f32 = 5.6; // the head
+    let jaw: f32 = 2.1; // half the opening of the jaw
+    let deep = 0.9; // where the jaw's floor is, from the middle of the head
+    let half: f32 = 1.65; // half the handle
+    let reach = 14.4; // from the middle of the head to the end of the handle
+    let arc = |from: f32, to: f32, steps: usize, centre: f32, r: f32| -> Vec<(f32, f32)> {
+        (0..=steps)
+            .map(|i| {
+                let a = (from + (to - from) * i as f32 / steps as f32).to_radians();
+                place(centre + r * a.cos(), r * a.sin())
+            })
+            .collect()
+    };
+    let lip = (jaw / round).asin().to_degrees();
+    let neck = 180.0 - (half / round).asin().to_degrees();
+    let mut points = vec![
+        place((round * round - jaw * jaw).sqrt(), jaw),
+        place(deep, jaw),
+        place(deep, -jaw),
+    ];
+    points.extend(arc(-lip, -neck, 14, 0.0, round));
+    points.extend(arc(-90.0, -270.0, 8, -reach + half, half));
+    points.extend(arc(neck, lip, 14, 0.0, round));
+    points
 }
 
 /// A button that is a picture and nothing else: no frame until the pointer is on it, `hover` said when it rests
