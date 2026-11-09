@@ -1377,10 +1377,12 @@ mod tests {
                     "{width} {live}: {menu:?} {computer:?} {engine:?}"
                 );
                 assert!(engine.right() < 240.0, "{width} {live}: {engine:?}");
+                // no menu bar along the top (Help is a row at the foot of the sidebar, C206)
                 assert!(
-                    !found
-                        .iter()
-                        .any(|(t, _)| ["File", "Models", "View", "Help"].contains(&t.as_str())),
+                    !found.iter().any(|(t, r)| {
+                        ["File", "Models", "View", "Help"].contains(&t.as_str())
+                            && r.center().y < 40.0
+                    }),
                     "{width} {live}: a menu bar"
                 );
                 // the bar: the model's name, what it is doing, and Start at its right end, apart and in the window

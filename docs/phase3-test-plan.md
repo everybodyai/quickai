@@ -380,6 +380,24 @@ A user-layer engine document may name any program; the application asks once, pe
 | G05 | 3.10 | ready | A user patch that changes only field defaults of the embedded Ollama does not ask. | `core/tests/p3_guard.rs` |
 | G06 | 3.10 | ready | Declined: the document stays refused, with no side effect. | `core/tests/p3_guard.rs` |
 | G07 | 3.10 | ready | Through the window: the application's own document and a patch of a default start with no question; a patch that names another program asks and starts nothing until the answer; no leaves nothing remembered and asks again; yes is remembered by the hash in the settings file, the program runs, and after a restart the same document is not asked about. | `app/engine.rs` |
+| G08 | C212 | ready | A configuration's context, GPU layers and split (`split_mode`) are what the runner starts llama-server with; the cards and their shares, which it does not say, are not given. | `p3/headless.rs` |
+| G09 | C212 | ready | A context past the old 128K (262144) is taken; one past the field (2000000) is said as a note of the review and left out, and the engine starts with the document's. | `p3/headless.rs` |
+| G10 | C212 | ready | Which cards (`devices`) and each one's share (`tensor_split`) belong to a computer: a file that says them is told so, and the engine starts without them; its split is still taken. | `p3/headless.rs` |
+| G11 | C212 | ready | No GPU layers is the processor: `--n-gpu-layers 0` and one `--device none`. | `p3/headless.rs` |
+| G12 | C212 | ready | A split llama.cpp does not have is said and left out, and a plan changes nothing. | `p3/headless.rs` |
+| G13 | C212 | ready | `quickai plan --configuration FILE` gives the file's context (262144), layers and split as the configuration's, not the defaults, without its cards or shares; what is said on the line still wins. | `cli.rs` |
+| G14 | C212 | ready | In the window, a length of the grid is the `--ctx-size` Start runs with; 128K for a model trained for 128000 is 128000 and still the box of 128K; Other… keeps its own number; the longest the model takes is read from its GGUF header. | `app/graphics_tests.rs` |
+| G15 | C212 | ready | The suggested length is the longest of 4K to 32K that fits on the card (12 GB: 32K, 8 GB: 16K), or comfortably in half the memory with no card; the dots say on the card, partly in memory or too big. | `app/graphics_tests.rs` |
+| G16 | C212 | ready | Auto puts the whole model on the card when it fits and as many layers as fit when not (the plan says them); choosing Processor turns Auto off and gives `--n-gpu-layers 0 --device none`; a model picked anew turns Auto on and fits it. | `app/graphics_tests.rs` |
+| G17 | C212 | ready | Built-in graphics beside a card of its own are left out (`--device Vulkan0`); every card ticked is llama.cpp's own choice again (no `--device`). | `app/graphics_tests.rs` |
+| G18 | C212 | ready | Two linked cards split by rows with a share of each give `--split-mode row --tensor-split 60,40`, and the meters share the model the same way. | `app/graphics_tests.rs` |
+| G19 | C212 | ready | Card names the installed build does not list (another build, a card taken out) are left out with the share, so Start is not refused; one still listed is kept; a build with no graphics (OpenVINO on the processor) leaves none. | `app/graphics_tests.rs` |
+| G20 | C212 | ready | A configuration the window saves keeps the context, the layers and the split and not the cards or shares; the runner plans that file with them (`quickai plan --configuration`); chosen again it is fitted to this computer's cards. | `app/graphics_tests.rs` |
+| G21 | C212 | ready | With Ollama, Graphics is its own switch: Processor sets `CUDA_VISIBLE_DEVICES` for it. | `app/graphics_tests.rs` |
+| G22 | C212 | ready | The port is not in the panel: it is on the Settings' page of how it starts (with the GPU layers as a number), where the port taken's Go to the setting goes; the context's opens the panel at Other…. | `app/graphics_tests.rs` |
+| G23 | C212 | ready | Part of the model on the card: the card's meter has that part and the memory's the rest, the line of the run says the layers, and it should be of medium speed. | `app/graphics_tests.rs` |
+| G24 | C212 | ready | The panel's Tools is closed at first and says how many servers are on; opened, it names each with its switch. | `app/graphics_tests.rs` |
+| G25 | C212 | ready | The cards are asked of the installed llama-server itself (`--list-devices`), once for each program. | `app/graphics_tests.rs` |
 
 ### X. What the documents say (WP3.9)
 
@@ -1039,7 +1057,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 721 / 0 / 16 / 5 (total 742). The test kit has 29 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 739 / 0 / 16 / 5 (total 760). The test kit has 29 tests of its own and the Python fake
 22, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 

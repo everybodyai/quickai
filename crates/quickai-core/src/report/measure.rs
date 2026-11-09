@@ -334,18 +334,12 @@ mod tests {
             exit_status("Server process exited unexpectedly (exit status: 1)."),
             Some("exit 1".to_string())
         );
-        // what the runtime writes on Unix, where the status prints its own `exit status:`
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::ExitStatusExt;
-            let status = std::process::ExitStatus::from_raw(3 << 8);
-            assert_eq!(
-                exit_status(&format!(
-                    "Server process exited unexpectedly (exit status: {status})."
-                )),
-                Some("exit 3".to_string())
-            );
-        }
+        // what the runtime writes on Unix, where the status prints its own `exit status:` (as `ExitStatus` of a code of
+        // 3 does; written out, since the core does not touch processes)
+        assert_eq!(
+            exit_status("Server process exited unexpectedly (exit status: exit status: 3)."),
+            Some("exit 3".to_string())
+        );
         assert_eq!(
             exit_status("Server process exited unexpectedly (exit status: signal: 9 (SIGKILL))."),
             Some("signal 9".to_string())

@@ -690,6 +690,14 @@ pub fn fit(field: &Field, value: &Value) -> Result<Value, String> {
             if text.contains('\0') {
                 return Err("holds a character that cannot be in a setting".to_string());
             }
+            // the whole text, as the window holds it to the pattern (an empty text of an optional field is none)
+            if let Some(pattern) = field.pattern.as_deref().filter(|_| !text.is_empty()) {
+                let whole = regex::Regex::new(&format!("^(?:{pattern})$"))
+                    .map_err(|_| "held to a pattern that is not valid".to_string())?;
+                if !whole.is_match(text) {
+                    return Err(format!("not of the form `{pattern}`"));
+                }
+            }
             Ok(value.clone())
         }
     }

@@ -39,6 +39,8 @@ mod engine;
 mod engine_bar;
 mod foreign_program;
 mod graphics;
+#[cfg(test)]
+mod graphics_tests;
 mod header;
 mod help;
 mod icons;

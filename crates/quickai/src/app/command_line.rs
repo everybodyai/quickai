@@ -65,7 +65,7 @@ impl App {
     /// with what its record attaches, the values as they stand, and the engine on the public port (the port of the
     /// live-traffic proxy is found only when it starts). An engine that can start with no model (Ollama's management
     /// mode) is shown so; one that cannot asks for a model. `Err` is the sentence to say instead.
-    fn plan_to_show(&self) -> Result<RunPlan, String> {
+    pub(super) fn plan_to_show(&self) -> Result<RunPlan, String> {
         let model = if self.runs_alone() {
             None
         } else {

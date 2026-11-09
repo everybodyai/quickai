@@ -8,7 +8,6 @@
 
 use std::collections::HashMap;
 use std::io::{self, BufReader, Read, Seek};
-use std::path::Path;
 
 /// "GGUF", as the first four bytes read as a little-endian number.
 const MAGIC: u32 = 0x4655_4747;
@@ -39,11 +38,6 @@ impl ModelFacts {
     }
 }
 
-/// Reads the facts of the model file at `path` (the first file of a model in parts has the header).
-pub fn read(path: &Path) -> io::Result<ModelFacts> {
-    parse(BufReader::new(std::fs::File::open(path)?))
-}
-
 /// A value of the header that is kept.
 #[derive(Clone, Debug, PartialEq)]
 enum Kept {
@@ -52,7 +46,7 @@ enum Kept {
     Numbers(Vec<u64>),
 }
 
-/// Reads the facts from a header.
+/// Reads the facts from a header (the first file of a model in parts has it; the window opens the file).
 pub fn parse<R: Read + Seek>(mut r: BufReader<R>) -> io::Result<ModelFacts> {
     if u32_of(&mut r)? != MAGIC {
         return Err(bad("not a GGUF file"));

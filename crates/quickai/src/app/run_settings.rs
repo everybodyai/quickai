@@ -126,7 +126,9 @@ impl App {
         matches!(id, "ctx_size" | "n_gpu_layers" | "gpu")
     }
 
-    /// The fields of the engine's primary section the panel does not show, for the Settings' page of how it starts.
+    /// The fields of the engine's primary section the panel does not show, for the Settings' page of how it starts; with
+    /// them the GPU layers, as a number (the panel's Graphics says it as a choice, and has no box for it when no card is
+    /// found).
     pub(super) fn primary_fields_elsewhere(&self) -> Vec<FormField> {
         let Some(section) = self.form().and_then(|f| f.section("primary").cloned()) else {
             return Vec::new();
@@ -134,7 +136,7 @@ impl App {
         section
             .fields
             .into_iter()
-            .filter(|f| f.visible && !self.panel_shows_field(&f.id))
+            .filter(|f| f.visible && (!self.panel_shows_field(&f.id) || f.id == "n_gpu_layers"))
             .collect()
     }
 
@@ -196,7 +198,7 @@ impl App {
     }
 
     /// The person chose a length of the grid: the suggested one is kept as such (worked out again for the next model).
-    fn choose_length(&mut self, tokens: i64) {
+    pub(super) fn choose_length(&mut self, tokens: i64) {
         let choice = if Some(tokens) == self.suggested_context() {
             RunChoice::Suggested
         } else {

@@ -1199,4 +1199,88 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&other);
     }
+
+    /// G13: `quickai plan` from a configuration says the context, the GPU layers and the split it gives the engine, each
+    /// as the configuration's; the cards and their shares, which belong to a computer, are not taken from it.
+    #[test]
+    fn p3_g13_plan_from_a_configuration_gives_its_context_layers_and_split_as_its_own() {
+        let dir = scratch("g13");
+        let model = dir.join("m.gguf");
+        std::fs::write(&model, b"x").unwrap();
+        let file = put(
+            &dir,
+            "long-rows.toml",
+            "schema = 1\nkind = \"profile\"\nid = \"long-rows\"\nname = \"Long and rows\"\nengine = \"llamacpp\"\n\n\
+             [[model]]\nrole = \"main\"\nfile = \"m.gguf\"\n\n\
+             [values.llamacpp]\nctx_size = 262144\nn_gpu_layers = 20\nsplit_mode = \"row\"\n\
+             devices = \"CUDA0,CUDA1\"\ntensor_split = \"3,1\"\n",
+        );
+        let (code, json, err) = run_capture(
+            &[
+                "plan",
+                "--json",
+                "--configuration",
+                file.to_str().unwrap(),
+                "--model",
+                model.to_str().unwrap(),
+                "--binary",
+                "/x/llama-server",
+            ],
+            &ConfigDirs::default(),
+        );
+        assert_eq!(code, 0, "{err}");
+        let plan: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let args: Vec<(String, String)> = plan["units"][0]["start"][0]["args"]
+            .as_array()
+            .expect("the arguments")
+            .iter()
+            .map(|a| {
+                (
+                    a["value"].as_str().unwrap_or_default().to_string(),
+                    a["origin"].as_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect();
+        let after = |flag: &str| {
+            let at = args
+                .iter()
+                .position(|(v, _)| v == flag)
+                .unwrap_or_else(|| panic!("{flag} in {args:?}"));
+            args[at + 1].clone()
+        };
+        for (flag, value) in [
+            ("--ctx-size", "262144"),
+            ("--n-gpu-layers", "20"),
+            ("--split-mode", "row"),
+        ] {
+            let (said, origin) = after(flag);
+            assert_eq!(said, value, "{args:?}");
+            assert!(
+                !origin.contains("default"),
+                "{flag} is the configuration's: {origin}"
+            );
+        }
+        assert!(!args.iter().any(|(v, _)| v == "--device"), "{args:?}");
+        assert!(!args.iter().any(|(v, _)| v == "--tensor-split"), "{args:?}");
+        // what is said on the line still wins over the file
+        let (code, json, _) = run_capture(
+            &[
+                "plan",
+                "--json",
+                "--configuration",
+                file.to_str().unwrap(),
+                "--model",
+                model.to_str().unwrap(),
+                "--binary",
+                "/x/llama-server",
+                "--ctx-size",
+                "8192",
+            ],
+            &ConfigDirs::default(),
+        );
+        assert_eq!(code, 0);
+        assert!(json.contains("\"8192\""), "{json}");
+        assert!(!json.contains("\"262144\""), "{json}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

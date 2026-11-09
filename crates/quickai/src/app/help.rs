@@ -1992,8 +1992,11 @@ mod tests {
             let mut output = ctx.run_ui(raw, |ui| viewport_ui_cb(ui));
             output.textures_delta.clear();
         });
+        // (the foot of the sidebar is where it settles from the second frame: the first lays it out before the panels know
+        // the window's height)
+        frame(&mut app, &ctx, Vec::new(), |_| ());
         let help = frame(&mut app, &ctx, Vec::new(), |ctx| spot_rect(ctx, Spot::Help))
-            .expect("the QuickAI menu is at the top of the sidebar");
+            .expect("Help is at the foot of the sidebar (C206)");
         assert!(
             titles.borrow().is_empty(),
             "no window before it is asked for"
@@ -2001,7 +2004,8 @@ mod tests {
         for events in click(help.center()) {
             frame(&mut app, &ctx, events, |_| ());
         }
-        let item = text_at(&mut app, &ctx, "Help…").expect("Help… in the QuickAI menu");
+        // its menu opens upward; the first item, Help, is the one with its key
+        let item = text_at(&mut app, &ctx, "F1").expect("Help, with F1, in the menu of Help");
         for events in click(item.center()) {
             frame(&mut app, &ctx, events, |_| ());
         }
@@ -2094,7 +2098,20 @@ mod tests {
                 .map(|p| p.page)
                 .collect()
         };
-        assert_eq!(found("port"), [HelpPage::WontStart]);
+        // the port's pages: the one of what to do when it is taken, and the two that say where it is set (C212)
+        assert_eq!(
+            found("port"),
+            [
+                HelpPage::Configurations,
+                HelpPage::Settings,
+                HelpPage::WontStart
+            ]
+        );
+        assert!(
+            !found("port").contains(&HelpPage::Privacy),
+            "\"report\" is not \"port\""
+        );
+        assert!(found("report").contains(&HelpPage::Privacy));
         assert_eq!(found("api key"), [HelpPage::ConnectApp]);
         assert_eq!(found("").len(), PAGES.len());
         assert!(found("zebra").is_empty());

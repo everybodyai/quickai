@@ -1068,3 +1068,171 @@ fn p3_o25_what_is_said_on_the_command_line_wins_over_the_file() {
     let (outcome, _) = run.stop();
     assert_eq!(outcome, Outcome::Stopped);
 }
+
+// ---- how it runs (C212): what the panel sets reaches the engine the runner starts -----------------------------------
+
+/// The value that follows `flag` in what the stand-in was started with, if it was given.
+fn after(argv: &[String], flag: &str) -> Option<String> {
+    argv.iter()
+        .position(|a| a == flag)
+        .and_then(|at| argv.get(at + 1).cloned())
+}
+
+/// A configuration of the usual model with `values` added to its llama.cpp values.
+fn with_values(world: &World, name: &str, values: &str) -> PathBuf {
+    world.file(
+        name,
+        &format!(
+            "[[model]]\ncatalog = \"alpha-4b\"\nfile = \"{FILE}\"\n\n[values.llamacpp]\nport = {}\n{values}",
+            world.port
+        ),
+    )
+}
+
+/// G08: the context, the GPU layers and the split a configuration says are what the runner starts the engine with;
+/// the cards and their shares, which it does not say, are not given.
+#[test]
+fn p3_g08_a_configurations_context_layers_and_split_reach_the_engine_the_runner_starts() {
+    let world = World::new("g08");
+    let file = with_values(
+        &world,
+        "how",
+        "ctx_size = 65536\nn_gpu_layers = 20\nsplit_mode = \"row\"\n",
+    );
+    let run = Run::start(world.request(&file, world.options()));
+    run.ready();
+    let argv = world.argv();
+    assert_eq!(
+        after(&argv, "--ctx-size").as_deref(),
+        Some("65536"),
+        "{argv:?}"
+    );
+    assert_eq!(
+        after(&argv, "--n-gpu-layers").as_deref(),
+        Some("20"),
+        "{argv:?}"
+    );
+    assert_eq!(
+        after(&argv, "--split-mode").as_deref(),
+        Some("row"),
+        "{argv:?}"
+    );
+    assert!(!argv.iter().any(|a| a == "--device"), "{argv:?}");
+    assert!(!argv.iter().any(|a| a == "--tensor-split"), "{argv:?}");
+    let (outcome, _) = run.stop();
+    assert_eq!(outcome, Outcome::Stopped);
+}
+
+/// G09: a context past the old 128K is taken (the grid goes to 256K, the field to 1M); one past the field is said, and
+/// the engine starts with the context of its document instead.
+#[test]
+fn p3_g09_a_context_past_128k_is_taken_and_one_past_the_field_is_said_and_left_out() {
+    let world = World::new("g09");
+    let long = with_values(&world, "long", "ctx_size = 262144\n");
+    let run = Run::start(world.request(&long, world.options()));
+    run.ready();
+    assert_eq!(
+        after(&world.argv(), "--ctx-size").as_deref(),
+        Some("262144")
+    );
+    let (outcome, _) = run.stop();
+    assert_eq!(outcome, Outcome::Stopped);
+
+    let past = with_values(&world, "past", "ctx_size = 2000000\n");
+    let run = Run::start(world.request(&past, world.options()));
+    run.ready();
+    let argv = world.argv();
+    let ctx = after(&argv, "--ctx-size").expect("a context");
+    assert_ne!(ctx, "2000000", "{argv:?}");
+    let (outcome, events) = run.stop();
+    assert_eq!(outcome, Outcome::Stopped);
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, Event::Review { text, .. } if text.contains("2000000"))),
+        "the value left out is said: {events:#?}"
+    );
+}
+
+/// G10: which cards and how much of the model each takes belong to a computer: a file that says them is told so, and
+/// the engine is started without them (llama.cpp's own choice of the cards there).
+#[test]
+fn p3_g10_the_cards_and_their_shares_in_a_file_are_the_computers_and_are_left_out() {
+    let world = World::new("g10");
+    let file = with_values(
+        &world,
+        "cards",
+        "devices = \"CUDA0,CUDA1\"\ntensor_split = \"3,1\"\nsplit_mode = \"row\"\n",
+    );
+    let run = Run::start(world.request(&file, world.options()));
+    run.ready();
+    let argv = world.argv();
+    assert!(!argv.iter().any(|a| a == "--device"), "{argv:?}");
+    assert!(!argv.iter().any(|a| a == "--tensor-split"), "{argv:?}");
+    assert_eq!(
+        after(&argv, "--split-mode").as_deref(),
+        Some("row"),
+        "{argv:?}"
+    );
+    let (outcome, events) = run.stop();
+    assert_eq!(outcome, Outcome::Stopped);
+    let said: Vec<&str> = events
+        .iter()
+        .filter_map(|e| match e {
+            Event::Review { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    for key in ["devices", "tensor_split"] {
+        assert!(said.iter().any(|t| t.contains(key)), "{key} in {said:#?}");
+    }
+}
+
+/// G11: no layers is the processor: the engine is given no device at all, as an OpenVINO build needs.
+#[test]
+fn p3_g11_no_gpu_layers_is_the_processor_and_no_device() {
+    let world = World::new("g11");
+    let file = with_values(&world, "cpu", "n_gpu_layers = 0\n");
+    let run = Run::start(world.request(&file, world.options()));
+    run.ready();
+    let argv = world.argv();
+    assert_eq!(
+        after(&argv, "--n-gpu-layers").as_deref(),
+        Some("0"),
+        "{argv:?}"
+    );
+    assert_eq!(
+        after(&argv, "--device").as_deref(),
+        Some("none"),
+        "{argv:?}"
+    );
+    assert_eq!(
+        argv.iter().filter(|a| *a == "--device").count(),
+        1,
+        "{argv:?}"
+    );
+    let (outcome, _) = run.stop();
+    assert_eq!(outcome, Outcome::Stopped);
+}
+
+/// G12: a split llama.cpp does not have is said and left out, and nothing is fetched for a plan.
+#[test]
+fn p3_g12_a_split_llamacpp_does_not_have_is_said_and_left_out() {
+    let world = World::new("g12");
+    let file = with_values(&world, "odd", "split_mode = \"column\"\n");
+    let (outcome, events) = world.up(
+        &file,
+        Options {
+            dry_run: true,
+            ..world.options()
+        },
+    );
+    assert_eq!(outcome, Outcome::Planned, "{events:#?}");
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, Event::Review { text, .. } if text.contains("column"))),
+        "{events:#?}"
+    );
+    assert!(!world.data.exists(), "a plan changes nothing");
+}

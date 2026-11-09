@@ -256,7 +256,7 @@ impl App {
 
     /// The devices field as the place and the cards want it: none for the processor (the GPU layers field says
     /// `--device none` then); built-in graphics left out beside a card of its own, unless they were ticked.
-    fn settle_devices(&mut self) {
+    pub(super) fn settle_devices(&mut self) {
         if self.engine_has_layers().is_none() || !matches!(self.devices, Devices::Known { .. }) {
             return;
         }
@@ -314,7 +314,11 @@ impl App {
             return;
         }
         let facts = (path.is_file() && is_gguf(&path))
-            .then(|| quickai_core::gguf::read(&path).ok())
+            .then(|| {
+                std::fs::File::open(&path)
+                    .and_then(|f| quickai_core::gguf::parse(std::io::BufReader::new(f)))
+                    .ok()
+            })
             .flatten();
         self.facts = Some((path, facts));
     }
@@ -404,7 +408,7 @@ impl App {
     }
 
     /// The person chose where it runs: Auto is off until another model is picked.
-    fn choose_place(&mut self, place: Place) {
+    pub(super) fn choose_place(&mut self, place: Place) {
         self.gpu_auto = false;
         let layers = match place {
             Place::Card => ALL_LAYERS,

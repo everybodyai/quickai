@@ -460,7 +460,10 @@ mod tests {
             "a green button over the title: {:?}",
             found.keys()
         );
-        assert!(!found.contains_key("Log"), "{:?}", found.keys());
+        // the only Log is the strip's at the foot of the page, which brings the log up (C208)
+        if let Some(log) = found.get("Log") {
+            assert!(log.top() > title.bottom() + 100.0, "{log:?}");
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -530,11 +533,10 @@ mod tests {
         let found = rects(&settled(&mut app, &ctx, true));
         let heading = heading_of(&found, "qwen3-vl:8b");
         assert!(heading.center().y < 56.0, "{heading:?} is not in the bar");
+        // how it runs: the panel's Context (C212)
         let get = *found
-            .iter()
-            .find(|(text, _)| text.contains(" context · "))
-            .unwrap_or_else(|| panic!("the line of how it runs: {:?}", found.keys()))
-            .1;
+            .get("Context")
+            .unwrap_or_else(|| panic!("the panel's Context: {:?}", found.keys()));
         assert!(
             get.left() > heading.left() + 200.0 && get.top() > 56.0,
             "{get:?} is not in the panel at the right"
@@ -904,7 +906,11 @@ mod tests {
         app.enable_traffic_proxy = true;
         let ctx = egui::Context::default();
         let found = rects(&settled(&mut app, &ctx, true));
-        assert!(!found.contains_key("Log") && !found.contains_key("Live traffic"));
+        // put away, the log's tabs are not there; the only Log is the strip's, at the foot of the page
+        assert!(!found.contains_key("Live traffic"));
+        if let Some(log) = found.get("Log") {
+            assert!(log.center().y > 560.0 - 28.0, "{log:?} is not the strip's");
+        }
         let button = spot(&mut app, &ctx, Spot::LogTab);
         assert!(
             button.center().y > 560.0 - 28.0 && button.left() > 240.0,
@@ -952,7 +958,8 @@ mod tests {
         let mut app = app_in(&dir, "llamacpp");
         only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
         let ctx = egui::Context::default();
-        let found = at_width(&mut app, &ctx, 980.0);
+        // where Recommended is in the frame the click is made in (it is at the foot of the sidebar, C205)
+        let found = rects(&settled(&mut app, &ctx, true));
         click(&mut app, &ctx, found["Recommended"].center());
         let page = at_width(&mut app, &ctx, 980.0);
         assert!(app.view == super::super::MainView::Recommended);
@@ -974,7 +981,7 @@ mod tests {
             "the bar's way back"
         );
         // MCP servers, and Escape
-        let found = at_width(&mut app, &ctx, 980.0);
+        let found = rects(&settled(&mut app, &ctx, true));
         click(&mut app, &ctx, found["MCP servers"].center());
         let page = at_width(&mut app, &ctx, 980.0);
         assert!(app.view == super::super::MainView::Tools);

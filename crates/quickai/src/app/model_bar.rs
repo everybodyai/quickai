@@ -89,7 +89,7 @@ impl App {
                         pressed.sidebar = show_sidebar_button(ui);
                         ui.add_space(8.0);
                     }
-                    // the name and what it is doing share what the buttons leave: the name keeps at least half of it, and
+                    // the name and what it is doing share what the buttons leave: the name keeps at least a third of it, and
                     // the state is drawn only where there is room for its dot and some of its words
                     let p = theme::palette();
                     let state_width = if said.is_empty() {
@@ -107,7 +107,7 @@ impl App {
                     // (i) beside the name opens the model's details (I1 of `the mockups`)
                     let info_width = if model_page { 30.0 } else { 0.0 };
                     let room = ui.available_width();
-                    let name_room = (room - state_width - info_width).max(room * 0.5).max(10.0);
+                    let name_room = (room - state_width - info_width).max(room * 0.35).max(10.0);
                     ui.scope(|ui| {
                         ui.set_max_width(name_room);
                         ui.add(

@@ -162,6 +162,50 @@ pub fn short_name(described: &str) -> String {
     name.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// How long a program is given to list its devices: a build that does not know the option, or that starts a server
+/// instead, is stopped then.
+const LIST_TIME: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// What `command` writes (its output, then its errors), when it ends within `time`; it is stopped if it does not.
+fn output_within(mut command: Command, time: std::time::Duration) -> std::io::Result<String> {
+    use std::io::Read;
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = command.spawn()?;
+    // read as it is written, so that a full pipe does not hold the program
+    let mut out = child.stdout.take();
+    let mut err = child.stderr.take();
+    let reader = std::thread::spawn(move || {
+        let mut text = String::new();
+        if let Some(out) = out.as_mut() {
+            let _ = out.read_to_string(&mut text);
+        }
+        let mut errors = String::new();
+        if let Some(err) = err.as_mut() {
+            let _ = err.read_to_string(&mut errors);
+        }
+        format!("{text}\n{errors}")
+    });
+    let deadline = std::time::Instant::now() + time;
+    loop {
+        if child.try_wait()?.is_some() {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "it did not list its devices in time",
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    Ok(reader.join().unwrap_or_default())
+}
+
 /// The devices of the llama.cpp server at `binary`, with whether its NVIDIA cards are linked.
 pub fn list(binary: &Path) -> Result<(Vec<Device>, bool), String> {
     let mut command = Command::new(binary);
@@ -177,14 +221,8 @@ pub fn list(binary: &Path) -> Result<(Vec<Device>, bool), String> {
         command.current_dir(dir);
     }
     no_console(&mut command);
-    let out = command
-        .output()
+    let text = output_within(command, LIST_TIME)
         .map_err(|e| format!("{} could not be run: {e}", binary.display()))?;
-    let text = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
     let devices = parse(&text);
     let cuda = devices.iter().filter(|d| d.id.starts_with("CUDA")).count();
     let linked = cuda >= 2 && nvlinked();

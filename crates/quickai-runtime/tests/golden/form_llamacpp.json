@@ -43,7 +43,7 @@
             "persist": "global",
             "range": [
               256.0,
-              131072.0
+              1048576.0
             ],
             "required": false,
             "step": 64.0,
@@ -214,6 +214,74 @@
           }
         ],
         "id": "app"
+      },
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "The graphics cards llama.cpp puts the model on, by its own names for them (CUDA0,CUDA1), as the tick boxes of the panel's Graphics set them. Empty: llama.cpp's own choice.",
+            "hint": null,
+            "id": "devices",
+            "key": "llamacpp.devices",
+            "label": "Graphics cards",
+            "legacy_key": null,
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": null,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "How the model is shared between graphics cards: layer (each card takes whole layers, llama.cpp's own) or row (each layer is shared, faster when the cards are linked with NVLink).",
+            "hint": null,
+            "id": "split_mode",
+            "key": "llamacpp.split_mode",
+            "label": "Split between cards",
+            "legacy_key": null,
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": null,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "How much of the model each card takes, as proportions in the order of the cards (3,1). Empty: in the measure of their free memory.",
+            "hint": null,
+            "id": "tensor_split",
+            "key": "llamacpp.tensor_split",
+            "label": "Share of each card",
+            "legacy_key": null,
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": null,
+            "visible": true,
+            "widget": null
+          }
+        ],
+        "id": "graphics"
       }
     ]
   },
@@ -263,7 +331,7 @@
             "persist": "global",
             "range": [
               256.0,
-              131072.0
+              1048576.0
             ],
             "required": false,
             "step": 64.0,
@@ -434,6 +502,74 @@
           }
         ],
         "id": "app"
+      },
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "The graphics cards llama.cpp puts the model on, by its own names for them (CUDA0,CUDA1), as the tick boxes of the panel's Graphics set them. Empty: llama.cpp's own choice.",
+            "hint": null,
+            "id": "devices",
+            "key": "llamacpp.devices",
+            "label": "Graphics cards",
+            "legacy_key": null,
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": null,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "How the model is shared between graphics cards: layer (each card takes whole layers, llama.cpp's own) or row (each layer is shared, faster when the cards are linked with NVLink).",
+            "hint": null,
+            "id": "split_mode",
+            "key": "llamacpp.split_mode",
+            "label": "Split between cards",
+            "legacy_key": null,
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": null,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "How much of the model each card takes, as proportions in the order of the cards (3,1). Empty: in the measure of their free memory.",
+            "hint": null,
+            "id": "tensor_split",
+            "key": "llamacpp.tensor_split",
+            "label": "Share of each card",
+            "legacy_key": null,
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": null,
+            "visible": true,
+            "widget": null
+          }
+        ],
+        "id": "graphics"
       }
     ]
   },
@@ -481,7 +617,7 @@
             "persist": "global",
             "range": [
               256.0,
-              131072.0
+              1048576.0
             ],
             "required": false,
             "step": 64.0,
@@ -652,6 +788,74 @@
           }
         ],
         "id": "app"
+      },
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": false,
+            "error": null,
+            "help": "The graphics cards llama.cpp puts the model on, by its own names for them (CUDA0,CUDA1), as the tick boxes of the panel's Graphics set them. Empty: llama.cpp's own choice.",
+            "hint": null,
+            "id": "devices",
+            "key": "llamacpp.devices",
+            "label": "Graphics cards",
+            "legacy_key": null,
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": null,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": false,
+            "error": null,
+            "help": "How the model is shared between graphics cards: layer (each card takes whole layers, llama.cpp's own) or row (each layer is shared, faster when the cards are linked with NVLink).",
+            "hint": null,
+            "id": "split_mode",
+            "key": "llamacpp.split_mode",
+            "label": "Split between cards",
+            "legacy_key": null,
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": null,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": false,
+            "error": null,
+            "help": "How much of the model each card takes, as proportions in the order of the cards (3,1). Empty: in the measure of their free memory.",
+            "hint": null,
+            "id": "tensor_split",
+            "key": "llamacpp.tensor_split",
+            "label": "Share of each card",
+            "legacy_key": null,
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": null,
+            "visible": true,
+            "widget": null
+          }
+        ],
+        "id": "graphics"
       }
     ]
   },
@@ -701,7 +905,7 @@
             "persist": "global",
             "range": [
               256.0,
-              131072.0
+              1048576.0
             ],
             "required": false,
             "step": 64.0,
@@ -872,6 +1076,74 @@
           }
         ],
         "id": "app"
+      },
+      {
+        "fields": [
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "The graphics cards llama.cpp puts the model on, by its own names for them (CUDA0,CUDA1), as the tick boxes of the panel's Graphics set them. Empty: llama.cpp's own choice.",
+            "hint": null,
+            "id": "devices",
+            "key": "llamacpp.devices",
+            "label": "Graphics cards",
+            "legacy_key": null,
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": null,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "How the model is shared between graphics cards: layer (each card takes whole layers, llama.cpp's own) or row (each layer is shared, faster when the cards are linked with NVLink).",
+            "hint": null,
+            "id": "split_mode",
+            "key": "llamacpp.split_mode",
+            "label": "Split between cards",
+            "legacy_key": null,
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": null,
+            "visible": true,
+            "widget": null
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "How much of the model each card takes, as proportions in the order of the cards (3,1). Empty: in the measure of their free memory.",
+            "hint": null,
+            "id": "tensor_split",
+            "key": "llamacpp.tensor_split",
+            "label": "Share of each card",
+            "legacy_key": null,
+            "options": [],
+            "origin": "unset",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "text",
+            "value": null,
+            "visible": true,
+            "widget": null
+          }
+        ],
+        "id": "graphics"
       }
     ]
   }

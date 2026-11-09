@@ -523,6 +523,7 @@ comfyui.port yes
 comfyui.python never
 llamacpp.bin_override never
 llamacpp.ctx_size yes
+llamacpp.devices never
 llamacpp.extra_args review
 llamacpp.extra_env review
 llamacpp.last_model -
@@ -530,6 +531,8 @@ llamacpp.mcp_servers never
 llamacpp.models_dir never
 llamacpp.n_gpu_layers yes
 llamacpp.port yes
+llamacpp.split_mode yes
+llamacpp.tensor_split never
 ollama.bin_override never
 ollama.ctx_size yes
 ollama.extra_env review
