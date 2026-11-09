@@ -218,7 +218,7 @@ const PAGES: &[Page] = &[
         lead: "Three steps to a first answer from a model that runs on this computer.",
         picture: Some(Picture {
             name: "main",
-            marks: &[(1, 165.0, 124.0), (2, 188.0, 257.0), (3, 703.0, 28.0)],
+            marks: &[(1, 165.0, 124.0), (2, 188.0, 175.0), (3, 776.0, 28.0)],
             ring: None,
         }),
         steps: &[
@@ -280,7 +280,7 @@ const PAGES: &[Page] = &[
         lead: "Talk to the model that runs, and give it a picture or a document to read.",
         picture: Some(Picture {
             name: "chat",
-            marks: &[(2, 420.0, 647.0), (3, 37.0, 612.0), (4, 450.0, 229.0), (5, 714.0, 52.0)],
+            marks: &[(2, 420.0, 629.0), (3, 34.0, 596.0), (4, 640.0, 240.0), (5, 673.0, 52.0)],
             ring: None,
         }),
         steps: &[
@@ -308,8 +308,8 @@ const PAGES: &[Page] = &[
                works with OpenAI's API can talk to it.",
         picture: Some(Picture {
             name: "connect",
-            marks: &[(1, 233.0, 66.0), (2, 85.0, 162.0), (3, 75.0, 230.0), (4, 165.0, 568.0)],
-            ring: Some([218.0, 12.0, 32.0, 32.0]),
+            marks: &[(1, 233.0, 84.0), (2, 85.0, 171.0), (3, 75.0, 239.0), (4, 165.0, 576.0)],
+            ring: Some([247.0, 68.0, 32.0, 32.0]),
         }),
         steps: &[
             step(
@@ -395,7 +395,8 @@ const PAGES: &[Page] = &[
             .does(Deed::Tools),
             step(
                 "Start a model and chat. The wrench in the chat's box has how many servers the model may use in its \
-                 corner; press it to switch each on or off.",
+                 corner; press it to switch each on or off. **Tools** in the panel at the right has a switch for each \
+                 too.",
             ),
             step(
                 "When the model wants a tool, a card shows what it would be given: press **Allow once**, **Always \
@@ -441,7 +442,13 @@ const PAGES: &[Page] = &[
         lead: "A configuration is a model and how it runs, kept under a name, to use again or to give to someone.",
         picture: Some(Picture {
             name: "change",
-            marks: &[(1, 233.0, 64.0), (2, 140.0, 287.0), (3, 264.0, 155.0)],
+            marks: &[
+                (1, 180.0, 84.0),
+                (2, 126.0, 175.0),
+                (3, 132.0, 334.0),
+                (4, 128.0, 437.0),
+                (5, 240.0, 125.0),
+            ],
             ring: None,
         }),
         steps: &[
@@ -494,8 +501,8 @@ const PAGES: &[Page] = &[
                 .does(Deed::Settings),
             step("**Program**: the builds of the engine's program. Use another, look up a newer one, or use your own."),
             step(
-                "**Starting it**: what the program is given besides what QuickAI gives it, and the whole command \
-                 line Start runs.",
+                "**Starting it**: the port, what the program is given besides what QuickAI gives it, and the whole \
+                 command line Start runs. The gear at the top of the panel opens this page.",
             ),
             step("**MCP servers**: the servers whose tools a model may use, as on **MCP servers** in the sidebar."),
             step("**Other computers**: whether QuickAI may set up a computer you add, to run models there."),
@@ -537,7 +544,7 @@ const PAGES: &[Page] = &[
         lead: "A model is quick when it fits in the memory of the graphics card, or of the computer.",
         picture: Some(Picture {
             name: "change",
-            marks: &[(1, 100.0, 367.0)],
+            marks: &[(1, 24.0, 214.0)],
             ring: None,
         }),
         steps: &[
@@ -547,6 +554,10 @@ const PAGES: &[Page] = &[
                  the same one (Q4 rather than Q8).",
             ),
             step("**Add a model** suggests what fits this computer's memory.").does(Deed::AddModel),
+            step(
+                "**Graphics** in the panel: when the whole model does not fit on the card, **Card + processor** puts as \
+                 many of its layers on it as fit. **This computer**, at the foot of the panel, shows what it takes.",
+            ),
             step("Other programs that use the graphics card (a game, another model) leave it less room."),
         ],
         numbered: true,
