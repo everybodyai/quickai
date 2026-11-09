@@ -487,8 +487,8 @@ impl App {
         }
     }
 
-    /// The log under the page (the bar's log button), with the live traffic beside it when it is on: tabs over it, a
-    /// close button at their right, and the height it is given kept for each.
+    /// The log under the page (︽ Log at its foot brings it up), with the live traffic beside it when it is on: tabs
+    /// over it, a close button at their right, and one height for both.
     fn show_dock(&mut self, ui: &mut egui::Ui) {
         let live = self.traffic_proxy_on();
         let shown = match self.active_tab {
@@ -499,15 +499,12 @@ impl App {
         if !on_live {
             self.log_unread = false;
         }
-        let (id, height) = match shown {
-            Tab::Live => ("dock_live", 320.0),
-            _ => ("dock_log", 220.0),
-        };
         let mut close = false;
-        egui::Panel::bottom(id)
+        // One panel for both tabs, so switching between them keeps the height it was given.
+        egui::Panel::bottom("dock")
             .resizable(true)
-            .default_size(height)
-            .size_range(90.0..=640.0)
+            .default_size(260.0)
+            .size_range(160.0..=640.0)
             .frame(theme::side_frame(egui::Margin::ZERO))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {

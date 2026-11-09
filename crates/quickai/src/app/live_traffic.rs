@@ -112,6 +112,7 @@ impl App {
         egui::ScrollArea::vertical()
             .id_salt("live_clients_scroll")
             .auto_shrink([false, false])
+            .min_scrolled_height(24.0)
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 4.0;
                 let total = self.traffic.len();
@@ -216,13 +217,20 @@ impl App {
         ui.separator();
 
         if self.traffic.is_empty() {
-            self.show_nothing_yet(ui);
+            // in a scroll area of its own, so a low log under the page keeps its height and this scrolls instead
+            let room = ui.available_height();
+            egui::ScrollArea::vertical()
+                .id_salt("live_nothing_scroll")
+                .auto_shrink([false, false])
+                .min_scrolled_height(24.0)
+                .show(ui, |ui| self.show_nothing_yet(ui, room));
             return;
         }
         egui::ScrollArea::vertical()
             .id_salt("live_turns_scroll")
             .stick_to_bottom(true)
             .auto_shrink([false, false])
+            .min_scrolled_height(24.0)
             .show(ui, |ui| {
                 theme::column(ui, CONVERSATION_WIDTH, |ui| {
                     ui.add_space(8.0);
@@ -244,7 +252,8 @@ impl App {
 
     /// What the right-hand side says while nothing has been asked of the server yet: that it is waiting, and for what to
     /// ask it with, or what to do first when it is not there to be asked.
-    fn show_nothing_yet(&mut self, ui: &mut egui::Ui) {
+    /// `room` is the height there is for it, to put it in the middle.
+    fn show_nothing_yet(&mut self, ui: &mut egui::Ui, room: f32) {
         let p = theme::palette();
         let state = self.session.state();
         let (words, address, stopped) = match self.setup_in_use().map(|spec| spec.name.clone()) {
@@ -295,7 +304,6 @@ impl App {
                 (words.to_string(), address, stopped)
             }
         };
-        let room = ui.available_height();
         ui.vertical_centered(|ui| {
             ui.add_space(((room - 250.0) / 2.0).max(20.0));
             signal_icon(ui, p.faint);
