@@ -290,8 +290,9 @@ const PAGES: &[Page] = &[
                 .at(Spot::Clip),
             step("Under each answer: **Copy**, **Regenerate**, and how fast it came."),
             step(
-                "The {more} at the right end of the bar: keep chats on this computer, set instructions and how free \
-                 the answers are, or save a chat as a file. The {pencil} beside it starts a new chat.",
+                "The {more} at the right end of the bar: keep chats on this computer, **Options…** for instructions and \
+                 how free the answers are (in a window of their own), or save a chat as a file. The {pencil} beside it \
+                 starts a new chat.",
             )
             .at(Spot::ChatMenu),
         ],
@@ -504,7 +505,7 @@ const PAGES: &[Page] = &[
             ring: None,
         }),
         steps: &[
-            step("Open the log with {log} in the bar: the engine says there why it stopped.")
+            step("Open the log with **Log** at the foot of the page: the engine says there why it stopped.")
                 .at(Spot::LogTab)
                 .does(Deed::Log),
             step(

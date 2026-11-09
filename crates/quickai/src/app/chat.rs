@@ -261,7 +261,7 @@ pub struct Chat {
     /// The temperature and the longest reply, when the person set them.
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
-    /// The box of the options is open.
+    /// The window of the chat's options is open (C208: a window of its own, as Settings and Help are).
     pub show_instructions: bool,
     /// The conversation is kept on this computer (the person's choice, in the settings), under this id once it has
     /// a message.
@@ -1080,8 +1080,8 @@ impl App {
                     .is_some_and(|t| !t.from_person && t.text.is_empty() && t.calls.is_empty());
                 if nothing && self.chat.error.is_none() {
                     self.chat.error = Some(format!(
-                        "It thought for {} s and stopped before it answered. Allow longer answers in the \
-                         chat's Options..., then send again.",
+                        "It thought for {} s and stopped before it answered. Allow longer answers in Options… \
+                         (⋯ at the right of the bar), then send again.",
                         since.elapsed().as_secs()
                     ));
                 }
@@ -1312,9 +1312,28 @@ impl App {
 
     /// The chat's part of the bar's ⋯ menu (UI v3, C203): Keep chats, Options and Export. New chat is the bar's pencil.
     pub(super) fn chat_menu_items(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette();
+        // Keep chats: its picture, its words and a switch, the row as tall as the menu's items
         let mut keep = self.chat.keep;
-        if ui
-            .checkbox(&mut keep, "Keep chats")
+        let row = ui
+            .horizontal(|ui| {
+                // laid out as the menu's other items are: the picture 8 points in, the words 10 after it
+                ui.set_min_height(30.0);
+                ui.spacing_mut().item_spacing.x = 0.0;
+                ui.add_space(8.0);
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                super::icons::paint(ui.painter(), rect, super::icons::Icon::Document, p.body);
+                ui.add_space(10.0);
+                ui.label(egui::RichText::new("Keep chats").color(p.body));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(6.0);
+                    theme::switch(ui, &mut keep, true)
+                })
+                .inner
+            })
+            .inner;
+        if row
             .on_hover_text(
                 "Keep each conversation on this computer (in QuickAI's own folder), listed beside it. Off, nothing is \
                  kept. Nothing leaves this computer either way.",
@@ -1326,28 +1345,39 @@ impl App {
         let set = !self.chat.instructions.trim().is_empty()
             || self.chat.temperature.is_some()
             || self.chat.max_tokens.is_some();
-        if ui
-            .button(if set { "Options... •" } else { "Options..." })
-            .on_hover_text(
-                "Instructions the model reads before every message, how free its answers are, and how long they may \
-                 be. Each is left to the model unless set.",
-            )
-            .clicked()
-        {
-            self.chat.show_instructions = !self.chat.show_instructions;
+        let options = super::icons::menu_item_keyed(
+            ui,
+            Some(super::icons::Icon::Sliders),
+            if set { "Options… •" } else { "Options…" },
+            "",
+        )
+        .on_hover_text(
+            "Instructions the model reads before every message, how free its answers are, and how long they may be, in \
+             a window of their own. Each is left to the model unless set.",
+        );
+        if options.clicked() {
+            self.open_chat_options();
             ui.close();
         }
-        if ui
-            .add_enabled(
-                !self.chat.turns.is_empty() && !self.chat.replying(),
-                egui::Button::new("Export..."),
-            )
-            .on_hover_text("Save this conversation as a Markdown file.")
-            .clicked()
-        {
+        let can_export = !self.chat.turns.is_empty() && !self.chat.replying();
+        let export = super::icons::menu_item(
+            ui,
+            super::icons::Icon::Upload,
+            "Export this chat…",
+            can_export,
+            false,
+        )
+        .on_hover_text("Save this conversation as a Markdown file.");
+        if export.clicked() && can_export {
             ui.close();
             self.export_chat();
         }
+    }
+
+    /// Opens the window of the chat's options, or brings it to the front.
+    pub(super) fn open_chat_options(&mut self) {
+        self.raise_chat_options = self.chat.show_instructions;
+        self.chat.show_instructions = true;
     }
 
     /// Whether a new chat can be begun: there is one to leave, and no reply is on its way.
@@ -1383,10 +1413,6 @@ impl App {
                     .unwrap_or_else(|| self.selected_configuration_name()),
             )
         });
-        if self.chat.show_instructions {
-            ui.add_space(6.0);
-            self.show_chat_options(ui);
-        }
         // with nothing said yet, what to do is said in the middle of the room the conversation will have
         let empty = self.chat.turns.is_empty() && self.chat.error.is_none();
         let empty_words = match (&model, running) {
@@ -1781,56 +1807,147 @@ impl App {
     }
 
     /// The options of a reply: the instructions, the temperature and the length, each the model's own until set.
-    fn show_chat_options(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.add_space(6.0);
-            ui.add(
-                egui::TextEdit::multiline(&mut self.chat.instructions)
-                    .desired_rows(2)
-                    .desired_width(ui.available_width() - 8.0)
-                    .hint_text("Instructions, for example: You are a helpful assistant. Answer briefly, in English."),
-            );
+    /// The window of the chat's options (C208, `the mockups`): the instructions the model reads before
+    /// every message, how free its answers are, and how long a reply may be; each left to the model until set. What is
+    /// set is used from the next message on; Reset gives all three back to the model, Close closes it.
+    pub(super) fn show_chat_options_window(&mut self, ctx: &egui::Context) {
+        if !self.chat.show_instructions {
+            return;
+        }
+        let id = chat_options_viewport();
+        if std::mem::take(&mut self.raise_chat_options) {
+            ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);
+        }
+        let mut close = false;
+        let builder = theme::own_window("Chat options", [460.0, 440.0], [380.0, 360.0]);
+        ctx.show_viewport_immediate(id, builder, |ui, class| {
+            if class != egui::ViewportClass::EmbeddedWindow
+                && ui.input(|i| i.viewport().close_requested())
+            {
+                close = true;
+            }
+            egui::Panel::bottom("chat_options_footer")
+                .frame(theme::bar_frame(egui::Margin::symmetric(16, 10)))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(theme::muted("For this chat and the next ones.").small());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button("Close").clicked() {
+                                close = true;
+                            }
+                            if ui
+                                .button("Reset")
+                                .on_hover_text("Leave all three to the model again.")
+                                .clicked()
+                            {
+                                self.chat.instructions.clear();
+                                self.chat.temperature = None;
+                                self.chat.max_tokens = None;
+                            }
+                        });
+                    });
+                });
+            egui::CentralPanel::default()
+                .frame(theme::page_frame().inner_margin(egui::Margin::symmetric(18, 14)))
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("chat_options_scroll")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| self.chat_options_body(ui));
+                });
         });
-        ui.horizontal(|ui| {
-            ui.add_space(6.0);
-            let mut own_temperature = self.chat.temperature.is_none();
-            if ui
-                .checkbox(&mut own_temperature, "The model's own temperature")
-                .on_hover_text(
-                    "Lower is steadier and more literal; higher is freer and more varied.",
-                )
-                .changed()
-            {
-                self.chat.temperature = (!own_temperature).then_some(0.7);
+        if close {
+            self.chat.show_instructions = false;
+        }
+    }
+
+    /// What the window of the chat's options has: three parts, each a name, a line on what it is, and its control.
+    fn chat_options_body(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette();
+        let head = |ui: &mut egui::Ui, name: &str, said: &str| {
+            ui.label(
+                egui::RichText::new(name)
+                    .family(theme::semibold(ui))
+                    .color(p.text),
+            );
+            if !said.is_empty() {
+                ui.label(theme::muted(said).small());
             }
-            if let Some(t) = self.chat.temperature.as_mut() {
-                ui.add(
-                    egui::Slider::new(t, 0.0..=2.0)
+            ui.add_space(4.0);
+        };
+        head(
+            ui,
+            "Instructions",
+            "What the model reads before every message.",
+        );
+        ui.add(
+            egui::TextEdit::multiline(&mut self.chat.instructions)
+                .desired_rows(3)
+                .desired_width(ui.available_width())
+                .hint_text("For example: You are a helpful assistant. Answer briefly, in English."),
+        );
+        ui.add_space(16.0);
+        head(
+            ui,
+            "How free its answers are",
+            "Lower is steadier and more literal; higher is freer and more varied.",
+        );
+        let mut own_temperature = self.chat.temperature.is_none();
+        if ui
+            .checkbox(&mut own_temperature, "The model's own")
+            .changed()
+        {
+            self.chat.temperature = (!own_temperature).then_some(0.7);
+        }
+        ui.add_enabled_ui(self.chat.temperature.is_some(), |ui| {
+            ui.horizontal(|ui| {
+                ui.label(theme::muted("steady").small());
+                // the slider takes the row, but for its number and the word after it
+                ui.spacing_mut().slider_width = (ui.available_width() - 110.0).max(100.0);
+                let mut t = self.chat.temperature.unwrap_or(0.7);
+                let slider = ui.add(
+                    egui::Slider::new(&mut t, 0.0..=2.0)
                         .step_by(0.05)
-                        .text("temperature"),
+                        .fixed_decimals(2)
+                        .show_value(true),
                 );
-            }
-            ui.add_space(12.0);
+                ui.label(theme::muted("free").small());
+                if slider.changed() {
+                    self.chat.temperature = Some(t);
+                }
+            });
+        });
+        ui.add_space(16.0);
+        head(
+            ui,
+            "How long a reply may be",
+            "In tokens: about three quarters of a word each.",
+        );
+        ui.horizontal(|ui| {
             let mut no_limit = self.chat.max_tokens.is_none();
-            if ui
-                .checkbox(&mut no_limit, "No length limit")
-                .on_hover_text(
-                    "The longest a reply may be, in tokens (about three quarters of a word each).",
-                )
-                .changed()
-            {
+            if ui.checkbox(&mut no_limit, "No limit").changed() {
                 self.chat.max_tokens = (!no_limit).then_some(512);
             }
-            if let Some(n) = self.chat.max_tokens.as_mut() {
-                ui.add(
-                    egui::DragValue::new(n)
+            ui.add_space(12.0);
+            ui.add_enabled_ui(self.chat.max_tokens.is_some(), |ui| {
+                let mut n = self.chat.max_tokens.unwrap_or(512);
+                let drag = ui.add(
+                    egui::DragValue::new(&mut n)
                         .range(16..=32768)
                         .speed(16.0)
                         .suffix(" tokens"),
                 );
-            }
+                if drag.changed() {
+                    self.chat.max_tokens = Some(n);
+                }
+            });
         });
     }
+}
+
+/// Which window the chat's options are.
+pub(super) fn chat_options_viewport() -> egui::ViewportId {
+    egui::ViewportId::from_hash_of("quickai_chat_options")
 }
 
 #[cfg(test)]

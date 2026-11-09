@@ -1,9 +1,10 @@
 //! The main window (UI v3, C203, the user's A6 of `the mockups` with the QuickAI menu of S2): the sidebar down
 //! the left (`sidebar.rs`: the QuickAI menu, the computer and the engine, Recommended, MCP servers and the models), and
-//! at its right one bar over the page (`model_bar.rs`: the model's name, what it is doing, Start or Stop, and pictures
-//! for a new chat, the log, the panel and a menu), the panel at the right (`inspector.rs`: how the model runs, and
-//! Connect an app while it runs), the log under the page when it is asked for, and the page itself: the chat. There is
-//! no menu bar and no status bar: what they had is in the QuickAI menu, the + of the list, the bar and the sidebar.
+//! at its right one bar over the page (`model_bar.rs`: the model's name and its (i), what it is doing, Start or Stop, a
+//! new chat and the chat's ⋯), the panel at the right (`inspector.rs`: how the model runs, and Connect an app while it
+//! runs), the log under the page when it is asked for (︽ Log in the strip at its foot), and the page itself: the chat.
+//! There is no menu bar and no status bar: what they had is in the QuickAI menu, the + of the list, the bar and the
+//! sidebar.
 //!
 //! What a person does first is on the page and nothing else: an engine that is not installed has its Install button
 //! alone, and a first run has the box that adds a model with the models suggested for this computer. An engine that
@@ -95,8 +96,11 @@ impl App {
                     .show(ui, |ui| self.show_inspector(ui));
             }
         }
+        // the log under the page, or the strip at its foot that brings it up (L1 of `the mockups`)
         if self.dock_open {
             self.show_dock(ui);
+        } else {
+            self.show_log_strip(ui);
         }
         if self.view != MainView::Model && !remote_view {
             // a page of the sidebar: the recommended models, or the MCP servers
@@ -526,12 +530,12 @@ impl App {
                         ui.add_space(6.0);
                         close = super::icons::icon_button(
                             ui,
-                            super::icons::Icon::Close,
+                            super::icons::Icon::DoubleDown,
                             egui::vec2(26.0, 24.0),
                             true,
                             false,
                         )
-                        .on_hover_text("Close the log (the log button of the bar opens it again).")
+                        .on_hover_text("Put the log away. ︽ Log at the foot of the page brings it up again.")
                         .clicked();
                     });
                 });
@@ -551,6 +555,68 @@ impl App {
             });
         if close {
             self.dock_open = false;
+        }
+    }
+}
+
+impl App {
+    /// The strip at the foot of the page while the log is put away: ︽ Log at its right end brings it up, with a red dot
+    /// when the log has something new (a run that stopped by itself).
+    fn show_log_strip(&mut self, ui: &mut egui::Ui) {
+        let mut open = false;
+        egui::Panel::bottom("log_strip")
+            .exact_size(28.0)
+            .resizable(false)
+            .frame(theme::side_frame(egui::Margin::symmetric(8, 0)))
+            .show(ui, |ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let p = theme::palette();
+                    let font = egui::TextStyle::Small.resolve(ui.style());
+                    let word = ui
+                        .painter()
+                        .layout_no_wrap("Log".to_string(), font, p.muted);
+                    let (rect, response) = ui.allocate_exact_size(
+                        egui::vec2(8.0 + 13.0 + 6.0 + word.size().x + 8.0, 22.0),
+                        egui::Sense::click(),
+                    );
+                    mark_spot(ui, Spot::LogTab, rect);
+                    let ink = if response.hovered() { p.text } else { p.muted };
+                    if response.hovered() {
+                        ui.painter().rect_filled(rect, 6.0, p.selected);
+                    }
+                    super::icons::paint(
+                        ui.painter(),
+                        egui::Rect::from_center_size(
+                            egui::pos2(rect.left() + 8.0 + 6.5, rect.center().y),
+                            egui::vec2(13.0, 13.0),
+                        ),
+                        super::icons::Icon::DoubleUp,
+                        ink,
+                    );
+                    ui.painter().galley(
+                        egui::pos2(rect.left() + 27.0, rect.center().y - word.size().y / 2.0),
+                        word,
+                        ink,
+                    );
+                    if self.log_unread {
+                        ui.painter().circle_filled(
+                            egui::pos2(rect.right() - 3.0, rect.top() + 4.0),
+                            3.5,
+                            p.bad,
+                        );
+                    }
+                    open = response
+                        .on_hover_text(
+                            "The log, and the live traffic when it is on: under the page.",
+                        )
+                        .clicked();
+                });
+            });
+        if open {
+            self.dock_open = true;
+            if matches!(self.active_tab, Tab::Chat) {
+                self.active_tab = Tab::Main;
+            }
         }
     }
 }

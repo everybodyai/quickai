@@ -432,7 +432,7 @@ mod tests {
             .get("Add your first model")
             .unwrap_or_else(|| panic!("the box that adds a model: {:?}", found.keys()));
         assert!(start.bottom() < title.top(), "{start:?} {title:?}");
-        // and its log under the page, with the bar's log button (C203): the crash panel sends the person to it
+        // and its log under the page, from ︽ Log at its foot (C203, C208): the crash panel sends the person to it
         app.dock_open = true;
         let found = rects(&settled(&mut app, &ctx, true));
         let title = *found
@@ -892,8 +892,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// I43 (C203): the log is under the page: the bar's log button opens it (with the live traffic beside it when that is
-    /// on) and its close button puts it away; a run that ends in a crash opens it by itself, with a dot on the button.
+    /// I43 (C203, C208): the log is under the page: ︽ Log in the strip at the page's foot brings it up (with the live
+    /// traffic beside it when that is on) and ︾ at the right end of its tabs puts it away; a run that ends in a crash opens
+    /// it by itself.
     #[test]
     fn p3_i43_the_log_opens_under_the_page_from_the_bar_and_by_itself_after_a_crash() {
         use super::super::help::Spot;
@@ -905,7 +906,10 @@ mod tests {
         let found = rects(&settled(&mut app, &ctx, true));
         assert!(!found.contains_key("Log") && !found.contains_key("Live traffic"));
         let button = spot(&mut app, &ctx, Spot::LogTab);
-        assert!(button.center().y < 56.0, "{button:?} is not in the bar");
+        assert!(
+            button.center().y > 560.0 - 28.0 && button.left() > 240.0,
+            "{button:?} is not at the foot of the page"
+        );
         click(&mut app, &ctx, button.center());
         let found = rects(&settled(&mut app, &ctx, true));
         let (log, live) = (found["Log"], found["Live traffic"]);
@@ -914,9 +918,15 @@ mod tests {
             "{log:?} is not under the page"
         );
         assert!((log.center().y - live.center().y).abs() < 4.0 && log.right() < live.left());
-        // the bar's button again puts it away
-        click(&mut app, &ctx, button.center());
+        // ︾ at the right end of its tabs puts it away, and the strip is back
+        click(
+            &mut app,
+            &ctx,
+            egui::pos2(760.0 - 6.0 - 13.0, log.center().y),
+        );
         assert!(!app.dock_open);
+        let strip = spot(&mut app, &ctx, Spot::LogTab);
+        assert!(strip.center().y > 560.0 - 28.0, "{strip:?}");
         // a run that ends in a crash: the log opens by itself, on the log
         app.active_tab = Tab::Live;
         app.session.report_start_failure(

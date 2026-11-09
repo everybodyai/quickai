@@ -31,6 +31,10 @@ pub(super) enum Icon {
     /// `the mockups`), each pointing the way its side goes.
     DoubleLeft,
     DoubleRight,
+    /// ︽ and ︾: the log under the page is brought up and put away with them (L1 of
+    /// `the mockups`).
+    DoubleUp,
+    DoubleDown,
     Chat,
     Refresh,
     Plug,
@@ -223,6 +227,14 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
         Icon::DoubleLeft => {
             line(&[(12.0, 6.5), (6.5, 12.0), (12.0, 17.5)]);
             line(&[(18.0, 6.5), (12.5, 12.0), (18.0, 17.5)]);
+        }
+        Icon::DoubleUp => {
+            line(&[(6.5, 12.0), (12.0, 6.5), (17.5, 12.0)]);
+            line(&[(6.5, 18.0), (12.0, 12.5), (17.5, 18.0)]);
+        }
+        Icon::DoubleDown => {
+            line(&[(6.5, 6.0), (12.0, 11.5), (17.5, 6.0)]);
+            line(&[(6.5, 12.0), (12.0, 17.5), (17.5, 12.0)]);
         }
         Icon::DoubleRight => {
             line(&[(6.0, 6.5), (11.5, 12.0), (6.0, 17.5)]);

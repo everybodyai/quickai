@@ -244,6 +244,8 @@ pub struct App {
     help: help::HelpState,
     /// *Change* is open under the model's name.
     change_open: bool,
+    /// The window of the chat's options was asked for again while it is open: it comes to the front.
+    raise_chat_options: bool,
     /// The sidebar is shown (UI v3, C203): its button at its head puts it away, and the bar's brings it back. Kept
     /// for the next start, as the panel's is.
     sidebar_open: bool,
@@ -508,6 +510,7 @@ impl App {
             focus_add_box: false,
             help: help::HelpState::default(),
             change_open: false,
+            raise_chat_options: false,
             sidebar_open: true,
             panel_open: true,
             panel_asked: false,
@@ -1047,6 +1050,7 @@ impl eframe::App for App {
         self.show_about_window(ui.ctx());
         self.show_remotes_window(ui.ctx());
         self.show_model_details(ui.ctx());
+        self.show_chat_options_window(ui.ctx());
         self.show_add_model_window(ui.ctx());
         self.show_connect_popover(ui.ctx());
         self.show_busy_dialog(ui.ctx());

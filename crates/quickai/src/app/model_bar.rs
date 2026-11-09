@@ -1,8 +1,9 @@
 //! The bar over the page (UI v3, C203, the user's A6 of `the mockups`): the chosen model's name (or the
-//! engine's, for one that runs on its own or has no model yet) and what it is doing; then what can be done with it as
-//! buttons with words (Start, Load model or Use this model; Stop; Open ComfyUI); then pictures: a new chat, the log
-//! under the page and the ⋯ menu (the chat's options, and the model's menu of the list). A side of the window put away
-//! is brought back from the bar's end on its side: » at the left for the sidebar, « at the right for the panel (H4).
+//! engine's, for one that runs on its own or has no model yet) with (i) for its details, and what it is doing; then what
+//! can be done with it as buttons with words (Start, Load model or Use this model; Stop; Open ComfyUI); then a new chat
+//! and ⋯, the chat's (Keep chats, Options, Export; C208). A side of the window put away is brought back from the bar's
+//! end on its side: » at the left for the sidebar, « at the right for the panel (H4). The log is under the page, brought
+//! up from the strip at its foot.
 
 use eframe::egui;
 
@@ -38,9 +39,10 @@ impl App {
                 // the panel at the right, put away (or a window too narrow for it to show by itself): « at the right end
                 // brings it back (H4 of `the mockups`); shown, its own » puts it away
                 if self.panel_possible() && !self.panel_shown {
-                    let show = icons::icon_button(ui, Icon::DoubleLeft, ICON, true, false).on_hover_text(
-                        "Show the panel: how the model runs, and Connect an app while it runs.",
-                    );
+                    let show = icons::icon_button(ui, Icon::DoubleLeft, ICON, true, false)
+                        .on_hover_text(
+                            "Show the panel: how the model runs, and Connect an app while it runs.",
+                        );
                     help::mark_spot(ui, Spot::Change, show.rect);
                     // Connect an app is the panel while the model runs
                     if state == ServerState::Running {
@@ -48,36 +50,20 @@ impl App {
                     }
                     pressed.panel = show.clicked();
                 }
-                // the pictures, from the right: ⋯, the log, a new chat
-                let more = icons::icon_button(ui, Icon::More, ICON, true, false)
-                    .on_hover_text(if model_page {
-                        "The chat's options, and the model's menu: Details, Show in folder, Copy name, Delete"
-                    } else {
-                        "Configurations, and the engine's builds"
-                    });
-                help::mark_spot(ui, Spot::ChatMenu, more.rect);
-                egui::Popup::menu(&more)
-                    .align(egui::RectAlign::BOTTOM_END)
-                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                    .width(240.0)
-                    .show(|ui| {
-                        ui.set_min_width(240.0);
-                        pressed.more = self.bar_menu(ui, model_page);
-                    });
-                // the log is there before the engine is installed too: it is where its install says what it does
-                {
-                    let log = icons::icon_button(ui, Icon::Terminal, ICON, true, self.dock_open)
-                        .on_hover_text("The log, and the live traffic when it is on: under the page.");
-                    help::mark_spot(ui, Spot::LogTab, log.rect);
-                    if self.log_unread && !self.dock_open {
-                        let p = theme::palette();
-                        ui.painter().circle_filled(
-                            egui::pos2(log.rect.right() - 6.0, log.rect.top() + 7.0),
-                            3.5,
-                            p.bad,
-                        );
-                    }
-                    pressed.log = log.clicked();
+                // the pictures, from the right: ⋯ (the chat's: M1 of `the mockups`; none when there is no
+                // chat and no chat page to set up) and a new chat
+                if self.bar_menu_has_items(model_page) {
+                    let more = icons::icon_button(ui, Icon::More, ICON, true, false)
+                        .on_hover_text("The chat: Keep chats, Options and Export");
+                    help::mark_spot(ui, Spot::ChatMenu, more.rect);
+                    egui::Popup::menu(&more)
+                        .align(egui::RectAlign::BOTTOM_END)
+                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                        .width(250.0)
+                        .show(|ui| {
+                            ui.set_min_width(250.0);
+                            pressed.more = self.bar_menu(ui, model_page);
+                        });
                 }
                 if model_page && self.can_chat() {
                     pressed.new_chat = icons::icon_button(
@@ -110,10 +96,18 @@ impl App {
                         0.0
                     } else {
                         let font = egui::TextStyle::Body.resolve(ui.style());
-                        ui.painter().layout_no_wrap(said.clone(), font, p.muted).size().x + 8.0 + 8.0 + 8.0
+                        ui.painter()
+                            .layout_no_wrap(said.clone(), font, p.muted)
+                            .size()
+                            .x
+                            + 8.0
+                            + 8.0
+                            + 8.0
                     };
+                    // (i) beside the name opens the model's details (I1 of `the mockups`)
+                    let info_width = if model_page { 30.0 } else { 0.0 };
                     let room = ui.available_width();
-                    let name_room = (room - state_width).max(room * 0.5).max(10.0);
+                    let name_room = (room - state_width - info_width).max(room * 0.5).max(10.0);
                     ui.scope(|ui| {
                         ui.set_max_width(name_room);
                         ui.add(
@@ -127,11 +121,25 @@ impl App {
                         )
                         .on_hover_text(&title);
                     });
+                    if model_page {
+                        ui.add_space(2.0);
+                        pressed.details = icons::icon_button(
+                            ui,
+                            Icon::Info,
+                            egui::vec2(26.0, 26.0),
+                            true,
+                            self.details_of.is_some(),
+                        )
+                        .on_hover_text("Details of this model")
+                        .clicked();
+                    }
                     if !said.is_empty() && ui.available_width() >= 40.0 {
                         ui.add_space(8.0);
                         theme::dot(ui, 8.0, 4.0, color);
-                        ui.add(egui::Label::new(egui::RichText::new(&said).color(p.muted)).truncate())
-                            .on_hover_text(&status);
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(&said).color(p.muted)).truncate(),
+                        )
+                        .on_hover_text(&status);
                     }
                 });
             });
@@ -344,43 +352,35 @@ impl App {
     /// engine's builds otherwise. What the model's part asked for comes back.
     fn bar_menu(&mut self, ui: &mut egui::Ui, model_page: bool) -> Option<BarMenu> {
         let mut asked = None;
-        if model_page && self.can_chat() {
-            ui.label(theme::muted("Chat").small());
+        let chat = model_page && self.can_chat();
+        if chat {
             self.chat_menu_items(ui);
-            ui.separator();
-        }
-        if model_page {
-            ui.label(theme::muted("Model").small());
-            let lists = self.lists_models();
-            if let Some(action) = self.model_menu(ui, self.selected, lists) {
-                asked = Some(BarMenu::Row(action));
-            }
-            ui.separator();
         }
         // the chat page of an engine without one of its own (Open WebUI beside Ollama): set it up, or open it while it runs.
         // It is in the panel too while the model runs; here it is also before, as the Server menu had it (UI v2)
-        if let Some(chat) = self.chat_button().filter(|_| !self.runs_alone()) {
-            let hover = format!("{}: {}", chat.label.trim_end_matches('.'), chat.hover);
-            if ui
-                .add_enabled(chat.enabled, egui::Button::new(&chat.label))
+        if let Some(page) = self.chat_button().filter(|_| !self.runs_alone()) {
+            if chat {
+                ui.separator();
+            }
+            let hover = format!("{}: {}", page.label.trim_end_matches('.'), page.hover);
+            if icons::menu_item(ui, Icon::Globe, &page.label, page.enabled, false)
                 .on_hover_text(&hover)
                 .on_disabled_hover_text(&hover)
                 .clicked()
+                && page.enabled
             {
                 asked = Some(BarMenu::BrowserChat);
                 ui.close();
             }
-            ui.separator();
-        }
-        if ui.button("Configurations…").clicked() {
-            asked = Some(BarMenu::Configurations);
-            ui.close();
-        }
-        if ui.button("Manage engines…").clicked() {
-            asked = Some(BarMenu::Engines);
-            ui.close();
         }
         asked
+    }
+
+    /// Whether ⋯ has anything: the chat's items, or the chat page to set up or open. The model's items are on its row in
+    /// the sidebar and its details on (i), Configurations in QuickAI ▾ and the panel, the engines in the engine's menu.
+    fn bar_menu_has_items(&self, model_page: bool) -> bool {
+        (model_page && self.can_chat())
+            || self.chat_button().filter(|_| !self.runs_alone()).is_some()
     }
 
     /// Does what was pressed in the bar.
@@ -415,25 +415,13 @@ impl App {
         if pressed.sidebar {
             self.sidebar_open = true;
         }
-        if pressed.log {
-            self.dock_open = !self.dock_open;
-            if self.dock_open && matches!(self.active_tab, super::Tab::Chat) {
-                self.active_tab = super::Tab::Main;
-            }
-        }
         if pressed.new_chat {
             self.begin_new_chat();
         }
+        if pressed.details {
+            self.do_row_action(ctx, self.selected, super::shell::RowAction::Details);
+        }
         match pressed.more {
-            Some(BarMenu::Row(action)) => self.do_row_action(ctx, self.selected, action),
-            Some(BarMenu::Configurations) => {
-                self.open_configurations();
-                self.raise_configurations = true;
-            }
-            Some(BarMenu::Engines) => {
-                self.advanced_section_wanted = true;
-                self.open_settings();
-            }
             Some(BarMenu::BrowserChat) => self.open_browser_chat(),
             None => {}
         }
@@ -471,16 +459,13 @@ struct Press {
     web_ui: bool,
     panel: bool,
     sidebar: bool,
-    log: bool,
+    details: bool,
     new_chat: bool,
     more: Option<BarMenu>,
 }
 
 /// What the bar's ⋯ menu was asked to do.
 enum BarMenu {
-    Row(super::shell::RowAction),
-    Configurations,
-    Engines,
     BrowserChat,
 }
 
