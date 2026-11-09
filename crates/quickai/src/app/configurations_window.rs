@@ -337,7 +337,6 @@ impl App {
         self.configs.import = None;
         self.configs.export = None;
         if self.configs.in_window {
-            self.configs.question = None;
             self.configs.name_box = None;
             self.configs.confirm = None;
             self.configs.in_window = false;

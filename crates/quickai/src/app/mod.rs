@@ -259,6 +259,9 @@ pub struct App {
     view: MainView,
     /// Custom was chosen among the presets: the fields are shown whatever the context size is.
     change_custom: bool,
+    /// How the person chose the model to run (Light, Balanced, Long, or numbers of their own), kept for the next model
+    /// and the next start (`app.run_choice`); none until they chose, or the numbers said it.
+    run_choice: Option<run_settings::Preset>,
     /// A run went wrong since the log was last looked at: its tab has a red dot.
     log_unread: bool,
     /// The MCP servers being asked why they gave no tools: what the log says, when each has answered.
@@ -353,6 +356,8 @@ impl App {
         app.config_dirs = config_dirs;
         // the first start with configurations keeps what the person had set as their Default
         app.adopt_working_state();
+        // how the model runs, as the person chose it last (a first start's 4K, which nobody chose, is Balanced)
+        app.take_up_run_choice();
         app.watch_the_window(cc.egui_ctx.clone());
         app.start_reports();
         app
@@ -510,6 +515,7 @@ impl App {
             dock_open: false,
             view: MainView::Model,
             change_custom: false,
+            run_choice: None,
             log_unread: false,
             mcp_checks: Vec::new(),
             seen_state: None,
@@ -587,6 +593,14 @@ impl App {
         if self.selected_model_info().is_none() {
             return;
         }
+        // the person's choice of how it runs is kept: the new model runs the same way, with its own numbers
+        let kept = self.context_now();
+        self.apply_model_defaults_only();
+        self.reapply_run_choice(kept);
+    }
+
+    /// The defaults the engine's document gives the selected model, and nothing else.
+    fn apply_model_defaults_only(&mut self) {
         if let Ok(edits) = form::recompute(
             &self.registry,
             &self.form_selection(),
@@ -759,6 +773,7 @@ impl App {
             (true, Tab::Main) => "log",
             (true, Tab::Live) => "live",
         });
+        settings.set_run_choice(self.run_choice.map(run_settings::Preset::key));
         settings.set_sidebar_hidden(!self.sidebar_open);
         settings.set_panel_hidden(!self.panel_open);
         settings.enable_traffic_proxy = self.enable_traffic_proxy;

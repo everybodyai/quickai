@@ -50,6 +50,10 @@ pub const TAB_KEY: &str = "app.tab";
 pub const SIDEBAR_HIDDEN_KEY: &str = "app.sidebar_hidden";
 pub const PANEL_HIDDEN_KEY: &str = "app.panel_hidden";
 
+/// How the person chose the model to run (`light`, `balanced`, `long` or `custom`): kept as the choice, so that another
+/// model is run the same way with its own numbers; absent, nothing was chosen yet.
+pub const RUN_CHOICE_KEY: &str = "app.run_choice";
+
 /// Where the person's MCP servers are kept: llama.cpp's field (its chat page is given them), read and written by the
 /// window whatever the engine, since QuickAI's own chat uses them with every engine (C204).
 pub const MCP_SERVERS_KEY: &str = "llamacpp.mcp_servers";
@@ -457,6 +461,17 @@ impl Settings {
             PANEL_HIDDEN_KEY,
             hidden.then_some(serde_json::Value::Bool(true)),
         );
+    }
+
+    /// How the person chose the model to run, if they chose (`RUN_CHOICE_KEY`).
+    pub fn run_choice(&self) -> Option<String> {
+        self.app_value(RUN_CHOICE_KEY)
+            .and_then(|v| v.as_str().map(str::to_string))
+    }
+
+    /// Records it; none takes the key away.
+    pub fn set_run_choice(&mut self, choice: Option<&str>) {
+        self.set_app_value(RUN_CHOICE_KEY, choice.map(serde_json::Value::from));
     }
 
     /// Whether a model has answered in the chat once: the last step of Getting started is done.

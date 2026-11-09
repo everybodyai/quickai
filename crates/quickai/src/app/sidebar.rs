@@ -1,8 +1,8 @@
 //! The sidebar of UI v3 (C203, the user's A6 with the QuickAI menu of S2, `the mockups`): at its head the
-//! QuickAI menu (Settings, Configurations, the theme, Help, Report a problem, About and Quit: what the menu bar had) and
-//! the button that puts the sidebar away, then where the models run and the engine that runs them, in one box, a box
-//! that narrows the list, and the models, with + for what the Models menu had; Recommended and MCP servers are at its
-//! foot. The menu bar and the status bar are gone.
+//! QuickAI menu (Settings, Configurations and Quit) and the button that puts the sidebar away, then where the models run
+//! and the engine that runs them, in one box, a box that narrows the list, and the models, with + for what the Models
+//! menu had. At its foot (C206, `the mockups`) Recommended and MCP servers, and under them Help (its
+//! menu: Help, the tour, the keys, Report a problem), About and the theme. The menu bar and the status bar are gone.
 
 use eframe::egui;
 
@@ -41,6 +41,8 @@ impl App {
                 );
                 ui.add_space(7.0);
                 self.show_nav_rows(ui);
+                ui.add_space(2.0);
+                self.show_help_row(ui);
             });
         let there = self.setup_in_use().is_some();
         let alone = self.runs_alone();
@@ -93,7 +95,6 @@ impl App {
             self.sidebar_open = false;
         }
         mark_spot(ui, Spot::Settings, rect);
-        mark_spot(ui, Spot::Help, rect);
         let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
         if ui.is_rect_visible(rect) {
             if open || response.hovered() {
@@ -130,16 +131,14 @@ impl App {
                 p.muted,
             );
         }
-        let response = response.on_hover_text(
-            "Settings (Ctrl+,), configurations, the theme, Help (F1), Report a problem, About QuickAI and Quit.",
-        );
+        let response = response.on_hover_text("Settings (Ctrl+,), configurations, and Quit.");
         let mut asked: Option<AppMenu> = None;
         egui::Popup::menu(&response)
             .align(egui::RectAlign::BOTTOM_START)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-            .width(260.0)
+            .width(240.0)
             .show(|ui| {
-                ui.set_width(260.0);
+                ui.set_width(240.0);
                 asked = self.app_menu(ui);
                 if asked.is_some() {
                     ui.close();
@@ -151,19 +150,13 @@ impl App {
                 self.open_configurations();
                 self.raise_configurations = true;
             }
-            Some(AppMenu::Help) => self.open_help(),
-            Some(AppMenu::Report) => self.open_report_problem(),
-            Some(AppMenu::About) => {
-                // open already, somewhere behind the main window: it comes to the front
-                self.raise_about = self.show_about;
-                self.show_about = true;
-            }
             Some(AppMenu::Quit) => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close),
             None => {}
         }
     }
 
-    /// The items of the QuickAI menu; the theme is changed in it at once, and the menu stays open for it.
+    /// The items of the QuickAI menu: Settings, Configurations and Quit (the theme, Help, Report a problem and About are
+    /// at the foot of the sidebar, C206).
     fn app_menu(&mut self, ui: &mut egui::Ui) -> Option<AppMenu> {
         let mut asked = None;
         if icons::menu_item_keyed(ui, Some(Icon::Gear), "Settings…", "Ctrl+,").clicked() {
@@ -172,50 +165,117 @@ impl App {
         if icons::menu_item_keyed(ui, Some(Icon::Sliders), "Configurations…", "").clicked() {
             asked = Some(AppMenu::Configurations);
         }
-        // the theme, as two choices side by side: a click changes it, and the menu stays
-        ui.horizontal(|ui| {
-            ui.set_min_height(30.0);
-            let p = theme::palette();
-            ui.add_space(8.0);
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-            icons::paint(
-                ui.painter(),
-                rect,
-                if self.dark_mode {
-                    Icon::Moon
-                } else {
-                    Icon::Sun
-                },
-                p.body,
-            );
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new("Theme").color(p.body));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.add_space(4.0);
-                let dark = self.dark_mode;
-                if segment(ui, "Dark", dark).clicked() && !dark {
-                    self.set_dark_mode(ui.ctx(), true);
-                }
-                if segment(ui, "Light", !dark).clicked() && dark {
-                    self.set_dark_mode(ui.ctx(), false);
-                }
-            });
-        });
-        ui.separator();
-        if icons::menu_item_keyed(ui, Some(Icon::Help), "Help…", "F1").clicked() {
-            asked = Some(AppMenu::Help);
-        }
-        if icons::menu_item_keyed(ui, Some(Icon::Warn), "Report a problem…", "").clicked() {
-            asked = Some(AppMenu::Report);
-        }
-        if icons::menu_item_keyed(ui, None, "About QuickAI", "").clicked() {
-            asked = Some(AppMenu::About);
-        }
         ui.separator();
         if icons::menu_item_keyed(ui, Some(Icon::Close), "Quit", "").clicked() {
             asked = Some(AppMenu::Quit);
         }
         asked
+    }
+
+    /// The last row of the sidebar (C206): **Help** with its word at the left, a menu that opens upwards (Help, the tour,
+    /// the keys, Report a problem), and at the right About QuickAI and the theme, as pictures.
+    fn show_help_row(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette();
+        let mut asked: Option<HelpMenu> = None;
+        let mut about = false;
+        let mut theme_flip = false;
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            // Help: its picture and its word, lit while its menu is open or the pointer is on it
+            let font = egui::TextStyle::Body.resolve(ui.style());
+            let word = ui
+                .painter()
+                .layout_no_wrap("Help".to_string(), font, p.body);
+            let (rect, help) = ui.allocate_exact_size(
+                egui::vec2(36.0 + word.size().x + 12.0, 30.0),
+                egui::Sense::click(),
+            );
+            mark_spot(ui, Spot::Help, rect);
+            let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&help));
+            if ui.is_rect_visible(rect) {
+                if open {
+                    ui.painter().rect_filled(rect, 8.0, p.selected);
+                } else if help.hovered() {
+                    ui.painter()
+                        .rect_filled(rect, 8.0, p.selected.gamma_multiply(0.55));
+                }
+                icons::paint(
+                    ui.painter(),
+                    egui::Rect::from_center_size(
+                        egui::pos2(rect.left() + 18.0, rect.center().y),
+                        egui::vec2(15.0, 15.0),
+                    ),
+                    Icon::Help,
+                    p.muted,
+                );
+                ui.painter().galley(
+                    egui::pos2(rect.left() + 36.0, rect.center().y - word.size().y / 2.0),
+                    word,
+                    p.body,
+                );
+            }
+            let help = help.on_hover_text("Help (F1), the tour, the keys, and Report a problem.");
+            egui::Popup::menu(&help)
+                .align(egui::RectAlign::TOP_START)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+                .width(230.0)
+                .show(|ui| {
+                    ui.set_width(230.0);
+                    if icons::menu_item_keyed(ui, Some(Icon::Help), "Help", "F1").clicked() {
+                        asked = Some(HelpMenu::Help);
+                    }
+                    if icons::menu_item_keyed(ui, Some(Icon::Route), "Take the tour", "").clicked()
+                    {
+                        asked = Some(HelpMenu::Tour);
+                    }
+                    if icons::menu_item_keyed(ui, Some(Icon::Keyboard), "Keyboard shortcuts", "")
+                        .clicked()
+                    {
+                        asked = Some(HelpMenu::Keys);
+                    }
+                    ui.separator();
+                    if icons::menu_item_keyed(ui, Some(Icon::Warn), "Report a problem…", "")
+                        .clicked()
+                    {
+                        asked = Some(HelpMenu::Report);
+                    }
+                });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let dark = self.dark_mode;
+                theme_flip = icons::icon_button(
+                    ui,
+                    if dark { Icon::Moon } else { Icon::Sun },
+                    egui::vec2(30.0, 30.0),
+                    true,
+                    false,
+                )
+                .on_hover_text(if dark {
+                    "Switch to the light theme"
+                } else {
+                    "Switch to the dark theme"
+                })
+                .clicked();
+                about = icons::icon_button(ui, Icon::Info, egui::vec2(30.0, 30.0), true, false)
+                    .on_hover_text("About QuickAI: its version, its site and its license.")
+                    .clicked();
+            });
+        });
+        if theme_flip {
+            let dark = !self.dark_mode;
+            self.set_dark_mode(ui.ctx(), dark);
+        }
+        if about {
+            // open already, somewhere behind the main window: it comes to the front
+            self.raise_about = self.show_about;
+            self.show_about = true;
+        }
+        match asked {
+            Some(HelpMenu::Help) => self.open_help(),
+            Some(HelpMenu::Tour) => self.start_tour(ui.ctx()),
+            Some(HelpMenu::Keys) => self.open_help_at(super::help::HelpPage::Shortcuts),
+            Some(HelpMenu::Report) => self.open_report_problem(),
+            None => {}
+        }
     }
 
     /// Where the models run and the engine that runs them, in one box: the computer (with whether it answers) and its
@@ -590,10 +650,16 @@ impl App {
 enum AppMenu {
     Settings,
     Configurations,
-    Help,
-    Report,
-    About,
     Quit,
+}
+
+/// What the menu of Help at the foot of the sidebar was asked to do.
+#[derive(Clone, Copy)]
+enum HelpMenu {
+    Help,
+    Tour,
+    Keys,
+    Report,
 }
 
 /// What the + of the list was asked to do.
@@ -685,32 +751,6 @@ fn nav_row(
                 p.faint,
             );
         }
-    }
-    response
-}
-
-/// One choice of a pair side by side (the theme's Light and Dark): lit when it is the one chosen.
-fn segment(ui: &mut egui::Ui, label: &str, on: bool) -> egui::Response {
-    let p = theme::palette();
-    let font = egui::TextStyle::Small.resolve(ui.style());
-    let galley = ui.painter().layout_no_wrap(label.to_string(), font, p.text);
-    let size = egui::vec2(galley.size().x + 18.0, 24.0);
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    if ui.is_rect_visible(rect) {
-        if on {
-            ui.painter().rect_filled(rect, 6.0, p.raised);
-        } else if response.hovered() {
-            ui.painter().rect_filled(rect, 6.0, p.selected);
-        }
-        let color = if on { p.text } else { p.muted };
-        ui.painter().galley(
-            egui::pos2(
-                rect.center().x - galley.size().x / 2.0,
-                rect.center().y - galley.size().y / 2.0,
-            ),
-            galley,
-            color,
-        );
     }
     response
 }

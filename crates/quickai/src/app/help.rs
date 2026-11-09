@@ -1,4 +1,4 @@
-//! Help (C191): a window of its own, which **Help…** in the QuickAI menu at the top left of the sidebar and F1 open.
+//! Help (C191): a window of its own, which **Help** at the foot of the sidebar (C206) and F1 open.
 //! Its pages are in a sidebar under a search box and Getting started; each is a title, a line on what it is for, a
 //! line on what is so now, a picture of the part of QuickAI it is about with numbered marks on it, and its steps under
 //! the picture with the same numbers. A step that names a button can **Show me** it: the button is ringed in the main
@@ -446,10 +446,13 @@ const PAGES: &[Page] = &[
         steps: &[
             step("The panel at the right of the page says how the model runs. The {panel} of the bar shows or hides it.")
                 .at(Spot::Change),
-            step("Choose how it runs: **Balanced**, **Long chats**, **Light**, or **Custom** for numbers of your own."),
             step(
-                "Once something is changed, **Save as…** keeps it under a name. The list over it (**Default** at \
-                 first) switches between the ones you kept.",
+                "Choose how much of the chat it remembers: **Light**, **Balanced** or **Long**. **Set the numbers \
+                 yourself…** is for numbers of your own. QuickAI keeps your choice for the next model and the next start.",
+            ),
+            step(
+                "**Configuration** at the top of the panel keeps how it runs under a name: **Save as a new \
+                 configuration…**. Choose one from the same list to use it again.",
             ),
             step("**Configurations…** in the **QuickAI** menu has them all: use, rename or delete one, or save it as a file to share.")
                 .does(Deed::Configurations),
@@ -629,7 +632,7 @@ const TOUR: &[(Spot, &str, &str)] = &[
     (
         Spot::Change,
         "How it runs",
-        "The panel at the right: faster, longer chats or less memory. Keep what you choose as a configuration.",
+        "The panel at the right: Light, Balanced or Long, how much of the chat it remembers. Keep it as a configuration.",
     ),
     (
         Spot::ChatBox,
@@ -644,7 +647,7 @@ const TOUR: &[(Spot, &str, &str)] = &[
     (
         Spot::Help,
         "Help",
-        "In the QuickAI menu, with Settings: everything is explained, with pictures. F1 opens it too.",
+        "At the foot of the sidebar, beside About and the theme: everything is explained, with pictures. F1 opens it too.",
     ),
 ];
 
@@ -739,6 +742,12 @@ impl App {
     pub(super) fn open_help(&mut self) {
         self.help.raise = self.help.open;
         self.help.open = true;
+    }
+
+    /// Opens Help on `page` (Keyboard shortcuts, from the menu of Help at the foot of the sidebar).
+    pub(super) fn open_help_at(&mut self, page: HelpPage) {
+        self.help_go(page);
+        self.open_help();
     }
 
     fn help_go(&mut self, page: HelpPage) {
@@ -1373,7 +1382,7 @@ impl App {
         }
     }
 
-    fn start_tour(&mut self, ctx: &egui::Context) {
+    pub(super) fn start_tour(&mut self, ctx: &egui::Context) {
         // most of what it is about is in the sidebar
         self.sidebar_open = true;
         self.help.tour = Some(0);

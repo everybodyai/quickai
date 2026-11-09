@@ -20,7 +20,6 @@ use quickai_core::profile::state::{capture, changes, Captured, Change, ModelFact
 use quickai_core::profile::Configuration;
 use quickai_core::value::Value;
 
-use super::configurations_window::Confirm;
 use super::App;
 use crate::configurations::{
     self, busy_ports, choose, entries, first_run_values, installed_builds, inventory,
@@ -28,27 +27,6 @@ use crate::configurations::{
     Host, Installed, Now, StoreError, Unusable, DEFAULT_ID,
 };
 use crate::launch;
-
-/// What the dropdown is made of: its width when there is room, and the least it is made when there is not.
-const COMBO_WIDTH: f32 = 240.0;
-const COMBO_LEAST: f32 = 110.0;
-
-/// Whether the section has its label, and how wide its dropdown is, in the room its row has. `label` is
-/// the width of the label with the space after it, `extras` the width of what a change adds to the row
-/// (the badge and the buttons, with the spaces between them). The room for the extras is kept whether
-/// there is a change or not, so that the dropdown is where it was and as wide as it was when one is made;
-/// with less room than the label, the least dropdown and the extras need, the label goes first, and then
-/// the dropdown gives up its width.
-pub(super) fn section_shape(room: f32, label: f32, extras: f32) -> (bool, f32) {
-    let spare = room - label - extras;
-    if spare >= COMBO_WIDTH {
-        (true, COMBO_WIDTH)
-    } else if spare >= COMBO_LEAST {
-        (true, spare)
-    } else {
-        (false, (room - extras).clamp(COMBO_LEAST, COMBO_WIDTH))
-    }
-}
 
 /// The mark in front of *Modified*, in the badge that says a configuration has changes that are not saved.
 /// It is a character the window's fonts have (the filled circle, U+25CF, is not one of them: it is drawn
@@ -68,8 +46,6 @@ pub(super) struct Configs {
     /// What a first run holds for the settings that have always been in the file (the default of a
     /// configuration): worked out once.
     pub first_run: BTreeMap<String, Value>,
-    /// A choice that waits for the answer to *Save, Don't save or Cancel*.
-    pub question: Option<String>,
     /// The box that asks for a name, when one is asked for.
     pub name_box: Option<NameBox>,
     /// What went wrong the last time, in a sentence, until the next thing the person does.
@@ -99,7 +75,6 @@ impl Configs {
         Configs {
             active: DEFAULT_ID.to_string(),
             first_run: BTreeMap::new(),
-            question: None,
             name_box: None,
             error: None,
             installed: std::cell::RefCell::new(None),
@@ -419,15 +394,13 @@ impl App {
             self.configs.error = Some(self.engine_locked_sentence());
             return;
         }
-        // the one in use, picked again, changes nothing: going back to what it says is Revert's, which asks first
-        // (picked again with changes, it threw them away without a word)
+        // the one in use, picked again, changes nothing: going back to what it says is Revert's, in the window of the
+        // configurations, which asks first
         if id == self.configs.active {
             return;
         }
-        if self.configuration_modified() {
-            self.configs.question = Some(id.to_string());
-            return;
-        }
+        // nothing asks about what the window holds (2026-11-09: the window keeps how it ran last, and a configuration is
+        // a setup to use, not a document with changes to save): choosing one uses it
         self.choose_configuration(id);
     }
 
@@ -493,6 +466,11 @@ impl App {
         );
         self.configs.active = id.to_string();
         self.load_engine_state();
+        // how it runs is what the configuration says: the preset its numbers are, or numbers of its own
+        self.change_custom = false;
+        let now = self.current_preset();
+        self.run_choice = Some(now);
+        self.change_custom = now == super::run_settings::Preset::Custom;
         if self.show_configurations {
             self.refresh_configurations();
         }
@@ -655,80 +633,93 @@ impl App {
 
     // ---- drawing ----------------------------------------------------------------------------------------
 
-    /// The section of the configuration, under the title row of the Main page: the label, the dropdown with
-    /// the name of the one in use and, while what the window holds is no longer what was saved, a badge
-    /// that says so with *Save*, *Save as...* and *Revert* after it, in a frame of another colour. The
-    /// room for the badge and the buttons is kept all the time, so that nothing moves when a change is
-    /// made (a field of the page under it may be the one the person is typing in).
+    /// The configuration in one line at the head of the panel (A2 of `the mockups`, the user's pick of
+    /// 2026-11-09): its name in a box that opens the list. Choosing one uses it; under the list are *Save to* the one in
+    /// use (when the window holds something else), *Save as a new configuration…* and *Manage configurations…*. Nothing
+    /// says *Modified*: the window keeps how it ran last.
     pub(super) fn show_configuration_section(&mut self, ui: &mut egui::Ui) {
-        let modified = self.configuration_modified();
-        let color = modified_color(ui.visuals().dark_mode);
-        // the box is there with a change or not, so that nothing moves when one is made (A73); a change makes it amber
-        let mut frame = egui::Frame::group(ui.style());
-        if modified {
-            frame = frame
-                .stroke(egui::Stroke::new(1.0, color))
-                .fill(color.gamma_multiply(0.1));
+        let p = super::theme::palette();
+        let all = self.configuration_entries();
+        let active = self.configs.active.clone();
+        let locked = self.engine_locked();
+        let name = all
+            .iter()
+            .find(|e| e.id == active)
+            .map_or_else(|| "Default".to_string(), |e| e.name.clone());
+        let width = ui.available_width();
+        let sense = if locked {
+            egui::Sense::hover()
+        } else {
+            egui::Sense::click()
+        };
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 34.0), sense);
+        let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
+        if ui.is_rect_visible(rect) {
+            let fill = if !locked && (open || response.hovered()) {
+                p.raised
+            } else {
+                p.card
+            };
+            ui.painter().rect(
+                rect,
+                8.0,
+                fill,
+                egui::Stroke::new(1.0, if open { p.accent_text } else { p.line }),
+                egui::StrokeKind::Inside,
+            );
+            let small = egui::TextStyle::Small.resolve(ui.style());
+            let label = ui
+                .painter()
+                .layout_no_wrap("Configuration".to_string(), small, p.muted);
+            let at = egui::pos2(rect.left() + 11.0, rect.center().y - label.size().y / 2.0);
+            let left = at.x + label.size().x + 8.0;
+            ui.painter().galley(at, label, p.muted);
+            let room = (rect.right() - 30.0 - left).max(10.0);
+            let ink = if locked { p.faint } else { p.text };
+            let title = egui::WidgetText::from(egui::RichText::new(&name).color(ink)).into_galley(
+                ui,
+                Some(egui::TextWrapMode::Truncate),
+                room,
+                egui::TextStyle::Body,
+            );
+            ui.painter().galley(
+                egui::pos2(left, rect.center().y - title.size().y / 2.0),
+                title,
+                ink,
+            );
+            super::icons::paint(
+                ui.painter(),
+                egui::Rect::from_center_size(
+                    egui::pos2(rect.right() - 16.0, rect.center().y),
+                    egui::vec2(12.0, 12.0),
+                ),
+                super::icons::Icon::Chevron,
+                if locked { p.faint } else { p.muted },
+            );
         }
-        frame.show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            self.show_section_row(ui, modified, color);
-            if let Some(why) = &self.configs.error {
-                ui.label(
-                    egui::RichText::new(why)
-                        .small()
-                        .color(super::theme::palette().bad),
-                );
-            }
-        });
-    }
-
-    /// The row of the section: what it chooses and what it is told to do is done after it is drawn.
-    fn show_section_row(&mut self, ui: &mut egui::Ui, modified: bool, color: egui::Color32) {
-        let (label_width, extras, badge) = row_widths(ui);
-        // in a room too narrow for the least dropdown and all that a change adds (Change at the narrowest window), the
-        // buttons of a change go to a row of their own under it, rather than out of the section
-        let two_rows = ui.available_width() < COMBO_LEAST + extras;
+        let response = if locked {
+            response.on_hover_text(self.engine_locked_sentence())
+        } else {
+            response.on_hover_text(format!(
+                "\"{name}\": the configuration last used, with the engine, the model and the settings to run. Choose \
+                 another to use it, or save how it runs now under a name."
+            ))
+        };
         let mut chosen: Option<String> = None;
         let mut command: Option<Command> = None;
-        let name = self.active_entry().map_or_else(String::new, |e| e.name);
-        ui.horizontal(|ui| {
-            let kept = if two_rows { badge } else { extras };
-            let (with_label, width) = section_shape(ui.available_width(), label_width, kept);
-            if with_label {
-                ui.label("Configuration:").on_hover_text(
-                    "The configuration in use: the engine, the model and the settings to run. \
-                     Choose another, save what you have set under a name, or manage them.",
-                );
-            }
-            self.show_configuration_combo(ui, width, modified, &mut chosen, &mut command);
-            if modified {
-                ui.label(egui::RichText::new(badge_text()).color(color).strong())
-                    .on_hover_ui(|ui| self.show_changes(ui, &name));
-                if !two_rows {
-                    self.show_change_buttons(ui, &mut command);
-                }
-            }
-        });
-        if two_rows {
-            // the row of the buttons of a change is there with a change or not (laid out, and drawn only with one), so that
-            // nothing under the section moves when one is made (A73): the panel at the right always has two rows (C203)
-            let row = if modified {
-                egui::UiBuilder::new()
-            } else {
-                egui::UiBuilder::new().invisible()
-            };
-            ui.scope_builder(row, |ui| {
-                ui.horizontal(|ui| {
-                    let mut asked = None;
-                    self.show_change_buttons(ui, &mut asked);
-                    if modified {
-                        command = command.or(asked);
-                    }
-                })
-            });
+        if !locked {
+            egui::Popup::menu(&response)
+                .align(egui::RectAlign::BOTTOM_START)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+                .width(width.max(260.0))
+                .show(|ui| {
+                    ui.set_min_width(width.max(260.0));
+                    self.configuration_menu(ui, &all, &active, &name, &mut chosen, &mut command);
+                });
         }
-
+        if let Some(why) = &self.configs.error {
+            ui.label(egui::RichText::new(why).small().color(p.bad));
+        }
         if chosen.is_some() || command.is_some() {
             self.configs.in_window = false;
         }
@@ -744,184 +735,96 @@ impl App {
                 self.ask_for_a_name(NameFor::SaveAs, &suggestion);
             }
             Some(Command::Manage) => self.open_configurations(),
-            Some(Command::Revert) => {
-                self.configs.error = None;
-                self.configs.confirm = Some(Confirm::Revert(self.configs.active.clone()));
-            }
             None => {}
         }
     }
 
-    /// The dropdown: the name of the configuration in use, and below it the configurations to choose from
-    /// and the commands.
-    fn show_configuration_combo(
-        &mut self,
+    /// The list of the configuration line: each configuration (the one in use marked; one for an engine this version has
+    /// not cannot be chosen, and says why), then what can be done.
+    fn configuration_menu(
+        &self,
         ui: &mut egui::Ui,
-        width: f32,
-        modified: bool,
+        all: &[Entry],
+        active: &str,
+        name: &str,
         chosen: &mut Option<String>,
         command: &mut Option<Command>,
     ) {
-        let all = self.configuration_entries();
-        let active = self.configs.active.clone();
-        let locked = self.engine_locked();
-        let name = all
-            .iter()
-            .find(|e| e.id == active)
-            .map_or("Default", |e| e.name.as_str());
         let engine_names: BTreeMap<String, String> = self
             .registry
             .engines()
             .map(|e| (e.id.clone(), e.doc.engine.name.clone()))
             .collect();
-
-        // The dropdown is as wide as the room the section kept for it and no wider: a name that is longer is
-        // cut (its end replaced by an ellipsis) and not let to push the badge and the buttons out of the row.
-        let combo = ui.allocate_ui_with_layout(
-            egui::vec2(width, ui.spacing().interact_size.y),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                ui.add_enabled_ui(!locked, |ui| {
-                    egui::ComboBox::from_id_salt("configuration_combo")
-                        .selected_text(name)
-                        .width(width)
-                        .truncate()
-                        .show_ui(ui, |ui| {
-                            ui.set_min_width(330.0);
-                            egui::ScrollArea::vertical()
-                                .id_salt("configuration_dropdown_scroll")
-                                .max_height(260.0)
-                                .auto_shrink([true, true])
-                                .show(ui, |ui| {
-                                    for entry in &all {
-                                        // one for an engine this version has not cannot be chosen, and says why
-                                        let stopped = quickai_core::profile::family(
-                                            self.registry.engine_map(),
-                                            &entry.configuration.engine,
-                                        )
-                                        .is_empty();
-                                        ui.horizontal(|ui| {
-                                            let text = marked(
-                                                ui,
-                                                &entry.name,
-                                                entry.id == active && modified,
-                                            );
-                                            let row = if stopped {
-                                                let reason =
-                                                    quickai_core::profile::notes::Note::new(
-                                                        "unknown_engine",
-                                                        &[(
-                                                            "engine",
-                                                            entry.configuration.engine.clone(),
-                                                        )],
-                                                    )
-                                                    .text(self.registry.vocabulary());
-                                                ui.add_enabled(
-                                                    false,
-                                                    egui::Button::selectable(false, text),
-                                                )
-                                                .on_disabled_hover_text(reason)
-                                            } else {
-                                                ui.selectable_label(entry.id == active, text)
-                                            };
-                                            if row.clicked() {
-                                                *chosen = Some(entry.id.clone());
-                                            }
-                                            ui.with_layout(
-                                                egui::Layout::right_to_left(egui::Align::Center),
-                                                |ui| {
-                                                    ui.label(
-                                                        egui::RichText::new(entry.origin.label())
-                                                            .small()
-                                                            .weak(),
-                                                    );
-                                                    ui.label(
-                                                        egui::RichText::new(
-                                                            engine_names
-                                                                .get(&entry.configuration.engine)
-                                                                .cloned()
-                                                                .unwrap_or_else(|| {
-                                                                    entry
-                                                                        .configuration
-                                                                        .engine
-                                                                        .clone()
-                                                                }),
-                                                        )
-                                                        .small()
-                                                        .weak(),
-                                                    );
-                                                },
-                                            );
-                                        });
-                                    }
-                                });
-                            ui.separator();
-                            if ui
-                                .add_enabled(modified, egui::Button::new("Save"))
-                                .on_hover_text("Save what you have set over this configuration.")
-                                .clicked()
-                            {
-                                *command = Some(Command::Save);
-                            }
-                            if ui
-                                .button("Save as...")
-                                .on_hover_text(
-                                    "Save what you have set as a new configuration, under a name.",
+        egui::ScrollArea::vertical()
+            .id_salt("configuration_dropdown_scroll")
+            .max_height(260.0)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                for entry in all {
+                    let stopped = quickai_core::profile::family(
+                        self.registry.engine_map(),
+                        &entry.configuration.engine,
+                    )
+                    .is_empty();
+                    ui.horizontal(|ui| {
+                        let text: egui::WidgetText = entry.name.as_str().into();
+                        let row = if stopped {
+                            let reason = quickai_core::profile::notes::Note::new(
+                                "unknown_engine",
+                                &[("engine", entry.configuration.engine.clone())],
+                            )
+                            .text(self.registry.vocabulary());
+                            ui.add_enabled(false, egui::Button::selectable(false, text))
+                                .on_disabled_hover_text(reason)
+                        } else {
+                            ui.selectable_label(entry.id == active, text)
+                        };
+                        if row.clicked() {
+                            *chosen = Some(entry.id.clone());
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(egui::RichText::new(entry.origin.label()).small().weak());
+                            ui.label(
+                                egui::RichText::new(
+                                    engine_names
+                                        .get(&entry.configuration.engine)
+                                        .cloned()
+                                        .unwrap_or_else(|| entry.configuration.engine.clone()),
                                 )
-                                .clicked()
-                            {
-                                *command = Some(Command::SaveAs);
-                            }
-                            if ui.button("Manage configurations...").clicked() {
-                                *command = Some(Command::Manage);
-                            }
-                        })
-                })
-            },
-        );
-        let shown = combo.inner;
-        let name = name.to_string();
-        if locked {
-            shown.response.on_hover_text(self.engine_locked_sentence());
-        } else if modified {
-            shown
-                .inner
-                .response
-                .on_hover_ui(|ui| self.show_changes(ui, &name));
+                                .small()
+                                .weak(),
+                            );
+                        });
+                    });
+                }
+            });
+        ui.separator();
+        // saving over the one in use is offered when the window holds something it does not say
+        let differs = self.configuration_modified();
+        let save = ui
+            .add_enabled(differs, egui::Button::new(format!("Save to \"{name}\"")))
+            .on_disabled_hover_text(format!("\"{name}\" says how it runs now already."));
+        let save = if differs {
+            save.on_hover_ui(|ui| self.show_changes(ui, name))
         } else {
-            shown.inner.response.on_hover_text(format!(
-                "\"{name}\": the configuration in use, with the engine, the model and the settings to run. \
-                 Choose another, save what you have set under a name, or manage them."
-            ));
-        }
-    }
-
-    /// The three things to do about a change, after the badge that says *Modified* (what changed is on its hover).
-    fn show_change_buttons(&mut self, ui: &mut egui::Ui, command: &mut Option<Command>) {
-        if ui
-            .button("Save")
-            .on_hover_text("Save what you have set over this configuration.")
-            .clicked()
-        {
+            save
+        };
+        if save.clicked() {
             *command = Some(Command::Save);
         }
         if ui
-            .button("Save as...")
-            .on_hover_text("Save what you have set as a new configuration, under a name.")
+            .button("Save as a new configuration…")
+            .on_hover_text("Keep how it runs now under a name, to use again or to share.")
             .clicked()
         {
             *command = Some(Command::SaveAs);
         }
-        let locked = self.engine_locked();
         if ui
-            .add_enabled(!locked, egui::Button::new("Revert"))
-            .on_hover_text(
-                "Go back to what was saved: the engine, the model and the settings go back to it.",
-            )
-            .on_disabled_hover_text(self.engine_locked_sentence())
+            .button("Manage configurations…")
+            .on_hover_text("Use, rename, delete, import or export them.")
             .clicked()
         {
-            *command = Some(Command::Revert);
+            *command = Some(Command::Manage);
         }
     }
 
@@ -956,85 +859,8 @@ impl App {
         if self.configs.in_window != in_window {
             return;
         }
-        self.show_unsaved_question(ctx);
         self.show_name_box(ctx);
         self.show_configuration_confirm(ctx);
-    }
-
-    /// *Save, Don't save, Cancel*: asked when a choice would replace changes that were not saved.
-    fn show_unsaved_question(&mut self, ctx: &egui::Context) {
-        let Some(target) = self.configs.question.clone() else {
-            return;
-        };
-        let current = self
-            .active_entry()
-            .map_or_else(|| "This configuration".to_string(), |e| e.name);
-        let wanted = self
-            .configuration_entries()
-            .into_iter()
-            .find(|e| e.id == target)
-            .map_or(target.clone(), |e| e.name);
-        let list: Vec<String> = self
-            .changes_since_saved()
-            .iter()
-            .take(6)
-            .map(Change::describe)
-            .collect();
-        let (mut save_it, mut dont, mut cancel) = (false, false, false);
-        let modal =
-            egui::Modal::new(egui::Id::new("unsaved_configuration_modal")).show(ctx, |ui| {
-                ui.set_width(modal_width(ctx, 340.0));
-                ui.label(
-                    egui::RichText::new(format!("\"{current}\" has changes that are not saved"))
-                        .strong(),
-                );
-                ui.add_space(6.0);
-                if !list.is_empty() {
-                    ui.label(egui::RichText::new(list.join("\n")).small());
-                    ui.add_space(6.0);
-                }
-                ui.label(format!("Choosing \"{wanted}\" replaces them."));
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        cancel = true;
-                    }
-                    if ui.button("Don't save").clicked() {
-                        dont = true;
-                    }
-                    if ui.button("Save").clicked() {
-                        save_it = true;
-                    }
-                });
-            });
-        if modal.should_close() {
-            cancel = true;
-        }
-        if save_it {
-            self.answer_unsaved(Answer::Save);
-        } else if dont {
-            self.answer_unsaved(Answer::DontSave);
-        } else if cancel {
-            self.answer_unsaved(Answer::Cancel);
-        }
-    }
-
-    /// The answer to *Save, Don't save, Cancel*: Save keeps what was set over the configuration in use
-    /// and then chooses the one that was asked for, Don't save chooses it at once, Cancel leaves
-    /// everything as it was.
-    pub(super) fn answer_unsaved(&mut self, answer: Answer) {
-        let Some(target) = self.configs.question.take() else {
-            return;
-        };
-        match answer {
-            Answer::Cancel => {}
-            Answer::DontSave => self.choose_configuration(&target),
-            Answer::Save => {
-                if self.save_active().is_ok() {
-                    self.choose_configuration(&target);
-                }
-            }
-        }
     }
 
     /// The box that asks for a name: for Save as, Duplicate and Rename.
@@ -1109,78 +935,15 @@ fn change_lines(all: &[Change]) -> Vec<String> {
     lines
 }
 
-/// The words of the badge that says a configuration has changes that are not saved.
-fn badge_text() -> String {
-    format!("{UNSAVED_MARK} Modified")
-}
-
-/// A name, and after it, when the configuration is modified, the word that says so in the colour of the
-/// badge (a row of the dropdown: the badge itself is next to the closed dropdown).
-fn marked(ui: &egui::Ui, name: &str, modified: bool) -> egui::WidgetText {
-    if !modified {
-        return name.into();
-    }
-    let font_id = egui::TextStyle::Body.resolve(ui.style());
-    let mut job = egui::text::LayoutJob::default();
-    job.append(
-        name,
-        0.0,
-        egui::TextFormat {
-            font_id: font_id.clone(),
-            color: egui::Color32::PLACEHOLDER,
-            ..Default::default()
-        },
-    );
-    job.append(
-        " (modified)",
-        0.0,
-        egui::TextFormat {
-            font_id,
-            color: modified_color(ui.visuals().dark_mode),
-            ..Default::default()
-        },
-    );
-    job.into()
-}
-
-/// The width of the label of the section with the space after it, of what a change adds to the row (the
-/// badge and the three buttons, with the spaces before and between them), and of the badge alone with the space
-/// before it: measured, so that the room that is kept for them is the room they take.
-fn row_widths(ui: &egui::Ui) -> (f32, f32, f32) {
-    let space = ui.spacing().item_spacing.x;
-    let padding = 2.0 * ui.spacing().button_padding.x;
-    let width = |text: String, style: egui::TextStyle| {
-        ui.painter()
-            .layout_no_wrap(text, style.resolve(ui.style()), egui::Color32::WHITE)
-            .size()
-            .x
-    };
-    let label = width("Configuration:".to_string(), egui::TextStyle::Body) + space;
-    let button = |text: &str| width(text.to_string(), egui::TextStyle::Button) + padding;
-    let badge = space + width(badge_text(), egui::TextStyle::Body);
-    let extras =
-        badge + space + button("Save") + space + button("Save as...") + space + button("Revert");
-    (label, extras, badge)
-}
-
 /// How wide a question is: as wide as it likes, but never wider than the window it is asked in.
 pub(super) fn modal_width(ctx: &egui::Context, wanted: f32) -> f32 {
     wanted.min(ctx.content_rect().width() - 40.0).max(240.0)
-}
-
-/// What the person answers when asked about changes that were not saved.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Answer {
-    Save,
-    DontSave,
-    Cancel,
 }
 
 #[derive(Clone, Copy)]
 enum Command {
     Save,
     SaveAs,
-    Revert,
     Manage,
 }
 
@@ -1343,46 +1106,38 @@ mod tests {
     }
 
     #[test]
-    fn p3_a50_the_dropdown_of_the_section_shows_the_one_in_use_and_says_when_it_is_modified() {
+    fn p3_a50_the_line_of_the_configuration_shows_the_one_in_use_and_never_says_modified() {
         let dir = scratch("a50");
         file_in(&dir, "profiles/vision.toml", vision_text());
         let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
         let said = settle(&mut app, &ctx);
-        // the mark of the badge is a character the fonts can draw (the filled circle is drawn as an empty box)
-        let drawable =
-            ctx.fonts_mut(|f| f.has_glyphs(&egui::FontId::proportional(14.0), UNSAVED_MARK));
-        assert!(drawable, "the fonts have no {UNSAVED_MARK}");
-        assert!(said.iter().any(|t| t == "Configuration:"), "{said:?}");
+        assert!(said.iter().any(|t| t == "Configuration"), "{said:?}");
         assert!(said.iter().any(|t| t == "Default"), "{said:?}");
-        for none in [badge_text().as_str(), "Save", "Save as...", "Revert"] {
+        // a setting changed: the line says nothing of it (the window keeps how it ran last, 2026-11-09), and the list of
+        // what changed is still there for Save to's hover
+        app.values.set("port", 9000u16);
+        let changed = settle(&mut app, &ctx);
+        for none in ["• Modified", "Save", "Save as...", "Revert"] {
             assert!(
-                !said.iter().any(|t| t == none),
-                "nothing is unsaved, and {none} is there: {said:?}"
+                !changed.iter().any(|t| t == none),
+                "{none} is there: {changed:?}"
             );
         }
-
-        // a setting changed: the badge says it, and what to do about it is there; the hover says what
-        app.values.set("port", 9000u16);
-        let said = settle(&mut app, &ctx);
-        for want in [badge_text().as_str(), "Save", "Save as...", "Revert"] {
-            assert!(said.iter().any(|t| t == want), "{want} in {said:?}");
-        }
+        assert_eq!(said, changed, "the line is the same with a change made");
         let list: Vec<String> = app
             .changes_since_saved()
             .iter()
             .map(Change::describe)
             .collect();
         assert_eq!(list, ["Port: 8080 to 9000"]);
-        // the same value typed back, and they go
-        app.values.set("port", 8080u16);
-        let said = settle(&mut app, &ctx);
-        assert!(!said.iter().any(|t| t == &badge_text()), "{said:?}");
         // a change of the theme is not a change of the run
+        app.values.set("port", 8080u16);
         app.dark_mode = !app.dark_mode;
         assert!(!app.configuration_modified());
 
-        // the dropdown, opened: every configuration with where it is from, and the commands
+        // the list, opened: every configuration with where it is from, and what can be done; Save to the one in use is
+        // grey while the window holds what it says
         let at = rect_of(&ctx, &mut app, "Default")
             .expect("the name")
             .center();
@@ -1393,9 +1148,9 @@ mod tests {
             "built in",
             "Ollama",
             "llama.cpp",
-            "Save",
-            "Save as...",
-            "Manage configurations...",
+            "Save to \"Default\"",
+            "Save as a new configuration…",
+            "Manage configurations…",
         ] {
             assert!(open.iter().any(|t| t == want), "{want} in {open:?}");
         }
@@ -1403,17 +1158,6 @@ mod tests {
         let first = open.iter().position(|t| t == "Default").unwrap();
         let vision = open.iter().position(|t| t == "Vision").unwrap();
         assert!(first < vision, "{open:?}");
-        // while the one in use has changes, its row says so in words
-        let _ = click_at(&mut app, &ctx, egui::pos2(700.0, 500.0));
-        app.values.set("port", 9000u16);
-        let at = rect_of(&ctx, &mut app, "Default")
-            .expect("the name")
-            .center();
-        let open = click_at(&mut app, &ctx, at);
-        assert!(
-            open.iter().any(|t| t == "Default (modified)"),
-            "the row of the one in use says it: {open:?}"
-        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1669,9 +1413,8 @@ mod tests {
             }
         }
         app.dock_open = false;
-        // Change open, with a change made (the widest the section is): nothing of it runs out of the window, at the
-        // narrowest the buttons of the change under the dropdown and the badge (in the window's own type, which is wider
-        // than egui's)
+        // Change open, with a change made and the fields of Custom: nothing of it runs out of the window (in the window's
+        // own type, which is wider than egui's)
         super::super::theme::apply(&ctx, true);
         app.enable_traffic_proxy = false;
         app.change_open = true;
@@ -1706,21 +1449,9 @@ mod tests {
                     out.is_empty(),
                     "{configuration} {width}: out of the window: {out:?}"
                 );
-                let at = |text: &str| {
-                    found
-                        .iter()
-                        .find(|(t, _)| t == text)
-                        .map(|(_, r)| *r)
-                        .unwrap_or_else(|| panic!("{text} at {width}: {found:?}"))
-                };
-                let (badge, save, revert) = (at(&badge_text()), at("Save"), at("Revert"));
                 assert!(
-                    badge.right() <= save.left() || badge.bottom() <= save.top(),
-                    "{configuration} {width}: {badge:?} {save:?}"
-                );
-                assert!(
-                    save.right() <= revert.left(),
-                    "{configuration} {width}: {save:?} {revert:?}"
+                    found.iter().any(|(t, _)| t == "Configuration"),
+                    "{configuration} {width}: {found:?}"
                 );
             }
         }
@@ -1728,82 +1459,11 @@ mod tests {
     }
 
     #[test]
-    fn p3_a72_the_configuration_is_a_section_at_the_top_of_the_page_whole_at_every_width() {
+    fn p3_a72_the_configuration_is_one_line_at_the_top_of_the_panel_whole_at_every_width() {
         let dir = scratch("a72");
         let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
-        for live in [false, true] {
-            app.enable_traffic_proxy = live;
-            // the worst case is the widest section: the one with a change in it
-            app.values.set("port", 9000u16);
-            for width in [520.0, 540.0, 560.0, 600.0, 680.0, 760.0, 1000.0, 1400.0] {
-                let output = settled_at(&mut app, &ctx, width);
-                let found = rects(&output);
-                let at = |text: &str| {
-                    *found
-                        .get(text)
-                        .unwrap_or_else(|| panic!("{text} at {width}: {:?}", found.keys()))
-                };
-                let (label, name) = (at("Configuration:"), at("Default"));
-                let (badge, save, save_as, revert) = (
-                    at(&badge_text()),
-                    at("Save"),
-                    at("Save as..."),
-                    at("Revert"),
-                );
-                // as wide as the page: one outline, from edge to edge
-                let section = frames(&output)
-                    .into_iter()
-                    .filter(|(rect, _)| rect.top() < label.top() && rect.bottom() > label.bottom())
-                    .map(|(rect, _)| rect)
-                    .next()
-                    .unwrap_or_else(|| panic!("{width}: no frame round the section"));
-                // (the page is as wide as the window leaves it, and no wider than a column of the Main tab's)
-                assert!(
-                    (section.width() - (width - 16.0).min(super::super::theme::PAGE_WIDTH)).abs()
-                        < 2.0,
-                    "{width}: the section is {} wide",
-                    section.width()
-                );
-                // the parts are in their order along the row and none is drawn over another: the name
-                // and the badge are far enough apart for the arrow of the dropdown to be between them
-                assert!(label.right() <= name.left(), "{width}: {label:?} {name:?}");
-                assert!(
-                    badge.left() >= name.left() + COMBO_LEAST - 8.0,
-                    "{width}: {name:?} {badge:?}"
-                );
-                assert!(badge.right() <= save.left(), "{width}: {badge:?} {save:?}");
-                assert!(
-                    save.right() <= save_as.left(),
-                    "{width}: {save:?} {save_as:?}"
-                );
-                assert!(
-                    save_as.right() <= revert.left(),
-                    "{width}: {save_as:?} {revert:?}"
-                );
-                // and the row ends inside the outline, whole
-                assert!(
-                    revert.right() < section.right(),
-                    "{width} {live}: {revert:?} is not inside {section:?}"
-                );
-                // with room the label is there, and the window's least is room enough
-                assert!(label.width() > 0.0, "{width}: no label");
-            }
-        }
-        // the shape: the label and the full width, then less width, then no label
-        let (label, extras) = (100.0, 270.0);
-        assert_eq!(
-            section_shape(label + extras + COMBO_WIDTH + 50.0, label, extras),
-            (true, COMBO_WIDTH)
-        );
-        assert_eq!(
-            section_shape(label + extras + 130.0, label, extras),
-            (true, 130.0)
-        );
-        assert_eq!(section_shape(extras + 120.0, label, extras), (false, 120.0));
-        assert_eq!(section_shape(10.0, label, extras), (false, COMBO_LEAST));
-        // a name that is longer than the dropdown is cut at its width, and the badge and the buttons stay whole in the row
-        // (the dropdown grew to the length of the name, and at the narrowest window pushed them out of it)
+        // a name longer than the line is cut at its end, and the label and the name stay inside the line's box
         let long = "Qwen3-VL 8B on Ollama with Open WebUI beside it for work!";
         file_in(
             &dir,
@@ -1811,133 +1471,74 @@ mod tests {
             &format!("schema = 1\nkind = \"profile\"\nid = \"long\"\nname = \"{long}\"\nengine = \"llamacpp\"\n"),
         );
         app.reload_configurations();
-        app.choose_configuration("long");
-        assert_eq!(app.configs.active, "long", "{:?}", app.configs.error);
-        app.values.set("port", 9000u16);
-        for width in [520.0, 600.0, 760.0, 1400.0] {
-            let output = settled_at(&mut app, &ctx, width);
-            let found = rects(&output);
-            let at = |text: &str| {
-                *found
-                    .get(text)
-                    .unwrap_or_else(|| panic!("{text} at {width}: {:?}", found.keys()))
-            };
-            let (name, badge, revert) = (at(long), at(&badge_text()), at("Revert"));
-            let section = frames(&output)
-                .into_iter()
-                .map(|(rect, _)| rect)
-                .find(|rect| rect.top() < name.top() && rect.bottom() > name.bottom())
-                .unwrap_or_else(|| panic!("{width}: no frame round the section"));
-            assert!(
-                name.right() < badge.left(),
-                "{width}: the name {name:?} runs into the badge {badge:?}"
-            );
-            assert!(
-                revert.right() < section.right(),
-                "{width}: {revert:?} is not inside {section:?}"
-            );
-            assert!(
-                name.width() <= COMBO_WIDTH,
-                "{width}: the name is {} wide, and the dropdown is at most {COMBO_WIDTH}",
-                name.width()
-            );
+        for (id, name) in [("default", "Default"), ("long", long)] {
+            app.choose_configuration(id);
+            assert_eq!(app.configs.active, id, "{:?}", app.configs.error);
+            app.values.set("port", 9000u16);
+            for width in [300.0, 520.0, 760.0, 1400.0] {
+                let output = settled_at(&mut app, &ctx, width);
+                let found = rects(&output);
+                let label = *found
+                    .get("Configuration")
+                    .unwrap_or_else(|| panic!("{width}: {:?}", found.keys()));
+                let shown = found
+                    .iter()
+                    .find(|(t, _)| *t == name || (name == long && t.ends_with('…')))
+                    .map(|(_, r)| *r)
+                    .unwrap_or_else(|| panic!("{name} at {width}: {:?}", found.keys()));
+                let line = frames(&output)
+                    .into_iter()
+                    .map(|(rect, _)| rect)
+                    .find(|rect| rect.top() < label.top() && rect.bottom() > label.bottom())
+                    .unwrap_or_else(|| panic!("{width}: no box round the line"));
+                // as wide as the page, from edge to edge
+                assert!(
+                    (line.width() - (width - 16.0).min(super::super::theme::PAGE_WIDTH)).abs()
+                        < 2.0,
+                    "{width}: the line is {} wide",
+                    line.width()
+                );
+                assert!(
+                    label.right() <= shown.left(),
+                    "{width}: {label:?} {shown:?}"
+                );
+                assert!(
+                    shown.right() < line.right() - 20.0,
+                    "{width}: {name} {shown:?} runs into the arrow of {line:?}"
+                );
+            }
         }
-        app.values.set("port", 8080u16);
+        // the live traffic is a tab of the dock at the foot of the window: with it open the line is where it was
         app.choose_configuration("default");
-        app.values.set("port", 9000u16);
-        // the live traffic is a tab of the dock at the foot of the window: with it open the section is where it was
-        // (choosing a configuration sets the proxy as it says)
         app.enable_traffic_proxy = true;
         app.active_tab = Tab::Live;
         let found = rects(&settled_at(&mut app, &ctx, 760.0));
         assert!(
-            found.contains_key("Configuration:") && found.contains_key(UNDER),
+            found.contains_key("Configuration") && found.contains_key(UNDER),
             "{:?}",
             found.keys()
         );
-        app.active_tab = Tab::Main;
-        let found = rects(&settled_at(&mut app, &ctx, 760.0));
-        assert!(found.contains_key("Configuration:") && found.contains_key(UNDER));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn p3_a73_a_change_is_said_in_words_in_a_colour_of_its_own_and_nothing_moves() {
+    fn p3_a73_a_change_says_nothing_and_moves_nothing() {
         let dir = scratch("a73");
         let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
         let amber = modified_color(true);
-        for width in [520.0, 760.0, 1100.0] {
+        for width in [300.0, 520.0, 760.0, 1100.0] {
             app.values.set("port", 8080u16);
             let quiet = settled_at(&mut app, &ctx, width);
-            let (said, outlines) = (rects(&quiet), frames(&quiet));
-            assert!(
-                !said.contains_key(&badge_text()),
-                "{width}: {:?}",
-                said.keys()
-            );
-            assert!(
-                !outlines.iter().any(|(_, color)| *color == amber),
-                "{width}: the section is in the colour of a change with none made"
-            );
-
-            // a change: the words, the colour, and what to do about it
             app.values.set("port", 9000u16);
-            let loud = settled_at(&mut app, &ctx, width);
-            let (changed, loud_outlines) = (rects(&loud), frames(&loud));
-            for want in [badge_text().as_str(), "Save", "Save as...", "Revert"] {
-                assert!(changed.contains_key(want), "{width}: {want}");
-            }
-            let section = loud_outlines
-                .iter()
-                .find(|(_, color)| *color == amber)
-                .unwrap_or_else(|| panic!("{width}: no outline in the colour of a change"))
-                .0;
-            // nothing moves: the label, the dropdown and what the page has under the section are where they
-            // were, and so is the section (its outline is the same rectangle)
-            for text in ["Configuration:", "Default", UNDER] {
-                assert_eq!(
-                    said[text], changed[text],
-                    "{width}: {text} moved when a change was made"
-                );
-            }
-            let was = outlines
-                .iter()
-                .map(|(rect, _)| *rect)
-                .find(|rect| {
-                    rect.top() < said["Configuration:"].top()
-                        && rect.bottom() > said["Configuration:"].bottom()
-                })
-                .expect("the outline of the section");
-            assert_eq!(was, section, "{width}: the section changed its size");
-
-            // typed back, and it is as it was: nothing of it is left
-            app.values.set("port", 8080u16);
-            let back = settled_at(&mut app, &ctx, width);
-            assert_eq!(rects(&back), said, "{width}");
-            assert!(!frames(&back).iter().any(|(_, color)| *color == amber));
+            let changed = settled_at(&mut app, &ctx, width);
+            assert_eq!(rects(&quiet), rects(&changed), "{width}: a change showed");
+            assert!(
+                !frames(&changed).iter().any(|(_, color)| *color == amber),
+                "{width}: the line is in the colour of a change"
+            );
         }
-        // as narrow as the panel at the right (C203): the buttons of a change have a row of their own under the dropdown,
-        // kept while there is no change, so that what is under the section stays where it is
-        app.values.set("port", 8080u16);
-        let quiet = rects(&settled_at(&mut app, &ctx, 300.0));
-        assert!(!quiet.contains_key("Revert"), "{:?}", quiet.keys());
-        app.values.set("port", 9000u16);
-        let loud = rects(&settled_at(&mut app, &ctx, 300.0));
-        assert!(
-            loud["Revert"].top() > loud["Default"].bottom(),
-            "the buttons are on a row of their own: {loud:?}"
-        );
-        assert_eq!(
-            quiet[UNDER], loud[UNDER],
-            "what is under the section moved when a change was made"
-        );
-        app.values.set("port", 8080u16);
-
-        // the light theme has a colour of its own for it (the other is hard to read on white)
-        assert_ne!(modified_color(true), modified_color(false));
-
-        // what the hover says: what changed, a line for each, and how many more than eight
+        // what Save to's hover says: what changed, a line for each, and how many more than eight
         app.values.set("port", 9000u16);
         app.values.set("ctx_size", 8192u32);
         let lines = change_lines(&app.changes_since_saved());
@@ -1958,61 +1559,34 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The person opens the line's list and clicks `item` in it.
+    fn from_the_list(app: &mut App, ctx: &egui::Context, item: &str) -> Vec<String> {
+        let name = app.active_entry().expect("the one in use").name;
+        let at = rect_of(ctx, app, &name).expect("the name").center();
+        let open = click_at(app, ctx, at);
+        assert!(open.iter().any(|t| t == item), "{item} in {open:?}");
+        let at = rect_of(ctx, app, item).expect("the item").center();
+        click_at(app, ctx, at)
+    }
+
     #[test]
-    fn p3_a74_the_buttons_of_a_modified_configuration_save_save_as_and_revert() {
+    fn p3_a74_the_list_saves_to_the_one_in_use_and_as_a_new_one() {
         let dir = scratch("a74");
         let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
         settle(&mut app, &ctx);
 
-        // Revert asks first, in the main window
+        // Save to writes over the one in use
         app.values.set("port", 9000u16);
-        settle(&mut app, &ctx);
-        let at = rect_of(&ctx, &mut app, "Revert").expect("Revert").center();
-        let asked = click_at(&mut app, &ctx, at);
-        assert!(
-            asked.iter().any(|t| t == "Go back to what was saved?"),
-            "{asked:?}"
-        );
-        assert_eq!(app.configs.confirm, Some(Confirm::Revert("default".into())));
-        assert_eq!(app.values.int("port"), Some(9000), "nothing is lost yet");
-        // Cancel leaves everything as it was
-        let at = rect_of(&ctx, &mut app, "Cancel").expect("Cancel").center();
-        let said = click_at(&mut app, &ctx, at);
-        assert!(app.configs.confirm.is_none());
-        assert!(!said.iter().any(|t| t == "Go back to what was saved?"));
-        assert!(app.configuration_modified());
-        assert_eq!(app.values.int("port"), Some(9000));
-        // and Revert, answered, goes back
-        let at = rect_of(&ctx, &mut app, "Revert").expect("Revert").center();
-        click_at(&mut app, &ctx, at);
-        assert!(app.configs.confirm.is_some());
-        let at = rect_of(&ctx, &mut app, "Revert")
-            .expect("the answer")
-            .center();
-        let said = click_at(&mut app, &ctx, at);
-        assert_eq!(app.values.int("port"), Some(8080), "back to what was saved");
-        assert!(!app.configuration_modified());
-        assert!(!said.iter().any(|t| t == &badge_text()), "{said:?}");
-
-        // Save writes over the one in use, and the badge goes
-        app.values.set("port", 9000u16);
-        settle(&mut app, &ctx);
-        let at = rect_of(&ctx, &mut app, "Save").expect("Save").center();
-        let said = click_at(&mut app, &ctx, at);
+        from_the_list(&mut app, &ctx, "Save to \"Default\"");
         let kept = std::fs::read_to_string(dir.join("config/profiles/default.toml"))
             .expect("the Default of the person, written");
         assert!(kept.contains("port = 9000"), "{kept}");
         assert!(!app.configuration_modified());
-        assert!(!said.iter().any(|t| t == &badge_text()), "{said:?}");
 
         // Save as asks for a name, in the main window, and the new one is the one in use
         app.values.set("port", 9100u16);
-        settle(&mut app, &ctx);
-        let at = rect_of(&ctx, &mut app, "Save as...")
-            .expect("Save as")
-            .center();
-        let asked = click_at(&mut app, &ctx, at);
+        let asked = from_the_list(&mut app, &ctx, "Save as a new configuration…");
         assert!(
             asked.iter().any(|t| t == "Save as a new configuration"),
             "{asked:?}"
@@ -2024,21 +1598,22 @@ mod tests {
         assert!(kept.contains("port = 9100"), "{kept}");
         let said = settle(&mut app, &ctx);
         assert!(said.iter().any(|t| t == "Studio"), "{said:?}");
-        assert!(!said.iter().any(|t| t == &badge_text()), "{said:?}");
 
-        // while something is fetched, Revert is grey (the sentence of the Engine row is on its hover) and
-        // asks nothing; what went wrong is said in the section
-        app.values.set("port", 9200u16);
+        // while something is fetched, the line opens nothing, and a choice says why in it
         app.download = Some(crate::jobs::Job::spawn(
             "x".into(),
             "Downloading",
             || {},
             |_| std::thread::sleep(std::time::Duration::from_millis(300)),
         ));
-        settle(&mut app, &ctx);
-        let at = rect_of(&ctx, &mut app, "Revert").expect("Revert").center();
-        click_at(&mut app, &ctx, at);
-        assert!(app.configs.confirm.is_none(), "a grey button asks nothing");
+        let at = rect_of(&ctx, &mut app, "Studio")
+            .expect("the name")
+            .center();
+        let open = click_at(&mut app, &ctx, at);
+        assert!(
+            !open.iter().any(|t| t == "Manage configurations…"),
+            "{open:?}"
+        );
         app.request_choose("default");
         let said = settle(&mut app, &ctx);
         assert!(
@@ -2091,8 +1666,6 @@ mod tests {
             "a configuration that was chosen is the one in use as it is: {:?}",
             app.changes_since_saved()
         );
-        let said = settle(&mut app, &egui::Context::default());
-        assert!(!said.iter().any(|t| t == &badge_text()), "{said:?}");
 
         // a change of the person's is a change
         app.values.set("ctx_size", 8192u32);
@@ -2187,26 +1760,13 @@ mod tests {
             "what was chosen is what was saved"
         );
 
-        // a change that is not saved asks first, and nothing moves until it is answered
+        // a change, and then another choice: nothing asks (the window keeps how it ran last, and a configuration is a
+        // setup to use), the Default is in use, and the file for Vision is as it was
         app.values.set("ctx_size", 2048u32);
         assert!(app.configuration_modified());
-        app.request_choose("default");
-        assert_eq!(app.configs.question.as_deref(), Some("default"));
-        assert_eq!(app.engine, "ollama");
-        assert_eq!(saved(&dir)["values"]["app.configuration"], "vision");
-        // Cancel: as it was
-        app.answer_unsaved(Answer::Cancel);
-        assert!(
-            app.configs.question.is_none()
-                && app.engine == "ollama"
-                && app.configs.active == "vision"
-        );
-        assert_eq!(app.values.int("ctx_size"), Some(2048));
-        // Don't save: the change is lost, the Default is in use, and the file for Vision is as it was
         let vision_before =
             std::fs::read_to_string(dir.join("config/profiles/vision.toml")).unwrap();
         app.request_choose("default");
-        app.answer_unsaved(Answer::DontSave);
         // the Default is the engine in use at its defaults (WP4.26): Ollama stays, and what Vision set goes
         assert_eq!(
             (app.engine.as_str(), app.configs.active.as_str()),
@@ -2224,12 +1784,12 @@ mod tests {
             std::fs::read_to_string(dir.join("config/profiles/vision.toml")).unwrap(),
             vision_before
         );
-        // Save: kept over the one in use, and then the other is chosen
+        // saved to the one in use, and then another chosen: what was set is kept in it
         app.request_choose("vision");
         app.values.set("ctx_size", 4096u32);
         assert!(app.configuration_modified());
+        app.save_active().expect("saved");
         app.request_choose("default");
-        app.answer_unsaved(Answer::Save);
         assert_eq!(app.configs.active, "default");
         let kept = std::fs::read_to_string(dir.join("config/profiles/vision.toml")).unwrap();
         assert!(kept.contains("ctx_size = 4096"), "{kept}");

@@ -1,14 +1,11 @@
-//! How the model will run, in one line under its name, and what *Change* opens there (UI v2, C176): the Server box of
-//! the page is gone, and with it the Configuration box over it.
-//!
-//! The line says it in words ("Balanced · 4K context · uses the graphics card"). *Change* opens, under it, the choices
-//! an engine with a context size has as presets (A3): **Balanced** is the context the engine's document recommends
-//! for this model and this computer (Ollama's own, which QuickAI cannot better), **Long chats** four times that (at
-//! least 16K, at most 32K), **Light** 2K (half of Balanced when that is 2K or less); **Custom** is the boxes of the
-//! fields as they always were (the port, the context size, the GPU). Under them, the configuration in use. Where the
-//! models run is the status bar's (C183): the line says it when it is another computer.
-//! A preset sets the context size and nothing else, so what is chosen is read back from it, and the line names a preset
-//! only when the context size is one.
+//! How the model runs, in the panel at the right (C206, A2 of `the mockups`, the user's pick of 2026-11-09):
+//! how much of the chat it remembers as one row of three choices, **Light**, **Balanced** and **Long**, with a line of
+//! what the chosen one means, and *Set the numbers yourself…* for the fields (Custom). **Balanced** is the context the
+//! engine's document recommends for this model and this computer (Ollama's own, which QuickAI cannot better), **Long**
+//! four times that (at least 16K, at most 32K), **Light** 2K (half of Balanced when that is 2K or less).
+//! A choice sets the context size and nothing else. It is kept as the choice (`app.run_choice`), not only as the number:
+//! another model picked runs the same way with its own number, and the next start works it out again. A first start's
+//! 4K, which nobody chose, is Balanced.
 
 use eframe::egui;
 use quickai_core::form;
@@ -19,6 +16,9 @@ use super::App;
 
 /// The id of the field that the presets set.
 const CONTEXT: &str = "ctx_size";
+
+/// The context of a first start (the settings' own), which the person did not choose.
+const FIRST_RUN_CONTEXT: i64 = 4096;
 
 /// One of the choices of how the model runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,6 +37,9 @@ impl Preset {
         Preset::Custom,
     ];
 
+    /// The three that set the number, as the row of the panel has them: the least memory first.
+    const ROW: [Preset; 3] = [Preset::Light, Preset::Balanced, Preset::Long];
+
     pub(super) fn title(self) -> &'static str {
         match self {
             Preset::Balanced => "Balanced",
@@ -46,13 +49,35 @@ impl Preset {
         }
     }
 
+    /// Its word in the row of the panel.
+    fn short(self) -> &'static str {
+        match self {
+            Preset::Long => "Long",
+            other => other.title(),
+        }
+    }
+
     fn description(self) -> &'static str {
         match self {
-            Preset::Balanced => "Good for most chats. Suits this model and this computer.",
-            Preset::Long => "Remembers more of a chat or a document. Needs more memory.",
-            Preset::Light => "Uses the least memory. Remembers less of the chat.",
+            Preset::Balanced => "Suits this model and this computer.",
+            Preset::Long => "Remembers more of a chat or a document, and needs more memory.",
+            Preset::Light => "Uses the least memory, and remembers less of the chat.",
             Preset::Custom => "Set the numbers yourself.",
         }
+    }
+
+    /// How it is kept in the settings (`app.run_choice`).
+    pub(super) fn key(self) -> &'static str {
+        match self {
+            Preset::Balanced => "balanced",
+            Preset::Long => "long",
+            Preset::Light => "light",
+            Preset::Custom => "custom",
+        }
+    }
+
+    pub(super) fn from_key(key: &str) -> Option<Preset> {
+        Preset::ALL.into_iter().find(|p| p.key() == key)
     }
 }
 
@@ -135,6 +160,62 @@ impl App {
         }
     }
 
+    /// The choice the panel shows: Custom when the person asked for their own numbers, else the preset the numbers are.
+    pub(super) fn shown_preset(&self) -> Preset {
+        if self.change_custom || self.run_choice == Some(Preset::Custom) {
+            Preset::Custom
+        } else {
+            self.current_preset()
+        }
+    }
+
+    /// Makes `preset` the way the model runs: its number, and the choice kept for the next model and the next start.
+    pub(super) fn choose_preset(&mut self, preset: Preset) {
+        self.change_custom = preset == Preset::Custom;
+        self.apply_preset(preset);
+        self.run_choice = Some(preset);
+    }
+
+    /// After another model was picked and its defaults were set: the choice kept is applied to it, so that it runs the
+    /// same way with its own number (Long is Long for every model); the person's own numbers stay (`kept`, the context
+    /// before the model was picked).
+    pub(super) fn reapply_run_choice(&mut self, kept: Option<quickai_core::value::Value>) {
+        if self.context_field().is_none() || self.remote_in_use().is_some() {
+            return;
+        }
+        match self.run_choice {
+            Some(Preset::Custom) => match kept {
+                Some(value) => self.values.set(CONTEXT, value),
+                None => self.values.clear(CONTEXT),
+            },
+            Some(preset) => self.apply_preset(preset),
+            None => {}
+        }
+    }
+
+    /// The context as the window holds it now, for `reapply_run_choice`.
+    pub(super) fn context_now(&self) -> Option<quickai_core::value::Value> {
+        self.values.get(CONTEXT).cloned()
+    }
+
+    /// At the start: the choice kept is taken up, its number worked out again for this model and this computer. With
+    /// none kept (an earlier version, or a first start), the numbers say which it is; the context a first start has
+    /// (4K, which nobody chose) is Balanced, and other numbers that are no preset are Custom.
+    pub(super) fn take_up_run_choice(&mut self) {
+        let kept = self.stored.run_choice().and_then(|k| Preset::from_key(&k));
+        if self.context_field().is_none() || self.remote_in_use().is_some() {
+            self.run_choice = kept;
+            return;
+        }
+        let choice = kept.unwrap_or_else(|| match self.current_preset() {
+            Preset::Custom if self.values.int(CONTEXT) == Some(FIRST_RUN_CONTEXT) => {
+                Preset::Balanced
+            }
+            now => now,
+        });
+        self.choose_preset(choice);
+    }
+
     /// How the model will run, in words.
     pub(super) fn run_summary(&self) -> String {
         if let Some(remote) = self.remote_in_use() {
@@ -193,105 +274,185 @@ impl App {
             .collect()
     }
 
-    /// What *Change* opens: the configuration in use, the presets (or the fields, for an engine with none), and where the
-    /// models run.
+    /// How the model runs (A2 of `the mockups`, the user's pick of 2026-11-09): the configuration in one line,
+    /// then how much of the chat it remembers as one row of three (Light, Balanced, Long) with a line of what the chosen
+    /// one means, and *Set the numbers yourself…* for the fields (Custom, with the way back). An engine with no context
+    /// (ComfyUI), or one on another computer, has its fields.
     pub(super) fn show_change_panel(&mut self, ui: &mut egui::Ui) {
         let running = self.session.is_active();
         let presets = self.context_field().is_some() && self.remote_in_use().is_none();
-        // the configuration first: it is what the rest belongs to (and so it is in one place whatever is under it)
+        // the configuration first: it is what the rest belongs to
         self.show_configuration_section(ui);
-        ui.add_space(8.0);
-        if presets {
-            let current = if self.change_custom {
-                Preset::Custom
-            } else {
-                self.current_preset()
-            };
-            ui.label(
-                egui::RichText::new("HOW SHOULD IT RUN?")
-                    .size(11.0)
-                    .family(theme::semibold(ui))
-                    .color(theme::palette().faint),
-            );
-            let mut chosen: Option<Preset> = None;
-            ui.add_enabled_ui(!running, |ui| {
-                for preset in Preset::ALL {
+        ui.add_space(14.0);
+        if !presets {
+            self.show_controls(ui);
+        } else {
+            let p = theme::palette();
+            let current = self.shown_preset();
+            let custom = current == Preset::Custom;
+            ui.horizontal(|ui| {
+                ui.label(theme::muted("How much of the chat it remembers").small());
+                if custom {
+                    pill(ui, "Custom", p.warn);
+                }
+            });
+            ui.add_space(2.0);
+            let cells: Vec<(Preset, String)> = Preset::ROW
+                .into_iter()
+                .map(|preset| {
                     let numbers = match self.preset_context(preset) {
                         Some(Some(tokens)) => format!(" ({} context)", context_words(tokens)),
                         _ => String::new(),
                     };
-                    if preset_row(
-                        ui,
-                        current == preset,
-                        preset.title(),
-                        &format!("{}{numbers}", preset.description()),
+                    (
+                        preset,
+                        format!("{}: {}{numbers}", preset.title(), preset.description()),
+                    )
+                })
+                .collect();
+            let mut chosen: Option<Preset> = None;
+            ui.add_enabled_ui(!running, |ui| {
+                chosen = choice_row(ui, &cells, (!custom).then_some(current));
+            });
+            if custom {
+                ui.add_space(6.0);
+                self.show_controls(ui);
+                ui.add_space(4.0);
+                if ui
+                    .add_enabled(!running, egui::Link::new("Back to Balanced"))
+                    .on_hover_text(Preset::Balanced.description())
+                    .clicked()
+                {
+                    chosen = Some(Preset::Balanced);
+                }
+            } else {
+                ui.add_space(7.0);
+                let numbers = match self.context_field().and_then(|f| f.value.as_i64()) {
+                    Some(tokens) => format!("{} context", context_words(tokens)),
+                    None => format!("{}'s own context", self.engine_name()),
+                };
+                let device = if self.gpu_offload() {
+                    "uses the graphics card"
+                } else {
+                    "runs on the processor only"
+                };
+                said_line(
+                    ui,
+                    &numbers,
+                    &format!(", {device}. {}", current.description()),
+                );
+                ui.add_space(8.0);
+                if ui
+                    .add_enabled(!running, egui::Link::new("Set the numbers yourself…"))
+                    .on_hover_text(
+                        "The context, the port and the graphics card, as numbers of your own.",
                     )
                     .clicked()
-                    {
-                        chosen = Some(preset);
-                    }
+                {
+                    chosen = Some(Preset::Custom);
                 }
-            });
+            }
             if let Some(preset) = chosen {
-                self.change_custom = preset == Preset::Custom;
-                self.apply_preset(preset);
+                self.choose_preset(preset);
             }
-            if current == Preset::Custom {
-                ui.add_space(4.0);
-                self.show_controls(ui);
-            }
-        } else {
-            self.show_controls(ui);
         }
         if running {
+            ui.add_space(4.0);
             ui.label(theme::muted("Stop the model to change these.").small());
         }
     }
 }
 
-/// One choice of the presets: a round button, its name, and under it what it does (on as many lines as the room
-/// needs).
-fn preset_row(ui: &mut egui::Ui, on: bool, title: &str, said: &str) -> egui::Response {
+/// The row of choices: one box cut in equal parts, the chosen one lit in the accent. Each part says on hover what it
+/// does. What was clicked comes back.
+fn choice_row(ui: &mut egui::Ui, cells: &[(Preset, String)], on: Option<Preset>) -> Option<Preset> {
     let p = theme::palette();
     let enabled = ui.is_enabled();
-    let width = ui.available_width().min(560.0);
-    let ink = if enabled { p.text } else { p.faint };
-    let title = ui.painter().layout_no_wrap(
-        title.to_string(),
-        egui::TextStyle::Button.resolve(ui.style()),
-        ink,
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 40.0), egui::Sense::hover());
+    let painter = ui.painter().clone();
+    painter.rect(
+        rect,
+        9.0,
+        p.card,
+        egui::Stroke::new(1.0, p.line),
+        egui::StrokeKind::Inside,
     );
-    let small = ui.painter().layout(
-        said.to_string(),
-        egui::TextStyle::Small.resolve(ui.style()),
-        p.muted,
-        (width - 40.0).max(80.0),
-    );
-    let height = (22.0 + small.size().y + 4.0).max(40.0);
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
-    if ui.is_rect_visible(rect) {
-        if on {
-            ui.painter().rect_filled(rect, 6.0, p.accent_soft);
-        } else if response.hovered() && enabled {
-            ui.painter()
-                .rect_filled(rect, 6.0, p.raised_hover.gamma_multiply(0.6));
-        }
-        let centre = egui::pos2(rect.left() + 16.0, rect.top() + 13.0);
-        ui.painter().circle_stroke(
-            centre,
-            7.0,
-            egui::Stroke::new(1.5, if on { p.accent_text } else { p.outline }),
+    let inner = rect.shrink(3.0);
+    let gap = 3.0;
+    let count = cells.len().max(1) as f32;
+    let each = (inner.width() - gap * (count - 1.0)) / count;
+    let mut chosen = None;
+    for (i, (preset, hover)) in cells.iter().enumerate() {
+        let cell = egui::Rect::from_min_size(
+            egui::pos2(inner.left() + i as f32 * (each + gap), inner.top()),
+            egui::vec2(each, inner.height()),
         );
-        if on {
-            ui.painter().circle_filled(centre, 3.5, p.accent_text);
+        let sense = if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        };
+        let response = ui
+            .interact(cell, ui.id().with(("run_choice", i)), sense)
+            .on_hover_text(hover);
+        let lit = on == Some(*preset);
+        if lit {
+            painter.rect(
+                cell,
+                6.0,
+                p.accent_soft,
+                egui::Stroke::new(1.0, p.accent_text.gamma_multiply(0.45)),
+                egui::StrokeKind::Inside,
+            );
+        } else if enabled && response.hovered() {
+            painter.rect_filled(cell, 6.0, p.raised_hover.gamma_multiply(0.6));
         }
-        let left = rect.left() + 32.0;
-        ui.painter()
-            .galley(egui::pos2(left, rect.top() + 4.0), title, ink);
-        ui.painter()
-            .galley(egui::pos2(left, rect.top() + 22.0), small, p.muted);
+        let color = match (lit, enabled) {
+            (true, _) => p.accent_text,
+            (false, true) => p.muted,
+            (false, false) => p.faint,
+        };
+        let mut font = egui::TextStyle::Body.resolve(ui.style());
+        if lit {
+            font.family = theme::semibold(ui);
+        }
+        let galley = painter.layout_no_wrap(preset.short().to_string(), font, color);
+        painter.galley(cell.center() - galley.size() / 2.0, galley, color);
+        if response.clicked() {
+            chosen = Some(*preset);
+        }
     }
-    response
+    chosen
+}
+
+/// A word in a thin rounded frame of `color` (Custom, beside the label of the row).
+fn pill(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let galley = ui.painter().layout_no_wrap(text.to_string(), font, color);
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(galley.size().x + 14.0, galley.size().y + 2.0),
+        egui::Sense::hover(),
+    );
+    ui.painter().rect_stroke(
+        rect,
+        rect.height() / 2.0,
+        egui::Stroke::new(1.0, color.gamma_multiply(0.55)),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter()
+        .galley(rect.center() - galley.size() / 2.0, galley, color);
+}
+
+/// The line under the row: the number in the colour of the text, then what the choice means, wrapped to the panel.
+fn said_line(ui: &mut egui::Ui, numbers: &str, rest: &str) {
+    let p = theme::palette();
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let mut job = egui::text::LayoutJob::default();
+    job.append(numbers, 0.0, egui::TextFormat::simple(font.clone(), p.body));
+    job.append(rest, 0.0, egui::TextFormat::simple(font, p.muted));
+    job.wrap.max_width = ui.available_width();
+    ui.label(job);
 }
 
 #[cfg(test)]

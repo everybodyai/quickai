@@ -38,8 +38,8 @@ impl App {
             || (self.lists_models() && self.session.model_name().is_none())
     }
 
-    /// How the model runs: what *Change* had (the configuration, the presets or the fields), then the MCP servers and how
-    /// it fits this computer.
+    /// How the model runs: the configuration, how much of the chat it remembers (or the fields), then the MCP servers and
+    /// how it fits this computer.
     fn show_how_section(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette();
         section_title(ui, "How it runs");
@@ -47,12 +47,7 @@ impl App {
         for problem in self.field_problems() {
             ui.colored_label(super::widgets::problem_color(), problem);
         }
-        ui.add_space(6.0);
-        ui.horizontal_wrapped(|ui| {
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-            icons::paint(ui.painter(), rect, Icon::Sliders, p.faint);
-            ui.label(theme::muted(self.run_summary()).small());
-        });
+        // (the line under the row says what the choice is: the summary of the run is the panel's while it runs)
         // the tools are the chat's: an engine that does not chat (ComfyUI) has none to show
         if let Some(count) = self
             .mcp_server_count()

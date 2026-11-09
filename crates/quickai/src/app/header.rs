@@ -747,16 +747,17 @@ mod tests {
         }]
     }
 
-    /// C203: there is no menu bar; what it had is in the QuickAI menu at the top of the sidebar (and the Models menu's in
-    /// the + of the list).
+    /// C203, C206: there is no menu bar; the QuickAI menu at the top of the sidebar has Settings, Configurations and Quit,
+    /// and the theme, Help, Report a problem and About are at the foot of the sidebar (the Models menu's in the + of the
+    /// list).
     #[test]
-    fn p3_i45_the_quickai_menu_has_what_the_menu_bar_had() {
+    fn p3_i45_the_quickai_menu_has_settings_configurations_and_quit() {
         let dir = scratch("v3-menu");
         let mut app = app_in(&dir, "llamacpp");
         only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
         let ctx = egui::Context::default();
         let found = rects(&settled(&mut app, &ctx, true));
-        for gone in ["File", "Models", "View", "Server", "Help"] {
+        for gone in ["File", "Models", "View", "Server"] {
             assert!(!found.contains_key(gone), "{gone} is still drawn");
         }
         let menu = *found
@@ -765,28 +766,16 @@ mod tests {
         assert!(menu.left() < 240.0 && menu.center().y < 40.0, "{menu:?}");
         click(&mut app, &ctx, menu.center());
         let found = rects(&settled(&mut app, &ctx, true));
-        for item in [
-            "Settings…",
-            "Configurations…",
-            "Theme",
-            "Light",
-            "Dark",
-            "Help…",
-            "Report a problem…",
-            "About QuickAI",
-            "Quit",
-        ] {
+        for item in ["Settings…", "Configurations…", "Quit"] {
             assert!(found.contains_key(item), "{item}: {:?}", found.keys());
         }
-        // the theme changes from it at once
-        let dark = app.dark_mode;
-        click(
-            &mut app,
-            &ctx,
-            found[if dark { "Light" } else { "Dark" }].center(),
-        );
-        assert_eq!(app.dark_mode, !dark);
-        app.set_dark_mode(&ctx, dark);
+        for gone in ["Theme", "Help…", "Report a problem…", "About QuickAI"] {
+            assert!(
+                !found.contains_key(gone),
+                "{gone} is in it: {:?}",
+                found.keys()
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1248,33 +1237,38 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// I40 (C192, C203): of Help, the QuickAI menu has Help, Report a problem and About; the rest is in Help's window
-    /// (Getting started, the keys, the documentation online, the privacy policy), and the website in About.
+    /// I40 (C192, C206): Help is at the foot of the sidebar, under Recommended and MCP servers: its menu has Help, the
+    /// tour, the keys and Report a problem (About is the picture beside it); the rest is in Help's window.
     #[test]
-    fn p3_i40_the_quickai_menu_has_help_report_a_problem_and_about() {
+    fn p3_i40_help_is_at_the_foot_of_the_sidebar_with_its_menu() {
         let dir = scratch("i40");
         let mut app = app_in(&dir, "llamacpp");
         only_model(&mut app, &dir, "Small-Q4_K_M.gguf", GB);
         let ctx = egui::Context::default();
         let found = rects(&settled(&mut app, &ctx, true));
-        click(&mut app, &ctx, found["QuickAI"].center());
-        let found = rects(&settled(&mut app, &ctx, true));
+        let help = found["Help"];
+        let mcp = found["MCP servers"];
         assert!(
-            found.contains_key("Help…")
-                && found.contains_key("Report a problem…")
-                && found.contains_key("About QuickAI"),
-            "{:?}",
-            found.keys()
+            help.left() < 240.0 && help.top() > mcp.bottom(),
+            "{help:?} {mcp:?}"
         );
+        click(&mut app, &ctx, help.center());
+        let found = rects(&settled(&mut app, &ctx, true));
+        for item in ["Take the tour", "Keyboard shortcuts", "Report a problem…"] {
+            assert!(found.contains_key(item), "{item}: {:?}", found.keys());
+        }
         for gone in [
+            "About QuickAI",
             "Getting started",
-            "Keyboard shortcuts",
             "Online documentation",
             "Privacy policy",
             "QuickAI on the web",
         ] {
             assert!(!found.contains_key(gone), "{gone}");
         }
+        // Keyboard shortcuts opens Help on its page
+        click(&mut app, &ctx, found["Keyboard shortcuts"].center());
+        assert!(app.help.open && app.help.page == super::super::help::HelpPage::Shortcuts);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

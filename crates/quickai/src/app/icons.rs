@@ -11,6 +11,8 @@ pub(super) enum Icon {
     Sun,
     Moon,
     Help,
+    /// About QuickAI: a ring with an i.
+    Info,
     Gear,
     Chevron,
     Back,
@@ -112,6 +114,11 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
                 points.push((16.85 + 7.0 * a.cos(), 7.15 + 7.0 * a.sin()));
             }
             line(&points);
+        }
+        Icon::Info => {
+            ring(12.0, 12.0, 9.0);
+            line(&[(12.0, 11.0), (12.0, 16.5)]);
+            dot(12.0, 7.8, 1.15);
         }
         Icon::Help => {
             ring(12.0, 12.0, 9.0);
