@@ -18,6 +18,7 @@ pub mod doc;
 pub mod docpath;
 pub mod expr;
 pub mod form;
+pub mod gguf;
 pub mod guard;
 pub mod heuristics;
 pub mod kvlines;

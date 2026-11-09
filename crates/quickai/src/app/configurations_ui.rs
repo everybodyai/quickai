@@ -466,11 +466,14 @@ impl App {
         );
         self.configs.active = id.to_string();
         self.load_engine_state();
-        // how it runs is what the configuration says: the preset its numbers are, or numbers of its own
-        self.change_custom = false;
-        let now = self.current_preset();
+        // how it runs is what the configuration says: the length its numbers are, or a number of its own; and it is fitted
+        // to this computer's cards (a configuration made on a bigger computer still starts here)
+        self.refresh_facts();
+        let now = self.choice_now();
         self.run_choice = Some(now);
-        self.change_custom = now == super::run_settings::Preset::Custom;
+        self.change_custom = now == super::run_settings::RunChoice::Own;
+        self.gpu_auto = true;
+        self.auto_fit();
         if self.show_configurations {
             self.refresh_configurations();
         }

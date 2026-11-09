@@ -626,6 +626,123 @@ impl App {
         }
     }
 
+    /// Tools in the panel (T1 of `the mockups`): its head with how many servers are on and the
+    /// sliders that open the MCP servers page; the head opens a switch for each server, with what it has or what went
+    /// wrong (closed at first: the user, "let the tools not show all the tools at first, only when clicked it should
+    /// show").
+    pub(super) fn show_tools_rows(&mut self, ui: &mut egui::Ui, hover: &str) {
+        let p = theme::palette();
+        let servers = self.mcp_list();
+        let on = servers.iter().filter(|s| !s.disabled).count();
+        let open_id = egui::Id::new("panel_tools_open");
+        let open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
+        let mut manage = false;
+        let mut toggle = false;
+        super::inspector::section_head(ui, Icon::Wrench, "Tools", Some(hover), |ui| {
+            manage = icons::icon_button(ui, Icon::Sliders, egui::vec2(26.0, 26.0), true, false)
+                .on_hover_text("Manage MCP servers…")
+                .clicked();
+            if servers.is_empty() {
+                ui.label(theme::muted("none yet").small());
+                return;
+            }
+            // how many are on, and the way to the switches
+            let (rect, response) =
+                ui.allocate_exact_size(egui::vec2(16.0, 24.0), egui::Sense::click());
+            let words = ui
+                .add(
+                    egui::Label::new(
+                        egui::RichText::new(format!("{on} of {} on", servers.len()))
+                            .small()
+                            .color(if open { p.text } else { p.muted }),
+                    )
+                    .sense(egui::Sense::click()),
+                )
+                .on_hover_text(if open {
+                    "Hide the switches."
+                } else {
+                    "Show a switch for each server."
+                });
+            let hovered = response.hovered() || words.hovered();
+            chevron(
+                ui.painter(),
+                rect.center(),
+                open,
+                if hovered { p.text } else { p.muted },
+            );
+            toggle = response.clicked() || words.clicked();
+        });
+        if toggle {
+            ui.data_mut(|d| d.insert_temp(open_id, !open));
+        }
+        if manage {
+            self.open_mcp_servers();
+        }
+        if !open || servers.is_empty() {
+            return;
+        }
+        let mut switch: Option<(String, bool)> = None;
+        for server in &servers {
+            let said = match self.tools.status.get(&server.name) {
+                _ if server.disabled => (String::new(), p.faint),
+                Some(ServerStatus::Ready(tools)) => (
+                    match tools.len() {
+                        1 => "1 tool".to_string(),
+                        n => format!("{n} tools"),
+                    },
+                    p.faint,
+                ),
+                Some(ServerStatus::Starting) => ("starting…".to_string(), p.faint),
+                Some(ServerStatus::Failed(_)) => ("did not start".to_string(), p.warn),
+                None => (String::new(), p.faint),
+            };
+            // the switch and what it has from the right, the name in what is left (shortened with … when long)
+            ui.horizontal(|ui| {
+                ui.set_min_height(28.0);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let mut ticked = !server.disabled;
+                    if theme::switch(ui, &mut ticked, true)
+                        .on_hover_text(if ticked {
+                            "On: the model may use its tools. Click to switch it off."
+                        } else {
+                            "Off: the model is not offered its tools. Click to switch it on."
+                        })
+                        .changed()
+                    {
+                        switch = Some((server.name.clone(), ticked));
+                    }
+                    if !said.0.is_empty() {
+                        ui.label(egui::RichText::new(&said.0).small().color(said.1));
+                    }
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.add_space(22.0);
+                        let name = ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(&server.name).color(if server.disabled {
+                                    p.muted
+                                } else {
+                                    p.text
+                                }),
+                            )
+                            .truncate(),
+                        );
+                        match self.tools.status.get(&server.name) {
+                            Some(ServerStatus::Failed(why)) => {
+                                name.on_hover_text(format!("{}: {why}", server.name));
+                            }
+                            _ => {
+                                name.on_hover_text(&server.name);
+                            }
+                        }
+                    });
+                });
+            });
+        }
+        if let Some((name, on)) = switch {
+            self.set_server_on(&name, on, ui.ctx());
+        }
+    }
+
     /// What the corner of the Tools button says: nothing while no server is on, else how many are, and whether
     /// one of them did not start.
     pub(super) fn tools_badge(&self, servers: &[Server]) -> Option<Badge> {
@@ -942,6 +1059,20 @@ fn pretty(arguments: &str) -> String {
         .ok()
         .and_then(|v| serde_json::to_string_pretty(&v).ok())
         .unwrap_or_else(|| arguments.to_string())
+}
+
+/// A small chevron at `at`: down while closed, up while open.
+fn chevron(painter: &egui::Painter, at: egui::Pos2, open: bool, color: egui::Color32) {
+    let (w, h) = (4.0, 2.2);
+    let dy = if open { -h } else { h };
+    painter.add(egui::Shape::line(
+        vec![
+            at + egui::vec2(-w, -dy / 2.0),
+            at + egui::vec2(0.0, dy / 2.0),
+            at + egui::vec2(w, -dy / 2.0),
+        ],
+        egui::Stroke::new(1.5, color),
+    ));
 }
 
 #[cfg(test)]

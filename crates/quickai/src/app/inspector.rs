@@ -11,8 +11,36 @@ use super::App;
 use crate::events::ServerState;
 
 impl App {
-    /// The panel at the right of the page.
+    /// The panel at the right of the page: This computer at its foot while the model is stopped (P1 of
+    /// `the mockups`), the rest over it.
     pub(super) fn show_inspector(&mut self, ui: &mut egui::Ui) {
+        self.refresh_facts();
+        self.poll_devices(ui.ctx());
+        let foot =
+            !self.connect_now() && !self.runs_alone() && self.models.get(self.selected).is_some();
+        // the meters of the foot take at most a quarter of the panel's height, and scroll beyond it
+        let meters = (ui.available_height() * 0.25).clamp(48.0, 170.0);
+        if foot {
+            egui::Panel::bottom("inspector_foot")
+                .frame(egui::Frame::new().inner_margin(egui::Margin {
+                    left: 0,
+                    right: 0,
+                    top: 8,
+                    bottom: 0,
+                }))
+                .show(ui, |ui| {
+                    let y = ui.max_rect().top() - 4.0;
+                    ui.painter().hline(
+                        ui.max_rect().x_range(),
+                        y,
+                        egui::Stroke::new(1.0, theme::palette().line),
+                    );
+                    self.show_this_computer(ui, meters);
+                });
+        }
+        // a scroll bar that takes its own room when the panel is longer than the window (several cards), so that it is
+        // not drawn over the right end of the rows
+        ui.spacing_mut().scroll = egui::style::ScrollStyle::thin();
         egui::ScrollArea::vertical()
             .id_salt("inspector")
             .auto_shrink([false, false])
@@ -38,95 +66,29 @@ impl App {
             || (self.lists_models() && self.session.model_name().is_none())
     }
 
-    /// How the model runs: the configuration, how much of the chat it remembers (or the fields), then the MCP servers and
-    /// how it fits this computer.
+    /// How the model runs: the configuration, the context and the graphics, then the tools with a switch each.
     fn show_how_section(&mut self, ui: &mut egui::Ui) {
-        let p = theme::palette();
-        self.panel_head(ui, "How it runs");
+        self.panel_head(ui, "How it runs", true);
         self.show_change_panel(ui);
         for problem in self.field_problems() {
             ui.colored_label(super::widgets::problem_color(), problem);
         }
-        // (the line under the row says what the choice is: the summary of the run is the panel's while it runs)
         // the tools are the chat's: an engine that does not chat (ComfyUI) has none to show
-        if let Some(count) = self
-            .mcp_server_count()
-            .filter(|_| !self.runs_alone() && self.can_chat())
-        {
+        if !self.runs_alone() && self.can_chat() {
             rule(ui);
-            let mut manage = false;
-            ui.horizontal(|ui| {
-                ui.label(theme::muted("Tools (MCP)").small());
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    manage = ui.link("Manage").clicked();
-                });
-            });
-            ui.label(egui::RichText::new(match count {
-                0 => "None on".to_string(),
-                1 => "1 server on".to_string(),
-                n => format!("{n} servers on"),
-            }));
-            ui.label(
-                theme::muted(if self.engine == crate::settings::DEFAULT_ENGINE {
-                    "Used when you chat here, and in Open Chat UI. QuickAI asks before a tool runs."
-                } else {
-                    "Used when you chat here. QuickAI asks before a tool runs."
-                })
-                .small(),
-            );
-            if manage {
-                self.open_mcp_servers();
-            }
-        }
-        if let Some(model) = self
-            .models
-            .get(self.selected)
-            .filter(|_| !self.runs_alone())
-        {
-            if let Some(offload) = self.speed_basis() {
-                rule(ui);
-                let tier =
-                    crate::hardware::speed_tier(model.size_bytes, self.total_ram_bytes, offload);
-                ui.horizontal(|ui| {
-                    ui.label(theme::muted("On this computer").small());
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let color = match tier {
-                            crate::hardware::SpeedTier::Fast => p.accent_text,
-                            crate::hardware::SpeedTier::Slow => p.warn,
-                            crate::hardware::SpeedTier::Medium => p.text,
-                        };
-                        ui.label(egui::RichText::new(tier.label()).color(color));
-                    });
-                });
-                let total = self.total_ram_bytes.max(1);
-                ui.horizontal(|ui| {
-                    ui.label(theme::muted("Size").small());
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{} of {} memory",
-                                super::shell::size_text(model.size_bytes),
-                                crate::hardware::format_bytes(total)
-                            ))
-                            .small(),
-                        );
-                    });
-                });
-                meter(ui, model.size_bytes as f32 / total as f32);
-            }
-        }
-        ui.add_space(10.0);
-        if ui.link("All settings for starting it…").clicked() {
-            self.settings_page = super::settings_window::SettingsPage::Start;
-            if !self.show_settings {
-                self.toggle_settings();
-            }
+            let hover = if self.engine == crate::settings::DEFAULT_ENGINE {
+                "The MCP servers the model can use when you chat here, and in Open Chat UI. QuickAI asks before a tool \
+                 runs."
+            } else {
+                "The MCP servers the model can use when you chat here. QuickAI asks before a tool runs."
+            };
+            self.show_tools_rows(ui, hover);
         }
     }
 
     /// Connect an app, while it runs: the rows and the example, the chat in a browser, and how it runs, in a line.
     fn show_connect_section(&mut self, ui: &mut egui::Ui) {
-        self.panel_head(ui, "Connect an app");
+        self.panel_head(ui, "Connect an app", false);
         let panel = self.connection_panel();
         let openai = panel.as_ref().is_some_and(|p| p.base_url.ends_with("/v1"));
         ui.label(
@@ -170,31 +132,17 @@ impl App {
         ui.label(theme::muted("How it runs").small());
         ui.label(self.run_summary());
         ui.label(theme::muted("Stop the model to change these.").small());
-        if let Some(count) = self.mcp_server_count().filter(|_| !self.runs_alone()) {
+        if !self.runs_alone() {
             rule(ui);
-            let mut manage = false;
-            ui.horizontal(|ui| {
-                ui.label(theme::muted("Tools (MCP)").small());
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    manage = ui.link("Manage").clicked();
-                });
-            });
-            ui.label(match count {
-                0 => "None on".to_string(),
-                1 => "1 server on".to_string(),
-                n => format!("{n} servers on"),
-            });
-            ui.label(
-                theme::muted(if self.engine == crate::settings::DEFAULT_ENGINE && self.remote_in_use().is_none() {
-                    "Used when you chat here, and in Open Chat UI. Apps you connect bring their own."
-                } else {
-                    "Used when you chat here. Apps you connect bring their own."
-                })
-                .small(),
-            );
-            if manage {
-                self.open_mcp_servers();
-            }
+            let hover = if self.engine == crate::settings::DEFAULT_ENGINE
+                && self.remote_in_use().is_none()
+            {
+                "The MCP servers the model can use when you chat here, and in Open Chat UI. Apps you connect bring \
+                 their own."
+            } else {
+                "The MCP servers the model can use when you chat here. Apps you connect bring their own."
+            };
+            self.show_tools_rows(ui, hover);
         }
     }
 
@@ -206,9 +154,11 @@ impl App {
 
 impl App {
     /// The head of the panel: the name of its section, and at its right » that puts the panel away (H4 of
-    /// `the mockups`); « at the right end of the bar brings it back.
-    fn panel_head(&mut self, ui: &mut egui::Ui, text: &str) {
+    /// `the mockups`; « at the right end of the bar brings it back), with the gear of All settings
+    /// for starting it beside it when `settings` (S1 of `the mockups`).
+    fn panel_head(&mut self, ui: &mut egui::Ui, text: &str, settings: bool) {
         let mut hide = false;
+        let mut open_settings = false;
         ui.horizontal(|ui| {
             ui.label(
                 egui::RichText::new(text)
@@ -228,9 +178,21 @@ impl App {
                     super::help::mark_spot(ui, super::help::Spot::Plug, button.rect);
                 }
                 hide = button.clicked();
+                if settings {
+                    open_settings =
+                        icons::icon_button(ui, Icon::Gear, egui::vec2(28.0, 28.0), true, false)
+                            .on_hover_text("All settings for starting it…")
+                            .clicked();
+                }
             });
         });
         ui.add_space(4.0);
+        if open_settings {
+            self.settings_page = super::settings_window::SettingsPage::Start;
+            if !self.show_settings {
+                self.toggle_settings();
+            }
+        }
         if hide {
             self.panel_open = false;
             self.panel_asked = false;
@@ -250,15 +212,29 @@ fn rule(ui: &mut egui::Ui) {
     ui.add_space(9.0);
 }
 
-/// A thin bar, filled as far as `share` (0 to 1) of it.
-fn meter(ui: &mut egui::Ui, share: f32) {
+/// The head of a section of the panel: its icon and its word, an (i) that says what it is when `hover`, and what
+/// `right` draws at its right end (drawn from the right).
+pub(super) fn section_head(
+    ui: &mut egui::Ui,
+    icon: Icon,
+    text: &str,
+    hover: Option<&str>,
+    right: impl FnOnce(&mut egui::Ui),
+) {
     let p = theme::palette();
-    let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 6.0), egui::Sense::hover());
-    ui.painter().rect_filled(rect, 3.0, p.raised);
-    let filled = egui::Rect::from_min_size(
-        rect.min,
-        egui::vec2((width * share.clamp(0.0, 1.0)).max(4.0), rect.height()),
-    );
-    ui.painter().rect_filled(filled, 3.0, p.accent_text);
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        ui.set_min_height(24.0);
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+        icons::paint(ui.painter(), rect, icon, p.muted);
+        ui.label(egui::RichText::new(text).color(p.text));
+        if let Some(hover) = hover {
+            let (rect, response) =
+                ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+            icons::paint(ui.painter(), rect, Icon::Info, p.faint);
+            response.on_hover_text(hover);
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), right);
+    });
+    ui.add_space(4.0);
 }

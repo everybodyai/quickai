@@ -215,7 +215,7 @@ id = "ctx_size"
 label = "Context size"
 help = '''Maximum number of tokens (roughly, word-pieces) of conversation llama.cpp keeps in memory at once — prompt plus reply combined. Bigger means it remembers more of a long chat/document, but uses more RAM/VRAM and can respond slower. Typical values: 2048-4096 for short chats, 8192-16384 for longer ones, 32768+ only for large documents on machines with memory to spare.'''
 type = "int"
-range = [256, 131072]
+range = [256, 1048576]
 step = 64
 default = { fn = "recommend_ctx_size", args = ["model.size_bytes", "sys.ram_bytes"] }
 recompute_on = ["model"]        # picking another model resets the value to the recommendation
@@ -239,6 +239,45 @@ bind.arg_by_value = { "0" = ["--device", "none"] }
 derive = { gpu_offload = "value > 0" }
 enabled_when = "not session.running"
 ui = { section = "primary", order = 30 }
+
+# The graphics cards, as the panel's Graphics section sets them (C213): which cards, how the model is split between
+# them, and how much each takes. Empty, llama.cpp chooses (every card, split by layers in the measure of their memory).
+[[field]]
+id = "devices"
+label = "Graphics cards"
+help = '''The graphics cards llama.cpp puts the model on, by its own names for them (CUDA0,CUDA1), as the tick boxes of the panel's Graphics set them. Empty: llama.cpp's own choice.'''
+type = "text"
+optional = true
+share = "never"
+share_note = "Which cards a model runs on belongs to a computer."
+bind.arg = ["--device", "${value}"]
+enabled_when = "not session.running"
+ui = { section = "graphics", order = 31 }
+
+[[field]]
+id = "split_mode"
+label = "Split between cards"
+help = '''How the model is shared between graphics cards: layer (each card takes whole layers, llama.cpp's own) or row (each layer is shared, faster when the cards are linked with NVLink).'''
+type = "text"
+optional = true
+pattern = '''^(layer|row)$'''
+share = "yes"
+bind.arg = ["--split-mode", "${value}"]
+enabled_when = "not session.running"
+ui = { section = "graphics", order = 32 }
+
+[[field]]
+id = "tensor_split"
+label = "Share of each card"
+help = '''How much of the model each card takes, as proportions in the order of the cards (3,1). Empty: in the measure of their free memory.'''
+type = "text"
+optional = true
+pattern = '''^[0-9]+(\.[0-9]+)?(,[0-9]+(\.[0-9]+)?)*$'''
+share = "never"
+share_note = "How a model is shared between cards belongs to a computer."
+bind.arg = ["--tensor-split", "${value}"]
+enabled_when = "not session.running"
+ui = { section = "graphics", order = 33 }
 
 [[field]]
 id = "extra_args"

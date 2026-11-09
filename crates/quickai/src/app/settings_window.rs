@@ -327,8 +327,13 @@ impl App {
         let name = self.engine_name();
         page_head(ui, &format!("Starting {}", self.server_name()), None);
         let (_, others) = advanced_fields(form);
-        // the MCP servers have a page of their own
-        let others: Vec<FormField> = others.into_iter().filter(|f| !is_mcp_field(f)).collect();
+        // the MCP servers have a page of their own; the port (and the other primary fields the panel does not show) is
+        // here first
+        let others: Vec<FormField> = self
+            .primary_fields_elsewhere()
+            .into_iter()
+            .chain(others.into_iter().filter(|f| !is_mcp_field(f)))
+            .collect();
         if !others.is_empty() {
             group(ui, |ui| self.show_fields(ui, &others, Some(&name)));
         }

@@ -38,6 +38,7 @@ mod diagnostics;
 mod engine;
 mod engine_bar;
 mod foreign_program;
+mod graphics;
 mod header;
 mod help;
 mod icons;
@@ -261,9 +262,15 @@ pub struct App {
     view: MainView,
     /// Custom was chosen among the presets: the fields are shown whatever the context size is.
     change_custom: bool,
-    /// How the person chose the model to run (Light, Balanced, Long, or numbers of their own), kept for the next model
-    /// and the next start (`app.run_choice`); none until they chose, or the numbers said it.
-    run_choice: Option<run_settings::Preset>,
+    /// How the person chose the context (the suggested length, a length of the grid, or a number of their own), kept
+    /// for the next model and the next start (`app.run_choice`); none until they chose, or the numbers said it.
+    run_choice: Option<run_settings::RunChoice>,
+    /// The graphics cards of the installed llama.cpp, with their memory (C213).
+    devices: graphics::Devices,
+    /// What the selected model's file says of it (its layers, its longest context, what a token takes), for that file.
+    facts: Option<(PathBuf, Option<quickai_core::gguf::ModelFacts>)>,
+    /// Where the model runs is fitted to the cards (Auto) until the person chooses it; picking a model puts it back.
+    gpu_auto: bool,
     /// A run went wrong since the log was last looked at: its tab has a red dot.
     log_unread: bool,
     /// The MCP servers being asked why they gave no tools: what the log says, when each has answered.
@@ -519,6 +526,9 @@ impl App {
             view: MainView::Model,
             change_custom: false,
             run_choice: None,
+            devices: graphics::Devices::default(),
+            facts: None,
+            gpu_auto: true,
             log_unread: false,
             mcp_checks: Vec::new(),
             seen_state: None,
@@ -598,6 +608,7 @@ impl App {
         }
         // the person's choice of how it runs is kept: the new model runs the same way, with its own numbers
         let kept = self.context_now();
+        self.refresh_facts();
         self.apply_model_defaults_only();
         self.reapply_run_choice(kept);
     }
@@ -726,8 +737,8 @@ impl App {
             "open:settings" => self.open_settings(),
             other if other.starts_with("open:settings.") => self.open_settings(),
             other if other.starts_with("focus_field:") => {
-                // the field is where its section puts it: Settings for an advanced one, the Custom numbers of
-                // Change for a primary one, which are opened
+                // the field is where it is shown: Settings for an advanced one, and for a primary one the panel does
+                // not show (the port, C212); the panel for the context (Other…, opened) and the graphics
                 let id = &other["focus_field:".len()..];
                 let section = self
                     .engine_doc()
@@ -738,20 +749,22 @@ impl App {
                 if self.in_companion {
                     self.companion_section_wanted = true;
                     self.open_settings();
-                } else if section.as_deref().unwrap_or("advanced") != "primary" {
+                } else if section.as_deref().unwrap_or("advanced") != "primary"
+                    || !self.panel_shows_field(id)
+                {
                     let program = self
                         .form()
                         .and_then(|f| f.field(id).cloned())
                         .is_some_and(|f| settings_window::is_program_field(&f));
                     self.settings_page = match section.as_deref().unwrap_or("advanced") {
                         "advanced" if program => settings_window::SettingsPage::Program,
-                        "advanced" => settings_window::SettingsPage::Start,
+                        "advanced" | "primary" => settings_window::SettingsPage::Start,
                         _ => settings_window::SettingsPage::General,
                     };
                     self.open_settings();
                 } else {
                     self.change_open = true;
-                    self.change_custom = true;
+                    self.change_custom = id == "ctx_size" || self.context_field().is_none();
                     self.panel_open = true;
                     self.panel_asked = true;
                 }
@@ -776,7 +789,7 @@ impl App {
             (true, Tab::Main) => "log",
             (true, Tab::Live) => "live",
         });
-        settings.set_run_choice(self.run_choice.map(run_settings::Preset::key));
+        settings.set_run_choice(self.run_choice.map(run_settings::RunChoice::key).as_deref());
         settings.set_sidebar_hidden(!self.sidebar_open);
         settings.set_panel_hidden(!self.panel_open);
         settings.enable_traffic_proxy = self.enable_traffic_proxy;

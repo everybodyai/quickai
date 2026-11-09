@@ -1447,9 +1447,13 @@ mod tests {
             "{said}"
         );
         assert!(!said.contains("Choose another build"), "{said}");
-        // the button goes to the numbers: Change, Custom
+        // the button goes to the port: on the Settings' page of how it starts, since the panel has no port (C212)
         app.invoke("focus_field:port");
-        assert!(app.change_open && app.change_custom);
+        assert!(app.show_settings);
+        assert_eq!(
+            app.settings_page,
+            super::super::settings_window::SettingsPage::Start
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

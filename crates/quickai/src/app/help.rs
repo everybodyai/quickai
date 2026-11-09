@@ -448,8 +448,18 @@ const PAGES: &[Page] = &[
             step("The panel at the right of the page says how the model runs. The {hide} at its top puts it away, and the {show} at the right end of the bar brings it back.")
                 .at(Spot::Change),
             step(
-                "Choose how much of the chat it remembers: **Light**, **Balanced** or **Long**. **Set the numbers \
-                 yourself…** is for numbers of your own. QuickAI keeps your choice for the next model and the next start.",
+                "**Context** is how much of the chat it remembers: choose a length, **4K** to **256K**, or **Other…** for \
+                 a number of your own. A dot on each says where it fits: green on the graphics card, amber partly in the \
+                 computer's memory (slower), red too big. The underlined one suits this model here.",
+            ),
+            step(
+                "**Graphics** is where it runs: **Card**, **Card + processor** (part of the model on the card) or \
+                 **Processor**. QuickAI fits it to the card for each model until you choose. With several cards, tick \
+                 the ones to use. **This computer**, at the foot, shows what it takes of each card and of the memory.",
+            ),
+            step(
+                "**Tools** opens a switch for each MCP server. The gear at the top of the panel has the rest of the \
+                 settings for starting it, the port among them.",
             ),
             step(
                 "**Configuration** at the top of the panel keeps how it runs under a name: **Save as a new \
@@ -512,7 +522,7 @@ const PAGES: &[Page] = &[
                 "**Port is taken**: another program listens there. **Use port** picks the next free one, **Stop it** \
                  stops the other program, **Override** stops it and starts QuickAI's.",
             ),
-            step("**Not enough memory**: choose **Light** in the panel at the right, or a smaller model.").at(Spot::Change),
+            step("**Not enough memory**: choose a shorter context in the panel at the right (one with a green dot), or a smaller model.").at(Spot::Change),
             step("**The program is missing**: the **Program** page of the Settings lists the builds. Use one.")
                 .does(Deed::Settings),
         ],
@@ -531,7 +541,7 @@ const PAGES: &[Page] = &[
             ring: None,
         }),
         steps: &[
-            step("In the panel at the right, **Light** uses the least memory. It remembers less of a long chat.").at(Spot::Change),
+            step("In the panel at the right, a shorter context (**4K**, **8K**) uses less memory. It remembers less of a long chat.").at(Spot::Change),
             step(
                 "A smaller model is faster: fewer billions of parameters (4B rather than 9B), or a smaller file of \
                  the same one (Q4 rather than Q8).",
@@ -633,7 +643,7 @@ const TOUR: &[(Spot, &str, &str)] = &[
     (
         Spot::Change,
         "How it runs",
-        "The panel at the right: Light, Balanced or Long, how much of the chat it remembers. Keep it as a configuration.",
+        "The panel at the right: how much of the chat it remembers, and where it runs. Keep it as a configuration.",
     ),
     (
         Spot::ChatBox,

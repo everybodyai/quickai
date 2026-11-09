@@ -18,6 +18,7 @@ pub mod cli;
 pub mod config;
 pub mod configuration_cli;
 pub mod configurations;
+pub mod devices;
 pub mod downloader;
 pub mod events;
 #[cfg(any(test, feature = "testkit"))]

@@ -1,98 +1,97 @@
-//! How the model runs, in the panel at the right (C206, A2 of `the mockups`, the user's pick of 2026-11-09):
-//! how much of the chat it remembers as one row of three choices, **Light**, **Balanced** and **Long**, with a line of
-//! what the chosen one means, and *Set the numbers yourself…* for the fields (Custom). **Balanced** is the context the
-//! engine's document recommends for this model and this computer (Ollama's own, which QuickAI cannot better), **Long**
-//! four times that (at least 16K, at most 32K), **Light** 2K (half of Balanced when that is 2K or less).
-//! A choice sets the context size and nothing else. It is kept as the choice (`app.run_choice`), not only as the number:
-//! another model picked runs the same way with its own number, and the next start works it out again. A first start's
-//! 4K, which nobody chose, is Balanced.
+//! How the model runs, in the panel at the right (C212, P1 of `the mockups`, the user's pick of
+//! 2026-11-09): the context as a grid of lengths, **4K** to **256K** and **Other…**, each with a dot of where it would
+//! fit (on the graphics card, partly in the computer's memory, or not at all) and the lengths past what the model was
+//! trained for dashed; then Graphics (`graphics.rs`). It took the place of Light, Balanced and Long, which stopped at
+//! 32K.
+//!
+//! The choice is kept (`app.run_choice`), not only the number: **the suggested length** (the one with the mark, the
+//! longest of 4K to 32K that fits on the card, or comfortably in the memory) is worked out again for each model; a
+//! length chosen stays for the next model as far as it takes it; **Other…** keeps its number. Ollama's suggestion is
+//! its own context, which QuickAI leaves to it. A first start's 4K, which nobody chose, is the suggested one.
 
 use eframe::egui;
 use quickai_core::form;
 use quickai_core::form::FormField;
 
+use super::graphics::Fit;
+use super::icons::Icon;
 use super::theme;
 use super::App;
 
-/// The id of the field that the presets set.
+/// The id of the field that the grid sets.
 const CONTEXT: &str = "ctx_size";
 
 /// The context of a first start (the settings' own), which the person did not choose.
 const FIRST_RUN_CONTEXT: i64 = 4096;
 
-/// One of the choices of how the model runs.
+/// The lengths of the grid, in tokens.
+const LENGTHS: [i64; 7] = [4096, 8192, 16384, 32768, 65536, 131072, 262144];
+
+/// How the person chose the context.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Preset {
-    Balanced,
-    Long,
-    Light,
-    Custom,
+pub(super) enum RunChoice {
+    /// The length suited to this model on this computer (the mark on the grid), worked out again for each model; for
+    /// Ollama, its own.
+    Suggested,
+    /// A length of the grid, kept for the next model as far as it takes it.
+    Length(i64),
+    /// A number of the person's own (Other…).
+    Own,
 }
 
-impl Preset {
-    pub(super) const ALL: [Preset; 4] = [
-        Preset::Balanced,
-        Preset::Long,
-        Preset::Light,
-        Preset::Custom,
-    ];
-
-    /// The three that set the number, as the row of the panel has them: the least memory first.
-    const ROW: [Preset; 3] = [Preset::Light, Preset::Balanced, Preset::Long];
-
-    pub(super) fn title(self) -> &'static str {
+impl RunChoice {
+    /// How it is kept in the settings (`app.run_choice`): Balanced, Long and Light were kept as words, and are read so.
+    pub(super) fn key(self) -> String {
         match self {
-            Preset::Balanced => "Balanced",
-            Preset::Long => "Long chats",
-            Preset::Light => "Light",
-            Preset::Custom => "Custom",
+            RunChoice::Suggested => "balanced".to_string(),
+            RunChoice::Length(n) => n.to_string(),
+            RunChoice::Own => "custom".to_string(),
         }
     }
 
-    /// Its word in the row of the panel.
-    fn short(self) -> &'static str {
-        match self {
-            Preset::Long => "Long",
-            other => other.title(),
+    pub(super) fn from_key(key: &str) -> Option<RunChoice> {
+        match key {
+            "balanced" => Some(RunChoice::Suggested),
+            "long" => Some(RunChoice::Length(32768)),
+            "light" => Some(RunChoice::Length(4096)),
+            "custom" => Some(RunChoice::Own),
+            n => n.parse().ok().filter(|n| *n > 0).map(RunChoice::Length),
         }
-    }
-
-    fn description(self) -> &'static str {
-        match self {
-            Preset::Balanced => "Suits this model and this computer.",
-            Preset::Long => "Remembers more of a chat or a document, and needs more memory.",
-            Preset::Light => "Uses the least memory, and remembers less of the chat.",
-            Preset::Custom => "Set the numbers yourself.",
-        }
-    }
-
-    /// How it is kept in the settings (`app.run_choice`).
-    pub(super) fn key(self) -> &'static str {
-        match self {
-            Preset::Balanced => "balanced",
-            Preset::Long => "long",
-            Preset::Light => "light",
-            Preset::Custom => "custom",
-        }
-    }
-
-    pub(super) fn from_key(key: &str) -> Option<Preset> {
-        Preset::ALL.into_iter().find(|p| p.key() == key)
     }
 }
 
-/// A number of tokens of context as a person reads it: `4K`, `16K`, or the number when it is not a round one.
+/// A number of tokens of context as a person reads it: `4K`, `16K`, `128K` (for 131072, and for the 128000 a model
+/// says it takes), or the number when it is not a round one.
 pub(super) fn context_words(tokens: i64) -> String {
-    if tokens >= 1024 && tokens % 1024 == 0 {
+    if tokens >= 1000 && tokens % 1000 == 0 {
+        format!("{}K", tokens / 1000)
+    } else if tokens >= 1024 && tokens % 1024 == 0 {
         format!("{}K", tokens / 1024)
     } else {
         tokens.to_string()
     }
 }
 
+/// The number a length of the grid sets when the model takes up to `most`: the length, or `most` for one a little past it
+/// (128K is 131072, and a model says 128000).
+fn length_at(n: i64, most: i64) -> Option<i64> {
+    if n <= most {
+        Some(n)
+    } else if n as f64 <= most as f64 * 1.05 {
+        Some(most)
+    } else {
+        None
+    }
+}
+
+/// A number of bytes in GB, as the hovers of the grid say it.
+fn gb(bytes: u64) -> String {
+    format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+}
+
 impl App {
-    /// The engine's context-size field, when it has one that is shown: only then are there presets.
-    fn context_field(&self) -> Option<FormField> {
+    /// The engine's context-size field, when it has one that is shown: only then is there a grid.
+    pub(super) fn context_field(&self) -> Option<FormField> {
         let form = self.form()?;
         form.section("primary")?
             .fields
@@ -118,79 +117,122 @@ impl App {
             .and_then(|e| e.value.as_i64())
     }
 
-    /// The context size of a preset: `Some(None)` leaves it to the engine; `None` for Custom.
-    pub(super) fn preset_context(&self, preset: Preset) -> Option<Option<i64>> {
-        let recommended = self.recommended_context();
-        let range = self
+    /// Whether the panel shows the engine's field `id`: with the grid, the context and the graphics (the port and the
+    /// rest of its primary fields are on the Settings' page of how it starts, C212); without it, every primary field.
+    pub(super) fn panel_shows_field(&self, id: &str) -> bool {
+        if self.context_field().is_none() || self.remote_in_use().is_some() {
+            return true;
+        }
+        matches!(id, "ctx_size" | "n_gpu_layers" | "gpu")
+    }
+
+    /// The fields of the engine's primary section the panel does not show, for the Settings' page of how it starts.
+    pub(super) fn primary_fields_elsewhere(&self) -> Vec<FormField> {
+        let Some(section) = self.form().and_then(|f| f.section("primary").cloned()) else {
+            return Vec::new();
+        };
+        section
+            .fields
+            .into_iter()
+            .filter(|f| f.visible && !self.panel_shows_field(&f.id))
+            .collect()
+    }
+
+    /// The longest context there is: the field's most, and what the model was trained for when its file says.
+    pub(super) fn max_context(&self) -> i64 {
+        let field = self
             .context_field()
             .and_then(|f| f.range)
-            .map_or((256, 131072), |(low, high)| (low as i64, high as i64));
-        let fit = |n: i64| n.clamp(range.0, range.1);
-        match preset {
-            Preset::Balanced => Some(recommended),
-            Preset::Long => Some(Some(fit(
-                recommended.map_or(16384, |r| (r * 4).clamp(16384, 32768))
-            ))),
-            // less than Balanced, always: half of it when it is 2K or less
-            Preset::Light => Some(Some(fit(
-                recommended.map_or(2048, |r| 2048.min(r / 2).max(512))
-            ))),
-            Preset::Custom => None,
+            .map_or(131072, |(_, high)| high as i64);
+        match self.model_facts().and_then(|f| f.context_length) {
+            Some(trained) => field.min(trained as i64),
+            None => field,
         }
     }
 
-    /// The preset that the context size in force is; Custom when it is none of them.
-    pub(super) fn current_preset(&self) -> Preset {
-        let Some(field) = self.context_field() else {
-            return Preset::Custom;
-        };
-        let now = field.value.as_i64();
-        [Preset::Balanced, Preset::Long, Preset::Light]
+    /// The suggested length: the longest of 4K to 32K that fits on the card (or comfortably in the memory) when the
+    /// model's file says what it needs, else what the engine's document recommends; `None` leaves it to the engine.
+    pub(super) fn suggested_context(&self) -> Option<i64> {
+        let recommended = self.recommended_context()?;
+        if self.need().is_none() {
+            return Some(recommended);
+        }
+        let most = self.max_context();
+        let fits = [32768, 16384, 8192, 4096]
             .into_iter()
-            .find(|p| self.preset_context(*p) == Some(now))
-            .unwrap_or(Preset::Custom)
+            .filter(|n| *n <= most)
+            .find(|n| self.fit(*n as u64) == Some(Fit::Good));
+        Some(fits.unwrap_or(FIRST_RUN_CONTEXT.min(most)))
     }
 
-    /// Sets the context size of `preset`.
-    pub(super) fn apply_preset(&mut self, preset: Preset) {
-        match self.preset_context(preset) {
-            Some(Some(tokens)) => self.values.set(CONTEXT, tokens),
-            Some(None) => self.values.clear(CONTEXT),
-            None => {}
+    /// The choice the numbers are: the suggested length, a length of the grid, or a number of the person's own.
+    pub(super) fn choice_now(&self) -> RunChoice {
+        let now = self.values.int(CONTEXT);
+        match now {
+            None => RunChoice::Suggested,
+            Some(n) if Some(n) == self.suggested_context() => RunChoice::Suggested,
+            Some(n) if self.grid_index(n).is_some() => {
+                RunChoice::Length(LENGTHS[self.grid_index(n).unwrap_or_default()])
+            }
+            Some(_) => RunChoice::Own,
         }
     }
 
-    /// The choice the panel shows: Custom when the person asked for their own numbers, else the preset the numbers are.
-    pub(super) fn shown_preset(&self) -> Preset {
-        if self.change_custom || self.run_choice == Some(Preset::Custom) {
-            Preset::Custom
+    /// Sets the context of `choice`: the suggested length, a length as far as the model takes it, or the number as it
+    /// is.
+    fn apply_choice(&mut self, choice: RunChoice) {
+        match choice {
+            RunChoice::Suggested => match self.suggested_context() {
+                Some(n) => self.values.set(CONTEXT, n),
+                None => self.values.clear(CONTEXT),
+            },
+            RunChoice::Length(n) => {
+                let most = self.max_context();
+                self.values
+                    .set(CONTEXT, length_at(n, most).unwrap_or(most).min(n));
+            }
+            RunChoice::Own => {}
+        }
+    }
+
+    /// The person chose a length of the grid: the suggested one is kept as such (worked out again for the next model).
+    fn choose_length(&mut self, tokens: i64) {
+        let choice = if Some(tokens) == self.suggested_context() {
+            RunChoice::Suggested
         } else {
-            self.current_preset()
-        }
+            RunChoice::Length(tokens)
+        };
+        self.change_custom = false;
+        let at = length_at(tokens, self.max_context()).unwrap_or(tokens);
+        self.values.set(CONTEXT, at);
+        self.run_choice = Some(choice);
+        self.auto_fit();
     }
 
-    /// Makes `preset` the way the model runs: its number, and the choice kept for the next model and the next start.
-    pub(super) fn choose_preset(&mut self, preset: Preset) {
-        self.change_custom = preset == Preset::Custom;
-        self.apply_preset(preset);
-        self.run_choice = Some(preset);
+    /// The box of the grid a number is, when it is one (128000 is 128K's for a model that takes that much).
+    fn grid_index(&self, n: i64) -> Option<usize> {
+        let most = self.max_context();
+        LENGTHS.iter().position(|l| length_at(*l, most) == Some(n))
     }
 
-    /// After another model was picked and its defaults were set: the choice kept is applied to it, so that it runs the
-    /// same way with its own number (Long is Long for every model); the person's own numbers stay (`kept`, the context
-    /// before the model was picked).
+    /// After another model was picked and its defaults were set: the choice kept is applied to it (a length is that
+    /// length for every model that takes it); the person's own number stays (`kept`, the context before).
     pub(super) fn reapply_run_choice(&mut self, kept: Option<quickai_core::value::Value>) {
         if self.context_field().is_none() || self.remote_in_use().is_some() {
             return;
         }
+        // where it runs first, for this model: the suggested length is what fits there
+        self.gpu_auto = true;
+        self.auto_fit();
         match self.run_choice {
-            Some(Preset::Custom) => match kept {
+            Some(RunChoice::Own) => match kept {
                 Some(value) => self.values.set(CONTEXT, value),
                 None => self.values.clear(CONTEXT),
             },
-            Some(preset) => self.apply_preset(preset),
+            Some(choice) => self.apply_choice(choice),
             None => {}
         }
+        self.auto_fit();
     }
 
     /// The context as the window holds it now, for `reapply_run_choice`.
@@ -200,20 +242,28 @@ impl App {
 
     /// At the start: the choice kept is taken up, its number worked out again for this model and this computer. With
     /// none kept (an earlier version, or a first start), the numbers say which it is; the context a first start has
-    /// (4K, which nobody chose) is Balanced, and other numbers that are no preset are Custom.
+    /// (4K, which nobody chose) is the suggested one.
     pub(super) fn take_up_run_choice(&mut self) {
-        let kept = self.stored.run_choice().and_then(|k| Preset::from_key(&k));
+        self.refresh_facts();
+        let kept = self
+            .stored
+            .run_choice()
+            .and_then(|k| RunChoice::from_key(&k));
         if self.context_field().is_none() || self.remote_in_use().is_some() {
             self.run_choice = kept;
             return;
         }
-        let choice = kept.unwrap_or_else(|| match self.current_preset() {
-            Preset::Custom if self.values.int(CONTEXT) == Some(FIRST_RUN_CONTEXT) => {
-                Preset::Balanced
+        let choice = kept.unwrap_or_else(|| match self.choice_now() {
+            RunChoice::Length(FIRST_RUN_CONTEXT) | RunChoice::Own
+                if self.values.int(CONTEXT) == Some(FIRST_RUN_CONTEXT) =>
+            {
+                RunChoice::Suggested
             }
             now => now,
         });
-        self.choose_preset(choice);
+        self.change_custom = choice == RunChoice::Own;
+        self.apply_choice(choice);
+        self.run_choice = Some(choice);
     }
 
     /// How the model will run, in words.
@@ -223,20 +273,14 @@ impl App {
         }
         let mut words = Vec::new();
         if let Some(field) = self.context_field() {
-            // a preset is named when the numbers are one; other numbers are said as they are (a first run's 4K is
-            // not something the person chose as "Custom")
-            let preset = self.current_preset();
-            if preset != Preset::Custom {
-                words.push(preset.title().to_string());
-            }
             words.push(match field.value.as_i64() {
                 Some(tokens) => format!("{} context", context_words(tokens)),
                 None => format!("{}'s own context", self.engine_name()),
             });
-            words.push(if self.gpu_offload() {
-                "uses the graphics card".to_string()
-            } else {
-                "CPU only".to_string()
+            words.push(match self.place_words() {
+                Some(place) => place,
+                None if self.gpu_offload() => "uses the graphics card".to_string(),
+                None => "CPU only".to_string(),
             });
         } else if let Some(form) = self.form() {
             // an engine with no context (ComfyUI): its fields, as they are
@@ -257,7 +301,7 @@ impl App {
         words.join(" · ")
     }
 
-    /// What is wrong with the fields of Change (the rules of the engine's document that a value breaks), a line each.
+    /// What is wrong with the fields of the panel (the rules of the engine's document that a value breaks), a line each.
     pub(super) fn field_problems(&self) -> Vec<String> {
         let Some(form) = self.form() else {
             return Vec::new();
@@ -274,185 +318,338 @@ impl App {
             .collect()
     }
 
-    /// How the model runs (A2 of `the mockups`, the user's pick of 2026-11-09): the configuration in one line,
-    /// then how much of the chat it remembers as one row of three (Light, Balanced, Long) with a line of what the chosen
-    /// one means, and *Set the numbers yourself…* for the fields (Custom, with the way back). An engine with no context
-    /// (ComfyUI), or one on another computer, has its fields.
+    /// How the model runs (P1 of `the mockups`): the configuration in one line, the context as
+    /// a grid of lengths, and Graphics. An engine with no context (ComfyUI), or one on another computer, has its fields.
     pub(super) fn show_change_panel(&mut self, ui: &mut egui::Ui) {
         let running = self.session.is_active();
-        let presets = self.context_field().is_some() && self.remote_in_use().is_none();
+        let grid = self.context_field().is_some() && self.remote_in_use().is_none();
         // the configuration first: it is what the rest belongs to
         self.show_configuration_section(ui);
-        ui.add_space(14.0);
-        if !presets {
+        ui.add_space(6.0);
+        if !grid {
+            ui.add_space(8.0);
             self.show_controls(ui);
-        } else {
-            let p = theme::palette();
-            let current = self.shown_preset();
-            let custom = current == Preset::Custom;
-            ui.horizontal(|ui| {
-                ui.label(theme::muted("How much of the chat it remembers").small());
-                if custom {
-                    pill(ui, "Custom", p.warn);
-                }
-            });
-            ui.add_space(2.0);
-            let cells: Vec<(Preset, String)> = Preset::ROW
-                .into_iter()
-                .map(|preset| {
-                    let numbers = match self.preset_context(preset) {
-                        Some(Some(tokens)) => format!(" ({} context)", context_words(tokens)),
-                        _ => String::new(),
-                    };
-                    (
-                        preset,
-                        format!("{}: {}{numbers}", preset.title(), preset.description()),
-                    )
-                })
-                .collect();
-            let mut chosen: Option<Preset> = None;
-            ui.add_enabled_ui(!running, |ui| {
-                chosen = choice_row(ui, &cells, (!custom).then_some(current));
-            });
-            if custom {
-                ui.add_space(6.0);
-                self.show_controls(ui);
-                ui.add_space(4.0);
-                if ui
-                    .add_enabled(!running, egui::Link::new("Back to Balanced"))
-                    .on_hover_text(Preset::Balanced.description())
-                    .clicked()
-                {
-                    chosen = Some(Preset::Balanced);
-                }
-            } else {
-                ui.add_space(7.0);
-                let numbers = match self.context_field().and_then(|f| f.value.as_i64()) {
-                    Some(tokens) => format!("{} context", context_words(tokens)),
-                    None => format!("{}'s own context", self.engine_name()),
-                };
-                let device = if self.gpu_offload() {
-                    "uses the graphics card"
-                } else {
-                    "runs on the processor only"
-                };
-                said_line(
-                    ui,
-                    &numbers,
-                    &format!(", {device}. {}", current.description()),
-                );
-                ui.add_space(8.0);
-                if ui
-                    .add_enabled(!running, egui::Link::new("Set the numbers yourself…"))
-                    .on_hover_text(
-                        "The context, the port and the graphics card, as numbers of your own.",
-                    )
-                    .clicked()
-                {
-                    chosen = Some(Preset::Custom);
-                }
-            }
-            if let Some(preset) = chosen {
-                self.choose_preset(preset);
-            }
+            return;
         }
+        self.show_context_grid(ui, !running);
+        ui.add_space(4.0);
+        self.show_graphics_section(ui);
         if running {
             ui.add_space(4.0);
             ui.label(theme::muted("Stop the model to change these.").small());
         }
     }
+
+    /// Context: the grid of lengths with their dots, and the number of the person's own under it.
+    fn show_context_grid(&mut self, ui: &mut egui::Ui, enabled: bool) {
+        let p = theme::palette();
+        let now = self.values.int(CONTEXT);
+        let most = self.max_context();
+        let trained = self.model_facts().and_then(|f| f.context_length);
+        let suggested = self.suggested_context();
+        let own = self.change_custom
+            || self.run_choice == Some(RunChoice::Own)
+            || now.is_some_and(|n| self.grid_index(n).is_none());
+        let engine_decides = now.is_none();
+        let mut back_to_engine = false;
+        super::inspector::section_head(
+            ui,
+            Icon::Chat,
+            "Context",
+            Some(
+                "How much of the chat the model remembers: what was said, and the documents put in it. Longer takes \
+                 more memory. The dot says where each length would fit with the model.",
+            ),
+            |ui| {
+                if engine_decides {
+                    ui.label(theme::muted(format!("{} decides", self.engine_name())).small());
+                } else if suggested.is_none() {
+                    back_to_engine = ui
+                        .add_enabled(
+                            enabled,
+                            egui::Link::new(egui::RichText::new(format!("{}'s own", self.engine_name())).small()),
+                        )
+                        .on_hover_text("Leave the context to the engine again.")
+                        .clicked();
+                } else if let Some(trained) = trained {
+                    ui.label(
+                        theme::muted(format!("model takes up to {}", context_words(trained as i64))).small(),
+                    );
+                }
+            },
+        );
+        let mut cells: Vec<Cell> = LENGTHS
+            .iter()
+            .map(|&n| {
+                let at = length_at(n, most);
+                let off = at.is_none();
+                let fit = at.and_then(|at| self.fit(at as u64));
+                Cell {
+                    text: context_words(n),
+                    fit,
+                    off,
+                    marked: suggested == Some(n),
+                    hover: self.length_hover(n, off, fit, suggested == Some(n)),
+                }
+            })
+            .collect();
+        cells.push(Cell {
+            // a number of the person's own is said on its box; one that is a length of the grid is that box's
+            text: match now.filter(|n| own && self.grid_index(*n).is_none()) {
+                Some(n) => context_words(n),
+                None => "Other…".to_string(),
+            },
+            fit: if own {
+                now.and_then(|n| self.fit(n as u64))
+            } else {
+                None
+            },
+            off: false,
+            marked: false,
+            hover: "A number of tokens of your own.".to_string(),
+        });
+        let lit = if own {
+            Some(LENGTHS.len())
+        } else {
+            now.and_then(|n| self.grid_index(n))
+        };
+        let chosen = ui
+            .add_enabled_ui(enabled, |ui| length_grid(ui, &cells, lit))
+            .inner;
+        match chosen {
+            Some(i) if i < LENGTHS.len() => self.choose_length(LENGTHS[i]),
+            Some(_) => {
+                self.change_custom = true;
+                self.run_choice = Some(RunChoice::Own);
+                if now.is_none() {
+                    self.values
+                        .set(CONTEXT, suggested.unwrap_or(FIRST_RUN_CONTEXT));
+                }
+            }
+            None => {}
+        }
+        if back_to_engine {
+            self.values.clear(CONTEXT);
+            self.change_custom = false;
+            self.run_choice = Some(RunChoice::Suggested);
+        }
+        // the dots, said once
+        if cells.iter().any(|c| c.fit.is_some()) {
+            let cards = !self.ticked_cards().is_empty()
+                && self.place() != super::graphics::Place::Processor;
+            let words = if cards {
+                ["on the card", "partly in memory", "too big"]
+            } else {
+                ["fits", "tight", "too big"]
+            };
+            ui.add_space(5.0);
+            ui.horizontal(|ui| {
+                for (word, color) in words.iter().zip([p.accent_text, p.warn, p.bad]) {
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
+                    ui.painter().circle_filled(rect.center(), 3.0, color);
+                    ui.label(egui::RichText::new(*word).size(11.0).color(p.faint));
+                    ui.add_space(4.0);
+                }
+            });
+        }
+        // Other…: the number
+        if own {
+            if let Some(mut n) = self.values.int(CONTEXT) {
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    let range = self
+                        .context_field()
+                        .and_then(|f| f.range)
+                        .unwrap_or((256.0, 131072.0));
+                    let changed = ui
+                        .add_enabled(
+                            enabled,
+                            egui::DragValue::new(&mut n)
+                                .range(range.0 as i64..=range.1 as i64)
+                                .speed(64.0)
+                                .suffix(" tokens"),
+                        )
+                        .on_hover_text("Drag, or click and type a number.")
+                        .changed();
+                    if changed {
+                        self.values.set(CONTEXT, n);
+                        self.auto_fit();
+                    }
+                    if let Some(trained) = trained.filter(|t| n as u64 > *t) {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "past the {} it was trained for",
+                                context_words(trained as i64)
+                            ))
+                            .small()
+                            .color(p.warn),
+                        );
+                    }
+                });
+            }
+        }
+    }
+
+    /// What a length's box says when the pointer rests on it: what it takes, and where that fits.
+    fn length_hover(&self, tokens: i64, off: bool, fit: Option<Fit>, marked: bool) -> String {
+        let words = context_words(tokens);
+        if off {
+            return match self.model_facts().and_then(|f| f.context_length) {
+                Some(trained) => format!(
+                    "{words}: past the {} this model was trained for.",
+                    context_words(trained as i64)
+                ),
+                None => format!("{words}: more than {} takes.", self.engine_name()),
+            };
+        }
+        let mut said = match (self.need(), fit) {
+            (Some(need), Some(fit)) => {
+                let chat = need.per_token.saturating_mul(tokens as u64);
+                let total = need.weights + chat;
+                let cards = self.ticked_cards();
+                let on_cards =
+                    !cards.is_empty() && self.place() != super::graphics::Place::Processor;
+                let card = match cards.as_slice() {
+                    [one] => format!("the {}", one.name),
+                    _ => "the cards".to_string(),
+                };
+                let base = format!(
+                    "{words}: {} for the chat, {} with the model.",
+                    gb(chat),
+                    gb(total)
+                );
+                match (fit, on_cards) {
+                    (Fit::Good, true) => format!("{base} It fits on {card}."),
+                    (Fit::Partly, true) => {
+                        format!("{base} More than {card} has free: part goes in the memory, and replies are slower.")
+                    }
+                    (Fit::Good, false) => format!("{base} It fits in the memory."),
+                    (Fit::Partly, false) => format!("{base} It takes most of the memory."),
+                    (Fit::TooBig, _) => format!("{base} More than this computer has."),
+                }
+            }
+            _ => format!("{words} of context."),
+        };
+        if marked {
+            said.push_str(" Suits this model on this computer.");
+        }
+        said
+    }
 }
 
-/// The row of choices: one box cut in equal parts, the chosen one lit in the accent. Each part says on hover what it
-/// does. What was clicked comes back.
-fn choice_row(ui: &mut egui::Ui, cells: &[(Preset, String)], on: Option<Preset>) -> Option<Preset> {
+/// A box of the grid.
+struct Cell {
+    text: String,
+    fit: Option<Fit>,
+    /// Past what the model takes: dashed, and not chosen.
+    off: bool,
+    /// The suggested length: a short line under its words.
+    marked: bool,
+    hover: String,
+}
+
+/// The grid: four boxes a row, the lit one in the accent, a dot at the top right of each that says where it fits. What
+/// was clicked comes back.
+fn length_grid(ui: &mut egui::Ui, cells: &[Cell], lit: Option<usize>) -> Option<usize> {
     let p = theme::palette();
     let enabled = ui.is_enabled();
     let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 40.0), egui::Sense::hover());
-    let painter = ui.painter().clone();
-    painter.rect(
-        rect,
-        9.0,
-        p.card,
-        egui::Stroke::new(1.0, p.line),
-        egui::StrokeKind::Inside,
+    let gap = 4.0;
+    let high = 32.0;
+    let each = (width - gap * 3.0) / 4.0;
+    let rows = cells.len().div_ceil(4);
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(
+            width,
+            rows as f32 * high + (rows.saturating_sub(1)) as f32 * gap,
+        ),
+        egui::Sense::hover(),
     );
-    let inner = rect.shrink(3.0);
-    let gap = 3.0;
-    let count = cells.len().max(1) as f32;
-    let each = (inner.width() - gap * (count - 1.0)) / count;
+    let painter = ui.painter().clone();
     let mut chosen = None;
-    for (i, (preset, hover)) in cells.iter().enumerate() {
-        let cell = egui::Rect::from_min_size(
-            egui::pos2(inner.left() + i as f32 * (each + gap), inner.top()),
-            egui::vec2(each, inner.height()),
+    for (i, cell) in cells.iter().enumerate() {
+        let (row, col) = (i / 4, i % 4);
+        let r = egui::Rect::from_min_size(
+            egui::pos2(
+                rect.left() + col as f32 * (each + gap),
+                rect.top() + row as f32 * (high + gap),
+            ),
+            egui::vec2(each, high),
         );
-        let sense = if enabled {
-            egui::Sense::click()
-        } else {
-            egui::Sense::hover()
-        };
+        let on = lit == Some(i);
+        let active = enabled && !cell.off;
         let response = ui
-            .interact(cell, ui.id().with(("run_choice", i)), sense)
-            .on_hover_text(hover);
-        let lit = on == Some(*preset);
-        if lit {
-            painter.rect(
-                cell,
-                6.0,
+            .interact(
+                r,
+                ui.id().with(("length", i)),
+                if active {
+                    egui::Sense::click()
+                } else {
+                    egui::Sense::hover()
+                },
+            )
+            .on_hover_text(&cell.hover);
+        let (fill, stroke) = if on {
+            (
                 p.accent_soft,
-                egui::Stroke::new(1.0, p.accent_text.gamma_multiply(0.45)),
-                egui::StrokeKind::Inside,
-            );
-        } else if enabled && response.hovered() {
-            painter.rect_filled(cell, 6.0, p.raised_hover.gamma_multiply(0.6));
+                egui::Stroke::new(1.0, p.accent_text.gamma_multiply(0.5)),
+            )
+        } else if cell.off {
+            (egui::Color32::TRANSPARENT, egui::Stroke::new(1.0, p.line))
+        } else if active && response.hovered() {
+            (p.raised_hover, egui::Stroke::new(1.0, p.outline))
+        } else {
+            (p.card, egui::Stroke::new(1.0, p.line))
+        };
+        painter.rect(r, 7.0, fill, stroke, egui::StrokeKind::Inside);
+        if cell.off {
+            // dashed: the lines of a box past what the model takes
+            let dash = egui::Stroke::new(1.0, p.side);
+            for k in 0..((r.width() / 6.0) as i32) {
+                let x = r.left() + 4.0 + k as f32 * 6.0;
+                painter.vline(x, r.top()..=r.top() + 1.0, dash);
+                painter.vline(x, r.bottom() - 1.0..=r.bottom(), dash);
+            }
         }
-        let color = match (lit, enabled) {
-            (true, _) => p.accent_text,
-            (false, true) => p.muted,
-            (false, false) => p.faint,
+        let color = if on {
+            p.accent_text
+        } else if cell.off || !enabled {
+            p.faint
+        } else {
+            p.body
         };
         let mut font = egui::TextStyle::Body.resolve(ui.style());
-        if lit {
+        font.size = 13.0;
+        if on {
             font.family = theme::semibold(ui);
         }
-        let galley = painter.layout_no_wrap(preset.short().to_string(), font, color);
-        painter.galley(cell.center() - galley.size() / 2.0, galley, color);
-        if response.clicked() {
-            chosen = Some(*preset);
+        let galley = painter.layout_no_wrap(cell.text.clone(), font, color);
+        painter.galley(r.center() - galley.size() / 2.0, galley, color);
+        if let Some(fit) = cell.fit {
+            let dot = match fit {
+                Fit::Good => p.accent_text,
+                Fit::Partly => p.warn,
+                Fit::TooBig => p.bad,
+            };
+            painter.circle_filled(egui::pos2(r.right() - 6.0, r.top() + 6.0), 3.0, dot);
+        }
+        if cell.marked {
+            painter.hline(
+                r.center().x - 7.0..=r.center().x + 7.0,
+                r.bottom() - 5.0,
+                egui::Stroke::new(
+                    2.0,
+                    p.accent_text.gamma_multiply(if on { 1.0 } else { 0.6 }),
+                ),
+            );
+        }
+        // a length that is lit is chosen already; Other… lit is clicked to open its number again
+        if response.clicked() && (!on || i == cells.len() - 1) {
+            chosen = Some(i);
         }
     }
     chosen
-}
-
-/// A word in a thin rounded frame of `color` (Custom, beside the label of the row).
-fn pill(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
-    let font = egui::TextStyle::Small.resolve(ui.style());
-    let galley = ui.painter().layout_no_wrap(text.to_string(), font, color);
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(galley.size().x + 14.0, galley.size().y + 2.0),
-        egui::Sense::hover(),
-    );
-    ui.painter().rect_stroke(
-        rect,
-        rect.height() / 2.0,
-        egui::Stroke::new(1.0, color.gamma_multiply(0.55)),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter()
-        .galley(rect.center() - galley.size() / 2.0, galley, color);
-}
-
-/// The line under the row: the number in the colour of the text, then what the choice means, wrapped to the panel.
-fn said_line(ui: &mut egui::Ui, numbers: &str, rest: &str) {
-    let p = theme::palette();
-    let font = egui::TextStyle::Small.resolve(ui.style());
-    let mut job = egui::text::LayoutJob::default();
-    job.append(numbers, 0.0, egui::TextFormat::simple(font.clone(), p.body));
-    job.append(rest, 0.0, egui::TextFormat::simple(font, p.muted));
-    job.wrap.max_width = ui.available_width();
-    ui.label(job);
 }
 
 #[cfg(test)]
@@ -466,7 +663,8 @@ mod tests {
 
     const GB: u64 = 1024 * 1024 * 1024;
 
-    /// An application of `engine` with one model of `bytes`, on a computer of 16 GB.
+    /// An application of `engine` with one model of `bytes` (not a real GGUF file: its facts are not known), on a
+    /// computer of 16 GB.
     fn app_with_model(dir: &Path, engine: &str, bytes: u64) -> App {
         let mut settings = Settings::default();
         settings.set_chosen_engine(engine);
@@ -495,35 +693,53 @@ mod tests {
         assert_eq!(context_words(4096), "4K");
         assert_eq!(context_words(16384), "16K");
         assert_eq!(context_words(131072), "128K");
-        assert_eq!(context_words(3000), "3000");
+        assert_eq!(context_words(128000), "128K");
+        assert_eq!(context_words(3000), "3K");
+        assert_eq!(context_words(3001), "3001");
         assert_eq!(context_words(512), "512");
     }
 
     #[test]
-    fn the_presets_of_llamacpp_are_the_recommended_context_four_times_it_and_2k() {
-        let dir = scratch("presets-llama");
+    fn a_length_a_little_past_what_the_model_takes_is_what_it_takes() {
+        assert_eq!(length_at(131072, 128000), Some(128000));
+        assert_eq!(length_at(65536, 128000), Some(65536));
+        assert_eq!(length_at(262144, 128000), None);
+    }
+
+    #[test]
+    fn the_choices_kept_by_an_earlier_version_are_read_as_lengths() {
+        assert_eq!(RunChoice::from_key("balanced"), Some(RunChoice::Suggested));
+        assert_eq!(RunChoice::from_key("long"), Some(RunChoice::Length(32768)));
+        assert_eq!(RunChoice::from_key("light"), Some(RunChoice::Length(4096)));
+        assert_eq!(RunChoice::from_key("custom"), Some(RunChoice::Own));
+        assert_eq!(RunChoice::from_key("65536"), Some(RunChoice::Length(65536)));
+        assert_eq!(RunChoice::from_key("nonsense"), None);
+        for choice in [
+            RunChoice::Suggested,
+            RunChoice::Length(131072),
+            RunChoice::Own,
+        ] {
+            assert_eq!(RunChoice::from_key(&choice.key()), Some(choice));
+        }
+    }
+
+    #[test]
+    fn without_the_models_facts_the_suggested_length_is_the_documents_and_a_length_is_kept() {
+        let dir = scratch("grid-llama");
         // a 1 GB model on 16 GB: the document recommends 16K
         let mut app = app_with_model(&dir, "llamacpp", GB);
-        assert_eq!(app.preset_context(Preset::Balanced), Some(Some(16384)));
-        assert_eq!(app.preset_context(Preset::Long), Some(Some(32768)));
-        assert_eq!(app.preset_context(Preset::Light), Some(Some(2048)));
-        assert_eq!(app.preset_context(Preset::Custom), None);
-
-        // a first run's 4K is none of them, and the line does not call it Custom: it says the numbers
-        assert_eq!(app.current_preset(), Preset::Custom);
-        let said = app.run_summary();
-        assert_eq!(said, "4K context · uses the graphics card");
-
-        for (preset, said) in [
-            (Preset::Balanced, "Balanced · 16K context"),
-            (Preset::Long, "Long chats · 32K context"),
-            (Preset::Light, "Light · 2K context"),
-        ] {
-            app.apply_preset(preset);
-            assert_eq!(app.current_preset(), preset);
-            assert!(app.run_summary().starts_with(said), "{}", app.run_summary());
-        }
-        // a preset sets the context and nothing else: no GPU is said as such
+        assert_eq!(app.suggested_context(), Some(16384));
+        app.choose_length(65536);
+        assert_eq!(app.values.int("ctx_size"), Some(65536));
+        assert_eq!(app.run_choice, Some(RunChoice::Length(65536)));
+        assert!(
+            app.run_summary().starts_with("64K context"),
+            "{}",
+            app.run_summary()
+        );
+        app.choose_length(16384);
+        assert_eq!(app.run_choice, Some(RunChoice::Suggested));
+        // where it runs is said as such
         app.values.set("n_gpu_layers", 0i64);
         assert!(
             app.run_summary().ends_with("CPU only"),
@@ -534,45 +750,28 @@ mod tests {
     }
 
     #[test]
-    fn a_bigger_model_has_a_smaller_balanced_context_and_light_is_always_less() {
-        let dir = scratch("presets-big");
-        // a 3 GB model on 16 GB: 8K is Balanced
-        let app = app_with_model(&dir, "llamacpp", 3 * GB);
-        assert_eq!(app.preset_context(Preset::Balanced), Some(Some(8192)));
-        assert_eq!(app.preset_context(Preset::Long), Some(Some(32768)));
-        assert_eq!(app.preset_context(Preset::Light), Some(Some(2048)));
-        // a 6 GB model on 16 GB: 2K is Balanced, Long chats is at least 16K, and Light is half of Balanced
-        let app = app_with_model(&dir, "llamacpp", 6 * GB);
-        assert_eq!(app.preset_context(Preset::Balanced), Some(Some(2048)));
-        assert_eq!(app.preset_context(Preset::Long), Some(Some(16384)));
-        assert_eq!(app.preset_context(Preset::Light), Some(Some(1024)));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn ollamas_balanced_is_its_own_context_and_the_others_set_one() {
-        let dir = scratch("presets-ollama");
+    fn ollamas_suggested_length_is_its_own_context() {
+        let dir = scratch("grid-ollama");
         let mut app = app_with_model(&dir, "ollama", GB);
-        assert_eq!(app.preset_context(Preset::Balanced), Some(None));
-        assert_eq!(app.current_preset(), Preset::Balanced);
+        assert_eq!(app.suggested_context(), None);
+        assert_eq!(app.choice_now(), RunChoice::Suggested);
         assert!(
-            app.run_summary()
-                .starts_with("Balanced · Ollama's own context"),
+            app.run_summary().starts_with("Ollama's own context"),
             "{}",
             app.run_summary()
         );
-        app.apply_preset(Preset::Long);
+        app.choose_length(16384);
         assert_eq!(app.values.int("ctx_size"), Some(16384));
-        app.apply_preset(Preset::Balanced);
+        app.apply_choice(RunChoice::Suggested);
         assert_eq!(app.values.get("ctx_size"), None, "left to Ollama again");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn an_engine_with_no_context_says_its_fields_and_has_no_presets() {
-        let dir = scratch("presets-comfy");
+    fn an_engine_with_no_context_says_its_fields_and_has_no_grid() {
+        let dir = scratch("grid-comfy");
         let app = app_with_model(&dir, "comfyui", GB);
-        assert_eq!(app.current_preset(), Preset::Custom);
+        assert!(app.context_field().is_none());
         let said = app.run_summary();
         assert!(said.contains("Port"), "{said}");
         assert!(!said.contains("context"), "{said}");

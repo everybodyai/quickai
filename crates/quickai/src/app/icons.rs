@@ -26,6 +26,8 @@ pub(super) enum Icon {
     Close,
     Check,
     Computer,
+    /// A graphics card: a chip with its pins (the panel's Graphics, C213).
+    Chip,
     Sliders,
     /// « and »: the sidebar and the panel at the right are put away and brought back with them (H4 of
     /// `the mockups`), each pointing the way its side goes.
@@ -215,6 +217,28 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
             ]);
             line(&[(8.5, 20.0), (15.5, 20.0)]);
             line(&[(12.0, 16.0), (12.0, 20.0)]);
+        }
+        Icon::Chip => {
+            line(&[
+                (6.0, 6.0),
+                (18.0, 6.0),
+                (18.0, 18.0),
+                (6.0, 18.0),
+                (6.0, 6.0),
+            ]);
+            line(&[
+                (9.5, 9.5),
+                (14.5, 9.5),
+                (14.5, 14.5),
+                (9.5, 14.5),
+                (9.5, 9.5),
+            ]);
+            for at in [9.5, 14.5] {
+                line(&[(at, 2.5), (at, 6.0)]);
+                line(&[(at, 18.0), (at, 21.5)]);
+                line(&[(2.5, at), (6.0, at)]);
+                line(&[(18.0, at), (21.5, at)]);
+            }
         }
         Icon::Sliders => {
             line(&[(4.0, 8.0), (13.0, 8.0)]);
