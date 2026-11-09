@@ -500,11 +500,17 @@ impl App {
             self.log_unread = false;
         }
         let mut close = false;
+        // dragged up, it leaves the page the chat's box (as high as it was last drawn, with the files over it) and a
+        // little of the conversation, so that the box is never under it
+        let chat_box = ui
+            .data(|d| d.get_temp::<f32>(egui::Id::new(super::chat::CHAT_BOX_HEIGHT)))
+            .unwrap_or(64.0);
+        let most = (ui.available_height() - chat_box - 80.0).clamp(160.0, 640.0);
         // One panel for both tabs, so switching between them keeps the height it was given.
         egui::Panel::bottom("dock")
             .resizable(true)
             .default_size(260.0)
-            .size_range(160.0..=640.0)
+            .size_range(160.0..=most)
             .frame(theme::side_frame(egui::Margin::ZERO))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {

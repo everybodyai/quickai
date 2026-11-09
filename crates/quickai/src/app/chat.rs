@@ -24,6 +24,10 @@ use super::App;
 use crate::chats::{self, ChatSummary, SavedChat, SavedTurn};
 use crate::events::ServerState;
 
+/// Where the height the chat's box took when it was last drawn is kept (egui's data), for the room the page leaves it
+/// and for how high the log under the page may be dragged.
+pub(super) const CHAT_BOX_HEIGHT: &str = "chat_box_height";
+
 /// One message of the conversation, the pictures sent with it, and for a reply, how fast it came.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Turn {
@@ -1441,7 +1445,11 @@ impl App {
                 None => format!("Start {server} with a model to chat with it here."),
             },
         };
-        let box_height = 64.0;
+        // the room under the conversation is what the box took the last time it was drawn, with the files to go with the
+        // next message over it and the lines of a long message in it: a height of its own would let a taller box run
+        // under the log
+        let box_id = egui::Id::new(CHAT_BOX_HEIGHT);
+        let box_height = ui.data(|d| d.get_temp::<f32>(box_id)).unwrap_or(64.0);
         let room = (ui.available_height() - box_height).max(40.0);
         let mut regenerate = false;
         let mut edit = false;
@@ -1687,6 +1695,7 @@ impl App {
         if edit {
             self.edit_last_message();
         }
+        let box_top = ui.cursor().top();
         // the pictures that go with the next message, each with the way to take it off
         if !self.chat.pictures.is_empty() {
             let mut off: Option<usize> = None;
@@ -1785,6 +1794,13 @@ impl App {
                     }
                 });
             });
+        // how high the box was, for the room the next frame leaves it; when it changed, this frame is drawn again before
+        // it is shown, so that the box is never seen under the log
+        let took = frame.response.rect.bottom() - box_top;
+        if (took - box_height).abs() > 0.5 {
+            ui.data_mut(|d| d.insert_temp(box_id, took));
+            ui.ctx().request_discard("the chat's box changed height");
+        }
         // the box, without the room its frame keeps round it
         let r = frame.response.rect;
         super::help::mark_spot(
