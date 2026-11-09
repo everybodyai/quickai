@@ -83,9 +83,9 @@ impl App {
                     egui::vec2((width - HIDE.x - 4.0).max(60.0), HEAD),
                     egui::Sense::click(),
                 );
-                hide = icons::icon_button(ui, Icon::SideLeft, HIDE, true, false)
+                hide = icons::icon_button(ui, Icon::DoubleLeft, HIDE, true, false)
                     .on_hover_text(
-                        "Hide the sidebar. The button at the left of the bar shows it again.",
+                        "Hide the sidebar. The » at the left end of the bar brings it back.",
                     )
                     .clicked();
                 menu

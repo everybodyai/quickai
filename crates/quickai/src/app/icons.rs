@@ -27,10 +27,10 @@ pub(super) enum Icon {
     Check,
     Computer,
     Sliders,
-    /// The sidebar, and the panel at the right: a window with a column at that side (the buttons that hide and show
-    /// them, as in the A6 samples).
-    SideLeft,
-    SideRight,
+    /// « and »: the sidebar and the panel at the right are put away and brought back with them (H4 of
+    /// `the mockups`), each pointing the way its side goes.
+    DoubleLeft,
+    DoubleRight,
     Chat,
     Refresh,
     Plug,
@@ -220,15 +220,13 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
             line(&[(12.5, 16.0), (20.0, 16.0)]);
             ring(9.5, 16.0, 2.4);
         }
-        Icon::SideLeft | Icon::SideRight => {
-            painter.rect_stroke(
-                Rect::from_min_max(at(3.5, 4.5), at(20.5, 19.5)),
-                2.5 * unit,
-                stroke,
-                egui::StrokeKind::Middle,
-            );
-            let x = if icon == Icon::SideLeft { 9.5 } else { 14.5 };
-            line(&[(x, 4.5), (x, 19.5)]);
+        Icon::DoubleLeft => {
+            line(&[(12.0, 6.5), (6.5, 12.0), (12.0, 17.5)]);
+            line(&[(18.0, 6.5), (12.5, 12.0), (18.0, 17.5)]);
+        }
+        Icon::DoubleRight => {
+            line(&[(6.0, 6.5), (11.5, 12.0), (6.0, 17.5)]);
+            line(&[(12.0, 6.5), (17.5, 12.0), (12.0, 17.5)]);
         }
         Icon::Chat => line(&[
             (4.0, 5.0),

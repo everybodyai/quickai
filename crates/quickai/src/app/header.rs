@@ -847,9 +847,9 @@ mod tests {
         seen.unwrap_or_else(|| panic!("{spot:?} is not drawn"))
     }
 
-    /// I42 (C203): the panel at the right (how the model runs) shows by itself in a window wide enough for it, as the
-    /// suites' 980 points are, and not in a narrower one, where the chat would have too little room; there the bar's
-    /// button opens it, and in a wide window puts it away.
+    /// I42 (C203, H4): the panel at the right (how the model runs) shows by itself in a window wide enough for it, as the
+    /// suites' 980 points are, and not in a narrower one, where the chat would have too little room; there « at the right
+    /// end of the bar opens it, and » at the panel's own head puts it away, in a wide window too.
     #[test]
     fn p3_i42_the_panel_shows_by_itself_in_a_wide_window_and_the_bars_button_opens_it_in_a_narrow_one(
     ) {
@@ -861,10 +861,13 @@ mod tests {
         assert!(at_width(&mut app, &ctx, 980.0).contains_key("How it runs"));
         let narrow = at_width(&mut app, &ctx, 760.0);
         assert!(!narrow.contains_key("How it runs"), "{:?}", narrow.keys());
-        // the bar's button opens it in the narrow window
-        let button = spot(&mut app, &ctx, Spot::Change);
-        assert!(button.center().y < 56.0, "{button:?} is not in the bar");
-        click(&mut app, &ctx, button.center());
+        // « at the right end of the bar opens it in the narrow window
+        let show = spot(&mut app, &ctx, Spot::Change);
+        assert!(
+            show.center().y < 56.0 && show.right() > 760.0 - 40.0,
+            "{show:?} is not at the right end of the bar"
+        );
+        click(&mut app, &ctx, show.center());
         let opened = at_width(&mut app, &ctx, 760.0);
         let title = *opened
             .get("How it runs")
@@ -873,13 +876,18 @@ mod tests {
             title.left() > 760.0 - 460.0,
             "{title:?} is not at the right"
         );
-        // and the same button puts it away, in the wide window too
-        let button = spot(&mut app, &ctx, Spot::Change);
-        click(&mut app, &ctx, button.center());
+        // » at the panel's head, beside its name, puts it away, and it stays away in the wide window too
+        let hide = spot(&mut app, &ctx, Spot::Change);
+        assert!(
+            (hide.center().y - title.center().y).abs() < 14.0 && hide.left() > title.right(),
+            "{hide:?} is not beside {title:?}"
+        );
+        click(&mut app, &ctx, hide.center());
         assert!(!at_width(&mut app, &ctx, 760.0).contains_key("How it runs"));
         assert!(!at_width(&mut app, &ctx, 980.0).contains_key("How it runs"));
-        let button = spot(&mut app, &ctx, Spot::Change);
-        click(&mut app, &ctx, button.center());
+        let show = spot(&mut app, &ctx, Spot::Change);
+        assert!(show.center().y < 56.0, "{show:?} is not in the bar");
+        click(&mut app, &ctx, show.center());
         assert!(at_width(&mut app, &ctx, 980.0).contains_key("How it runs"));
         let _ = std::fs::remove_dir_all(&dir);
     }

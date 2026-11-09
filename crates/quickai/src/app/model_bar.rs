@@ -1,8 +1,8 @@
 //! The bar over the page (UI v3, C203, the user's A6 of `the mockups`): the chosen model's name (or the
 //! engine's, for one that runs on its own or has no model yet) and what it is doing; then what can be done with it as
 //! buttons with words (Start, Load model or Use this model; Stop; Open ComfyUI); then pictures: a new chat, the log
-//! under the page, the panel at the right (how it runs, and Connect an app while it runs) and the ⋯ menu (the chat's
-//! options, and the model's menu of the list). With the sidebar put away, a button at its left end brings it back.
+//! under the page and the ⋯ menu (the chat's options, and the model's menu of the list). A side of the window put away
+//! is brought back from the bar's end on its side: » at the left for the sidebar, « at the right for the panel (H4).
 
 use eframe::egui;
 
@@ -35,7 +35,20 @@ impl App {
         ui.horizontal_centered(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(2.0);
-                // the pictures, from the right: ⋯, the panel, the log, a new chat
+                // the panel at the right, put away (or a window too narrow for it to show by itself): « at the right end
+                // brings it back (H4 of `the mockups`); shown, its own » puts it away
+                if self.panel_possible() && !self.panel_shown {
+                    let show = icons::icon_button(ui, Icon::DoubleLeft, ICON, true, false).on_hover_text(
+                        "Show the panel: how the model runs, and Connect an app while it runs.",
+                    );
+                    help::mark_spot(ui, Spot::Change, show.rect);
+                    // Connect an app is the panel while the model runs
+                    if state == ServerState::Running {
+                        help::mark_spot(ui, Spot::Plug, show.rect);
+                    }
+                    pressed.panel = show.clicked();
+                }
+                // the pictures, from the right: ⋯, the log, a new chat
                 let more = icons::icon_button(ui, Icon::More, ICON, true, false)
                     .on_hover_text(if model_page {
                         "The chat's options, and the model's menu: Details, Show in folder, Copy name, Delete"
@@ -51,20 +64,6 @@ impl App {
                         ui.set_min_width(240.0);
                         pressed.more = self.bar_menu(ui, model_page);
                     });
-                if self.panel_possible() {
-                    let panel = icons::icon_button(ui, Icon::SideRight, ICON, true, self.panel_shown)
-                        .on_hover_text(if self.panel_shown {
-                            "Hide the panel at the right: how the model runs, and Connect an app while it runs."
-                        } else {
-                            "Show the panel at the right: how the model runs, and Connect an app while it runs."
-                        });
-                    help::mark_spot(ui, Spot::Change, panel.rect);
-                    // Connect an app is the panel while the model runs
-                    if state == ServerState::Running {
-                        help::mark_spot(ui, Spot::Plug, panel.rect);
-                    }
-                    pressed.panel = panel.clicked();
-                }
                 // the log is there before the engine is installed too: it is where its install says what it does
                 {
                     let log = icons::icon_button(ui, Icon::Terminal, ICON, true, self.dock_open)
@@ -409,14 +408,9 @@ impl App {
             }
         }
         if pressed.panel {
-            // shown, it is put away; not shown (shut, or a window too narrow), it is opened and stays
-            if self.panel_shown {
-                self.panel_open = false;
-                self.panel_asked = false;
-            } else {
-                self.panel_open = true;
-                self.panel_asked = true;
-            }
+            // not shown (put away, or a window too narrow): it is opened, and stays
+            self.panel_open = true;
+            self.panel_asked = true;
         }
         if pressed.sidebar {
             self.sidebar_open = true;
@@ -492,7 +486,7 @@ enum BarMenu {
 
 /// The button at the left end of the bar that brings back the sidebar, when it was put away.
 fn show_sidebar_button(ui: &mut egui::Ui) -> bool {
-    icons::icon_button(ui, Icon::SideLeft, ICON, true, false)
+    icons::icon_button(ui, Icon::DoubleRight, ICON, true, false)
         .on_hover_text("Show the sidebar")
         .clicked()
 }

@@ -312,8 +312,8 @@ const PAGES: &[Page] = &[
         }),
         steps: &[
             step(
-                "Start the model: the panel at the right of the page becomes **Connect an app**. The {panel} of the \
-                 bar shows and hides it.",
+                "Start the model: the panel at the right of the page becomes **Connect an app**. The {hide} at its \
+                 top puts it away, and the {show} at the right end of the bar brings it back.",
             )
             .at(Spot::Plug),
             step("Copy the **Address** into the other app. It may call it the base URL or the endpoint."),
@@ -444,7 +444,7 @@ const PAGES: &[Page] = &[
             ring: None,
         }),
         steps: &[
-            step("The panel at the right of the page says how the model runs. The {panel} of the bar shows or hides it.")
+            step("The panel at the right of the page says how the model runs. The {hide} at its top puts it away, and the {show} at the right end of the bar brings it back.")
                 .at(Spot::Change),
             step(
                 "Choose how much of the chat it remembers: **Light**, **Balanced** or **Long**. **Set the numbers \
@@ -1739,7 +1739,8 @@ fn button_icon(name: &str) -> Option<Icon> {
         "clip" => Icon::Clip,
         "more" => Icon::More,
         "gear" => Icon::Gear,
-        "panel" => Icon::SideRight,
+        "hide" => Icon::DoubleRight,
+        "show" => Icon::DoubleLeft,
         "log" => Icon::Terminal,
         "plus" => Icon::Plus,
         "pencil" => Icon::Pencil,

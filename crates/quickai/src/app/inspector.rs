@@ -42,7 +42,7 @@ impl App {
     /// how it fits this computer.
     fn show_how_section(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette();
-        section_title(ui, "How it runs");
+        self.panel_head(ui, "How it runs");
         self.show_change_panel(ui);
         for problem in self.field_problems() {
             ui.colored_label(super::widgets::problem_color(), problem);
@@ -126,7 +126,7 @@ impl App {
 
     /// Connect an app, while it runs: the rows and the example, the chat in a browser, and how it runs, in a line.
     fn show_connect_section(&mut self, ui: &mut egui::Ui) {
-        section_title(ui, "Connect an app");
+        self.panel_head(ui, "Connect an app");
         let panel = self.connection_panel();
         let openai = panel.as_ref().is_some_and(|p| p.base_url.ends_with("/v1"));
         ui.label(
@@ -204,15 +204,38 @@ impl App {
     }
 }
 
-/// The name of the panel's section, at its head.
-fn section_title(ui: &mut egui::Ui, text: &str) {
-    ui.label(
-        egui::RichText::new(text)
-            .size(15.0)
-            .family(theme::semibold(ui))
-            .color(theme::palette().text),
-    );
-    ui.add_space(4.0);
+impl App {
+    /// The head of the panel: the name of its section, and at its right » that puts the panel away (H4 of
+    /// `the mockups`); « at the right end of the bar brings it back.
+    fn panel_head(&mut self, ui: &mut egui::Ui, text: &str) {
+        let mut hide = false;
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(text)
+                    .size(15.0)
+                    .family(theme::semibold(ui))
+                    .color(theme::palette().text),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let button =
+                    icons::icon_button(ui, Icon::DoubleRight, egui::vec2(28.0, 28.0), true, false)
+                        .on_hover_text(
+                            "Hide the panel. The « at the right end of the bar brings it back.",
+                        );
+                super::help::mark_spot(ui, super::help::Spot::Change, button.rect);
+                // Connect an app is the panel while the model runs
+                if self.session.state() == ServerState::Running {
+                    super::help::mark_spot(ui, super::help::Spot::Plug, button.rect);
+                }
+                hide = button.clicked();
+            });
+        });
+        ui.add_space(4.0);
+        if hide {
+            self.panel_open = false;
+            self.panel_asked = false;
+        }
+    }
 }
 
 /// A line between two parts of the panel.
