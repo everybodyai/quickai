@@ -1,7 +1,8 @@
 //! The sidebar of UI v3 (C203, the user's A6 with the QuickAI menu of S2, `the mockups`): at its head the
-//! QuickAI menu (Settings, Configurations, the theme, Help, Report a problem, About and Quit: what the menu bar had),
-//! then where the models run and the engine that runs them, in one box, a box that narrows the list, Recommended and
-//! MCP servers, and the models, with + for what the Models menu had. The menu bar and the status bar are gone.
+//! QuickAI menu (Settings, Configurations, the theme, Help, Report a problem, About and Quit: what the menu bar had) and
+//! the button that puts the sidebar away, then where the models run and the engine that runs them, in one box, a box
+//! that narrows the list, and the models, with + for what the Models menu had; Recommended and MCP servers are at its
+//! foot. The menu bar and the status bar are gone.
 
 use eframe::egui;
 
@@ -13,14 +14,34 @@ use super::App;
 
 /// The height of the head of the sidebar, the QuickAI menu's row.
 const HEAD: f32 = 34.0;
+/// The button at the right of the head that puts the sidebar away.
+const HIDE: egui::Vec2 = egui::vec2(30.0, 30.0);
 
 impl App {
-    /// The sidebar: the QuickAI menu, the computer and the engine, the box that narrows the list, Recommended and MCP
-    /// servers, and the models (none for an engine that runs on its own, which keeps its files on its page).
+    /// The sidebar: the QuickAI menu, the computer and the engine, the box that narrows the list, and the models (none
+    /// for an engine that runs on its own, which keeps its files on its page), with Recommended and MCP servers at its
+    /// foot.
     pub(super) fn show_sidebar(&mut self, ui: &mut egui::Ui, active: bool) {
         self.show_app_menu_row(ui);
         ui.add_space(8.0);
         self.show_where_and_engine(ui);
+        // Recommended and MCP servers at the foot, under a line, and the models in the room above them (the user, on
+        // 2026-11-09)
+        egui::Panel::bottom("sidebar_foot")
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(egui::Frame::new())
+            .show(ui, |ui| {
+                ui.add_space(6.0);
+                let y = ui.cursor().top();
+                ui.painter().hline(
+                    ui.max_rect().x_range(),
+                    y,
+                    egui::Stroke::new(1.0, theme::palette().line),
+                );
+                ui.add_space(7.0);
+                self.show_nav_rows(ui);
+            });
         let there = self.setup_in_use().is_some();
         let alone = self.runs_alone();
         if !alone && !there && self.models.len() > FILTER_FROM {
@@ -34,12 +55,10 @@ impl App {
         } else if self.models.len() <= FILTER_FROM {
             self.model_filter.clear();
         }
-        ui.add_space(8.0);
-        self.show_nav_rows(ui);
         if alone {
             return;
         }
-        ui.add_space(10.0);
+        ui.add_space(12.0);
         if there {
             self.show_models_there(ui);
             return;
@@ -53,8 +72,26 @@ impl App {
     fn show_app_menu_row(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette();
         let width = ui.available_width();
-        let (rect, response) =
-            ui.allocate_exact_size(egui::vec2(width, HEAD), egui::Sense::click());
+        // the menu, and at its right the button that puts the sidebar away (as in the A6 samples)
+        let mut hide = false;
+        let (rect, response) = ui
+            .horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                let menu = ui.allocate_exact_size(
+                    egui::vec2((width - HIDE.x - 4.0).max(60.0), HEAD),
+                    egui::Sense::click(),
+                );
+                hide = icons::icon_button(ui, Icon::SideLeft, HIDE, true, false)
+                    .on_hover_text(
+                        "Hide the sidebar. The button at the left of the bar shows it again.",
+                    )
+                    .clicked();
+                menu
+            })
+            .inner;
+        if hide {
+            self.sidebar_open = false;
+        }
         mark_spot(ui, Spot::Settings, rect);
         mark_spot(ui, Spot::Help, rect);
         let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));

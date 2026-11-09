@@ -244,6 +244,9 @@ pub struct App {
     help: help::HelpState,
     /// *Change* is open under the model's name.
     change_open: bool,
+    /// The sidebar is shown (UI v3, C203): its button at its head puts it away, and the bar's brings it back. Kept
+    /// for the next start, as the panel's is.
+    sidebar_open: bool,
     /// The panel at the right of the page (how it runs; Connect an app while it runs) is open (UI v3, C203).
     panel_open: bool,
     /// The panel was opened with the bar's button: it shows in a window too narrow for it to show by itself.
@@ -500,6 +503,7 @@ impl App {
             focus_add_box: false,
             help: help::HelpState::default(),
             change_open: false,
+            sidebar_open: true,
             panel_open: true,
             panel_asked: false,
             panel_shown: false,
@@ -521,6 +525,9 @@ impl App {
             Some("live") => (Tab::Live, true),
             _ => (Tab::Chat, false),
         };
+        // and the sides of the window that were put away
+        app.sidebar_open = !app.stored.sidebar_hidden();
+        app.panel_open = !app.stored.panel_hidden();
         // the executable, the models and the panels' state of the engine in use
         app.load_engine_state();
         // and the configuration in use: the one the settings name, else the Default
@@ -752,6 +759,8 @@ impl App {
             (true, Tab::Main) => "log",
             (true, Tab::Live) => "live",
         });
+        settings.set_sidebar_hidden(!self.sidebar_open);
+        settings.set_panel_hidden(!self.panel_open);
         settings.enable_traffic_proxy = self.enable_traffic_proxy;
         if let Some(engine) = self.registry.engine(&self.engine) {
             let mut values = self.values.clone();

@@ -52,12 +52,23 @@ impl App {
         }
         self.take_shortcuts(ui.ctx(), state, active);
 
+        // the sidebar slides away with the button at its head, and back with the bar's (as in the A6 samples); the page
+        // of a computer QuickAI sets up has no bar, and keeps it
+        if self.setup_in_use().is_some() {
+            self.sidebar_open = true;
+        }
+        // (dragged narrower than it can be, it is put away too, and dragged out of the window's edge it comes back)
+        let was = self.sidebar_open;
+        let mut open = was;
         egui::Panel::left("sidebar")
             .resizable(true)
             .default_size(240.0)
             .size_range(200.0..=340.0)
             .frame(theme::side_frame(egui::Margin::symmetric(10, 10)))
-            .show(ui, |ui| self.show_sidebar(ui, active));
+            .show_collapsible(ui, &mut open, |ui| self.show_sidebar(ui, active));
+        if open != was {
+            self.sidebar_open = open;
+        }
         // a computer QuickAI sets up, chosen in the sidebar: the page of its run (WP4.33), which has its own head
         let remote_view = self.setup_in_use().is_some();
         let wide = ui.ctx().content_rect().width() >= PANEL_FROM;

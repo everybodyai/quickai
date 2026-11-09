@@ -2,7 +2,7 @@
 //! engine's, for one that runs on its own or has no model yet) and what it is doing; then what can be done with it as
 //! buttons with words (Start, Load model or Use this model; Stop; Open ComfyUI); then pictures: a new chat, the log
 //! under the page, the panel at the right (how it runs, and Connect an app while it runs) and the ⋯ menu (the chat's
-//! options, and the model's menu of the list).
+//! options, and the model's menu of the list). With the sidebar put away, a button at its left end brings it back.
 
 use eframe::egui;
 
@@ -52,10 +52,12 @@ impl App {
                         pressed.more = self.bar_menu(ui, model_page);
                     });
                 if self.panel_possible() {
-                    let panel = icons::icon_button(ui, Icon::Sliders, ICON, true, self.panel_shown)
-                        .on_hover_text(
-                            "The panel at the right: how the model runs, and Connect an app while it runs.",
-                        );
+                    let panel = icons::icon_button(ui, Icon::SideRight, ICON, true, self.panel_shown)
+                        .on_hover_text(if self.panel_shown {
+                            "Hide the panel at the right: how the model runs, and Connect an app while it runs."
+                        } else {
+                            "Show the panel at the right: how the model runs, and Connect an app while it runs."
+                        });
                     help::mark_spot(ui, Spot::Change, panel.rect);
                     // Connect an app is the panel while the model runs
                     if state == ServerState::Running {
@@ -95,7 +97,13 @@ impl App {
                     self.bar_actions(ui, state, active, &mut pressed);
                 }
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.add_space(18.0);
+                    if self.sidebar_open {
+                        ui.add_space(18.0);
+                    } else {
+                        ui.add_space(4.0);
+                        pressed.sidebar = show_sidebar_button(ui);
+                        ui.add_space(8.0);
+                    }
                     // the name and what it is doing share what the buttons leave: the name keeps at least half of it, and
                     // the state is drawn only where there is room for its dot and some of its words
                     let p = theme::palette();
@@ -149,8 +157,15 @@ impl App {
             ),
         };
         let mut back = false;
+        let mut sidebar = false;
         ui.horizontal_centered(|ui| {
-            ui.add_space(6.0);
+            if self.sidebar_open {
+                ui.add_space(6.0);
+            } else {
+                ui.add_space(4.0);
+                sidebar = show_sidebar_button(ui);
+                ui.add_space(2.0);
+            }
             back = icons::icon_button(ui, Icon::Back, ICON, true, false)
                 .on_hover_text("Back to the model (Escape)")
                 .clicked();
@@ -166,6 +181,9 @@ impl App {
         });
         if back {
             self.view = super::MainView::Model;
+        }
+        if sidebar {
+            self.sidebar_open = true;
         }
     }
 
@@ -400,6 +418,9 @@ impl App {
                 self.panel_asked = true;
             }
         }
+        if pressed.sidebar {
+            self.sidebar_open = true;
+        }
         if pressed.log {
             self.dock_open = !self.dock_open;
             if self.dock_open && matches!(self.active_tab, super::Tab::Chat) {
@@ -455,6 +476,7 @@ struct Press {
     stop: bool,
     web_ui: bool,
     panel: bool,
+    sidebar: bool,
     log: bool,
     new_chat: bool,
     more: Option<BarMenu>,
@@ -466,6 +488,13 @@ enum BarMenu {
     Configurations,
     Engines,
     BrowserChat,
+}
+
+/// The button at the left end of the bar that brings back the sidebar, when it was put away.
+fn show_sidebar_button(ui: &mut egui::Ui) -> bool {
+    icons::icon_button(ui, Icon::SideLeft, ICON, true, false)
+        .on_hover_text("Show the sidebar")
+        .clicked()
 }
 
 /// The thin upright line between the buttons with words and the pictures.

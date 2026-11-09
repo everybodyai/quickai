@@ -103,6 +103,16 @@ pub(super) enum Spot {
     Help,
 }
 
+impl Spot {
+    /// Whether it is in the sidebar, which can be put away.
+    fn in_sidebar(self) -> bool {
+        matches!(
+            self,
+            Spot::EngineMenu | Spot::AddModel | Spot::Computer | Spot::Settings | Spot::Help
+        )
+    }
+}
+
 /// What a step's button does for the person.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Deed {
@@ -434,7 +444,7 @@ const PAGES: &[Page] = &[
             ring: None,
         }),
         steps: &[
-            step("The panel at the right of the page says how the model runs. The {panel} of the bar shows it.")
+            step("The panel at the right of the page says how the model runs. The {panel} of the bar shows or hides it.")
                 .at(Spot::Change),
             step("Choose how it runs: **Balanced**, **Long chats**, **Light**, or **Custom** for numbers of your own."),
             step(
@@ -1118,7 +1128,9 @@ impl App {
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     if let Some(spot) = step.spot {
-                        let there = spot_rect(ui.ctx(), spot).is_some();
+                        // a part of the sidebar put away is there once the sidebar is shown again
+                        let tucked = spot.in_sidebar() && !self.sidebar_open;
+                        let there = tucked || spot_rect(ui.ctx(), spot).is_some();
                         let showing = self.help.shown.is_some_and(|(s, _)| s == spot);
                         let shown = icons::labelled_button(
                             ui,
@@ -1133,6 +1145,9 @@ impl App {
                         )
                         .on_disabled_hover_text("It is not on the main window now.");
                         if shown.clicked() {
+                            if tucked {
+                                self.sidebar_open = true;
+                            }
                             self.help.shown = Some((spot, Instant::now()));
                             ui.ctx().send_viewport_cmd_to(
                                 egui::ViewportId::ROOT,
@@ -1359,6 +1374,8 @@ impl App {
     }
 
     fn start_tour(&mut self, ctx: &egui::Context) {
+        // most of what it is about is in the sidebar
+        self.sidebar_open = true;
         self.help.tour = Some(0);
         self.help.shown = None;
         ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
@@ -1713,7 +1730,7 @@ fn button_icon(name: &str) -> Option<Icon> {
         "clip" => Icon::Clip,
         "more" => Icon::More,
         "gear" => Icon::Gear,
-        "panel" => Icon::Sliders,
+        "panel" => Icon::SideRight,
         "log" => Icon::Terminal,
         "plus" => Icon::Plus,
         "pencil" => Icon::Pencil,

@@ -46,6 +46,10 @@ const TELEMETRY_KEYS: [&str; 2] = ["app.telemetry_level", "app.telemetry_asked"]
 /// The tab the window shows under the model (`chat`, `log` or `live`); absent, the chat (UI v2).
 pub const TAB_KEY: &str = "app.tab";
 
+/// The sides of the main window the person put away (UI v3): the sidebar, the panel at the right; absent, shown.
+pub const SIDEBAR_HIDDEN_KEY: &str = "app.sidebar_hidden";
+pub const PANEL_HIDDEN_KEY: &str = "app.panel_hidden";
+
 /// Where the person's MCP servers are kept: llama.cpp's field (its chat page is given them), read and written by the
 /// window whatever the engine, since QuickAI's own chat uses them with every engine (C204).
 pub const MCP_SERVERS_KEY: &str = "llamacpp.mcp_servers";
@@ -422,6 +426,36 @@ impl Settings {
         self.set_app_value(
             TAB_KEY,
             (tab != "chat").then(|| serde_json::Value::from(tab)),
+        );
+    }
+
+    /// Whether the sidebar was put away when the window was last left.
+    pub fn sidebar_hidden(&self) -> bool {
+        self.app_value(SIDEBAR_HIDDEN_KEY)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    }
+
+    /// Records it; shown takes the key away.
+    pub fn set_sidebar_hidden(&mut self, hidden: bool) {
+        self.set_app_value(
+            SIDEBAR_HIDDEN_KEY,
+            hidden.then_some(serde_json::Value::Bool(true)),
+        );
+    }
+
+    /// Whether the panel at the right was put away when the window was last left.
+    pub fn panel_hidden(&self) -> bool {
+        self.app_value(PANEL_HIDDEN_KEY)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    }
+
+    /// Records it; shown takes the key away.
+    pub fn set_panel_hidden(&mut self, hidden: bool) {
+        self.set_app_value(
+            PANEL_HIDDEN_KEY,
+            hidden.then_some(serde_json::Value::Bool(true)),
         );
     }
 
