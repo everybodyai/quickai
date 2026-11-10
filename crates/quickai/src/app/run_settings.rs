@@ -243,8 +243,8 @@ impl App {
     }
 
     /// At the start: the choice kept is taken up, its number worked out again for this model and this computer. With
-    /// none kept (an earlier version, or a first start), the numbers say which it is; the context a first start has
-    /// (4K, which nobody chose) is the suggested one.
+    /// none kept (an earlier version, or a first start), the numbers say which it is, as they are: a 4K that nobody chose
+    /// stays 4K, since the configuration in use says 4K too (the suggested length has its dot in the grid).
     pub(super) fn take_up_run_choice(&mut self) {
         self.refresh_facts();
         let kept = self
@@ -255,17 +255,17 @@ impl App {
             self.run_choice = kept;
             return;
         }
-        let choice = kept.unwrap_or_else(|| match self.choice_now() {
-            RunChoice::Length(FIRST_RUN_CONTEXT) | RunChoice::Own
-                if self.values.int(CONTEXT) == Some(FIRST_RUN_CONTEXT) =>
-            {
-                RunChoice::Suggested
-            }
-            now => now,
-        });
+        let choice = kept.unwrap_or_else(|| self.choice_now());
         self.change_custom = choice == RunChoice::Own;
         self.apply_choice(choice);
         self.run_choice = Some(choice);
+        self.derived_choice = if kept.is_some() { None } else { Some(choice) };
+    }
+
+    /// The choice `app.run_choice` keeps: none while it is still the one the numbers said (a file nobody chose in gets
+    /// no key it did not have), the choice once the person made another.
+    pub(super) fn run_choice_to_keep(&self) -> Option<RunChoice> {
+        self.run_choice.filter(|c| Some(*c) != self.derived_choice)
     }
 
     /// How the model will run, in words.
@@ -748,6 +748,38 @@ mod tests {
             "{}",
             app.run_summary()
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_choice_nobody_made_is_not_written_and_one_made_is() {
+        let dir = scratch("grid-kept");
+        let mut app = app_with_model(&dir, "llamacpp", GB);
+        app.take_up_run_choice();
+        // a first start's 4K stays 4K (the configuration in use says 4K: nothing is changed that nobody changed)
+        assert_eq!(app.values.int("ctx_size"), Some(4096));
+        assert_eq!(app.run_choice, Some(RunChoice::Length(4096)));
+        assert_eq!(app.settings_now().run_choice(), None, "the numbers say it");
+        app.choose_length(65536);
+        assert_eq!(app.settings_now().run_choice().as_deref(), Some("65536"));
+        app.choose_length(4096);
+        assert_eq!(
+            app.settings_now().run_choice(),
+            None,
+            "the numbers say it again"
+        );
+        app.choose_length(16384);
+        assert_eq!(
+            app.settings_now().run_choice().as_deref(),
+            Some("balanced"),
+            "the suggested one, chosen"
+        );
+        // a choice the file kept stays written, whatever it is
+        let mut settings = app.settings_now();
+        settings.set_run_choice(Some("balanced"));
+        app.stored = settings;
+        app.take_up_run_choice();
+        assert_eq!(app.settings_now().run_choice().as_deref(), Some("balanced"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

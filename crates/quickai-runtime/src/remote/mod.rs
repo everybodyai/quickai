@@ -448,9 +448,21 @@ pub fn explain(lines: &[String]) -> String {
 /// (the engine's own identity, as its document names it: Ollama's `/api/version` and `/version`). `None` when nothing
 /// answers there, or what answers is not the engine.
 pub fn identity(local_port: u16, path: &str, pointer: &str) -> Option<String> {
+    identity_within(local_port, path, pointer, Duration::from_secs(8))
+}
+
+/// `identity` with a reply awaited `read` at most: an engine on this computer answers its version at once, and a program
+/// that holds the port and says nothing must not keep the window waiting the eight seconds a tunnel is given (TC-CFL-027:
+/// the question about the port came after the suites stopped looking for it).
+pub fn identity_within(
+    local_port: u16,
+    path: &str,
+    pointer: &str,
+    read: Duration,
+) -> Option<String> {
     let address = SocketAddr::from(([127, 0, 0, 1], local_port));
-    let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(5)).ok()?;
-    stream.set_read_timeout(Some(Duration::from_secs(8))).ok()?;
+    let mut stream = TcpStream::connect_timeout(&address, read.min(Duration::from_secs(5))).ok()?;
+    stream.set_read_timeout(Some(read)).ok()?;
     let request =
         format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{local_port}\r\nConnection: close\r\n\r\n");
     stream.write_all(request.as_bytes()).ok()?;
@@ -675,6 +687,29 @@ pub fn not_answering(spec: &RemoteSpec, engine: &str, port: u16) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_program_that_holds_the_port_and_says_nothing_is_given_up_on_within_the_time_asked() {
+        // a listener that takes the connection and never answers (TC-CFL-027's: another program on the engine's port)
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let held = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            std::thread::sleep(Duration::from_secs(4));
+            drop(stream);
+        });
+        let started = std::time::Instant::now();
+        assert_eq!(
+            identity_within(port, "/version", "/version", Duration::from_secs(1)),
+            None
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "{:?}",
+            started.elapsed()
+        );
+        held.join().unwrap();
+    }
 
     #[test]
     fn the_tunnel_is_asked_of_ssh_with_no_questions_and_no_port_open_on_either_side() {

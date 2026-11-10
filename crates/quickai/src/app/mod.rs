@@ -267,6 +267,9 @@ pub struct App {
     /// How the person chose the context (the suggested length, a length of the grid, or a number of their own), kept
     /// for the next model and the next start (`app.run_choice`); none until they chose, or the numbers said it.
     run_choice: Option<run_settings::RunChoice>,
+    /// The choice the numbers said when nobody had kept one (at the start, or a configuration taken up): while it is still
+    /// the choice it is not written, so a file the person never chose in keeps the keys it had.
+    derived_choice: Option<run_settings::RunChoice>,
     /// The graphics cards of the installed llama.cpp, with their memory (C213).
     devices: graphics::Devices,
     /// What the selected model's file says of it (its layers, its longest context, what a token takes), for that file.
@@ -367,7 +370,7 @@ impl App {
         app.config_dirs = config_dirs;
         // the first start with configurations keeps what the person had set as their Default
         app.adopt_working_state();
-        // how the model runs, as the person chose it last (a first start's 4K, which nobody chose, is Balanced)
+        // how the model runs, as the person chose it last (with no choice kept, as the numbers say)
         app.take_up_run_choice();
         app.watch_the_window(cc.egui_ctx.clone());
         app.start_reports();
@@ -528,6 +531,7 @@ impl App {
             view: MainView::Model,
             change_custom: false,
             run_choice: None,
+            derived_choice: None,
             devices: graphics::Devices::default(),
             facts: None,
             gpu_auto: true,
@@ -791,7 +795,11 @@ impl App {
             (true, Tab::Main) => "log",
             (true, Tab::Live) => "live",
         });
-        settings.set_run_choice(self.run_choice.map(run_settings::RunChoice::key).as_deref());
+        settings.set_run_choice(
+            self.run_choice_to_keep()
+                .map(run_settings::RunChoice::key)
+                .as_deref(),
+        );
         settings.set_sidebar_hidden(!self.sidebar_open);
         settings.set_panel_hidden(!self.panel_open);
         settings.enable_traffic_proxy = self.enable_traffic_proxy;

@@ -471,6 +471,7 @@ impl App {
         self.refresh_facts();
         let now = self.choice_now();
         self.run_choice = Some(now);
+        self.derived_choice = Some(now);
         self.change_custom = now == super::run_settings::RunChoice::Own;
         self.gpu_auto = true;
         self.auto_fit();

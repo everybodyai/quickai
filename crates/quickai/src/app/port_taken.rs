@@ -65,8 +65,13 @@ impl App {
             return None;
         }
         let engine = doc.doc.launch.attach.as_ref().and_then(|attach| {
-            crate::remote::identity(port, &attach.identity.path, &attach.identity.pointer)
-                .map(|version| format!("{} {version}", doc.doc.engine.name))
+            crate::remote::identity_within(
+                port,
+                &attach.identity.path,
+                &attach.identity.pointer,
+                std::time::Duration::from_secs(2),
+            )
+            .map(|version| format!("{} {version}", doc.doc.engine.name))
         });
         let usable = engine.is_some() && mode != "spawn";
         Some(PortTaken {
