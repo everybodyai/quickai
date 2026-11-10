@@ -255,7 +255,7 @@ impl App {
                 })
                 .clicked();
                 about = icons::icon_button(ui, Icon::Info, egui::vec2(30.0, 30.0), true, false)
-                    .on_hover_text("About QuickAI: its version, its site and its license.")
+                    .on_hover_text("About QuickAI: its version, its site, its license and its partners.")
                     .clicked();
             });
         });

@@ -243,6 +243,9 @@ pub struct App {
     remote: remote_ui::RemoteState,
     /// The application's icon as a picture the title row draws; made when the first frame needs it.
     logo: Option<egui::TextureHandle>,
+    /// About's tab, and the partners' icons it shows, made when that tab is first shown.
+    about_tab: about_window::AboutTab,
+    partner_logos: Vec<egui::TextureHandle>,
     /// *Add a model* is open (a window; a first run has it on the page instead).
     add_model_open: bool,
     /// *Add a model* was asked for again while open: it comes to the front.
@@ -536,6 +539,8 @@ impl App {
             details_of: None,
             remote: remote_ui::RemoteState::default(),
             logo: None,
+            about_tab: about_window::AboutTab::default(),
+            partner_logos: Vec::new(),
             add_model_open: false,
             raise_add_model: false,
             raise_details: false,

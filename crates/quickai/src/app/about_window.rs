@@ -1,4 +1,6 @@
-//! The ℹ About window: usage, disclaimer and licences.
+//! The ℹ About window: usage, disclaimer and licences, and on a tab of its own the companies EverybodyAI works with.
+
+use std::cell::Cell;
 
 use eframe::egui;
 
@@ -13,12 +15,95 @@ pub(super) fn about_viewport() -> egui::ViewportId {
     egui::ViewportId::from_hash_of("quickai_about")
 }
 
+/// The tabs of About: QuickAI itself, and its partners.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum AboutTab {
+    #[default]
+    About,
+    Partners,
+}
+
+/// A company EverybodyAI works with: its name, its site, what it does, and its icon (a PNG of assets/partners).
+struct Partner {
+    name: &'static str,
+    site: &'static str,
+    about: &'static str,
+    icon: &'static [u8],
+}
+
+const PARTNERS: &[Partner] = &[Partner {
+    name: "Tiqnova",
+    site: "https://tiqnova.io",
+    about: "Software and AI, built around how your business works. One team, from strategy to long-term support.",
+    icon: include_bytes!("../../../../assets/partners/tiqnova.png"),
+}];
+
+/// The row of About's tabs, as the dock under the page has its own.
+fn tab_row(ui: &mut egui::Ui, tab: &Cell<AboutTab>) {
+    ui.horizontal(|ui| {
+        for (which, label) in [(AboutTab::About, "About"), (AboutTab::Partners, "Partners")] {
+            if super::shell::dock_tab(ui, label, tab.get() == which).clicked() {
+                tab.set(which);
+            }
+        }
+    });
+}
+
 impl App {
+    /// The partners' icons as pictures, made when the tab is first shown.
+    fn partner_logos(&mut self, ctx: &egui::Context) -> Vec<egui::TextureId> {
+        if self.partner_logos.len() != PARTNERS.len() {
+            self.partner_logos = PARTNERS
+                .iter()
+                .map(|partner| {
+                    let icon = eframe::icon_data::from_png_bytes(partner.icon).expect("a partner's icon is a PNG");
+                    ctx.load_texture(
+                        format!("partner-{}", partner.name),
+                        egui::ColorImage::from_rgba_unmultiplied(
+                            [icon.width as usize, icon.height as usize],
+                            &icon.rgba,
+                        ),
+                        egui::TextureOptions::LINEAR,
+                    )
+                })
+                .collect();
+        }
+        self.partner_logos.iter().map(|texture| texture.id()).collect()
+    }
+
+    /// The Partners tab: each company with its icon, its name, a link to its site, and what it does.
+    fn show_partners(&mut self, ui: &mut egui::Ui) {
+        let logos = self.partner_logos(ui.ctx());
+        ui.spacing_mut().item_spacing.y = 2.0;
+        ui.label("Companies that work with EverybodyAI, the makers of QuickAI.");
+        ui.add_space(12.0);
+        for (partner, logo) in PARTNERS.iter().zip(logos) {
+            ui.horizontal(|ui| {
+                ui.add(egui::Image::new((logo, egui::Vec2::splat(48.0))).corner_radius(10.0));
+                ui.add_space(6.0);
+                ui.vertical(|ui| {
+                    ui.label(egui::RichText::new(partner.name).strong().size(16.0));
+                    if ui
+                        .link(partner.site.trim_start_matches("https://"))
+                        .on_hover_text(format!("{} on the web", partner.name))
+                        .clicked()
+                    {
+                        let _ = webbrowser::open(partner.site);
+                    }
+                });
+            });
+            ui.add_space(6.0);
+            ui.label(partner.about);
+            ui.add_space(12.0);
+        }
+    }
+
     pub(super) fn show_about_window(&mut self, ctx: &egui::Context) {
         if !self.show_about {
             return;
         }
         let mut close = false;
+        let tab = Cell::new(self.about_tab);
         // the program that goes with the engine, if one does (Open WebUI beside Ollama): downloaded on request too
         let companion = self.companion_doc().map(|c| {
             (
@@ -61,6 +146,10 @@ impl App {
         let builder = theme::own_window(ABOUT_TITLE, [560.0, 600.0], [400.0, 300.0]);
         ctx.show_viewport_immediate(id, builder, |ui, class| {
             let text = |ui: &mut egui::Ui| {
+                        if tab.get() == AboutTab::Partners {
+                            self.show_partners(ui);
+                            return;
+                        }
                         // paragraphs, close together: it is text, and the sections have the space between them
                         ui.spacing_mut().item_spacing.y = 2.0;
                         ui.horizontal(|ui| {
@@ -165,6 +254,8 @@ impl App {
                 // the window's title, margins and Close button are 112 px; with less than a window of 592 to put it in, the
                 // text gets what is left (so that Close is in view)
                 let scroll = (ui.ctx().content_rect().height() - 112.0).clamp(160.0, 480.0);
+                tab_row(ui, &tab);
+                ui.add_space(6.0);
                 egui::ScrollArea::vertical().max_height(scroll).show(ui, text);
                 ui.add_space(10.0);
                 if ui.button("Close").clicked() {
@@ -174,6 +265,9 @@ impl App {
                 if ui.input(|i| i.viewport().close_requested()) {
                     close = true;
                 }
+                egui::Panel::top("about_tabs")
+                    .frame(theme::page_frame())
+                    .show(ui, |ui| tab_row(ui, &tab));
                 egui::Panel::bottom("about_footer")
                     .frame(theme::page_frame())
                     .show(ui, |ui| {
@@ -190,6 +284,7 @@ impl App {
                     });
             }
         });
+        self.about_tab = tab.get();
         if close {
             self.show_about = false;
         }

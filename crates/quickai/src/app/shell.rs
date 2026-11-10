@@ -831,7 +831,7 @@ fn fact_lines(
 }
 
 /// A tab of the dock: its name, and a line of the accent under the one that is open.
-fn dock_tab(ui: &mut egui::Ui, label: &str, open: bool) -> egui::Response {
+pub(super) fn dock_tab(ui: &mut egui::Ui, label: &str, open: bool) -> egui::Response {
     let p = theme::palette();
     let text = egui::RichText::new(label).color(if open { p.text } else { p.muted });
     let galley = egui::WidgetText::from(text).into_galley(
