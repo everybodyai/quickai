@@ -50,6 +50,8 @@ pub(super) enum HelpPage {
     GettingStarted,
     FindModel,
     Chat,
+    /// Talking to QuickAI (C216): the microphone, reading aloud, hands-free.
+    Talk,
     ConnectApp,
     Pictures,
     Remote,
@@ -98,6 +100,8 @@ pub(super) enum Spot {
     Change,
     ChatBox,
     Clip,
+    /// The microphone in the chat's box (C216).
+    Mic,
     ChatMenu,
     LogTab,
     Computer,
@@ -155,6 +159,8 @@ enum Deed {
     Privacy,
     /// The page of the MCP servers.
     Tools,
+    /// The Voice page of the Settings (C216).
+    Voice,
 }
 
 impl Deed {
@@ -168,6 +174,7 @@ impl Deed {
             Deed::ModelsFolder => "Open the folder",
             Deed::Privacy => "Read the privacy policy",
             Deed::Tools => "Open MCP servers",
+            Deed::Voice => "Open Voice settings",
         }
     }
 
@@ -181,6 +188,7 @@ impl Deed {
             Deed::ModelsFolder => Icon::Folder,
             Deed::Privacy => Icon::Lock,
             Deed::Tools => Icon::Wrench,
+            Deed::Voice => Icon::Mic,
         }
     }
 }
@@ -328,6 +336,46 @@ const PAGES: &[Page] = &[
         ],
         numbered: true,
         tip: Some("What you type stays on this computer, unless the model runs on another one you added."),
+    },
+    Page {
+        page: HelpPage::Talk,
+        group: Group::Using,
+        icon: Icon::Mic,
+        title: "Talk to QuickAI",
+        lead: "Say your message instead of typing it, hear the answers read aloud, or talk with nothing to press. All of \
+               it happens on this computer.",
+        picture: None,
+        steps: &[
+            step(
+                "Press the microphone {mic} in the chat's box and talk; press ■ when you are done. What you said goes in \
+                 the box, to change before you send it. Or hold **Ctrl+Space** while you talk.",
+            )
+            .at(Spot::Mic),
+            step(
+                "The first time, QuickAI downloads its speech model (82 MB), unless your package came with it. A larger \
+                 one that hears accents and noise better is in **Settings › Voice**.",
+            ),
+            step(
+                "**Read aloud** under an answer reads it in the computer's own voice, lighting the sentence being read. \
+                 **Read answers aloud**, in Settings › Voice, reads every answer as it comes; it is off until you turn it \
+                 on.",
+            ),
+            step(
+                "**Hands-free**, in the {more} at the right end of the bar or by right-clicking the microphone: it \
+                 listens, sends what you said when you pause, reads the answer and listens again. **Esc** ends it.",
+            )
+            .at(Spot::ChatMenu),
+            step(
+                "**Settings › Voice**: the microphone, the language you speak, the speech model, sending when you stop \
+                 talking, and the voice and its speed.",
+            )
+            .does(Deed::Voice),
+        ],
+        numbered: true,
+        tip: Some(
+            "Nothing you say leaves this computer. On Linux, reading aloud needs a speech program: install espeak-ng \
+             (sudo apt install espeak-ng) if Read aloud says there is none.",
+        ),
     },
     Page {
         page: HelpPage::ConnectApp,
@@ -654,6 +702,8 @@ const PAGES: &[Page] = &[
             step("Ctrl+K|Add a model"),
             step("Ctrl+L|Go to the chat's box"),
             step("Enter|Send a message"),
+            step("Ctrl+Space|Talk while it is held (what you say goes in the box)"),
+            step("Ctrl+Shift+Space|Start or end hands-free"),
             step("Shift+Enter|A new line in a message"),
             step("Ctrl+,|Settings"),
             step("F1|Help"),
@@ -751,6 +801,12 @@ const TOUR: &[(Spot, &str, &str)] = &[
         Spot::ChatBox,
         "Chat",
         "Type here once the model runs. The paper clip adds a picture or a file, and the wrench says which tools it has.",
+    ),
+    (
+        Spot::Mic,
+        "Talk",
+        "Press the microphone and say it instead of typing. Right-click it for hands-free: it listens, answers aloud and \
+         listens again.",
     ),
     (
         Spot::LogTab,
@@ -1483,6 +1539,10 @@ impl App {
                 main();
             }
             Deed::Settings => self.open_settings(),
+            Deed::Voice => {
+                self.open_settings();
+                self.settings_page = super::settings_window::SettingsPage::Voice;
+            }
             Deed::Configurations => {
                 self.open_configurations();
                 self.raise_configurations = true;
@@ -1877,6 +1937,7 @@ fn button_icon(name: &str) -> Option<Icon> {
         "plug" => Icon::Plug,
         "globe" => Icon::Globe,
         "clip" => Icon::Clip,
+        "mic" => Icon::Mic,
         "more" => Icon::More,
         "gear" => Icon::Gear,
         "hide" => Icon::DoubleRight,

@@ -39,6 +39,7 @@ NOTICES_BY_REPOSITORY = {
     "jedisct1/rust-siphash": "Copyright 2012-2016 The Rust Project Developers.\nCopyright 2016-2026 Frank Denis.",
     "madsmtm/objc2": "Copyright 2026 Mads Marquart",
     "retep998/winapi-rs": "Copyright (c) 2015-2018 The winapi-rs Developers",
+    "rustaudio/sample": "Copyright (c) 2016 RustAudio Developers",
 }
 
 # Files with notices that cargo-about does not pick up: (library, file, what it is).

@@ -1078,7 +1078,6 @@ pub(super) fn chevron(painter: &egui::Painter, at: egui::Pos2, open: bool, color
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(unix)]
     use std::path::Path;
     #[cfg(unix)]
     use std::time::{Duration, Instant};
@@ -1086,6 +1085,8 @@ mod tests {
     use quickai_core::value::Value;
 
     use crate::config::{build_registry, ConfigDirs};
+    // the cases that run a server are of Unix (a fake MCP server is a shell script)
+    #[cfg(unix)]
     use crate::events::ServerState;
     use crate::settings::Settings;
     #[cfg(unix)]
@@ -1228,11 +1229,13 @@ for line in sys.stdin:
     }
 
     /// The last call of the conversation.
+    #[cfg(unix)]
     fn last_call(app: &App) -> Option<&ToolCall> {
         app.chat.turns.iter().rev().find_map(|t| t.calls.last())
     }
 
     /// The text of the last reply, when it has ended.
+    #[cfg(unix)]
     fn last_reply(app: &App) -> Option<&str> {
         app.chat
             .turns
@@ -1242,6 +1245,7 @@ for line in sys.stdin:
     }
 
     /// What the whole window draws, as text, at the width the suites use.
+    #[cfg(unix)]
     fn painted(app: &mut App, ctx: &egui::Context) -> String {
         fn walk(shape: &egui::epaint::Shape, into: &mut Vec<String>) {
             match shape {

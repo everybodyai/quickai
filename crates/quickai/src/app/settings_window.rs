@@ -47,6 +47,9 @@ pub(super) enum SettingsPage {
     Tools,
     Companion,
     Computers,
+    /// Talking to QuickAI (C216): the microphone, the speech model, reading aloud (`talk.rs`). The app's own, shown
+    /// whatever the engine.
+    Voice,
 }
 
 /// Which window the Settings are: the id the display knows it by.
@@ -215,6 +218,7 @@ impl App {
                 "Other computers",
             ));
         }
+        pages.push(NavItem::new(SettingsPage::Voice, Icon::Mic, "Voice"));
         pages
     }
 
@@ -274,6 +278,7 @@ impl App {
             SettingsPage::Tools => self.show_mcp_page(ui),
             SettingsPage::Companion => self.show_companion_page(ui),
             SettingsPage::Computers => self.show_computers_page(ui),
+            SettingsPage::Voice => self.show_voice_page(ui),
         }
         if let Some(msg) = &self.settings_error {
             ui.add_space(8.0);

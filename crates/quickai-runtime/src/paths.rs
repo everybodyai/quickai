@@ -64,6 +64,41 @@ pub fn user_models_dir() -> PathBuf {
     home_dir().join(".quickai").join("models")
 }
 
+/// Where the speech model this package shipped with is (C216): `speech/` next to the executable (in the macOS app,
+/// its `Contents/Resources`). Read from, never written to.
+pub fn bundled_speech_dir() -> PathBuf {
+    match exe_dir() {
+        Some(dir) => packaging_dir(&dir).join("speech"),
+        None => dev_repo_root().join("speech"),
+    }
+}
+
+/// Where speech models are downloaded to: `~/.quickai/speech`.
+pub fn user_speech_dir() -> PathBuf {
+    home_dir().join(".quickai").join("speech")
+}
+
+/// Where quickai-whisper (everybodyai/quickai-whisper, the program that writes down what is said) is looked for, first
+/// to last: next to the app (the packages carry it there, as they carry llama-server; in the macOS app, beside the
+/// program in `Contents/MacOS`), then `~/.quickai/speech/bin` (one put there by hand), then, under `cargo run`, the
+/// builds of `quickai-whisper` beside this checkout (its `build/local.sh`).
+pub fn speech_program_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(dir) = exe_dir() {
+        dirs.push(dir);
+    }
+    dirs.push(user_speech_dir().join("bin"));
+    let builds = dev_repo_root()
+        .join("..")
+        .join("thirdparty")
+        .join("whisper")
+        .join("build")
+        .join("out");
+    dirs.push(builds.join("local-avx2"));
+    dirs.push(builds.join("local-portable"));
+    dirs
+}
+
 fn home_dir() -> PathBuf {
     directories::BaseDirs::new()
         .map(|d| d.home_dir().to_path_buf())

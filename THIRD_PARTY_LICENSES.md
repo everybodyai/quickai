@@ -6,6 +6,13 @@ their own license terms, reproduced in full below:
 
 - **llama-server**, built from [llama.cpp](https://github.com/ggml-org/llama.cpp)
   — MIT License.
+- **quickai-whisper**, the program that writes down what you say to the microphone, from
+  [everybodyai/quickai-whisper](https://github.com/everybodyai/quickai-whisper) and built from
+  [whisper.cpp](https://github.com/ggml-org/whisper.cpp) — MIT License (its own, as QuickAI's, and whisper.cpp's).
+- **Whisper base** speech model (`ggml-base-q8_0.bin`), in the packages that bundle a model, from
+  [OpenAI's Whisper](https://github.com/openai/whisper) in whisper.cpp's format
+  ([ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp)) — MIT License. Bundled unmodified; the
+  app-alone packages download it when the microphone is first used.
 - **Bonsai 2 4B** model weights (`Ternary-Bonsai-2-4B-Q2_0.gguf`), from
   [Prism ML](https://huggingface.co/prism-ml), built from Qwen3.5-4B by Alibaba
   Cloud — Apache License 2.0. Bundled unmodified; no changes have been made to
@@ -51,6 +58,90 @@ released under the same terms.
 MIT License
 
 Copyright (c) 2023-2026 The ggml authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+## quickai-whisper — MIT License
+
+The program itself ([everybodyai/quickai-whisper](https://github.com/everybodyai/quickai-whisper)):
+
+```
+MIT License
+
+Copyright (c) 2026 Nihal Abdul Kader
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+whisper.cpp and ggml, which it is built from (whisper.cpp v1.8.3):
+
+```
+MIT License
+
+Copyright (c) 2023-2024 The ggml authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+## Whisper speech model — MIT License
+
+```
+MIT License
+
+Copyright (c) 2022 OpenAI
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -365,7 +456,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 ---
 
-<!-- Everything below this line is generated by scripts/licenses/generate.py from Cargo.lock 6ac19e7400ce27fe7c2bdefc068ddf3c800441371dcd5cd7e693cea1b7cc7245. Do not edit it by hand. -->
+<!-- Everything below this line is generated by scripts/licenses/generate.py from Cargo.lock 80ce05e3a599e80713cfe101dc925b7012b502593256af960bd015718726403e. Do not edit it by hand. -->
 
 ## Rust libraries
 
@@ -375,13 +466,13 @@ choice is used under the first of these that it offers: MIT, Apache-2.0, ISC, BS
 the programs, not what is only used to build and test them. Each name links to the library and its source on
 [crates.io](https://crates.io).
 
-380 libraries, under these licenses (some under more than one):
+389 libraries, under these licenses (some under more than one):
 
 | License | Libraries |
 |---|---|
-| MIT License | 336 |
+| MIT License | 344 |
 | Unicode License v3 | 19 |
-| Apache License 2.0 | 15 |
+| Apache License 2.0 | 16 |
 | ISC License | 4 |
 | BSD 3-Clause "New" or "Revised" License | 3 |
 | Boost Software License 1.0 | 2 |
@@ -1688,6 +1779,58 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
+Used by [alsa 0.11.0](https://crates.io/crates/alsa/0.11.0):
+
+```
+MIT License
+
+Copyright (c) 2015-2021 David Henningsson, and other contributors.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+Used by [alsa-sys 0.4.0](https://crates.io/crates/alsa-sys/0.4.0):
+
+```
+MIT License
+
+Copyright (c) 2018 diwic
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 Used by [arboard 3.6.1](https://crates.io/crates/arboard/3.6.1):
 
 ```
@@ -2077,7 +2220,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-Used by [block2 0.5.1](https://crates.io/crates/block2/0.5.1), [block2 0.6.2](https://crates.io/crates/block2/0.6.2), [dispatch2 0.3.1](https://crates.io/crates/dispatch2/0.3.1), [objc-sys 0.3.5](https://crates.io/crates/objc-sys/0.3.5), [objc2 0.5.2](https://crates.io/crates/objc2/0.5.2), [objc2 0.6.4](https://crates.io/crates/objc2/0.6.4), [objc2-app-kit 0.2.2](https://crates.io/crates/objc2-app-kit/0.2.2), [objc2-app-kit 0.3.2](https://crates.io/crates/objc2-app-kit/0.3.2), [objc2-core-foundation 0.3.2](https://crates.io/crates/objc2-core-foundation/0.3.2), [objc2-core-graphics 0.3.2](https://crates.io/crates/objc2-core-graphics/0.3.2), [objc2-encode 4.1.0](https://crates.io/crates/objc2-encode/4.1.0), [objc2-foundation 0.2.2](https://crates.io/crates/objc2-foundation/0.2.2), [objc2-foundation 0.3.2](https://crates.io/crates/objc2-foundation/0.3.2), [objc2-io-kit 0.3.2](https://crates.io/crates/objc2-io-kit/0.3.2), [objc2-metal 0.3.2](https://crates.io/crates/objc2-metal/0.3.2), [objc2-quartz-core 0.3.2](https://crates.io/crates/objc2-quartz-core/0.3.2):
+Used by [block2 0.5.1](https://crates.io/crates/block2/0.5.1), [block2 0.6.2](https://crates.io/crates/block2/0.6.2), [dispatch2 0.3.1](https://crates.io/crates/dispatch2/0.3.1), [objc-sys 0.3.5](https://crates.io/crates/objc-sys/0.3.5), [objc2 0.5.2](https://crates.io/crates/objc2/0.5.2), [objc2 0.6.4](https://crates.io/crates/objc2/0.6.4), [objc2-app-kit 0.2.2](https://crates.io/crates/objc2-app-kit/0.2.2), [objc2-app-kit 0.3.2](https://crates.io/crates/objc2-app-kit/0.3.2), [objc2-audio-toolbox 0.3.2](https://crates.io/crates/objc2-audio-toolbox/0.3.2), [objc2-core-audio 0.3.2](https://crates.io/crates/objc2-core-audio/0.3.2), [objc2-core-audio-types 0.3.2](https://crates.io/crates/objc2-core-audio-types/0.3.2), [objc2-core-foundation 0.3.2](https://crates.io/crates/objc2-core-foundation/0.3.2), [objc2-core-graphics 0.3.2](https://crates.io/crates/objc2-core-graphics/0.3.2), [objc2-encode 4.1.0](https://crates.io/crates/objc2-encode/4.1.0), [objc2-foundation 0.2.2](https://crates.io/crates/objc2-foundation/0.2.2), [objc2-foundation 0.3.2](https://crates.io/crates/objc2-foundation/0.3.2), [objc2-io-kit 0.3.2](https://crates.io/crates/objc2-io-kit/0.3.2), [objc2-metal 0.3.2](https://crates.io/crates/objc2-metal/0.3.2), [objc2-quartz-core 0.3.2](https://crates.io/crates/objc2-quartz-core/0.3.2):
 
 ```
 MIT License
@@ -2309,6 +2452,36 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
+Used by [coreaudio-rs 0.14.2](https://crates.io/crates/coreaudio-rs/0.14.2), [either 1.18.0](https://crates.io/crates/either/1.18.0), [itertools 0.15.0](https://crates.io/crates/itertools/0.15.0):
+
+```
+Copyright (c) 2015
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
 Used by [cpufeatures 0.2.17](https://crates.io/crates/cpufeatures/0.2.17):
 
 ```
@@ -2425,6 +2598,29 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+```
+
+Used by [dasp_sample 0.11.0](https://crates.io/crates/dasp_sample/0.11.0):
+
+```
+MIT License
+
+Copyright (c) 2016 RustAudio Developers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
 Used by [digest 0.10.7](https://crates.io/crates/digest/0.10.7):
@@ -2683,36 +2879,6 @@ LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE A
 EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 USE OR OTHER DEALINGS IN THE SOFTWARE.
-```
-
-Used by [either 1.18.0](https://crates.io/crates/either/1.18.0), [itertools 0.15.0](https://crates.io/crates/itertools/0.15.0):
-
-```
-Copyright (c) 2015
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
 ```
 
 Used by [enumflags2 0.7.12](https://crates.io/crates/enumflags2/0.7.12):
@@ -3792,6 +3958,36 @@ Used by [lock_api 0.4.14](https://crates.io/crates/lock_api/0.4.14), [parking_lo
 
 ```
 Copyright (c) 2016 The Rust Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+Used by [mach2 0.6.0](https://crates.io/crates/mach2/0.6.0):
+
+```
+Copyright (c) 2019 Nick Fitzgerald, 2021 Yuki Okushi
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -5973,7 +6169,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-Used by [codespan-reporting 0.13.1](https://crates.io/crates/codespan-reporting/0.13.1), [gethostname 1.1.0](https://crates.io/crates/gethostname/1.1.0), [ring 0.17.14](https://crates.io/crates/ring/0.17.14), [self_cell 1.3.0](https://crates.io/crates/self_cell/1.3.0):
+Used by [codespan-reporting 0.13.1](https://crates.io/crates/codespan-reporting/0.13.1), [cpal 0.18.2](https://crates.io/crates/cpal/0.18.2), [gethostname 1.1.0](https://crates.io/crates/gethostname/1.1.0), [ring 0.17.14](https://crates.io/crates/ring/0.17.14), [self_cell 1.3.0](https://crates.io/crates/self_cell/1.3.0):
 
 ```
                               Apache License

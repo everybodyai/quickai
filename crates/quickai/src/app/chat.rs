@@ -742,13 +742,19 @@ pub enum Span {
     Code,
 }
 
-/// One line of text with its spans, in the size and colour given.
-fn show_spans(ui: &mut egui::Ui, text: &str, size: Option<f32>, strong: bool) {
+/// One line of text with its spans, in the size and colour given; the part of it that is `lit` (the sentence being
+/// read aloud, C216) has a background.
+fn show_spans(ui: &mut egui::Ui, text: &str, size: Option<f32>, strong: bool, lit: Option<&str>) {
     let p = theme::palette();
     let mut job = egui::text::LayoutJob::default();
     let body = egui::TextStyle::Body.resolve(ui.style());
     let mono = egui::TextStyle::Monospace.resolve(ui.style());
-    for (span, words) in spans(text) {
+    let pieces = spans(text);
+    // where the sentence is in the words of the line, in bytes of them all
+    let plain: String = pieces.iter().map(|(_, w)| w.as_str()).collect();
+    let lit_range = lit.and_then(|sentence| lit_range(&plain, sentence));
+    let mut at = 0;
+    for (span, words) in pieces {
         let mut font = match span {
             Span::Code => mono.clone(),
             _ => body.clone(),
@@ -772,7 +778,27 @@ fn show_spans(ui: &mut egui::Ui, text: &str, size: Option<f32>, strong: bool) {
             // a stronger weight of the same face, as the panels' titles have
             format.font_id.family = theme::semibold(ui);
         }
-        job.append(&words, 0.0, format);
+        let end = at + words.len();
+        match lit_range.filter(|(from, to)| *from < end && *to > at) {
+            Some((from, to)) => {
+                // the span cut where the sentence begins and ends in it, its middle lit
+                let a = from.saturating_sub(at).min(words.len());
+                let b = (to - at).min(words.len());
+                let (a, b) = (floor_char(&words, a), floor_char(&words, b));
+                if a > 0 {
+                    job.append(&words[..a], 0.0, format.clone());
+                }
+                let mut lit_format = format.clone();
+                lit_format.background = p.accent_text.gamma_multiply(0.22);
+                lit_format.color = p.text;
+                job.append(&words[a..b], 0.0, lit_format);
+                if b < words.len() {
+                    job.append(&words[b..], 0.0, format);
+                }
+            }
+            None => job.append(&words, 0.0, format),
+        }
+        at = end;
     }
     job.wrap.max_width = ui.available_width();
     // wrapped whatever the layout it is in: a row (an item of a list, a quote) would let it run on out of the bubble
@@ -780,8 +806,36 @@ fn show_spans(ui: &mut egui::Ui, text: &str, size: Option<f32>, strong: bool) {
     ui.add(egui::Label::new(job).selectable(true).wrap());
 }
 
-/// One message: its lines as Markdown has them, and its code blocks in monospace.
-fn show_message(ui: &mut egui::Ui, text: &str) {
+/// Where `sentence` (as it is read aloud: without the marks of Markdown) is in `plain` (the words of a line), as byte
+/// offsets; the start of a sentence that goes on to the next line lights to the end of this one.
+fn lit_range(plain: &str, sentence: &str) -> Option<(usize, usize)> {
+    let sentence = sentence.trim().trim_end_matches('.');
+    if sentence.is_empty() {
+        return None;
+    }
+    if let Some(at) = plain.find(sentence) {
+        return Some((at, at + sentence.len()));
+    }
+    // the first words of it, at least a few
+    let head: String = sentence.chars().take(40).collect();
+    let head = head.trim_end();
+    (head.chars().count() >= 12)
+        .then(|| plain.find(head))
+        .flatten()
+        .map(|at| (at, plain.len()))
+}
+
+/// The largest char boundary of `text` at or before `at`.
+fn floor_char(text: &str, mut at: usize) -> usize {
+    at = at.min(text.len());
+    while !text.is_char_boundary(at) {
+        at -= 1;
+    }
+    at
+}
+
+/// One message: its lines as Markdown has them, and its code blocks in monospace; the sentence being read aloud lit.
+fn show_message(ui: &mut egui::Ui, text: &str, lit: Option<&str>) {
     let p = theme::palette();
     for (code, part) in parts(text) {
         if code {
@@ -807,13 +861,13 @@ fn show_message(ui: &mut egui::Ui, text: &str) {
                         2 => 17.0,
                         _ => 15.0,
                     };
-                    show_spans(ui, words, Some(size), true);
+                    show_spans(ui, words, Some(size), true, lit);
                 }
                 Line::Item(mark, words) => {
                     ui.horizontal_top(|ui| {
                         ui.add_space(6.0);
                         ui.label(egui::RichText::new(mark).color(p.muted));
-                        show_spans(ui, words, None, false);
+                        show_spans(ui, words, None, false, lit);
                     });
                 }
                 Line::Table(row) => {
@@ -825,13 +879,13 @@ fn show_message(ui: &mut egui::Ui, text: &str) {
                 Line::Quote(words) => {
                     ui.horizontal_top(|ui| {
                         ui.label(egui::RichText::new("▎").color(p.muted));
-                        show_spans(ui, words, None, false);
+                        show_spans(ui, words, None, false, lit);
                     });
                 }
                 Line::Plain(words) if words.trim().is_empty() => {
                     ui.add_space(4.0);
                 }
-                Line::Plain(words) => show_spans(ui, words, None, false),
+                Line::Plain(words) => show_spans(ui, words, None, false, lit),
             }
         }
     }
@@ -868,7 +922,7 @@ impl App {
     }
 
     /// The model the chat talks to: the one loaded here, or the one the run on the computer shown runs.
-    fn chat_model(&self) -> Option<String> {
+    pub(super) fn chat_model(&self) -> Option<String> {
         if self.setup_in_use().is_some() {
             // as the list of that computer names it (`Qwen3.5 9B (Q4_K_M)`), not by its file
             return self
@@ -1364,6 +1418,19 @@ impl App {
             self.open_chat_options();
             ui.close();
         }
+        // hands-free (C216): it listens, sends, reads the answer and listens again
+        if super::talk::CAN_HEAR {
+            let can_talk = self.chat_running() && self.talk.hands_free.is_none();
+            let hands_free = super::icons::menu_item(ui, super::icons::Icon::Wave, "Hands-free", can_talk, false)
+                .on_hover_text(
+                    "Talk to the model with nothing to press: it listens, sends what you said when you pause, reads the \
+                     answer aloud and listens again (Ctrl+Shift+Space). Esc ends it.",
+                );
+            if hands_free.clicked() && can_talk {
+                ui.close();
+                self.start_hands_free(ui.ctx());
+            }
+        }
         let can_export = !self.chat.turns.is_empty() && !self.chat.replying();
         let export = super::icons::menu_item(
             ui,
@@ -1406,6 +1473,8 @@ impl App {
 
     fn show_chat_conversation(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette();
+        // the whole of the chat, which hands-free covers (C216)
+        let chat_rect = ui.max_rect();
         let running = self.chat_running();
         let model = self.chat_model();
         let server = self.server_name();
@@ -1454,6 +1523,8 @@ impl App {
         let room = (ui.available_height() - box_height).max(40.0);
         let mut regenerate = false;
         let mut edit = false;
+        // Read aloud or Stop reading under an answer (C216): its turn, and which
+        let mut read: Option<(usize, bool)> = None;
         // what was pressed on the card of a tool the model asked for: the turn, the call, and what
         let mut card: Option<(usize, usize, super::tools::CardAction)> = None;
         let asker = model.clone().unwrap_or_else(|| "The model".to_string());
@@ -1572,7 +1643,7 @@ impl App {
                                 bubble.show(ui, |ui| {
                                     ui.set_max_width(width * 0.78);
                                     ui.vertical(|ui| {
-                                        show_message(ui, &text);
+                                        show_message(ui, &text, self.talk.reading_in(i));
                                         if let Some(with) = &with {
                                             ui.label(theme::muted(with.as_str()));
                                         }
@@ -1623,8 +1694,13 @@ impl App {
                             {
                                 regenerate = true;
                             }
+                            if let Some(start) = self.show_read_aloud(ui, i) {
+                                read = Some((i, start));
+                            }
                             if let Some(stats) = &turn.stats {
-                                ui.label(theme::muted(stats.line()));
+                                // cut with … where the row is narrow (Read aloud beside it, C216): a line that runs on
+                                // widens the page under the panel and pushes the box's buttons out of it
+                                ui.add(egui::Label::new(theme::muted(stats.line())).truncate());
                             }
                         });
                     } else if turn.from_person && Some(i) == last_message && idle {
@@ -1693,6 +1769,11 @@ impl App {
         if regenerate {
             self.regenerate_chat(ui.ctx());
         }
+        match read {
+            Some((turn, true)) => self.read_turn(turn, ui.ctx()),
+            Some((_, false)) => self.stop_reading(),
+            None => {}
+        }
         if edit {
             self.edit_last_message();
         }
@@ -1728,9 +1809,13 @@ impl App {
         let mut attach = false;
         // a run on a computer QuickAI set up may not say its model (llama.cpp serves the one it was started with)
         let ready = running && (model.is_some() || remote_run.is_some());
+        let recording = self.talk.recording_for_box();
         let frame = egui::Frame::new()
             .fill(p.well)
-            .stroke(egui::Stroke::new(1.0, p.outline))
+            .stroke(egui::Stroke::new(
+                if recording { 1.5 } else { 1.0 },
+                if recording { p.bad.gamma_multiply(0.8) } else { p.outline },
+            ))
             .corner_radius(10)
             .inner_margin(egui::Margin::symmetric(6, 4))
             .outer_margin(egui::Margin {
@@ -1755,13 +1840,22 @@ impl App {
                         // the tools the model can use here: the MCP servers that are on (C204, C210)
                         self.show_tools_button(ui);
                     });
+                    // while the microphone records, the box is the strip that shows it (C216, R1)
+                    if recording {
+                        self.show_recording_strip(ui);
+                        return;
+                    }
                     // Enter sends and Shift+Enter is a new line: the key is taken before the box sees it, so that it
                     // does not put a line break in the message wherever the cursor is
                     let input_id = egui::Id::new("chat_input");
                     let focused = ui.memory(|m| m.has_focus(input_id));
                     let enter = focused
                         && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+                    let talk_width = self.talk_buttons_width();
                     let hint = match &model {
+                        _ if ready && self.talk.said_nothing_heard() => {
+                            "Nothing was heard. Try again, closer to the microphone.".to_string()
+                        }
                         Some(model) if ready => format!("Message {model}"),
                         _ => "Start a model to chat with it".to_string(),
                     };
@@ -1771,9 +1865,20 @@ impl App {
                             .id(input_id)
                             .frame(egui::Frame::NONE)
                             .desired_rows(1)
-                            .desired_width(ui.available_width() - 40.0)
+                            .desired_width(ui.available_width() - 40.0 - talk_width)
                             .hint_text(hint),
                     );
+                    // what was said was put in the box: it has the keys, with the cursor at its end
+                    if std::mem::take(&mut self.talk.focus_box) {
+                        field.request_focus();
+                        if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), input_id) {
+                            let end = egui::text::CCursor::new(self.chat.input.chars().count());
+                            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(end)));
+                            state.store(ui.ctx(), input_id);
+                        }
+                    }
+                    // the speaker and the microphone, before the arrow (C216, M1)
+                    self.show_talk_buttons(ui, ready);
                     if self.chat.replying() {
                         if icons::icon_button(ui, Icon::Close, egui::vec2(32.0, 28.0), true, true)
                             .on_hover_text("Stop the reply. What came of it stays.")
@@ -1812,6 +1917,8 @@ impl App {
                 r.max - egui::vec2(16.0, 10.0),
             ),
         );
+        // hands-free covers the chat (C216, H1)
+        self.show_hands_free(ui.ctx(), chat_rect);
         if attach {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter(

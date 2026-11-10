@@ -76,6 +76,8 @@ mod sidebar;
 mod stall;
 mod theme;
 mod tools;
+// talking to QuickAI: the microphone, reading aloud and hands-free (C216)
+mod talk;
 mod values;
 mod widgets;
 mod workbench;
@@ -232,6 +234,7 @@ pub struct App {
     chat: chat::Chat,
     /// The MCP servers QuickAI runs for the chat (C204).
     tools: tools::Tools,
+    talk: talk::Talk,
     /// The words the list of models is narrowed to (a box over it, when the list is long).
     model_filter: String,
     /// The model whose details are in a window of their own (`model_details.rs`), by its name.
@@ -459,6 +462,7 @@ impl App {
         data_dir: Option<String>,
     ) -> Self {
         let mut log_lines = config_log_lines(&registry);
+        let voice = crate::voice::settings::VoiceSettings::from_value(settings.voice());
         let (engine, note) = config::engine_in_use(&registry, &settings);
         log_lines.extend(note);
         let values = FieldValues::from_settings(&settings, registry.engine(&engine));
@@ -527,6 +531,7 @@ impl App {
             restart_with_selected: false,
             chat: chat::Chat::default(),
             tools: tools::Tools::default(),
+            talk: talk::Talk::new(voice),
             model_filter: String::new(),
             details_of: None,
             remote: remote_ui::RemoteState::default(),
@@ -824,6 +829,7 @@ impl App {
         settings.set_sidebar_hidden(!self.sidebar_open);
         settings.set_panel_hidden(!self.panel_open);
         settings.set_configuration_unnamed(self.configs.unnamed);
+        settings.set_voice(self.talk.settings.to_value());
         settings.enable_traffic_proxy = self.enable_traffic_proxy;
         if let Some(engine) = self.registry.engine(&self.engine) {
             let mut values = self.values.clone();
@@ -1076,6 +1082,7 @@ impl eframe::App for App {
         self.poll_named_models(ui.ctx());
         self.poll_loaded(ui.ctx());
         self.poll_chat();
+        self.poll_talk(ui.ctx());
         self.poll_tools(ui.ctx());
         self.poll_remote(ui.ctx());
         self.poll_setup_run(ui.ctx());
@@ -1088,6 +1095,8 @@ impl eframe::App for App {
         self.follow_the_run();
 
         self.show_window(ui);
+        // the card over the microphone (the speech model, a microphone that does not work)
+        self.show_talk_card(ui.ctx());
         // the ring of Help's Show me and the tour, over what the main window drew
         self.show_help_marks(ui.ctx());
         if self.delete_asked_in_window {

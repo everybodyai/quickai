@@ -4,6 +4,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+// talking to QuickAI: the microphone, speech to text and reading aloud (C216)
+mod voice;
 
 // The window is a client of the runtime crate. These names keep the paths its modules were written
 // with (`crate::config`, `crate::runtime::Session`, ...), so that what the window does to the computer

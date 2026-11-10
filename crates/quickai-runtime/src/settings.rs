@@ -66,6 +66,9 @@ pub const MCP_SERVERS_KEY: &str = "llamacpp.mcp_servers";
 /// What the person said of each tool of an MCP server, `<server>.<tool>` to `always` or `off`; a tool not in it is asked
 /// about each time (C204).
 pub const TOOL_PERMISSIONS_KEY: &str = "app.tool_permissions";
+/// Talking to QuickAI (C216): the microphone, the language, the speech model, reading aloud and its voice, as an
+/// object of what differs from the defaults (the window's `voice::settings::VoiceSettings`).
+pub const VOICE_KEY: &str = "app.voice";
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Settings {
@@ -422,6 +425,16 @@ impl Settings {
             TOOL_PERMISSIONS_KEY,
             (!map.is_empty()).then_some(serde_json::Value::Object(map)),
         );
+    }
+
+    /// What the person chose for talking to QuickAI, as it is kept.
+    pub fn voice(&self) -> Option<&serde_json::Value> {
+        self.app_value(VOICE_KEY)
+    }
+
+    /// Keeps it; `None` (all as by default) takes the key away.
+    pub fn set_voice(&mut self, voice: Option<serde_json::Value>) {
+        self.set_app_value(VOICE_KEY, voice);
     }
 
     /// The tab the window showed under the model when it was last left (`chat`, `log`, `live`), if one was kept.

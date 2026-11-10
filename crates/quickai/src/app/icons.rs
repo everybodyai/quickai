@@ -78,6 +78,8 @@ pub(super) enum Icon {
     /// What Connect an app gives (R1 of `the mockups`): the address, two links of a chain; the key.
     Link,
     Key,
+    /// Hands-free (C216): the lines of a voice.
+    Wave,
 }
 
 /// Draws `icon` in `rect` (it is drawn in the largest square that fits, in the middle) in `color`.
@@ -384,6 +386,19 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
             line(&[(10.9, 13.1), (20.0, 4.0)]);
             line(&[(17.0, 7.0), (19.5, 9.5)]);
             line(&[(14.6, 9.4), (16.6, 11.4)]);
+        }
+        Icon::Wave => {
+            // the lines of a voice, of the heights it has
+            for (x, half) in [
+                (3.0, 1.5),
+                (7.0, 5.5),
+                (11.0, 9.0),
+                (15.0, 3.5),
+                (19.0, 6.5),
+                (22.0, 1.5),
+            ] {
+                line(&[(x, 12.0 - half), (x, 12.0 + half)]);
+            }
         }
         Icon::Play => {
             painter.add(Shape::convex_polygon(

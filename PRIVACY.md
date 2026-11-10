@@ -33,6 +33,12 @@ anything the app does; see [Stores and package managers](#stores-and-package-man
   developer or to any third party. Whatever conversation history the chat page keeps is kept by your browser, on
   your computer; the app does not store it. The local server has no password (the **API** panel shows the key as
   "none"), so any program or other user on the same computer can send it requests while it is running.
+- **What you say, if you use the microphone.** The microphone records only while you talk to QuickAI: after you press
+  it (or hold Ctrl+Space), or while hands-free is on, which the window shows. What it records is written down by
+  whisper.cpp inside QuickAI, on your computer, and kept nowhere: the recording is dropped once its words are in the
+  chat's box (or sent, when you chose that). Answers read aloud go to your computer's own speech program. Nothing of
+  either is sent anywhere. The speech model it needs is downloaded once, from Hugging Face (below), unless your package
+  came with it.
 - **Ollama, if you choose it.** Ollama is a separate program, MIT-licensed, that QuickAI downloads on request
   (Settings, **Look up Ollama builds**) and never ships. QuickAI starts it as `ollama serve` so that it listens
   on `127.0.0.1` only and with `OLLAMA_NO_CLOUD=1`, which you cannot override from the app's extra-environment box:
@@ -210,6 +216,10 @@ while it runs, not while you chat. It does so only when you press a button, or E
   about thirty-five requests in all). No cookie is kept and nothing is sent but the request and a `User-Agent` that
   says `quickai`. Hugging Face sees your IP address and handles it under its own
   [privacy policy](https://huggingface.co/privacy).
+- **The speech model.** The first time you press the microphone, if your package did not come with it, the card over
+  the microphone offers to download it; **Download** fetches one file of `ggerganov/whisper.cpp` from Hugging Face
+  (`huggingface.co`, about 82 MB, checked against the checksum the app pins). A larger one is fetched the same way when
+  you choose it in Settings › Voice.
 - **The recommended models.** **Add a model** with its box empty suggests models from a list that is part of the
   application, and **Recommended** (in the Models menu) opens the whole list: opening them, searching the list and
   closing them contact no one. A button of it fetches what it says (below), from the host the list names: Hugging Face
