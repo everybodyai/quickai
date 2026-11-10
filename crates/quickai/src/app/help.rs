@@ -341,11 +341,15 @@ const PAGES: &[Page] = &[
         page: HelpPage::Talk,
         group: Group::Using,
         icon: Icon::Mic,
-        title: "Talk to QuickAI",
+        title: "Talk to QuickAI (experimental)",
         lead: "Say your message instead of typing it, hear the answers read aloud, or talk with nothing to press. All of \
-               it happens on this computer.",
+               it happens on this computer. It is new and still being improved, so it is off until you turn it on.",
         picture: None,
         steps: &[
+            step(
+                "Turn on **Use voice** in **Settings › Voice**. Until then QuickAI shows no microphone and never opens it.",
+            )
+            .does(Deed::Voice),
             step(
                 "Press the microphone {mic} in the chat's box and talk; press ■ when you are done. What you said goes in \
                  the box, to change before you send it. Or hold **Ctrl+Space** while you talk.",
@@ -366,10 +370,9 @@ const PAGES: &[Page] = &[
             )
             .at(Spot::ChatMenu),
             step(
-                "**Settings › Voice**: the microphone, the language you speak, the speech model, sending when you stop \
-                 talking, and the voice and its speed.",
-            )
-            .does(Deed::Voice),
+                "**Settings › Voice** also has the microphone, the language you speak, the speech model, sending when you \
+                 stop talking, and the voice and its speed.",
+            ),
         ],
         numbered: true,
         tip: Some(
@@ -702,8 +705,8 @@ const PAGES: &[Page] = &[
             step("Ctrl+K|Add a model"),
             step("Ctrl+L|Go to the chat's box"),
             step("Enter|Send a message"),
-            step("Ctrl+Space|Talk while it is held (what you say goes in the box)"),
-            step("Ctrl+Shift+Space|Start or end hands-free"),
+            step("Ctrl+Space|Talk while it is held, once voice is on (what you say goes in the box)"),
+            step("Ctrl+Shift+Space|Start or end hands-free, once voice is on"),
             step("Shift+Enter|A new line in a message"),
             step("Ctrl+,|Settings"),
             step("F1|Help"),

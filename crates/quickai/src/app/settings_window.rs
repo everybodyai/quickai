@@ -721,14 +721,15 @@ fn nav_item(ui: &mut egui::Ui, nav: &NavItem, chosen: bool, narrow: bool) -> egu
 /// The head of a page: its title, and a line under it when it has one.
 pub(super) fn page_head(ui: &mut egui::Ui, title: &str, lead: Option<&str>) {
     let p = theme::palette();
-    ui.label(
+    let head = ui.label(
         egui::RichText::new(title)
             .size(18.0)
             .family(theme::semibold(ui))
             .color(p.text),
     );
+    // what the page is for is said when the pointer rests on its title: the page itself is its settings
     if let Some(lead) = lead {
-        ui.label(egui::RichText::new(lead).small().color(p.muted));
+        head.on_hover_text(lead);
     }
     ui.add_space(8.0);
 }
@@ -759,9 +760,10 @@ pub(super) fn row_line(ui: &mut egui::Ui) {
     ui.add_space(9.0);
 }
 
-/// A setting on a row: its name, and what it does in small words under it, on the left; `control` on the right, drawn
-/// from the right edge. `hover` is said when the pointer rests on the name. What comes back is what `control` gave, and
-/// the name's response: a click on the name of a switch turns it over, as a click on the words of a tick box did.
+/// A setting on a row: its name on the left, `control` on the right, drawn from the right edge. What it does (`desc`)
+/// and anything more (`hover`) are said when the pointer rests on the name, so that the page is its settings and not
+/// their explanations. What comes back is what `control` gave, and the name's response: a click on the name of a switch
+/// turns it over, as a click on the words of a tick box did.
 pub(super) fn setting_row<R>(
     ui: &mut egui::Ui,
     title: &str,
@@ -781,17 +783,15 @@ pub(super) fn setting_row<R>(
                         egui::Label::new(egui::RichText::new(title).color(p.text))
                             .sense(egui::Sense::click()),
                     );
-                    let name = match hover {
-                        Some(hover) => name.on_hover_text(hover),
-                        None => name,
+                    let said = match (desc, hover) {
+                        (Some(desc), Some(hover)) => Some(format!("{desc}\n\n{hover}")),
+                        (Some(text), None) | (None, Some(text)) => Some(text.to_string()),
+                        (None, None) => None,
                     };
-                    if let Some(desc) = desc {
-                        ui.add(
-                            egui::Label::new(egui::RichText::new(desc).small().color(p.muted))
-                                .wrap(),
-                        );
+                    match said {
+                        Some(said) => name.on_hover_text(said),
+                        None => name,
                     }
-                    name
                 })
                 .inner;
             (reply, name)

@@ -33,12 +33,13 @@ anything the app does; see [Stores and package managers](#stores-and-package-man
   developer or to any third party. Whatever conversation history the chat page keeps is kept by your browser, on
   your computer; the app does not store it. The local server has no password (the **API** panel shows the key as
   "none"), so any program or other user on the same computer can send it requests while it is running.
-- **What you say, if you use the microphone.** The microphone records only while you talk to QuickAI: after you press
-  it (or hold Ctrl+Space), or while hands-free is on, which the window shows. What it records is written down by
-  whisper.cpp inside QuickAI, on your computer, and kept nowhere: the recording is dropped once its words are in the
-  chat's box (or sent, when you chose that). Answers read aloud go to your computer's own speech program. Nothing of
-  either is sent anywhere. The speech model it needs is downloaded once, from Hugging Face (below), unless your package
-  came with it.
+- **What you say, if you use the microphone.** Voice is off until you turn on **Use voice** in Settings › Voice; until
+  then QuickAI never opens the microphone. Once it is on, the microphone records only while you talk to QuickAI: after
+  you press it (or hold Ctrl+Space), or while hands-free is on, which the window shows. What it records is written down
+  by quickai-whisper (whisper.cpp), a program that runs beside QuickAI on your computer and connects to nothing, and is
+  kept nowhere: the recording is dropped once its words are in the chat's box (or sent, when you chose that). Answers
+  read aloud go to your computer's own speech program. Nothing of either is sent anywhere. The speech model it needs is
+  downloaded once, from Hugging Face (below), unless your package came with it.
 - **Ollama, if you choose it.** Ollama is a separate program, MIT-licensed, that QuickAI downloads on request
   (Settings, **Look up Ollama builds**) and never ships. QuickAI starts it as `ollama serve` so that it listens
   on `127.0.0.1` only and with `OLLAMA_NO_CLOUD=1`, which you cannot override from the app's extra-environment box:

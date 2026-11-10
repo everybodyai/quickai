@@ -1418,8 +1418,8 @@ impl App {
             self.open_chat_options();
             ui.close();
         }
-        // hands-free (C216): it listens, sends, reads the answer and listens again
-        if super::talk::CAN_HEAR {
+        // hands-free (C216): it listens, sends, reads the answer and listens again; only once voice is turned on
+        if super::talk::CAN_HEAR && self.talk.settings.enabled {
             let can_talk = self.chat_running() && self.talk.hands_free.is_none();
             let hands_free = super::icons::menu_item(ui, super::icons::Icon::Wave, "Hands-free", can_talk, false)
                 .on_hover_text(

@@ -226,6 +226,15 @@ impl App {
             .get_or_insert_with(|| Speaker::new(move || ctx.request_repaint()))
     }
 
+    /// Voice turned off in the Settings: whatever of it was going stops.
+    fn voice_turned_off(&mut self, ctx: &egui::Context) {
+        if self.talk.hands_free.is_some() {
+            self.end_hands_free(ctx);
+        }
+        self.stop_listening(false, ctx);
+        self.stop_reading();
+    }
+
     /// The person changed something of the voice: it is kept.
     fn voice_changed(&mut self) {
         self.save_settings();
@@ -242,7 +251,8 @@ impl App {
     pub(super) fn start_listening(&mut self, purpose: Purpose, ctx: &egui::Context) {
         #[cfg(feature = "voice")]
         {
-            if self.talk.listening.is_some() {
+            // voice off: the microphone is never opened
+            if !self.talk.settings.enabled || self.talk.listening.is_some() {
                 return;
             }
             // what it says itself is not heard
@@ -448,6 +458,9 @@ impl App {
 
     /// Reads the answer of `turn` aloud, from the start.
     pub(super) fn read_turn(&mut self, turn: usize, ctx: &egui::Context) {
+        if !self.talk.settings.enabled {
+            return;
+        }
         let Some(text) = self.chat.turns.get(turn).map(|t| t.text.clone()) else {
             return;
         };
@@ -506,6 +519,9 @@ impl App {
     /// Reads every answer as it comes (the speaker in the box), and hands-free's answer: a reading follows the answer
     /// that is being written, a sentence as soon as it is whole.
     fn follow_answer(&mut self, ctx: &egui::Context) {
+        if !self.talk.settings.enabled {
+            return;
+        }
         let last = self.chat.turns.len().checked_sub(1);
         let last_reply = last.filter(|&i| !self.chat.turns[i].from_person);
         let replying = self.chat.replying();
@@ -629,7 +645,11 @@ impl App {
     // ---- hands-free ---------------------------------------------------------------------------------------------
 
     pub(super) fn start_hands_free(&mut self, ctx: &egui::Context) {
-        if !CAN_HEAR || self.talk.hands_free.is_some() || !self.chat_ready() {
+        if !CAN_HEAR
+            || !self.talk.settings.enabled
+            || self.talk.hands_free.is_some()
+            || !self.chat_ready()
+        {
             return;
         }
         if self.talk.recording_for_box() {
@@ -814,6 +834,10 @@ impl App {
     /// Ctrl+Space held records for the box; Ctrl+Shift+Space starts and ends hands-free; Escape stops reading and ends
     /// hands-free.
     fn talk_keys(&mut self, ctx: &egui::Context) {
+        // voice off: the keys are left to the rest of the window
+        if !self.talk.settings.enabled {
+            return;
+        }
         let mut hold: Option<bool> = None;
         let mut toggle = false;
         let mut escape = false;
@@ -962,7 +986,7 @@ impl App {
 
     /// The room the microphone takes in the box.
     pub(super) fn talk_buttons_width(&self) -> f32 {
-        if CAN_HEAR {
+        if CAN_HEAR && self.talk.settings.enabled {
             32.0
         } else {
             0.0
@@ -972,7 +996,8 @@ impl App {
     /// The microphone, before the send arrow (and no speaker button:
     /// reading every answer aloud is a setting of Settings › Voice, off unless turned on).
     pub(super) fn show_talk_buttons(&mut self, ui: &mut egui::Ui, ready: bool) {
-        if !CAN_HEAR {
+        // no microphone in the box until voice is turned on in Settings › Voice
+        if !CAN_HEAR || !self.talk.settings.enabled {
             return;
         }
         let p = theme::palette();
@@ -1089,6 +1114,9 @@ impl App {
 
     /// Read aloud (or Stop reading) under an answer.
     pub(super) fn show_read_aloud(&self, ui: &mut egui::Ui, turn: usize) -> Option<bool> {
+        if !self.talk.settings.enabled {
+            return None;
+        }
         let reading = self
             .talk
             .reading
@@ -1412,9 +1440,38 @@ impl App {
         page_head(
             ui,
             "Voice",
-            Some("Talk to QuickAI and hear its answers. What you say is written down on this computer, and the answers are read by its own voice."),
+            Some("Experimental. Talk to QuickAI and hear its answers. What you say is written down on this computer, and the answers are read by its own voice."),
         );
         let mut changed = false;
+        // the switch for all of it: off, QuickAI shows no microphone, no Read aloud and no hands-free, and never opens
+        // the microphone (nor lists them, nor starts the speech program)
+        group(ui, |ui| {
+            let mut on = self.talk.settings.enabled;
+            if switch_row(
+                ui,
+                "Use voice (experimental)",
+                Some(
+                    "The microphone in the chat's box, Read aloud under answers, and hands-free. Off, QuickAI shows none of \
+                     them and never opens the microphone.",
+                ),
+                None,
+                &mut on,
+                true,
+            ) {
+                self.talk.settings.enabled = on;
+                if !on {
+                    self.voice_turned_off(&ctx);
+                }
+                changed = true;
+            }
+        });
+        if !self.talk.settings.enabled {
+            if changed {
+                self.voice_changed();
+            }
+            return;
+        }
+        ui.add_space(14.0);
         ui.label(theme::muted("TALKING").small());
         ui.add_space(4.0);
         group(ui, |ui| {

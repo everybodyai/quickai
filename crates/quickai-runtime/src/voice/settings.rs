@@ -5,10 +5,13 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
-/// The person's choices. The defaults: the system's microphone, the language heard, the base model, the words put in
-/// the box to check, answers not read aloud, the system's voice at its usual speed.
+/// The person's choices. The defaults: voice off (nothing of it shows, and the microphone is never opened, until the
+/// person turns it on in Settings › Voice), the system's microphone, the language heard, the base model, the words put
+/// in the box to check, answers not read aloud, the system's voice at its usual speed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VoiceSettings {
+    /// Voice is on: the microphone, Read aloud, hands-free and their keys. Off until the person turns it on.
+    pub enabled: bool,
     /// The microphone by the id `capture::microphones` gives it; `None` is the system's own choice.
     pub microphone: Option<String>,
     /// The language spoken, as whisper names it (`en`, `ml`); `None` lets it tell.
@@ -30,6 +33,7 @@ pub struct VoiceSettings {
 impl Default for VoiceSettings {
     fn default() -> Self {
         VoiceSettings {
+            enabled: false,
             microphone: None,
             language: None,
             model: SPEECH_MODELS[0].id.to_string(),
@@ -59,6 +63,7 @@ impl VoiceSettings {
         let flag =
             |key: &str, default: bool| v.get(key).and_then(Value::as_bool).unwrap_or(default);
         VoiceSettings {
+            enabled: flag("enabled", d.enabled),
             microphone: text("microphone"),
             language: text("language"),
             model: text("model")
@@ -80,6 +85,9 @@ impl VoiceSettings {
     pub fn to_value(&self) -> Option<Value> {
         let d = VoiceSettings::default();
         let mut map = serde_json::Map::new();
+        if self.enabled != d.enabled {
+            map.insert("enabled".into(), json!(self.enabled));
+        }
         if let Some(m) = &self.microphone {
             map.insert("microphone".into(), json!(m));
         }
@@ -244,6 +252,7 @@ mod tests {
         assert_eq!(VoiceSettings::default().to_value(), None);
         assert_eq!(VoiceSettings::from_value(None), VoiceSettings::default());
         let chosen = VoiceSettings {
+            enabled: true,
             microphone: Some("hw:CARD=USB,DEV=0".into()),
             language: Some("ml".into()),
             model: "small".into(),
@@ -255,6 +264,18 @@ mod tests {
         };
         let kept = chosen.to_value().unwrap();
         assert_eq!(VoiceSettings::from_value(Some(&kept)), chosen);
+    }
+
+    #[test]
+    fn voice_is_off_until_it_is_turned_on() {
+        assert!(!VoiceSettings::default().enabled);
+        assert!(!VoiceSettings::from_value(Some(&json!({ "read_answers": true }))).enabled);
+        let on = VoiceSettings {
+            enabled: true,
+            ..VoiceSettings::default()
+        };
+        assert_eq!(on.to_value(), Some(json!({ "enabled": true })));
+        assert!(VoiceSettings::from_value(on.to_value().as_ref()).enabled);
     }
 
     #[test]

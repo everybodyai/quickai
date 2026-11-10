@@ -56,7 +56,8 @@ impl App {
             self.partner_logos = PARTNERS
                 .iter()
                 .map(|partner| {
-                    let icon = eframe::icon_data::from_png_bytes(partner.icon).expect("a partner's icon is a PNG");
+                    let icon = eframe::icon_data::from_png_bytes(partner.icon)
+                        .expect("a partner's icon is a PNG");
                     ctx.load_texture(
                         format!("partner-{}", partner.name),
                         egui::ColorImage::from_rgba_unmultiplied(
@@ -68,7 +69,10 @@ impl App {
                 })
                 .collect();
         }
-        self.partner_logos.iter().map(|texture| texture.id()).collect()
+        self.partner_logos
+            .iter()
+            .map(|texture| texture.id())
+            .collect()
     }
 
     /// The Partners tab: each company with its icon, its name, a link to its site, and what it does.
