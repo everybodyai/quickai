@@ -1302,7 +1302,8 @@ mod tests {
         click_in_settings(&mut app, &ctx, &display, program.center());
         settle(&mut app, &ctx, &display);
         assert_eq!(app.settings_page, SettingsPage::Program);
-        assert!(where_is(&display, "The build of llama.cpp that Start runs.").is_some());
+        // its lead is said on the hover of its title; its own content is shown
+        assert!(where_is(&display, "Use a program on disk…").is_some());
         assert!(where_is(&display, "Downloaded models folder").is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1725,7 +1726,6 @@ mod tests {
         settle(&mut app, &ctx, &display);
         let inside = in_settings(&display);
         for text in [
-            "A chat page for your models",
             "License: Open WebUI License",
             "openwebui.org",
             "Start Open WebUI with Ollama",
