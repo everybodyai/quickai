@@ -358,10 +358,21 @@ pub struct VoiceProgram {
 
 pub const VOICE_PROGRAM: VoiceProgram = VoiceProgram {
     version: "0.1.0",
-    // pinned once its release is made
-    linux: None,
-    windows: None,
-    macos: None,
+    linux: Some(ProgramAsset {
+        archive: "quickai-voice-0.1.0-linux-x86_64.tar.gz",
+        bytes: 10_962_747,
+        sha256: "f0729c0d62195a787bcc3da8c6142eac26b2e3538e7540a94faa31f4f086ef96",
+    }),
+    windows: Some(ProgramAsset {
+        archive: "quickai-voice-0.1.0-windows-x86_64.zip",
+        bytes: 8_524_840,
+        sha256: "b3bbe7258c63c754a98d1b1d21dd6e6e3adb66f9085ac937d65e664ab268f4b3",
+    }),
+    macos: Some(ProgramAsset {
+        archive: "quickai-voice-0.1.0-macos-universal.tar.gz",
+        bytes: 20_812_095,
+        sha256: "c447dc110c98faf4cf47a7ce44d7b4de1e761d872491397a6fa50b2be2a174aa",
+    }),
 };
 
 impl VoiceProgram {
