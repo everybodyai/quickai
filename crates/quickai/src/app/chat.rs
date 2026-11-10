@@ -809,7 +809,8 @@ fn show_spans(ui: &mut egui::Ui, text: &str, size: Option<f32>, strong: bool, li
 /// Where `sentence` (as it is read aloud: without the marks of Markdown) is in `plain` (the words of a line), as byte
 /// offsets; the start of a sentence that goes on to the next line lights to the end of this one.
 fn lit_range(plain: &str, sentence: &str) -> Option<(usize, usize)> {
-    let sentence = sentence.trim().trim_end_matches('.');
+    // its last mark is not looked for: a piece of a sentence cut at a dash ends in a comma the answer does not have
+    let sentence = sentence.trim().trim_end_matches(['.', ',', ';', ':']);
     if sentence.is_empty() {
         return None;
     }
@@ -2082,6 +2083,14 @@ pub(super) fn chat_options_viewport() -> egui::ViewportId {
 mod tests {
     use super::*;
     use crate::testkit::fake_ollama::FakeOllama;
+
+    /// The pieces of a sentence cut at a dash are lit in the answer, which has the dash and not their comma.
+    #[test]
+    fn the_pieces_of_a_sentence_read_at_a_dash_are_lit() {
+        let plain = "I'm active - no glitches.";
+        assert_eq!(lit_range(plain, "I'm active,"), Some((0, 10)));
+        assert_eq!(lit_range(plain, "no glitches."), Some((13, 24)));
+    }
 
     fn reply_of(
         port: u16,

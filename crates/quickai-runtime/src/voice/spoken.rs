@@ -16,6 +16,15 @@ pub fn for_speech(raw: &str) -> String {
 /// `raw` as it should be heard, in one line; `symbols` keeps the symbols too (`#`, `/`, arrows, emoji…), which a voice
 /// reads by their names.
 pub fn for_speech_with(raw: &str, symbols: bool) -> String {
+    cleaned(raw, symbols).replace(PAUSE, "")
+}
+
+/// A pause of a dash: the sentence is read in two pieces there (`dashes_as_pauses`), for the voice takes a breath
+/// between pieces and hardly any at a comma. A mark of its own, never heard or shown.
+const PAUSE: char = '\u{E000}';
+
+/// `raw` cleaned, with the pauses of its dashes marked.
+fn cleaned(raw: &str, symbols: bool) -> String {
     let mut state = LineState {
         symbols,
         ..LineState::default()
@@ -34,11 +43,14 @@ pub fn sentences(raw: &str) -> Vec<String> {
 
 /// `raw` as it should be heard, in sentences; `symbols` keeps the symbols too.
 pub fn sentences_with(raw: &str, symbols: bool) -> Vec<String> {
-    let cleaned = for_speech_with(raw, symbols);
+    let cleaned = cleaned(raw, symbols);
     let (mut done, rest) = split_sentences(&cleaned);
     // the last one has no space after its mark: it is a sentence all the same, cut when it is long
     done.extend(cut_long(rest.trim()));
-    done
+    done.into_iter()
+        .map(|piece| piece.replace(PAUSE, ""))
+        .filter(|piece| !piece.trim().is_empty())
+        .collect()
 }
 
 /// What is carried from one line to the next: whether it is inside a block of code, and whether symbols are read.
@@ -61,7 +73,7 @@ fn clean_line(line: &str, state: &mut LineState) -> Option<String> {
         return None;
     }
     let (body, pause) = strip_block_marks(trimmed);
-    let mut spoken = inline(body);
+    let mut spoken = dashes_as_pauses(&inline(body));
     let table = trimmed.starts_with('|');
     if table {
         spoken = spoken
@@ -87,6 +99,46 @@ fn clean_line(line: &str, state: &mut LineState) -> Option<String> {
             spoken
         },
     )
+}
+
+/// A dash between words is a pause: a voice reads "active - no glitches" in one breath, and a comma adds hardly any
+/// (Kokoro, 0.06 s). A spaced hyphen, en or em dash, or an em dash between words, is made a comma where the sentence is
+/// read in two pieces (`PAUSE`), with a breath between them (0.4 s); a hyphen inside a word or a number
+/// ("well-known", "1-2") is left as it is.
+pub fn dashes_as_pauses(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let dash = matches!(c, '-' | '\u{2013}' | '\u{2014}');
+        let spaced =
+            dash && i > 0 && chars[i - 1] == ' ' && chars.get(i + 1).is_some_and(|n| *n == ' ');
+        let em_between = c == '\u{2014}'
+            && i > 0
+            && chars[i - 1].is_alphanumeric()
+            && chars.get(i + 1).is_some_and(|n| n.is_alphanumeric());
+        if spaced {
+            // "active - no": the space before it goes, a comma and the pause take its place
+            while out.ends_with(' ') {
+                out.pop();
+            }
+            if !out.is_empty() {
+                if !out.ends_with([',', '.', ';', ':', '!', '?']) {
+                    out.push(',');
+                }
+                out.push(PAUSE);
+            }
+        } else if em_between {
+            out.push(',');
+            out.push(PAUSE);
+            out.push(' ');
+        } else {
+            out.push(c);
+        }
+        i += 1;
+    }
+    out
 }
 
 /// `text` without the symbols a voice reads by their names ("hash", "slash", "rightwards arrow", "grinning face"), each
@@ -147,6 +199,8 @@ pub fn split_sentences(text: &str) -> (Vec<String>, &str) {
     for (k, &(at, c)) in chars.iter().enumerate() {
         let next = chars.get(k + 1).map(|&(_, n)| n);
         let ends = match c {
+            // a dash's pause: what comes before it is read as a piece of its own
+            PAUSE => true,
             '.' | '!' | '?' | '…' => next.is_some_and(char::is_whitespace),
             // a full stop of Chinese and Japanese, of Hindi and of Arabic needs no space after it
             '。' | '！' | '？' | '।' | '؟' => true,
@@ -156,7 +210,7 @@ pub fn split_sentences(text: &str) -> (Vec<String>, &str) {
             continue;
         }
         let end = at + c.len_utf8();
-        let sentence = text[start..end].trim();
+        let sentence = text[start..end].trim().trim_end_matches(PAUSE).trim();
         if c == '.' && is_short_form(sentence) {
             continue;
         }
@@ -235,7 +289,7 @@ pub struct SentenceFeed {
 impl SentenceFeed {
     /// Words of a line that was begun already: its inline marks left out, and its symbols unless they are read.
     fn speakable(&self, text: &str) -> String {
-        let words = collapse(&inline(text));
+        let words = collapse(&dashes_as_pauses(&inline(text)));
         if self.state.symbols {
             words
         } else {
@@ -329,7 +383,8 @@ impl SentenceFeed {
     }
 
     fn give(&mut self, sentence: String, out: &mut Vec<String>) {
-        if self.total >= MAX_CHARS {
+        let sentence = sentence.replace(PAUSE, "");
+        if self.total >= MAX_CHARS || sentence.trim().is_empty() {
             return;
         }
         self.total += sentence.chars().count();
@@ -491,6 +546,29 @@ fn site_of(address: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_dash_between_words_is_a_pause() {
+        assert_eq!(
+            for_speech("I'm active - no glitches"),
+            "I'm active, no glitches"
+        );
+        assert_eq!(
+            sentences("I'm active - no glitches."),
+            ["I'm active,", "no glitches."]
+        );
+        assert_eq!(for_speech("Fast \u{2014} and small"), "Fast, and small");
+        assert_eq!(for_speech("fast\u{2014}small"), "fast, small");
+        assert_eq!(
+            for_speech("A well-known 1-2 step, x -1"),
+            "A well-known 1-2 step, x -1"
+        );
+        assert_eq!(for_speech_with("on - off", true), "on, off");
+        let mut feed = SentenceFeed::new(false);
+        let mut heard = feed.push("Ready - set. Go");
+        heard.extend(feed.finish());
+        assert_eq!(heard, ["Ready,", "set.", "Go"]);
+    }
 
     #[test]
     fn symbols_are_left_out_unless_they_are_read_as_words_and_kept_when_asked() {
