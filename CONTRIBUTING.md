@@ -7,6 +7,21 @@ Thank you for helping. Bug reports, ideas, documentation and code are all welcom
 - **Found a bug or have an idea?** Open an issue using one of the templates.
 - **Found a security problem?** Report it privately, as [SECURITY.md](SECURITY.md) describes.
 - **Planning a larger change?** Open an issue first, so we can agree on the approach before you put in the work.
+- **Have a question, or an idea to talk over?** Ask in [Discussions](https://github.com/everybodyai/quickai/discussions).
+
+## Where to start
+
+- **[Good first issues](https://github.com/everybodyai/quickai/labels/good%20first%20issue)** are small and
+  self-contained, with a pointer to the code. **[Help wanted](https://github.com/everybodyai/quickai/labels/help%20wanted)**
+  are bigger ones we would be glad to hand over.
+- **Add a model to the recommended list.** The list is TOML under `crates/quickai-runtime/manifests/catalog/`, so it
+  takes no Rust: [docs/catalog.md](docs/catalog.md) explains the keys, and the tests check every entry. Give the file's
+  size and SHA-256, and a model license that allows people to use it.
+- **Try it on your computer and tell us.** A bug report with your system and graphics card, or a note in Discussions
+  of which model ran how fast, helps more than you might think: we cannot test every card.
+- **Packages.** QuickAI is not yet in the AUR, Homebrew, Scoop or Chocolatey; if you keep packages for one
+  of them, say so in an issue.
+- **Documentation.** If something in Help or the docs was unclear, a fix to the words is very welcome.
 
 ## License of contributions
 

@@ -1,0 +1,42 @@
+name: Suggest a model
+description: A model you'd like in QuickAI's recommended list
+labels: [models]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The recommended list is data: TOML documents under `crates/quickai-runtime/manifests/catalog/`, described in
+        [docs/catalog.md](https://github.com/everybodyai/quickai/blob/main/docs/catalog.md). You are welcome to open a
+        pull request that adds the model yourself; this form is for when you'd rather we did.
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: Its name and where its files are (a Hugging Face repository, or Ollama's library).
+      placeholder: e.g. Qwen3.5 9B, https://huggingface.co/...
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What it is good at
+      description: What would people use it for, and why this one rather than a model already in the list?
+    validations:
+      required: true
+  - type: input
+    id: license
+    attributes:
+      label: License
+      description: The model's own license, as its page states it.
+    validations:
+      required: true
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      options: [llama.cpp (GGUF), Ollama, ComfyUI, Not sure]
+  - type: textarea
+    id: tried
+    attributes:
+      label: How it ran for you
+      description: If you tried it, the file or quantization, the computer, and how fast it was (tokens a second).
