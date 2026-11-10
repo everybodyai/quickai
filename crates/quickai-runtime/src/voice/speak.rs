@@ -390,14 +390,27 @@ fn parse_espeak(out: &str) -> Vec<VoiceInfo> {
         .collect()
 }
 
-/// `spd-say -L`: `NAME LANGUAGE VARIANT`, a voice a line.
+/// `spd-say -L`: `NAME LANGUAGE VARIANT`, a voice a line, in columns of a fixed width. A name can have spaces in it
+/// ("English (America)+Belinda"), so the language and the variant are the last two words and the name is the rest.
+/// espeak's module lists every language once for each of its sound variants (+Belinda, +Boris, ...): a voice is
+/// listed once, by its name without the variant, which is what `spd-say -y` takes too.
 fn parse_spd(out: &str) -> Vec<VoiceInfo> {
+    let mut seen = std::collections::HashSet::new();
     out.lines()
         .filter_map(|l| {
-            let cols: Vec<&str> = l.split_whitespace().collect();
-            let (name, lang) = (cols.first()?, cols.get(1)?);
-            (*name != "NAME").then(|| VoiceInfo {
-                id: name.to_string(),
+            let words: Vec<&str> = l.split_whitespace().collect();
+            if words.len() < 3 || words[0] == "NAME" {
+                return None;
+            }
+            let lang = words[words.len() - 2];
+            let name = words[..words.len() - 2].join(" ");
+            let name = name
+                .split_once('+')
+                .map_or(name.as_str(), |(base, _)| base)
+                .trim()
+                .to_string();
+            (!name.is_empty() && seen.insert(name.clone())).then(|| VoiceInfo {
+                id: name,
                 language: lang.to_string(),
                 about: String::new(),
             })
@@ -780,6 +793,30 @@ mod tests {
         assert_eq!(
             parse_spd("NAME LANGUAGE VARIANT\nafrikaans af none\n")[0].id,
             "afrikaans"
+        );
+        // names with spaces, in spd-say's columns, and espeak's variants of one voice listed once
+        let spd = format!(
+            "{:>25}{:>25}{:>25}\n{:>25}{:>25}{:>25}\n{:>25}{:>25}{:>25}\n{:>25}{:>25}{:>25}\n",
+            "NAME",
+            "LANGUAGE",
+            "VARIANT",
+            "English (America)+Belinda",
+            "en-US",
+            "none",
+            "English (America)+Boris",
+            "en-US",
+            "none",
+            "Afrikaans",
+            "af",
+            "none",
+        );
+        let voices = parse_spd(&spd);
+        assert_eq!(
+            voices
+                .iter()
+                .map(|v| (v.id.as_str(), v.language.as_str()))
+                .collect::<Vec<_>>(),
+            [("English (America)", "en-US"), ("Afrikaans", "af")]
         );
     }
 

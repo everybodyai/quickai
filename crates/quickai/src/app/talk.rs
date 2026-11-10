@@ -155,6 +155,9 @@ pub(super) struct Talk {
     mics: Option<Vec<Microphone>>,
     voices: Option<Result<Vec<VoiceInfo>, String>>,
     voices_asked: Option<Receiver<Result<Vec<VoiceInfo>, String>>>,
+    /// What is typed in the search box at the top of the lists of languages and of voices.
+    language_search: String,
+    voice_search: String,
 }
 
 /// How long a recording may be, and how much is kept before someone talks in hands-free (so that the first syllable is
@@ -1538,21 +1541,33 @@ impl App {
                         .selected_text(shown)
                         .width(220.0)
                         .height(320.0)
+                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                         .show_ui(ui, |ui| {
-                            if ui
-                                .selectable_label(language.is_none(), "Tell it from what is said")
-                                .clicked()
+                            let query =
+                                search_box(ui, &mut self.talk.language_search, "Search languages");
+                            if query.is_empty()
+                                && ui
+                                    .selectable_label(
+                                        language.is_none(),
+                                        "Tell it from what is said",
+                                    )
+                                    .clicked()
                             {
                                 self.talk.settings.language = None;
                                 changed = true;
+                                ui.close();
                             }
-                            for (code, name) in LANGUAGES {
+                            for (code, name) in LANGUAGES
+                                .iter()
+                                .filter(|(code, name)| matches(&query, &[code, name]))
+                            {
                                 if ui
-                                    .selectable_label(language.as_deref() == Some(code), name)
+                                    .selectable_label(language.as_deref() == Some(*code), *name)
                                     .clicked()
                                 {
                                     self.talk.settings.language = Some(code.to_string());
                                     changed = true;
+                                    ui.close();
                                 }
                             }
                         });
@@ -1663,17 +1678,25 @@ impl App {
                         .width(220.0)
                         .height(320.0)
                         .truncate()
+                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                         .show_ui(ui, |ui| {
-                            if ui
-                                .selectable_label(voice.is_none(), "The usual one")
-                                .clicked()
+                            let query =
+                                search_box(ui, &mut self.talk.voice_search, "Search voices");
+                            if query.is_empty()
+                                && ui
+                                    .selectable_label(voice.is_none(), "The usual one")
+                                    .clicked()
                             {
                                 self.talk.settings.voice = None;
                                 changed = true;
+                                ui.close();
                             }
-                            for v in &voices {
+                            for v in voices
+                                .iter()
+                                .filter(|v| matches(&query, &[&v.id, &v.language, &v.about]))
+                            {
                                 let words = if v.about.is_empty() {
-                                    format!("{} ({})", v.id, v.language)
+                                    format!("{} · {}", v.id, v.language)
                                 } else {
                                     format!("{} · {}", v.about, v.language)
                                 };
@@ -1686,6 +1709,7 @@ impl App {
                                 {
                                     self.talk.settings.voice = Some(v.id.clone());
                                     changed = true;
+                                    ui.close();
                                 }
                             }
                         });
@@ -1792,4 +1816,24 @@ fn blocked_card(e: &MicError) -> Card {
             settings: None,
         },
     }
+}
+
+/// The search box at the top of a long list: what is typed, made small, to match the list's words with.
+fn search_box(ui: &mut egui::Ui, text: &mut String, hint: &str) -> String {
+    let field = ui.add(
+        egui::TextEdit::singleline(text)
+            .hint_text(hint)
+            .desired_width(f32::INFINITY),
+    );
+    // the list opened: what is typed goes in the box, with nothing to click first
+    if !field.has_focus() && ui.memory(|m| m.focused().is_none()) {
+        field.request_focus();
+    }
+    ui.add_space(4.0);
+    text.trim().to_lowercase()
+}
+
+/// Whether any of `words` has what was searched for in it (everything, when nothing was).
+fn matches(query: &str, words: &[&str]) -> bool {
+    query.is_empty() || words.iter().any(|w| w.to_lowercase().contains(query))
 }
