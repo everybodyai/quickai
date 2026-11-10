@@ -48,3 +48,5 @@ pub mod settings;
 pub mod sources;
 #[cfg(any(test, feature = "testkit"))]
 pub mod testkit;
+// talking to QuickAI: the microphone, what hears it, reading aloud (C216)
+pub mod voice;

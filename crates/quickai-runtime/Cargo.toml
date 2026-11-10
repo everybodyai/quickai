@@ -17,6 +17,9 @@ testkit = []
 # program and the configuration copied there, the run started, followed and stopped, and the other ways for what it
 # lacks (`remote::{probe, deploy, run, job, alternatives}`). Without it, a computer is only one the window attaches to.
 remote-setup = []
+# Talking to QuickAI (C216, `voice`): the microphone and what hears it (quickai-whisper, a program of its own). Reading
+# aloud and the rest of `voice` are there without it.
+voice = ["dep:libloading", "dep:cpal"]
 
 [dependencies]
 quickai-core = { path = "../quickai-core" }
@@ -39,6 +42,14 @@ include_dir = "0.7.4"
 # Unix, a job object on Windows.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# the microphone (feature `voice`): ALSA, loaded when it is first used (the window links no sound library, so it starts
+# on a system that has none), on Linux; cpal (WASAPI, CoreAudio) elsewhere
+[target.'cfg(target_os = "linux")'.dependencies]
+libloading = { version = "0.8", optional = true }
+
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+cpal = { version = "0.18", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

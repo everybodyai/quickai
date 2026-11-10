@@ -4,8 +4,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
-// talking to QuickAI: the microphone, speech to text and reading aloud (C216)
-mod voice;
 
 // The window is a client of the runtime crate. These names keep the paths its modules were written
 // with (`crate::config`, `crate::runtime::Session`, ...), so that what the window does to the computer
@@ -13,7 +11,7 @@ mod voice;
 use quickai_runtime::{
     bundles, chats, cli, config, configuration_cli, configurations, devices, downloader, events,
     gpu, hardware, jobs, launch, model_store, models, paths, ports, prims, provision, remote,
-    runtime, settings, sources,
+    runtime, settings, sources, voice,
 };
 // what is said of a run (on a computer QuickAI sets up)
 #[cfg(feature = "remote-setup")]

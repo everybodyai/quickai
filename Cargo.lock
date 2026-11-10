@@ -2889,13 +2889,11 @@ dependencies = [
 name = "quickai"
 version = "0.2.6"
 dependencies = [
- "cpal",
  "crossbeam-channel",
  "directories",
  "eframe",
  "egui",
  "libc",
- "libloading",
  "quickai-core",
  "quickai-runtime",
  "rfd",
@@ -2935,11 +2933,13 @@ dependencies = [
 name = "quickai-runtime"
 version = "0.2.6"
 dependencies = [
+ "cpal",
  "crossbeam-channel",
  "directories",
  "flate2",
  "include_dir",
  "libc",
+ "libloading",
  "quickai-core",
  "regex",
  "ruzstd",

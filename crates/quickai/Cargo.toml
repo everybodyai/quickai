@@ -24,20 +24,12 @@ webbrowser = "1"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-# the microphone: ALSA, loaded when it is first used (the window links no sound library, so it starts on a system
-# that has none), on Linux; cpal (WASAPI, CoreAudio) elsewhere
-[target.'cfg(target_os = "linux")'.dependencies]
-libloading = "0.8"
-
-[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
-cpal = { version = "0.18", optional = true }
-
 [features]
 default = ["remote-setup", "voice"]
 # Talking to QuickAI (C216): the microphone, reading answers aloud and hands-free. What was said is written down by
 # quickai-whisper (everybodyai/quickai-whisper: whisper.cpp, a program of its own that the packages carry next to the
 # app). Off (`--no-default-features --features remote-setup`), the window has no microphone; reading aloud stays.
-voice = ["dep:cpal"]
+voice = ["quickai-runtime/voice"]
 # Runs QuickAI sets up on another computer (WP4.33, docs/remote-runs.md section 5): the way "QuickAI sets it up" of a
 # computer, the page of its run, its dialogs. Without it (`--no-default-features`) the window has the computers it
 # attaches to only; `app/remote_run_off.rs` stands in for what is left out.
