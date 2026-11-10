@@ -49,6 +49,15 @@ fn gguf(dir: &Path, name: &str, layers: u32, trained: u32, bytes: u64) -> PathBu
     let path = dir.join(name);
     let file = std::fs::File::create(&path).unwrap();
     std::io::Write::write_all(&mut &file, &b).unwrap();
+    // Windows keeps the whole length of a file on the disk unless the file is sparse, and a runner has less room than
+    // the 10 GB a model of these tests is
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("fsutil")
+            .args(["sparse", "setflag"])
+            .arg(&path)
+            .output();
+    }
     file.set_len(bytes).unwrap();
     path
 }
