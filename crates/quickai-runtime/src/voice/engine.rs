@@ -647,6 +647,77 @@ for line in sys.stdin:
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// With the real quickai-voice and a voice (`QUICKAI_TEST_VOICE_BIN`, `QUICKAI_TEST_VOICE_DIR`, a folder of a
+    /// Kokoro pack): two sentences are read in order, each heard for about its length. Left out when they are not
+    /// there.
+    #[test]
+    fn the_real_program_reads_a_kokoro_voice() {
+        let (Some(program), Some(dir)) = (
+            std::env::var_os("QUICKAI_TEST_VOICE_BIN"),
+            std::env::var_os("QUICKAI_TEST_VOICE_DIR"),
+        ) else {
+            return;
+        };
+        let spec = crate::voice::voices::describe_folder(std::path::Path::new(&dir)).unwrap();
+        let (wake_tx, wake) = std::sync::mpsc::channel::<()>();
+        let speaker = Speaker::new(
+            Ok(Backend::Voice {
+                program: program.into(),
+                spec,
+                speaker: 3,
+            }),
+            move || {
+                let _ = wake_tx.send(());
+            },
+        );
+        let asked = std::time::Instant::now();
+        speaker.say(
+            1,
+            vec![
+                "Hello from QuickAI.".into(),
+                "This is Kokoro, reading on this computer.".into(),
+            ],
+            false,
+            None,
+            1.0,
+        );
+        let mut heard = Vec::new();
+        let mut first = None;
+        while !heard.contains(&Spoken::Ended { utterance: 1 }) {
+            wake.recv_timeout(Duration::from_secs(60))
+                .expect("it reads");
+            for s in speaker.take() {
+                if first.is_none() && matches!(s, Spoken::Began { .. }) {
+                    first = Some(asked.elapsed());
+                }
+                heard.push(s);
+            }
+        }
+        assert_eq!(
+            heard,
+            [
+                Spoken::Began {
+                    utterance: 1,
+                    index: 0
+                },
+                Spoken::Began {
+                    utterance: 1,
+                    index: 1
+                },
+                Spoken::Ended { utterance: 1 },
+            ]
+        );
+        let all = asked.elapsed();
+        eprintln!(
+            "first sentence began after {:?} (with the voice loading), all heard after {all:?}",
+            first.unwrap()
+        );
+        assert!(
+            all > Duration::from_secs(2),
+            "two sentences take a while to be heard: {all:?}"
+        );
+    }
+
     #[test]
     fn a_servers_address_is_made_the_address_of_its_speech() {
         assert_eq!(
