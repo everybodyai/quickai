@@ -538,6 +538,75 @@ fn p3_g23_part_on_the_card_is_shared_between_the_cards_meter_and_the_memorys() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// G26 (C215): Card + processor reaches at least as far as the processor alone, since the card's room is added to the
+/// memory's: its dots say whether a length fits split, the layers on the card follow the length chosen, and its speed
+/// goes by the share of the layers on the card. The suggested length still goes by the card alone.
+#[test]
+fn p3_g26_card_and_processor_fits_what_either_does_and_its_layers_follow_the_length() {
+    let dir = scratch("g26");
+    // 6 GiB of weights in 32 layers: 16K of context is 2 GiB, 128K is 16, 256K is 32
+    gguf(&dir.join("models"), "Mid-Q4_K_M.gguf", 32, 262_144, 6 * GIB);
+    let mut app = app_in(&dir, "llamacpp", 60 * GIB);
+    app.values.set("ctx_size", 16384i64);
+    with_cards(
+        &mut app,
+        vec![card(
+            "ROCm0",
+            "Radeon RX 6700 XT",
+            12,
+            12,
+            DeviceKind::Discrete,
+        )],
+        false,
+    );
+    assert_eq!(app.place(), Place::Card);
+    // on the card whole: 64K is more than its 11 GiB
+    assert_eq!(app.fit(32768), Some(Fit::Good));
+    assert_eq!(app.fit(65536), Some(Fit::Partly));
+    // the processor alone: 128K in half of the memory, 256K tightly
+    app.choose_place(Place::Processor);
+    assert_eq!(app.fit(131072), Some(Fit::Good));
+    assert_eq!(app.fit(262144), Some(Fit::Partly));
+    // split: the card's 11 GiB and half the memory's 30 hold 256K (38.5 GiB) too
+    app.choose_place(Place::Mixed(31));
+    assert_eq!(app.fit(16384), Some(Fit::Good));
+    assert_eq!(app.fit(131072), Some(Fit::Good));
+    assert_eq!(app.fit(262144), Some(Fit::Good));
+    assert_eq!(app.fit(1 << 20), Some(Fit::TooBig));
+    assert_eq!(
+        app.speed(),
+        Some(crate::hardware::SpeedTier::Fast),
+        "31 of 32 on the card"
+    );
+
+    // 128K chosen: 31 layers and their context would not fit on the card, so as many go as fit, (11 - 0.5) / (22 / 32)
+    app.choose_length(131072);
+    assert!(
+        !app.gpu_auto,
+        "the person's choice of where it runs is kept"
+    );
+    assert_eq!(app.place(), Place::Mixed(15));
+    assert_eq!(after(&args(&app), "--n-gpu-layers").as_deref(), Some("15"));
+    assert_eq!(
+        app.speed(),
+        Some(crate::hardware::SpeedTier::Medium),
+        "15 of 32"
+    );
+    // and back to 16K: all but one fit again
+    app.choose_length(16384);
+    assert_eq!(app.place(), Place::Mixed(31));
+
+    // an 8 GiB card: the suggestion is what runs on it whole (4K), not the 32K a split holds
+    with_cards(
+        &mut app,
+        vec![card("ROCm0", "Radeon RX 6600", 8, 8, DeviceKind::Discrete)],
+        false,
+    );
+    assert_eq!(app.fit(32768), Some(Fit::Good));
+    assert_eq!(app.suggested_context(), Some(4096));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// G24: the panel's Tools is closed at first and says how many servers are on; opened, it names each with a switch.
 #[test]
 fn p3_g24_the_panels_tools_say_how_many_are_on_and_open_to_a_switch_each() {

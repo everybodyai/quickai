@@ -173,7 +173,7 @@ impl App {
         let fits = [32768, 16384, 8192, 4096]
             .into_iter()
             .filter(|n| *n <= most)
-            .find(|n| self.fit(*n as u64) == Some(Fit::Good));
+            .find(|n| self.fit_on_cards(*n as u64) == Some(Fit::Good));
         Some(fits.unwrap_or(FIRST_RUN_CONTEXT.min(most)))
     }
 
@@ -465,8 +465,9 @@ impl App {
         }
         // the dots, said once
         if cells.iter().any(|c| c.fit.is_some()) {
-            let cards = !self.ticked_cards().is_empty()
-                && self.place() != super::graphics::Place::Processor;
+            // on the card whole, where it lands; split or in the memory, whether it fits (C215)
+            let cards =
+                !self.ticked_cards().is_empty() && self.place() == super::graphics::Place::Card;
             let words = if cards {
                 ["on the card", "partly in memory", "too big"]
             } else {
@@ -540,6 +541,9 @@ impl App {
                 let cards = self.ticked_cards();
                 let on_cards =
                     !cards.is_empty() && self.place() != super::graphics::Place::Processor;
+                let split = on_cards
+                    && matches!(self.place(), super::graphics::Place::Mixed(_))
+                    && fit != Fit::TooBig;
                 let card = match cards.as_slice() {
                     [one] => format!("the {}", one.name),
                     _ => "the cards".to_string(),
@@ -549,7 +553,23 @@ impl App {
                     gb(chat),
                     gb(total)
                 );
+                let layers = self.split_layers_at(tokens as u64);
                 match (fit, on_cards) {
+                    _ if split => match layers {
+                        Some((n, of)) if n >= of => format!("{base} It fits on {card}."),
+                        Some((n, of)) => {
+                            let tight = if fit == Fit::Partly {
+                                " It takes most of the memory."
+                            } else {
+                                ""
+                            };
+                            format!(
+                                "{base} {n} of its {of} layers fit on {card}, the rest go in the memory: \
+                                 slower than on the card alone.{tight}"
+                            )
+                        }
+                        None => format!("{base} Part on {card}, the rest in the memory."),
+                    },
                     (Fit::Good, true) => format!("{base} It fits on {card}."),
                     (Fit::Partly, true) => {
                         format!("{base} More than {card} has free: part goes in the memory, and replies are slower.")

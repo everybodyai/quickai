@@ -398,6 +398,7 @@ A user-layer engine document may name any program; the application asks once, pe
 | G23 | C212 | ready | Part of the model on the card: the card's meter has that part and the memory's the rest, the line of the run says the layers, and it should be of medium speed. | `app/graphics_tests.rs` |
 | G24 | C212 | ready | The panel's Tools is closed at first and says how many servers are on; opened, it names each with its switch. | `app/graphics_tests.rs` |
 | G25 | C212 | ready | The cards are asked of the installed llama-server itself (`--list-devices`), once for each program. | `app/graphics_tests.rs` |
+| G26 | C215 | ready | Card + processor fits what the card and the memory hold together (at least as far as the processor alone); its layers follow the length chosen; its speed goes by the share on the card; the suggested length still goes by the card alone. | `app/graphics_tests.rs` |
 
 ### X. What the documents say (WP3.9)
 

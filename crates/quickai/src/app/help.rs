@@ -712,14 +712,15 @@ const TOUR: &[(Spot, &str, &str)] = &[
     (
         Spot::Context,
         "Context",
-        "How much of the chat it remembers. The dot says where each length fits: green on the graphics card, amber \
-         partly in memory, red too big. Other… has 512K to 2M and a number of your own.",
+        "How much of the chat it remembers. The dot says whether each length fits where it runs: green fits, amber \
+         is tight (with Card, partly in memory), red too big. Other… has 512K to 2M and a number of your own.",
     ),
     (
         Spot::Graphics,
         "Graphics",
-        "Where it runs: on the card, part on the card and part on the processor, or the processor alone. With Ollama, \
-         it says what Ollama chose.",
+        "Where it runs: on the card, part on the card and part on the processor, or the processor alone. With the \
+         card and the processor, as many layers go on the card as fit the length chosen. With Ollama, it says what \
+         Ollama chose.",
     ),
     (
         Spot::Extras,

@@ -29,6 +29,9 @@ const MIB: u64 = 1024 * 1024;
 const MARGIN: u64 = 1024 * MIB;
 /// The room llama.cpp's work takes beside the model and its context.
 const WORK: u64 = 512 * MIB;
+/// The share of a model's layers on the cards at which a split is fast, and medium (below it, as the processor).
+const SPLIT_FAST: f64 = 0.8;
+const SPLIT_MEDIUM: f64 = 0.4;
 /// All the layers, as the GPU layers field says it.
 const ALL_LAYERS: i64 = 999;
 /// The fields of the graphics.
@@ -124,6 +127,21 @@ pub(super) fn fit_of(need: &Need, tokens: u64, room: Option<u64>, ram: u64) -> F
                 Fit::TooBig
             }
         }
+    }
+}
+
+/// Where a length fits with Card + processor (C215): as many layers go on the cards as fit at that length (`auto_fit`)
+/// and the rest in the memory, so it fits as the processor's do with the cards' room added. A split has room for more
+/// than either alone; how fast it is, is the speed's to say.
+pub(super) fn split_fit_of(need: &Need, tokens: u64, room: u64, ram: u64) -> Fit {
+    let total = need.total(tokens) as f64;
+    let (room, ram) = (room as f64, ram as f64);
+    if total <= room + ram * RAM_FRACTION {
+        Fit::Good
+    } else if total <= room + ram * RAM_LIMIT {
+        Fit::Partly
+    } else {
+        Fit::TooBig
     }
 }
 
@@ -483,8 +501,22 @@ impl App {
         (!cards.is_empty() && self.place() != Place::Processor).then(|| room_of(&cards))
     }
 
-    /// Where `tokens` of context fit with the model, as things are chosen; `None` when the model's file does not say.
+    /// Where `tokens` of context fit with the model, as things are chosen: on the card whole (Card), split between
+    /// the card and the memory (Card + processor), or in the memory (Processor); `None` when the model's file does
+    /// not say.
     pub(super) fn fit(&self, tokens: u64) -> Option<Fit> {
+        let need = self.need()?;
+        Some(match (self.place(), self.card_room()) {
+            (Place::Mixed(_), Some(room)) => {
+                split_fit_of(&need, tokens, room, self.total_ram_bytes)
+            }
+            (_, room) => fit_of(&need, tokens, room, self.total_ram_bytes),
+        })
+    }
+
+    /// Where `tokens` fit with the whole model on the cards when it goes on cards at all: what the suggested length
+    /// goes by, so that it is the longest that runs fast.
+    pub(super) fn fit_on_cards(&self, tokens: u64) -> Option<Fit> {
         let need = self.need()?;
         Some(fit_of(
             &need,
@@ -494,11 +526,32 @@ impl App {
         ))
     }
 
+    /// With Card + processor, how many of the model's layers fit on the cards at `tokens`, and of how many.
+    pub(super) fn split_layers_at(&self, tokens: u64) -> Option<(u64, u64)> {
+        let need = self.need()?;
+        let room = self.card_room()?;
+        Some((layers_that_fit(&need, tokens, room), need.layers))
+    }
+
     /// Auto: puts the whole model on the cards when it fits there, else as many of its layers as fit, else none; for a
     /// model just picked, a configuration just chosen, a length of context just chosen, and the cards just known.
     /// Nothing is changed once the person chose where it runs, or while it runs.
     pub(super) fn auto_fit(&mut self) {
-        if !self.gpu_auto || self.session.is_active() || self.engine_has_layers().is_none() {
+        if self.session.is_active() || self.engine_has_layers().is_none() {
+            return;
+        }
+        if !self.gpu_auto {
+            // Card + processor, chosen: as many layers on the cards as fit at the length now (C215). The ones there before
+            // may not fit a longer one, and a shorter one leaves room for more.
+            if let Place::Mixed(n) = self.place() {
+                if self.need().is_some() && !self.ticked_cards().is_empty() {
+                    let fit = self.mixed_layers();
+                    if fit != n {
+                        self.values.set(LAYERS, fit as i64);
+                        self.settle_devices();
+                    }
+                }
+            }
             return;
         }
         let cards = self.ticked_cards();
@@ -598,7 +651,10 @@ impl App {
         Some((per_card, memory))
     }
 
-    /// How fast it should be: on the cards whole, fast; partly, medium; on the processor, as its size and the memory say.
+    /// How fast it should be: on the cards whole, fast; split, by the share of its layers on the cards (C215: a token
+    /// reads every layer, and a card reads its memory several times faster than the processor reads the computer's, so
+    /// four fifths on the card is still fast, and under two fifths little faster than the processor alone); on the
+    /// processor, as its size and the memory say.
     pub(super) fn speed(&self) -> Option<SpeedTier> {
         let model = self.models.get(self.selected)?;
         let known = (self.lists_devices() && matches!(self.devices, Devices::Known { .. }))
@@ -610,7 +666,18 @@ impl App {
                     Some(Fit::Good) | None => SpeedTier::Fast,
                     _ => SpeedTier::Medium,
                 },
-                Place::Mixed(_) if !cards.is_empty() => SpeedTier::Medium,
+                Place::Mixed(n) if !cards.is_empty() => {
+                    let share = self
+                        .need()
+                        .map_or(0.5, |need| n as f64 / need.layers.max(1) as f64);
+                    if share >= SPLIT_FAST {
+                        SpeedTier::Fast
+                    } else if share >= SPLIT_MEDIUM {
+                        SpeedTier::Medium
+                    } else {
+                        crate::hardware::speed_tier(model.size_bytes, self.total_ram_bytes, false)
+                    }
+                }
                 _ => crate::hardware::speed_tier(model.size_bytes, self.total_ram_bytes, false),
             });
         }
