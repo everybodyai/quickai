@@ -134,6 +134,8 @@ parts = [
 
 [components.mmproj]
 bind.arg = ["--mmproj", "${component.path}"]
+# the field `projector` turns it off: the model then starts without it (C213, Extras in the panel)
+switch = "projector"
 
 # How llama-server is started for a kind of model. A catalog (data) names a mode by its id and a record
 # beside the weights remembers it; the words are the engine's own, and they come after the arguments of the
@@ -215,7 +217,7 @@ id = "ctx_size"
 label = "Context size"
 help = '''Maximum number of tokens (roughly, word-pieces) of conversation llama.cpp keeps in memory at once — prompt plus reply combined. Bigger means it remembers more of a long chat/document, but uses more RAM/VRAM and can respond slower. Typical values: 2048-4096 for short chats, 8192-16384 for longer ones, 32768+ only for large documents on machines with memory to spare.'''
 type = "int"
-range = [256, 1048576]
+range = [256, 2097152]
 step = 64
 default = { fn = "recommend_ctx_size", args = ["model.size_bytes", "sys.ram_bytes"] }
 recompute_on = ["model"]        # picking another model resets the value to the recommendation
@@ -278,6 +280,17 @@ share_note = "How a model is shared between cards belongs to a computer."
 bind.arg = ["--tensor-split", "${value}"]
 enabled_when = "not session.running"
 ui = { section = "graphics", order = 33 }
+
+# Whether a vision model's projector is attached (C213): off, the model starts without it, cannot read pictures, and the
+# memory the projector takes is left free.
+[[field]]
+id = "projector"
+label = "Projector for pictures"
+help = '''A vision model reads pictures through a second file, its projector, which was fetched with it. On, it is attached when the model starts. Off, the model starts without it: it cannot read pictures, and the memory the projector takes is left free. A model without a projector is not changed by this.'''
+type = "bool"
+default = true
+enabled_when = "not session.running"
+ui = { section = "advanced", order = 85 }
 
 [[field]]
 id = "extra_args"

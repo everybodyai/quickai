@@ -92,6 +92,8 @@ pub struct CompiledComponent {
     /// The folder of the models folder this kind of file is kept in, for an engine that finds its
     /// files by where they are.
     pub place: Option<String>,
+    /// The `bool` field that turns this kind on and off, when one does.
+    pub switch: Option<String>,
 }
 
 /// `[[models.mode]]`: a way the engine is started for a kind of model, checked.
@@ -3206,12 +3208,25 @@ fn compile_components(c: &mut Checker, doc: &EngineDoc) -> Vec<CompiledComponent
                 c.template(&at.clone().key("bind").key("arg").index(i), text, &schema)
             })
             .collect();
+        // the switch is a field of the document that is a yes or a no
+        if let Some(switch) = &component.switch {
+            let field = doc.fields.iter().find(|f| &f.id == switch);
+            if !field.is_some_and(|f| f.ty == crate::doc::engine::FieldType::Bool) {
+                c.error_hint(
+                    &at.clone().key("switch"),
+                    format!("the component `{kind}` is switched by `{switch}`, which is not a field of type bool"),
+                    "the id of a [[field]] with type = \"bool\", such as `projector`",
+                );
+                continue;
+            }
+        }
         if arg.len() == component.bind.arg.len() {
             compiled.push(CompiledComponent {
                 kind: kind.clone(),
                 order: component.order.unwrap_or(DEFAULT_COMPONENT_ORDER),
                 arg,
                 place: component.place.clone(),
+                switch: component.switch.clone(),
             });
         }
     }

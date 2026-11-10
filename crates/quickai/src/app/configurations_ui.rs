@@ -33,6 +33,9 @@ use crate::launch;
 /// as an empty box).
 pub(super) const UNSAVED_MARK: &str = "•";
 
+/// What the configuration's box says while the window holds one with no name (C213, N1).
+pub(super) const UNNAMED: &str = "Unnamed";
+
 /// The colour of what says a configuration has changes that are not saved: amber, a deeper one on the
 /// light theme (the one of the dark theme is hard to read on white).
 pub(super) fn modified_color(dark: bool) -> egui::Color32 {
@@ -68,6 +71,13 @@ pub(super) struct Configs {
     pub confirm: Option<super::configurations_window::Confirm>,
     /// The last thing that was done in the window, in a sentence.
     pub status: Option<String>,
+    /// The window holds a configuration with no name (C213, N1 of `the mockups`): another model was
+    /// picked than the one `active` names, and `active` is left as it was saved.
+    pub unnamed: bool,
+    /// Whether the window holds something other than the configuration in use, for what the window held then (a hash of
+    /// the settings it would write, the model and the configuration): the panel asks every frame, and the answer reads
+    /// the disk.
+    pub modified_cache: std::cell::RefCell<Option<(u64, bool)>>,
 }
 
 impl Configs {
@@ -86,6 +96,8 @@ impl Configs {
             export: None,
             confirm: None,
             status: None,
+            unnamed: false,
+            modified_cache: std::cell::RefCell::new(None),
         }
     }
 }
@@ -245,7 +257,59 @@ impl App {
     /// another version) is not changed by being chosen. Nothing is started or read from the disk for it,
     /// but the installed builds, which are looked at when they change (`installed_cache_or_scan`).
     pub(super) fn configuration_modified(&self) -> bool {
-        !self.changes_since_saved().is_empty()
+        self.configs.unnamed || !self.changes_since_saved().is_empty()
+    }
+
+    /// `configuration_modified`, worked out again only when what the window would write, the model or the configuration
+    /// changed: for the outline of the configuration's box, which is drawn every frame.
+    pub(super) fn configuration_modified_now(&self) -> bool {
+        if self.configs.unnamed {
+            return true;
+        }
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            serde_json::to_string(&self.settings_now())
+                .unwrap_or_default()
+                .hash(&mut hasher);
+            self.selected.hash(&mut hasher);
+            self.models.len().hash(&mut hasher);
+            self.configs.active.hash(&mut hasher);
+            hasher.finish()
+        };
+        if let Some((at, modified)) = *self.configs.modified_cache.borrow() {
+            if at == key {
+                return modified;
+            }
+        }
+        let modified = self.configuration_modified();
+        *self.configs.modified_cache.borrow_mut() = Some((key, modified));
+        modified
+    }
+
+    /// Another model was picked in the list (C213, the user's N1): the configuration in use, when it names a model and
+    /// it is not this one, is left as it was saved, and the window holds a new configuration with no name. One that
+    /// names no model runs whatever is picked, and keeps its name.
+    pub(super) fn leave_configuration_for_model(&mut self) {
+        if self.configs.unnamed {
+            return;
+        }
+        let Some(entry) = self.active_entry() else {
+            return;
+        };
+        let Some(named) = entry.configuration.models.first() else {
+            return;
+        };
+        let picked = self.models.get(self.selected).map(|m| m.filename.clone());
+        if picked.as_deref() == Some(named.source.label()) {
+            return;
+        }
+        self.configs.unnamed = true;
+        self.configs.error = None;
+        self.push_log(format!(
+            "[quickai] Another model was picked: \"{}\" is as it was saved, and this one has no name until it is saved.",
+            entry.name
+        ));
     }
 
     /// What was changed since the configuration in use was saved, as a person says it (`Port: 8080 to
@@ -396,7 +460,7 @@ impl App {
         }
         // the one in use, picked again, changes nothing: going back to what it says is Revert's, in the window of the
         // configurations, which asks first
-        if id == self.configs.active {
+        if id == self.configs.active && !self.configs.unnamed {
             return;
         }
         // nothing asks about what the window holds (2026-11-09: the window keeps how it ran last, and a configuration is
@@ -456,8 +520,10 @@ impl App {
             return;
         }
         next.set_active_configuration(id);
+        next.set_configuration_unnamed(false);
         self.write_settings(&next);
         self.stored = next;
+        self.configs.unnamed = false;
         self.engine = choice.state.engine.clone();
         self.enable_traffic_proxy = choice.state.traffic_proxy;
         self.values = super::values::FieldValues::from_settings(
@@ -524,6 +590,7 @@ impl App {
             Ok(id) => {
                 self.reload_configurations();
                 self.configs.active = id.clone();
+                self.configs.unnamed = false;
                 let mut stored = self.settings_now();
                 stored.set_active_configuration(&id);
                 self.write_settings(&stored);
@@ -629,6 +696,7 @@ impl App {
     pub(super) fn find_active_configuration(&mut self) {
         let (id, note) = configurations::active_for_start(&self.registry, &self.stored);
         self.configs.active = id;
+        self.configs.unnamed = self.stored.configuration_unnamed();
         self.configs.first_run = first_run_values(&self.registry);
         if let Some(note) = note {
             self.push_log(note);
@@ -639,8 +707,10 @@ impl App {
 
     /// The configuration in one line at the head of the panel (A2 of `the mockups`, the user's pick of
     /// 2026-11-09): its name in a box that opens the list. Choosing one uses it; under the list are *Save to* the one in
-    /// use (when the window holds something else), *Save as a new configuration…* and *Manage configurations…*. Nothing
-    /// says *Modified*: the window keeps how it ran last.
+    /// use (when the window holds something else), *Save as a new configuration…* and *Manage configurations…*. The
+    /// window keeps how it ran last; what it holds that the configuration does not say gives the box an amber outline, and
+    /// its hover says what changed (Y1 of `the mockups`). Another model picked makes it *Unnamed*, in
+    /// grey italics, until it is saved (N1).
     pub(super) fn show_configuration_section(&mut self, ui: &mut egui::Ui) {
         let p = super::theme::palette();
         let all = self.configuration_entries();
@@ -650,6 +720,8 @@ impl App {
             .iter()
             .find(|e| e.id == active)
             .map_or_else(|| "Default".to_string(), |e| e.name.clone());
+        let unnamed = self.configs.unnamed;
+        let modified = self.configuration_modified_now();
         let width = ui.available_width();
         let sense = if locked {
             egui::Sense::hover()
@@ -664,13 +736,15 @@ impl App {
             } else {
                 p.card
             };
-            ui.painter().rect(
-                rect,
-                8.0,
-                fill,
-                egui::Stroke::new(1.0, if open { p.accent_text } else { p.line }),
-                egui::StrokeKind::Inside,
-            );
+            let stroke = if open {
+                egui::Stroke::new(1.0, p.accent_text)
+            } else if modified {
+                egui::Stroke::new(1.5, modified_color(ui.visuals().dark_mode))
+            } else {
+                egui::Stroke::new(1.0, p.line)
+            };
+            ui.painter()
+                .rect(rect, 8.0, fill, stroke, egui::StrokeKind::Inside);
             let small = egui::TextStyle::Small.resolve(ui.style());
             let label = ui
                 .painter()
@@ -679,8 +753,19 @@ impl App {
             let left = at.x + label.size().x + 8.0;
             ui.painter().galley(at, label, p.muted);
             let room = (rect.right() - 30.0 - left).max(10.0);
-            let ink = if locked { p.faint } else { p.text };
-            let title = egui::WidgetText::from(egui::RichText::new(&name).color(ink)).into_galley(
+            let ink = if locked {
+                p.faint
+            } else if unnamed {
+                p.muted
+            } else {
+                p.text
+            };
+            let words = if unnamed {
+                egui::RichText::new(UNNAMED).italics().color(ink)
+            } else {
+                egui::RichText::new(&name).color(ink)
+            };
+            let title = egui::WidgetText::from(words).into_galley(
                 ui,
                 Some(egui::TextWrapMode::Truncate),
                 room,
@@ -703,6 +788,17 @@ impl App {
         }
         let response = if locked {
             response.on_hover_text(self.engine_locked_sentence())
+        } else if unnamed {
+            let model = self
+                .models
+                .get(self.selected)
+                .map_or_else(|| "The model picked".to_string(), |m| m.display.clone());
+            response.on_hover_text(format!(
+                "Not saved: {model}, with the settings it has. \"{name}\" is as it was saved: choose it in the list to \
+                 go back to it, or save this one under a name."
+            ))
+        } else if modified {
+            response.on_hover_ui(|ui| self.show_changes(ui, &name))
         } else {
             response.on_hover_text(format!(
                 "\"{name}\": the configuration last used, with the engine, the model and the settings to run. Choose \
@@ -764,6 +860,19 @@ impl App {
             .max_height(260.0)
             .auto_shrink([false, true])
             .show(ui, |ui| {
+                // the one the window holds, with no name, at the top: it is the one in use
+                if self.configs.unnamed {
+                    ui.horizontal(|ui| {
+                        let _ = ui.selectable_label(true, egui::RichText::new(UNNAMED).italics());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new("not saved")
+                                    .small()
+                                    .color(modified_color(ui.visuals().dark_mode)),
+                            );
+                        });
+                    });
+                }
                 for entry in all {
                     let stopped = quickai_core::profile::family(
                         self.registry.engine_map(),
@@ -771,50 +880,76 @@ impl App {
                     )
                     .is_empty();
                     ui.horizontal(|ui| {
-                        let text: egui::WidgetText = entry.name.as_str().into();
-                        let row = if stopped {
-                            let reason = quickai_core::profile::notes::Note::new(
-                                "unknown_engine",
-                                &[("engine", entry.configuration.engine.clone())],
+                        let engine_word = engine_names
+                            .get(&entry.configuration.engine)
+                            .cloned()
+                            .unwrap_or_else(|| entry.configuration.engine.clone());
+                        // the name has the room the engine and the origin leave, and is cut with … past it
+                        let small = egui::TextStyle::Small.resolve(ui.style());
+                        let right = ui
+                            .painter()
+                            .layout_no_wrap(
+                                format!("{engine_word}   {}", entry.origin.label()),
+                                small,
+                                egui::Color32::WHITE,
                             )
-                            .text(self.registry.vocabulary());
-                            ui.add_enabled(false, egui::Button::selectable(false, text))
-                                .on_disabled_hover_text(reason)
-                        } else {
-                            ui.selectable_label(entry.id == active, text)
-                        };
+                            .size()
+                            .x
+                            + 24.0;
+                        let room = (ui.available_width() - right).max(80.0);
+                        let text: egui::WidgetText = entry.name.as_str().into();
+                        let row = ui
+                            .scope(|ui| {
+                                ui.set_max_width(room);
+                                if stopped {
+                                    let reason = quickai_core::profile::notes::Note::new(
+                                        "unknown_engine",
+                                        &[("engine", entry.configuration.engine.clone())],
+                                    )
+                                    .text(self.registry.vocabulary());
+                                    ui.add_enabled(
+                                        false,
+                                        egui::Button::selectable(false, text).truncate(),
+                                    )
+                                    .on_disabled_hover_text(reason)
+                                } else {
+                                    ui.add(
+                                        egui::Button::selectable(
+                                            entry.id == active && !self.configs.unnamed,
+                                            text,
+                                        )
+                                        .truncate(),
+                                    )
+                                    .on_hover_text(&entry.name)
+                                }
+                            })
+                            .inner;
                         if row.clicked() {
                             *chosen = Some(entry.id.clone());
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(egui::RichText::new(entry.origin.label()).small().weak());
-                            ui.label(
-                                egui::RichText::new(
-                                    engine_names
-                                        .get(&entry.configuration.engine)
-                                        .cloned()
-                                        .unwrap_or_else(|| entry.configuration.engine.clone()),
-                                )
-                                .small()
-                                .weak(),
-                            );
+                            ui.label(egui::RichText::new(engine_word).small().weak());
                         });
                     });
                 }
             });
         ui.separator();
-        // saving over the one in use is offered when the window holds something it does not say
-        let differs = self.configuration_modified();
-        let save = ui
-            .add_enabled(differs, egui::Button::new(format!("Save to \"{name}\"")))
-            .on_disabled_hover_text(format!("\"{name}\" says how it runs now already."));
-        let save = if differs {
-            save.on_hover_ui(|ui| self.show_changes(ui, name))
-        } else {
-            save
-        };
-        if save.clicked() {
-            *command = Some(Command::Save);
+        // saving over the one in use is offered when the window holds something it does not say; one with no name is
+        // saved under a name, and nothing is written over the one it came from
+        if !self.configs.unnamed {
+            let differs = self.configuration_modified();
+            let save = ui
+                .add_enabled(differs, egui::Button::new(format!("Save to \"{name}\"")))
+                .on_disabled_hover_text(format!("\"{name}\" says how it runs now already."));
+            let save = if differs {
+                save.on_hover_ui(|ui| self.show_changes(ui, name))
+            } else {
+                save
+            };
+            if save.clicked() {
+                *command = Some(Command::Save);
+            }
         }
         if ui
             .button("Save as a new configuration…")
@@ -842,16 +977,24 @@ impl App {
 
     /// A name for a new configuration that nothing has: the one in use with a number after it.
     pub(super) fn suggested_name(&self) -> String {
-        let base = self
-            .active_entry()
-            .map_or_else(|| "My configuration".to_string(), |e| e.name);
+        // one with no name is called after its model; a named one is the name with a number
+        let base = match self
+            .models
+            .get(self.selected)
+            .filter(|_| self.configs.unnamed)
+        {
+            Some(model) => model.display.clone(),
+            None => self
+                .active_entry()
+                .map_or_else(|| "My configuration".to_string(), |e| e.name),
+        };
         let names: BTreeSet<String> = self
             .configuration_entries()
             .into_iter()
             .map(|e| e.name.to_lowercase())
             .collect();
-        (2..)
-            .map(|n| format!("{base} {n}"))
+        std::iter::once(base.clone())
+            .chain((2..).map(|n| format!("{base} {n}")))
             .find(|candidate| !names.contains(&candidate.to_lowercase()))
             .unwrap_or(base)
     }
@@ -1921,6 +2064,94 @@ mod tests {
         );
         app.values.set("port", 8080u16);
         assert!(!app.configuration_modified());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// C213 (N1 of `the mockups`): another model picked leaves the configuration in use as it was
+    /// saved, and the window holds one with no name: its line says Unnamed in amber, its list has no Save to, the next
+    /// start finds it so, Save as names it after the model, and choosing the one it came from goes back to it with its
+    /// model. One that names no model keeps its name.
+    #[test]
+    fn c213_another_model_picked_leaves_the_configuration_as_saved_and_holds_one_with_no_name() {
+        let dir = scratch("c213-unnamed");
+        std::fs::create_dir_all(dir.join("models")).unwrap();
+        for name in ["First-Q4_K_M.gguf", "Second-Q4_K_M.gguf"] {
+            std::fs::File::create(dir.join("models").join(name))
+                .unwrap()
+                .set_len(1000)
+                .unwrap();
+        }
+        let mut app = app_in(&dir, "llamacpp");
+        app.models = app.scan_models();
+        let at =
+            |app: &App, name: &str| app.models.iter().position(|m| m.filename == name).unwrap();
+        let (first, second) = (
+            at(&app, "First-Q4_K_M.gguf"),
+            at(&app, "Second-Q4_K_M.gguf"),
+        );
+        app.selected = first;
+        app.values.set("port", 9300u16);
+        app.save_as_configuration("Mine").unwrap();
+        assert_eq!(app.configs.active, "mine");
+        let kept = dir.join("config/profiles/mine.toml");
+        let before = std::fs::read_to_string(&kept).unwrap();
+        assert!(before.contains("First-Q4_K_M.gguf"), "{before}");
+        assert!(!app.configuration_modified());
+
+        // picking the model it names again changes nothing
+        app.leave_configuration_for_model();
+        assert!(!app.configs.unnamed);
+
+        // another model: the configuration is left as it was, and the window holds one with no name
+        app.selected = second;
+        app.leave_configuration_for_model();
+        assert!(app.configs.unnamed);
+        assert_eq!(app.configs.active, "mine", "the one it came from");
+        assert!(app.configuration_modified() && app.configuration_modified_now());
+        assert_eq!(std::fs::read_to_string(&kept).unwrap(), before);
+        let ctx = egui::Context::default();
+        let said = settle(&mut app, &ctx);
+        assert!(said.iter().any(|t| t == UNNAMED), "{said:?}");
+        let box_at = rect_of(&ctx, &mut app, UNNAMED).expect("the line").center();
+        let open = click_at(&mut app, &ctx, box_at);
+        assert!(open.iter().any(|t| t == "not saved"), "{open:?}");
+        assert!(!open.iter().any(|t| t.starts_with("Save to")), "{open:?}");
+        assert!(open.iter().any(|t| t == "Mine"), "{open:?}");
+        let _ = click_at(&mut app, &ctx, egui::pos2(5.0, 5.0));
+
+        // the next start finds it so
+        app.write_settings(&app.settings_now());
+        assert_eq!(saved(&dir)["values"]["app.configuration_unnamed"], true);
+        let again = app_with(&dir, Settings::load_from(&dir.join("settings.json")));
+        assert!(again.configs.unnamed);
+        assert_eq!(again.configs.active, "mine");
+
+        // choosing the one it came from goes back to it, with its model
+        app.request_choose("mine");
+        assert!(!app.configs.unnamed);
+        assert_eq!(app.models[app.selected].filename, "First-Q4_K_M.gguf");
+        assert!(!app.configuration_modified());
+
+        // Save as names it after the model, and it is the one in use
+        app.selected = second;
+        app.leave_configuration_for_model();
+        assert!(app.configs.unnamed);
+        let name = app.suggested_name();
+        assert_eq!(name, app.models[second].display);
+        app.save_as_configuration(&name).unwrap();
+        assert!(!app.configs.unnamed);
+        assert!(!app.configuration_modified());
+        assert_eq!(saved(&dir)["values"].get("app.configuration_unnamed"), None);
+
+        // one that names no model (the built-in Default) keeps its name whatever is picked
+        app.request_choose("default");
+        assert!(app.configuration_entries()[0]
+            .configuration
+            .models
+            .is_empty());
+        app.selected = first;
+        app.leave_configuration_for_model();
+        assert!(!app.configs.unnamed);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

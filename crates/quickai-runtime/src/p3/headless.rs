@@ -1123,7 +1123,7 @@ fn p3_g08_a_configurations_context_layers_and_split_reach_the_engine_the_runner_
     assert_eq!(outcome, Outcome::Stopped);
 }
 
-/// G09: a context past the old 128K is taken (the grid goes to 256K, the field to 1M); one past the field is said, and
+/// G09: a context past the old 128K is taken (the grid and the field go to 2M); one past the field is said, and
 /// the engine starts with the context of its document instead.
 #[test]
 fn p3_g09_a_context_past_128k_is_taken_and_one_past_the_field_is_said_and_left_out() {
@@ -1138,18 +1138,18 @@ fn p3_g09_a_context_past_128k_is_taken_and_one_past_the_field_is_said_and_left_o
     let (outcome, _) = run.stop();
     assert_eq!(outcome, Outcome::Stopped);
 
-    let past = with_values(&world, "past", "ctx_size = 2000000\n");
+    let past = with_values(&world, "past", "ctx_size = 3000000\n");
     let run = Run::start(world.request(&past, world.options()));
     run.ready();
     let argv = world.argv();
     let ctx = after(&argv, "--ctx-size").expect("a context");
-    assert_ne!(ctx, "2000000", "{argv:?}");
+    assert_ne!(ctx, "3000000", "{argv:?}");
     let (outcome, events) = run.stop();
     assert_eq!(outcome, Outcome::Stopped);
     assert!(
         events
             .iter()
-            .any(|e| matches!(e, Event::Review { text, .. } if text.contains("2000000"))),
+            .any(|e| matches!(e, Event::Review { text, .. } if text.contains("3000000"))),
         "the value left out is said: {events:#?}"
     );
 }

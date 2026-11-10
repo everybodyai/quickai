@@ -51,6 +51,10 @@ pub struct Component {
     /// The folder of the models folder this kind of file is kept in, for an engine that finds its
     /// files by where they are and not by an argument (`vae`, `text_encoders`): a plain name.
     pub place: Option<String>,
+    /// The id of a field of type `bool` that turns this kind of file on and off (`projector`): off, the
+    /// file is not attached, and the model starts without it. Without one, a file of the kind is always
+    /// attached.
+    pub switch: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

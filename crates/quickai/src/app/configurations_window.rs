@@ -373,6 +373,16 @@ impl App {
 
         let entries = self.configuration_entries();
         let modified = self.configuration_modified();
+        if self.configs.unnamed {
+            ui.label(
+                egui::RichText::new(
+                    "In use: one with no name, since another model was picked. Save as… names it; Use goes back to one.",
+                )
+                .small()
+                .color(super::configurations_ui::modified_color(ui.visuals().dark_mode)),
+            );
+            ui.add_space(4.0);
+        }
         for entry in &entries {
             self.show_configuration_card(ui, entry, modified);
         }
@@ -404,7 +414,8 @@ impl App {
     /// its notes. The one in use has a green frame.
     fn show_configuration_card(&mut self, ui: &mut egui::Ui, entry: &Entry, modified: bool) {
         let p = theme::palette();
-        let active = entry.id == self.configs.active;
+        // with no name, the window holds none of them
+        let active = entry.id == self.configs.active && !self.configs.unnamed;
         let open = self.configs.selected.as_deref() == Some(entry.id.as_str());
         let report = self
             .configs

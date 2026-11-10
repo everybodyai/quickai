@@ -165,7 +165,7 @@ fn gb(bytes: u64) -> String {
 
 impl App {
     /// Whether the cards are asked for: llama.cpp on this computer.
-    fn lists_devices(&self) -> bool {
+    pub(super) fn lists_devices(&self) -> bool {
         self.engine == crate::settings::DEFAULT_ENGINE
             && !self.in_companion
             && self.remote_in_use().is_none()
@@ -337,7 +337,8 @@ impl App {
         let model = self.models.get(self.selected)?;
         let facts = self.model_facts()?;
         Some(Need {
-            weights: model.size_bytes,
+            // a projector that is attached goes on the card with the weights (C213)
+            weights: model.size_bytes + self.projector_bytes(),
             layers: facts.layers?,
             per_token: facts.kv_bytes_per_token?,
         })
@@ -439,7 +440,8 @@ impl App {
             .model_facts()
             .and_then(|f| f.context_bytes(tokens))
             .unwrap_or(0);
-        let weights = model.size_bytes;
+        // the projector, when it is attached, is counted with the model
+        let weights = model.size_bytes + self.projector_bytes();
         let cards = self.ticked_cards();
         let share = match self.place() {
             _ if cards.is_empty() => 0.0,

@@ -405,6 +405,7 @@ impl App {
             if let Some(i) = index.filter(|i| *i != self.selected) {
                 self.selected = i;
                 self.apply_model_defaults();
+                self.leave_configuration_for_model();
             }
             self.remote.picked.insert(spec.id, pick);
         }

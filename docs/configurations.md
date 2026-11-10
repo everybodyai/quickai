@@ -190,6 +190,15 @@ a model it names that the window cannot hold (not here yet, or not listed becaus
 is left as it was when it is chosen), nor a value the file says that is the default (a file written by hand, or by another version): a configuration that was just chosen is a fact, and is never
 said to be modified for what this computer lacks (A75).
 
+**In the panel (C206, C213).** Since UI v3 the configuration is one line at the top of the panel at the right, with no *Modified* word: its box has
+an **amber edge** while the list of what changed is not empty, and its hover is that list. **Another model picked** (in the list of models, or one just
+fetched) than the one the configuration in use names leaves that configuration as it was saved: the window holds a configuration **with no name**,
+which the box says as *Unnamed* in grey italics with the amber edge. Its list has it at the top, marked *not saved*, and no *Save to*, so nothing is
+written over the one it came from by mistake; *Save as...* suggests the model's name; choosing a configuration (the one it came from too) uses it,
+model and all. The state is kept for the next start (`app.configuration_unnamed`, with `app.configuration` still the one it came from), the window of
+the configurations marks none as in use, and `quickai configuration list` stars none. A configuration that names no model (the built-in Default) runs
+whatever is picked, and keeps its name.
+
 | Action | What happens |
 |---|---|
 | **Choose** (dropdown, or *Use* in the window) | refused while something runs or is fetched (the rule of the Engine row, `engine_locked`), with the same sentence; with unsaved changes it asks *Save / Don't save / Cancel*; the notes (§7) are made for this computer: if one stops it the window says why and stays as it was, otherwise the configuration is applied, `settings.json` is written, the engine's state is reloaded, and the notes that remain are in the log and in the window |

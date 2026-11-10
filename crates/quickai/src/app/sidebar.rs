@@ -629,6 +629,8 @@ impl App {
                     // a model picked anew gets its own defaults (a smaller context for a bigger model), still only a
                     // starting point: the boxes stay free to change
                     self.apply_model_defaults();
+                    // and the configuration that names another model is left as it was saved (C213)
+                    self.leave_configuration_for_model();
                 }
             });
     }

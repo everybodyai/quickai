@@ -43,7 +43,7 @@
             "persist": "global",
             "range": [
               256.0,
-              1048576.0
+              2097152.0
             ],
             "required": false,
             "step": 64.0,
@@ -122,6 +122,27 @@
             "value": "",
             "visible": true,
             "widget": "mcp_servers"
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "A vision model reads pictures through a second file, its projector, which was fetched with it. On, it is attached when the model starts. Off, the model starts without it: it cannot read pictures, and the memory the projector takes is left free. A model without a projector is not changed by this.",
+            "hint": null,
+            "id": "projector",
+            "key": "llamacpp.projector",
+            "label": "Projector for pictures",
+            "legacy_key": null,
+            "options": [],
+            "origin": "default",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "bool",
+            "value": true,
+            "visible": true,
+            "widget": null
           },
           {
             "applies": "on_start",
@@ -331,7 +352,7 @@
             "persist": "global",
             "range": [
               256.0,
-              1048576.0
+              2097152.0
             ],
             "required": false,
             "step": 64.0,
@@ -410,6 +431,27 @@
             "value": "",
             "visible": true,
             "widget": "mcp_servers"
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "A vision model reads pictures through a second file, its projector, which was fetched with it. On, it is attached when the model starts. Off, the model starts without it: it cannot read pictures, and the memory the projector takes is left free. A model without a projector is not changed by this.",
+            "hint": null,
+            "id": "projector",
+            "key": "llamacpp.projector",
+            "label": "Projector for pictures",
+            "legacy_key": null,
+            "options": [],
+            "origin": "default",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "bool",
+            "value": true,
+            "visible": true,
+            "widget": null
           },
           {
             "applies": "on_start",
@@ -617,7 +659,7 @@
             "persist": "global",
             "range": [
               256.0,
-              1048576.0
+              2097152.0
             ],
             "required": false,
             "step": 64.0,
@@ -696,6 +738,27 @@
             "value": "",
             "visible": true,
             "widget": "mcp_servers"
+          },
+          {
+            "applies": "on_start",
+            "enabled": false,
+            "error": null,
+            "help": "A vision model reads pictures through a second file, its projector, which was fetched with it. On, it is attached when the model starts. Off, the model starts without it: it cannot read pictures, and the memory the projector takes is left free. A model without a projector is not changed by this.",
+            "hint": null,
+            "id": "projector",
+            "key": "llamacpp.projector",
+            "label": "Projector for pictures",
+            "legacy_key": null,
+            "options": [],
+            "origin": "default",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "bool",
+            "value": true,
+            "visible": true,
+            "widget": null
           },
           {
             "applies": "on_start",
@@ -905,7 +968,7 @@
             "persist": "global",
             "range": [
               256.0,
-              1048576.0
+              2097152.0
             ],
             "required": false,
             "step": 64.0,
@@ -984,6 +1047,27 @@
             "value": "",
             "visible": true,
             "widget": "mcp_servers"
+          },
+          {
+            "applies": "on_start",
+            "enabled": true,
+            "error": null,
+            "help": "A vision model reads pictures through a second file, its projector, which was fetched with it. On, it is attached when the model starts. Off, the model starts without it: it cannot read pictures, and the memory the projector takes is left free. A model without a projector is not changed by this.",
+            "hint": null,
+            "id": "projector",
+            "key": "llamacpp.projector",
+            "label": "Projector for pictures",
+            "legacy_key": null,
+            "options": [],
+            "origin": "default",
+            "persist": "global",
+            "range": null,
+            "required": false,
+            "step": null,
+            "type": "bool",
+            "value": true,
+            "visible": true,
+            "widget": null
           },
           {
             "applies": "on_start",

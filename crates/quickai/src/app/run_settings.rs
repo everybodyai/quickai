@@ -24,8 +24,14 @@ const CONTEXT: &str = "ctx_size";
 /// The context of a first start (the settings' own), which the person did not choose.
 const FIRST_RUN_CONTEXT: i64 = 4096;
 
-/// The lengths of the grid, in tokens.
-const LENGTHS: [i64; 7] = [4096, 8192, 16384, 32768, 65536, 131072, 262144];
+/// The lengths of the grid, in tokens: 4K to 256K in its two rows, then 512K, 1M and 2M, in a third row that Other…
+/// opens (C213, the user: "on clicking 'other..' add another row - show also 512, 1M, 2M").
+const LENGTHS: [i64; 10] = [
+    4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152,
+];
+
+/// How many of `LENGTHS` are in the first two rows; Other… is the box after them, and the rest are the third row.
+const FIRST_ROWS: usize = 7;
 
 /// How the person chose the context.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,7 +69,11 @@ impl RunChoice {
 /// A number of tokens of context as a person reads it: `4K`, `16K`, `128K` (for 131072, and for the 128000 a model
 /// says it takes), or the number when it is not a round one.
 pub(super) fn context_words(tokens: i64) -> String {
-    if tokens >= 1000 && tokens % 1000 == 0 {
+    if tokens >= 1_048_576 && tokens % 1_048_576 == 0 {
+        format!("{}M", tokens / 1_048_576)
+    } else if tokens >= 1_000_000 && tokens % 1_000_000 == 0 {
+        format!("{}M", tokens / 1_000_000)
+    } else if tokens >= 1000 && tokens % 1000 == 0 {
         format!("{}K", tokens / 1000)
     } else if tokens >= 1024 && tokens % 1024 == 0 {
         format!("{}K", tokens / 1024)
@@ -85,7 +95,7 @@ fn length_at(n: i64, most: i64) -> Option<i64> {
 }
 
 /// A number of bytes in GB, as the hovers of the grid say it.
-fn gb(bytes: u64) -> String {
+pub(super) fn gb(bytes: u64) -> String {
     format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
 }
 
@@ -380,21 +390,24 @@ impl App {
                 }
             },
         );
-        let mut cells: Vec<Cell> = LENGTHS
-            .iter()
-            .map(|&n| {
-                let at = length_at(n, most);
-                let off = at.is_none();
-                let fit = at.and_then(|at| self.fit(at as u64));
-                Cell {
-                    text: context_words(n),
-                    fit,
-                    off,
-                    marked: suggested == Some(n),
-                    hover: self.length_hover(n, off, fit, suggested == Some(n)),
-                }
-            })
-            .collect();
+        // the third row (512K to 2M) is there while Other… is open, or one of its lengths is chosen
+        let longer = own
+            || now
+                .and_then(|n| self.grid_index(n))
+                .is_some_and(|i| i >= FIRST_ROWS);
+        let cell_of = |n: i64| {
+            let at = length_at(n, most);
+            let off = at.is_none();
+            let fit = at.and_then(|at| self.fit(at as u64));
+            Cell {
+                text: context_words(n),
+                fit,
+                off,
+                marked: suggested == Some(n),
+                hover: self.length_hover(n, off, fit, suggested == Some(n)),
+            }
+        };
+        let mut cells: Vec<Cell> = LENGTHS[..FIRST_ROWS].iter().map(|&n| cell_of(n)).collect();
         cells.push(Cell {
             // a number of the person's own is said on its box; one that is a length of the grid is that box's
             text: match now.filter(|n| own && self.grid_index(*n).is_none()) {
@@ -408,18 +421,28 @@ impl App {
             },
             off: false,
             marked: false,
-            hover: "A number of tokens of your own.".to_string(),
+            hover: if longer {
+                "A number of tokens of your own.".to_string()
+            } else {
+                "A number of tokens of your own, or a longer length: 512K, 1M or 2M.".to_string()
+            },
         });
+        if longer {
+            cells.extend(LENGTHS[FIRST_ROWS..].iter().map(|&n| cell_of(n)));
+        }
+        // the boxes are the first rows' lengths, Other… (FIRST_ROWS), then the third row's
         let lit = if own {
-            Some(LENGTHS.len())
+            Some(FIRST_ROWS)
         } else {
             now.and_then(|n| self.grid_index(n))
+                .map(|i| if i < FIRST_ROWS { i } else { i + 1 })
         };
         let chosen = ui
-            .add_enabled_ui(enabled, |ui| length_grid(ui, &cells, lit))
+            .add_enabled_ui(enabled, |ui| length_grid(ui, &cells, lit, FIRST_ROWS))
             .inner;
         match chosen {
-            Some(i) if i < LENGTHS.len() => self.choose_length(LENGTHS[i]),
+            Some(i) if i < FIRST_ROWS => self.choose_length(LENGTHS[i]),
+            Some(i) if i > FIRST_ROWS => self.choose_length(LENGTHS[i - 1]),
             Some(_) => {
                 self.change_custom = true;
                 self.run_choice = Some(RunChoice::Own);
@@ -463,7 +486,7 @@ impl App {
                     let range = self
                         .context_field()
                         .and_then(|f| f.range)
-                        .unwrap_or((256.0, 131072.0));
+                        .unwrap_or((256.0, 2097152.0));
                     let changed = ui
                         .add_enabled(
                             enabled,
@@ -553,7 +576,12 @@ struct Cell {
 
 /// The grid: four boxes a row, the lit one in the accent, a dot at the top right of each that says where it fits. What
 /// was clicked comes back.
-fn length_grid(ui: &mut egui::Ui, cells: &[Cell], lit: Option<usize>) -> Option<usize> {
+fn length_grid(
+    ui: &mut egui::Ui,
+    cells: &[Cell],
+    lit: Option<usize>,
+    reopen: usize,
+) -> Option<usize> {
     let p = theme::palette();
     let enabled = ui.is_enabled();
     let width = ui.available_width();
@@ -646,8 +674,8 @@ fn length_grid(ui: &mut egui::Ui, cells: &[Cell], lit: Option<usize>) -> Option<
                 ),
             );
         }
-        // a length that is lit is chosen already; Other… lit is clicked to open its number again
-        if response.clicked() && (!on || i == cells.len() - 1) {
+        // a length that is lit is chosen already; Other… (`reopen`) lit is clicked to open its number again
+        if response.clicked() && (!on || i == reopen) {
             chosen = Some(i);
         }
     }
@@ -688,6 +716,29 @@ mod tests {
         app.models = app.scan_models();
         app.selected = 0;
         app
+    }
+
+    /// C213: Other… opens a third row, 512K to 2M; a length of it is a length (kept as one), said in millions.
+    #[test]
+    fn the_third_row_is_lengths_of_the_grid_and_says_them_in_millions() {
+        assert_eq!(context_words(524288), "512K");
+        assert_eq!(context_words(1_048_576), "1M");
+        assert_eq!(context_words(2_097_152), "2M");
+        assert_eq!(context_words(1_000_000), "1M");
+        let dir = scratch("c213-longer");
+        let mut app = app_with_model(&dir, "llamacpp", GB);
+        // the field goes to 2M, and a model whose file says nothing takes that much
+        assert_eq!(app.max_context(), 2_097_152);
+        for tokens in [524288, 1_048_576, 2_097_152] {
+            app.choose_length(tokens);
+            assert_eq!(app.values.int(CONTEXT), Some(tokens));
+            assert_eq!(app.choice_now(), RunChoice::Length(tokens), "{tokens}");
+            assert_eq!(
+                RunChoice::from_key(&RunChoice::Length(tokens).key()),
+                Some(RunChoice::Length(tokens))
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

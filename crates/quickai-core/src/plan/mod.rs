@@ -659,6 +659,17 @@ fn plan_spawn(
                 continue;
             }
             Binding::Component(component) => {
+                // a kind of file its switch turns off is not attached (the model starts without its projector)
+                let off = component.switch.as_ref().is_some_and(|switch| {
+                    engine
+                        .fields
+                        .iter()
+                        .position(|f| &f.id == switch)
+                        .is_some_and(|i| resolved[i].value == Value::Bool(false))
+                });
+                if off {
+                    continue;
+                }
                 let origin = format!("component {}", component.kind);
                 for attached in selection
                     .components

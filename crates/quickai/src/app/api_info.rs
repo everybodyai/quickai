@@ -257,3 +257,227 @@ pub(super) fn show_connection_details(ui: &mut egui::Ui, panel: &ApiPanel) {
         );
     });
 }
+
+/// Connect an app in the panel (R1 of `the mockups`, the user's pick of 2026-11-10): the address,
+/// the model's name and the key in one box, each with its picture in place of its label (which the hover says) and a
+/// copy button; under it the example in a line (its language, a copy button, and the arrow that shows the code), closed
+/// at first. The language chosen last is kept, as in the popover.
+pub(super) fn show_connection_box(ui: &mut egui::Ui, panel: &ApiPanel) {
+    let p = theme::palette();
+    egui::Frame::new()
+        .fill(p.card)
+        .stroke(egui::Stroke::new(1.0, p.line))
+        .corner_radius(8.0)
+        .inner_margin(egui::Margin {
+            left: 10,
+            right: 4,
+            top: 1,
+            bottom: 1,
+        })
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let mut first = true;
+            let mut row = |ui: &mut egui::Ui,
+                           icon: Icon,
+                           what: &str,
+                           value: &str,
+                           copy: bool,
+                           note: Option<&str>| {
+                if !first {
+                    let y = ui.cursor().top();
+                    let x = ui.max_rect().x_range();
+                    ui.painter().hline(
+                        (x.min - 10.0)..=(x.max + 4.0),
+                        y,
+                        egui::Stroke::new(1.0, p.line),
+                    );
+                }
+                first = false;
+                ui.horizontal(|ui| {
+                    ui.set_min_height(34.0);
+                    let (rect, response) =
+                        ui.allocate_exact_size(egui::vec2(15.0, 15.0), egui::Sense::hover());
+                    icons::paint(ui.painter(), rect, icon, p.muted);
+                    response.on_hover_text(what);
+                    ui.add_space(4.0);
+                    let room = (ui.available_width() - if copy { 34.0 } else { 0.0 }).max(40.0);
+                    let words = if copy {
+                        egui::RichText::new(value).monospace().color(p.text)
+                    } else {
+                        egui::RichText::new(value).small().color(p.muted)
+                    };
+                    let hover = match note {
+                        Some(note) => format!("{what}: {value}\n{note}"),
+                        None => format!("{what}: {value}"),
+                    };
+                    // from the left, cut with … when it is longer than the room
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(room, 22.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.set_width(room);
+                            ui.add(egui::Label::new(words).truncate())
+                                .on_hover_text(hover);
+                        },
+                    );
+                    if copy {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            icons::copy_button(ui, what, value);
+                        });
+                    }
+                });
+            };
+            row(ui, Icon::Link, "Address", &panel.base_url, true, None);
+            for (label, url) in &panel.extra_urls {
+                row(ui, Icon::Link, label, url, true, None);
+            }
+            if let Some(model) = &panel.model {
+                row(
+                    ui,
+                    Icon::Package,
+                    "Model",
+                    &model.value,
+                    true,
+                    model.note.as_deref(),
+                );
+            }
+            if let Some(key) = &panel.api_key {
+                if key.value == "none" {
+                    row(
+                        ui,
+                        Icon::Key,
+                        "API key",
+                        "any key, or none",
+                        false,
+                        key.note.as_deref(),
+                    );
+                } else {
+                    row(
+                        ui,
+                        Icon::Key,
+                        "API key",
+                        &key.value,
+                        true,
+                        key.note.as_deref(),
+                    );
+                }
+            }
+        });
+    let Some(example) = &panel.example else {
+        return;
+    };
+    // the languages there are, curl first; the one chosen last is kept for the next time
+    let mut codes: Vec<(&str, &str, &str)> = vec![("curl", "curl", example.curl.as_str())];
+    if let Some(python) = &example.python {
+        codes.push(("Python", "Python", python));
+    }
+    if let Some(javascript) = &example.javascript {
+        codes.push(("JS", "JavaScript", javascript));
+    }
+    let tab_id = egui::Id::new("connect_an_app_tab");
+    let open_id = egui::Id::new("connect_an_app_example_open");
+    let mut tab: usize = ui
+        .data(|d| d.get_temp(tab_id))
+        .unwrap_or(0)
+        .min(codes.len() - 1);
+    let mut open: bool = ui.data(|d| d.get_temp(open_id)).unwrap_or(false);
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        ui.set_min_height(26.0);
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(15.0, 15.0), egui::Sense::hover());
+        icons::paint(ui.painter(), rect, Icon::Code, p.muted);
+        ui.add_space(2.0);
+        let words = ui
+            .add(
+                egui::Label::new(egui::RichText::new("Example").color(p.text))
+                    .sense(egui::Sense::click()),
+            )
+            .on_hover_text(if open {
+                "Hide the code."
+            } else {
+                "Show the code."
+            });
+        if words.clicked() {
+            open = !open;
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let (rect, arrow) =
+                ui.allocate_exact_size(egui::vec2(18.0, 24.0), egui::Sense::click());
+            super::tools::chevron(
+                ui.painter(),
+                rect.center(),
+                open,
+                if arrow.hovered() { p.text } else { p.muted },
+            );
+            if arrow
+                .on_hover_text(if open {
+                    "Hide the code."
+                } else {
+                    "Show the code."
+                })
+                .clicked()
+            {
+                open = !open;
+            }
+            icons::copy_button(ui, "example", codes[tab].2);
+            // drawn from the right: the last language first
+            ui.spacing_mut().item_spacing.x = 2.0;
+            for (i, (short, name, _)) in codes.iter().enumerate().rev() {
+                if language_tab(ui, short, tab == i)
+                    .on_hover_text(format!("The example in {name}"))
+                    .clicked()
+                {
+                    tab = i;
+                }
+            }
+        });
+    });
+    ui.data_mut(|d| {
+        d.insert_temp(tab_id, tab);
+        d.insert_temp(open_id, open);
+    });
+    if open {
+        ui.add_space(4.0);
+        theme::well_frame(egui::Margin::symmetric(10, 8)).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.add(
+                egui::Label::new(egui::RichText::new(codes[tab].2).monospace().color(p.text))
+                    .wrap(),
+            );
+        });
+    }
+}
+
+/// A language of the example, small: lit in the accent when it is the one shown.
+fn language_tab(ui: &mut egui::Ui, words: &str, on: bool) -> egui::Response {
+    let p = theme::palette();
+    let font = egui::FontId::proportional(12.0);
+    let color = if on { p.accent_text } else { p.muted };
+    let galley = ui.painter().layout_no_wrap(words.to_string(), font, color);
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(galley.size().x + 12.0, 22.0),
+        egui::Sense::click(),
+    );
+    if ui.is_rect_visible(rect) {
+        if on {
+            ui.painter().rect(
+                rect,
+                5.0,
+                p.accent_soft,
+                egui::Stroke::new(1.0, p.accent_text.gamma_multiply(0.4)),
+                egui::StrokeKind::Inside,
+            );
+        } else if response.hovered() {
+            ui.painter().rect_filled(rect, 5.0, p.raised_hover);
+        }
+        let ink = if response.hovered() && !on {
+            p.text
+        } else {
+            color
+        };
+        ui.painter()
+            .galley(rect.center() - galley.size() / 2.0, galley, ink);
+    }
+    response
+}

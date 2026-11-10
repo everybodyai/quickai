@@ -25,16 +25,12 @@ impl App {
                 .frame(egui::Frame::new().inner_margin(egui::Margin {
                     left: 0,
                     right: 0,
-                    top: 8,
+                    top: 10,
                     bottom: 0,
                 }))
+                // the foot's own edge is the one line over it (D1 of `the mockups`: a second one,
+                // drawn 4 px under it, made two)
                 .show(ui, |ui| {
-                    let y = ui.max_rect().top() - 4.0;
-                    ui.painter().hline(
-                        ui.max_rect().x_range(),
-                        y,
-                        egui::Stroke::new(1.0, theme::palette().line),
-                    );
                     self.show_this_computer(ui, meters);
                 });
         }
@@ -68,10 +64,14 @@ impl App {
 
     /// How the model runs: the configuration, the context and the graphics, then the tools with a switch each.
     fn show_how_section(&mut self, ui: &mut egui::Ui) {
-        self.panel_head(ui, "How it runs", true);
+        self.panel_head(ui, "How it runs", true, None);
         self.show_change_panel(ui);
         for problem in self.field_problems() {
             ui.colored_label(super::widgets::problem_color(), problem);
+        }
+        // what is added when it starts: the projector, the mode, the person's arguments and environment (X1)
+        if self.remote_in_use().is_none() {
+            self.show_extras_rows(ui);
         }
         // the tools are the chat's: an engine that does not chat (ComfyUI) has none to show
         if !self.runs_alone() && self.can_chat() {
@@ -86,24 +86,27 @@ impl App {
         }
     }
 
-    /// Connect an app, while it runs: the rows and the example, the chat in a browser, and how it runs, in a line.
+    /// Connect an app, while it runs (R1 of `the mockups`, the user's pick of 2026-11-10: "make the
+    /// text less textier on run"): the address, the model's name and the key in one box, with a picture each for its
+    /// label; the example closed, copied without being shown; the chat in a browser; how it runs as chips with a lock;
+    /// and the tools. The sentences are in the (i) and the hovers.
     fn show_connect_section(&mut self, ui: &mut egui::Ui) {
-        self.panel_head(ui, "Connect an app", false);
         let panel = self.connection_panel();
         let openai = panel.as_ref().is_some_and(|p| p.base_url.ends_with("/v1"));
-        ui.label(
-            theme::muted(if openai {
-                "Give these to any app that works with OpenAI's API."
+        self.panel_head(
+            ui,
+            "Connect an app",
+            false,
+            Some(if openai {
+                "Give these to any app that works with OpenAI's API: the address, the model's name and the key."
             } else {
                 "Give this address to an app that uses its API."
-            })
-            .small(),
+            }),
         );
-        ui.add_space(4.0);
         if let Some(panel) = &panel {
-            super::api_info::show_connection_details(ui, panel);
+            super::api_info::show_connection_box(ui, panel);
         }
-        ui.add_space(8.0);
+        ui.add_space(10.0);
         // the chat in a browser: the engine's own page, or its companion's (Open WebUI)
         if let Some(chat) = self.browser_chat().filter(|_| !self.runs_alone()) {
             let hover = format!("{}: {}", chat.label.trim_end_matches('.'), chat.hover);
@@ -129,9 +132,18 @@ impl App {
             });
         }
         rule(ui);
-        ui.label(theme::muted("How it runs").small());
-        ui.label(self.run_summary());
-        ui.label(theme::muted("Stop the model to change these.").small());
+        section_head(ui, Icon::Chat, "How it runs", None, |ui| {
+            let (rect, response) =
+                ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
+            icons::paint(
+                ui.painter(),
+                rect.shrink(4.0),
+                Icon::Lock,
+                theme::palette().muted,
+            );
+            response.on_hover_text("Stop the model to change these.");
+        });
+        self.show_run_chips(ui);
         if !self.runs_alone() {
             rule(ui);
             let hover = if self.engine == crate::settings::DEFAULT_ENGINE
@@ -153,10 +165,10 @@ impl App {
 }
 
 impl App {
-    /// The head of the panel: the name of its section, and at its right » that puts the panel away (H4 of
-    /// `the mockups`; « at the right end of the bar brings it back), with the gear of All settings
-    /// for starting it beside it when `settings` (S1 of `the mockups`).
-    fn panel_head(&mut self, ui: &mut egui::Ui, text: &str, settings: bool) {
+    /// The head of the panel: the name of its section, an (i) that says `info` when there is one, and at its right » that
+    /// puts the panel away (H4 of `the mockups`; « at the right end of the bar brings it back), with
+    /// the gear of All settings for starting it beside it when `settings` (S1 of `the mockups`).
+    fn panel_head(&mut self, ui: &mut egui::Ui, text: &str, settings: bool, info: Option<&str>) {
         let mut hide = false;
         let mut open_settings = false;
         ui.horizontal(|ui| {
@@ -166,6 +178,12 @@ impl App {
                     .family(theme::semibold(ui))
                     .color(theme::palette().text),
             );
+            if let Some(info) = info {
+                let (rect, response) =
+                    ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                icons::paint(ui.painter(), rect, Icon::Info, theme::palette().faint);
+                response.on_hover_text(info);
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let button =
                     icons::icon_button(ui, Icon::DoubleRight, egui::vec2(28.0, 28.0), true, false)

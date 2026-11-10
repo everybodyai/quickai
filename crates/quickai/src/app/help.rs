@@ -308,7 +308,7 @@ const PAGES: &[Page] = &[
                works with OpenAI's API can talk to it.",
         picture: Some(Picture {
             name: "connect",
-            marks: &[(1, 233.0, 84.0), (2, 85.0, 171.0), (3, 75.0, 239.0), (4, 165.0, 576.0)],
+            marks: &[(1, 233.0, 84.0), (2, 13.0, 126.0), (3, 13.0, 161.0), (4, 165.0, 287.0)],
             ring: Some([247.0, 68.0, 32.0, 32.0]),
         }),
         steps: &[
@@ -317,14 +317,17 @@ const PAGES: &[Page] = &[
                  top puts it away, and the {show} at the right end of the bar brings it back.",
             )
             .at(Spot::Plug),
-            step("Copy the **Address** into the other app. It may call it the base URL or the endpoint."),
-            step("Copy the **Model** name too. Type anything as the **API key**, or leave it blank."),
-            step("**Open Chat UI** {globe} under it opens a chat in your browser, when the engine has one."),
+            step(
+                "Copy the **Address**, the first line of the box, into the other app. It may call it the base URL or \
+                 the endpoint.",
+            ),
+            step("Copy the **Model** name under it too. Any **API key** will do, or none."),
+            step("**Open Chat UI** {globe} under them opens a chat in your browser, when the engine has one."),
         ],
         numbered: true,
         tip: Some(
-            "The address works on this computer only: other computers on your network cannot reach it. The panel \
-             has examples for curl, Python and JavaScript.",
+            "The address works on this computer only: other computers on your network cannot reach it. **Example** \
+             copies a request in curl, Python or JavaScript, and its arrow shows it.",
         ),
     },
     Page {
@@ -446,7 +449,7 @@ const PAGES: &[Page] = &[
                 (1, 180.0, 84.0),
                 (2, 126.0, 175.0),
                 (3, 132.0, 334.0),
-                (4, 128.0, 437.0),
+                (4, 128.0, 420.0),
                 (5, 240.0, 125.0),
             ],
             ring: None,
@@ -456,8 +459,9 @@ const PAGES: &[Page] = &[
                 .at(Spot::Change),
             step(
                 "**Context** is how much of the chat it remembers: choose a length, **4K** to **256K**, or **Other…** for \
-                 a number of your own. A dot on each says where it fits: green on the graphics card, amber partly in the \
-                 computer's memory (slower), red too big. The underlined one suits this model here.",
+                 a number of your own and the longer ones, **512K** to **2M**. A dot on each says where it fits: green \
+                 on the graphics card, amber partly in the computer's memory (slower), red too big. The underlined one \
+                 suits this model here.",
             ),
             step(
                 "**Graphics** is where it runs: **Card**, **Card + processor** (part of the model on the card) or \
@@ -465,12 +469,16 @@ const PAGES: &[Page] = &[
                  the ones to use. **This computer**, at the foot, shows what it takes of each card and of the memory.",
             ),
             step(
-                "**Tools** opens a switch for each MCP server. The gear at the top of the panel has the rest of the \
-                 settings for starting it, the port among them.",
+                "**Extras** opens what is added when it starts: a vision model's projector, with a switch, and your own \
+                 arguments and environment, a chip each to change or take out. **Tools** opens a switch for each MCP \
+                 server. The gear at the top of the panel has the rest of the settings for starting it, the port among \
+                 them.",
             ),
             step(
                 "**Configuration** at the top of the panel keeps how it runs under a name: **Save as a new \
-                 configuration…**. Choose one from the same list to use it again.",
+                 configuration…**. Choose one from the same list to use it again. Its box has an amber edge while the \
+                 panel holds something it does not say. Picking another model leaves it as it was saved: the panel then \
+                 holds an **Unnamed** one until you save it.",
             ),
             step("**Configurations…** in the **QuickAI** menu has them all: use, rename or delete one, or save it as a file to share.")
                 .does(Deed::Configurations),

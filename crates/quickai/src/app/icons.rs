@@ -75,6 +75,9 @@ pub(super) enum Icon {
     /// An address opened in the browser: a box, and an arrow out of its corner.
     #[cfg_attr(not(feature = "remote-setup"), allow(dead_code))]
     External,
+    /// What Connect an app gives (R1 of `the mockups`): the address, two links of a chain; the key.
+    Link,
+    Key,
 }
 
 /// Draws `icon` in `rect` (it is drawn in the largest square that fits, in the middle) in `color`.
@@ -349,6 +352,38 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
             ]);
             line(&[(14.0, 4.0), (20.0, 4.0), (20.0, 10.0)]);
             line(&[(20.0, 4.0), (11.0, 13.0)]);
+        }
+        Icon::Link => {
+            // two links of a chain, at 45 degrees, each a loop with round ends
+            let link = |cx: f32, cy: f32| {
+                let (ux, uy) = (
+                    std::f32::consts::FRAC_1_SQRT_2,
+                    -std::f32::consts::FRAC_1_SQRT_2,
+                );
+                let (nx, ny) = (-uy, ux);
+                let (h, r) = (3.0, 3.2);
+                let mut points = Vec::new();
+                for (end, from) in [(h, -90.0_f32), (-h, 90.0)] {
+                    for i in 0..=8 {
+                        let a = (from + i as f32 * 22.5).to_radians();
+                        let (s, c) = a.sin_cos();
+                        points.push((
+                            cx + end * ux + r * (c * ux + s * nx),
+                            cy + end * uy + r * (c * uy + s * ny),
+                        ));
+                    }
+                }
+                points.push(points[0]);
+                line(&points);
+            };
+            link(8.6, 15.4);
+            link(15.4, 8.6);
+        }
+        Icon::Key => {
+            ring(8.0, 16.0, 4.0);
+            line(&[(10.9, 13.1), (20.0, 4.0)]);
+            line(&[(17.0, 7.0), (19.5, 9.5)]);
+            line(&[(14.6, 9.4), (16.6, 11.4)]);
         }
         Icon::Play => {
             painter.add(Shape::convex_polygon(

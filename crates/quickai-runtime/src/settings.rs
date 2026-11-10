@@ -54,6 +54,11 @@ pub const PANEL_HIDDEN_KEY: &str = "app.panel_hidden";
 /// model is run the same way with its own numbers; absent, nothing was chosen yet.
 pub const RUN_CHOICE_KEY: &str = "app.run_choice";
 
+/// Whether what the window holds is a configuration with no name (C213, N1 of `the mockups`): another
+/// model was picked than the one the configuration in use names, which is left as it was saved; `app.configuration` is
+/// still the one it came from. Absent, it is the named one.
+pub const CONFIGURATION_UNNAMED_KEY: &str = "app.configuration_unnamed";
+
 /// Where the person's MCP servers are kept: llama.cpp's field (its chat page is given them), read and written by the
 /// window whatever the engine, since QuickAI's own chat uses them with every engine (C204).
 pub const MCP_SERVERS_KEY: &str = "llamacpp.mcp_servers";
@@ -460,6 +465,21 @@ impl Settings {
         self.set_app_value(
             PANEL_HIDDEN_KEY,
             hidden.then_some(serde_json::Value::Bool(true)),
+        );
+    }
+
+    /// Whether the window holds a configuration with no name (`CONFIGURATION_UNNAMED_KEY`).
+    pub fn configuration_unnamed(&self) -> bool {
+        self.app_value(CONFIGURATION_UNNAMED_KEY)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    }
+
+    /// Records it; a named one takes the key away.
+    pub fn set_configuration_unnamed(&mut self, unnamed: bool) {
+        self.set_app_value(
+            CONFIGURATION_UNNAMED_KEY,
+            unnamed.then_some(serde_json::Value::Bool(true)),
         );
     }
 

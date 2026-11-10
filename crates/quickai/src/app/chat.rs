@@ -982,9 +982,10 @@ impl App {
             .find(|m| m.display == name || m.filename == name)
             .is_some_and(|m| {
                 m.note.split(", ").any(|w| w == "vision")
-                    || m.companions
-                        .iter()
-                        .any(|c| c.kind == "mmproj" && c.exists())
+                    || (self.projector_on()
+                        && m.companions
+                            .iter()
+                            .any(|c| c.kind == "mmproj" && c.exists()))
             })
     }
 

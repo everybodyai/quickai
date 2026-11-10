@@ -37,6 +37,7 @@ mod controls;
 mod diagnostics;
 mod engine;
 mod engine_bar;
+mod extras;
 mod foreign_program;
 mod graphics;
 #[cfg(test)]
@@ -802,6 +803,7 @@ impl App {
         );
         settings.set_sidebar_hidden(!self.sidebar_open);
         settings.set_panel_hidden(!self.panel_open);
+        settings.set_configuration_unnamed(self.configs.unnamed);
         settings.enable_traffic_proxy = self.enable_traffic_proxy;
         if let Some(engine) = self.registry.engine(&self.engine) {
             let mut values = self.values.clone();
@@ -992,6 +994,7 @@ impl App {
                 let chosen = self.models.get(self.selected).map(|m| m.filename.clone());
                 if chosen != current {
                     self.apply_model_defaults();
+                    self.leave_configuration_for_model();
                 }
                 self.refresh_recommendation();
                 self.save_settings();

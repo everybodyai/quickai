@@ -1062,7 +1062,7 @@ fn pretty(arguments: &str) -> String {
 }
 
 /// A small chevron at `at`: down while closed, up while open.
-fn chevron(painter: &egui::Painter, at: egui::Pos2, open: bool, color: egui::Color32) {
+pub(super) fn chevron(painter: &egui::Painter, at: egui::Pos2, open: bool, color: egui::Color32) {
     let (w, h) = (4.0, 2.2);
     let dy = if open { -h } else { h };
     painter.add(egui::Shape::line(

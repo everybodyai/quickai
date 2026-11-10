@@ -371,6 +371,7 @@ How one kind of companion file reaches the program once a model that has one is 
 | `order` | whole number | Where its arguments stand among the fields': after those of a lower `order`, before those of a higher one. Default 80, which is before `extra_args` (90). |
 | `bind` | table, below | What it adds. |
 | `place` | text | For an engine that finds its files by the folder they are in (ComfyUI): the folder of the models folder this kind of file is kept in (`text_encoders`), a plain name. A component needs `place` or `bind.arg`, and may have both. |
+| `switch` | text | The id of a field of type `bool` that turns this kind of file on and off (llama.cpp's `projector`): while it is false, no file of the kind is attached and the model starts without it. Without one, a file of the kind is always attached. A field that is not of type `bool` is an error. |
 
 ## `[components.<kind>.bind]`
 

@@ -204,6 +204,8 @@ fn list(dirs: &ConfigDirs, out: &mut dyn Write) -> i32 {
     let registry = build_registry(dirs);
     let settings = settings_of(dirs);
     let (active, _) = configurations::active_for_start(&registry, &settings);
+    // with no name (another model picked in the window), none of them is the one in use
+    let unnamed = settings.configuration_unnamed();
     let all = entries(&registry);
     let width = |f: &dyn Fn(&configurations::Entry) -> usize| all.iter().map(f).max().unwrap_or(0);
     let (w_id, w_name, w_engine) = (
@@ -220,7 +222,11 @@ fn list(dirs: &ConfigDirs, out: &mut dyn Write) -> i32 {
         let _ = writeln!(
             out,
             "{} {:<w_id$}  {:<w_name$}  {:<w_engine$}  {}{model}",
-            if entry.id == active { "*" } else { " " },
+            if entry.id == active && !unnamed {
+                "*"
+            } else {
+                " "
+            },
             entry.id,
             entry.name,
             entry.configuration.engine,

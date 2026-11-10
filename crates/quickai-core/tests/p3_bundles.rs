@@ -501,6 +501,23 @@ fn p3_b07_an_attached_companion_is_on_the_command_line_before_the_persons_own_ar
     );
 }
 
+/// C213: a component whose switch is off (llama.cpp's `projector`, Extras in the panel) is not attached, and the model
+/// starts without it; on, or not said at all, it is attached as before.
+#[test]
+fn c213_a_component_its_switch_turns_off_is_left_off_the_command_line() {
+    let r = registry(&[]);
+    let with = selection().with_component("mmproj", "/models/proj.gguf");
+    let on = args_of(&r, &with.clone());
+    assert!(values(&on).contains(&"--mmproj"), "{on:?}");
+    assert_eq!(
+        args_of(&r, &with.clone().set("llamacpp.projector", true)),
+        on
+    );
+    let off = args_of(&r, &with.set("llamacpp.projector", false));
+    assert!(!values(&off).contains(&"--mmproj"), "{off:?}");
+    assert_eq!(off, args_of(&r, &selection()), "as a model without one");
+}
+
 #[test]
 fn p3_b08_the_order_of_a_component_is_the_documents_to_say() {
     // a component of order 5 stands before the fields; those of 20 (the context size's own) after it, a
