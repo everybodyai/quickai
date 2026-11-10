@@ -1,4 +1,4 @@
-//! The bar over the page (UI v3, C203, the user's A6 of `the mockups`): the chosen model's name (or the
+//! The bar over the page (UI v3, C203): the chosen model's name (or the
 //! engine's, for one that runs on its own or has no model yet) with (i) for its details, and what it is doing; then what
 //! can be done with it as buttons with words (Start, Load model or Use this model; Stop; Open ComfyUI); then a new chat
 //! and ⋯, the chat's (Keep chats, Options, Export; C208). A side of the window put away is brought back from the bar's
@@ -37,7 +37,7 @@ impl App {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(2.0);
                 // the panel at the right, put away (or a window too narrow for it to show by itself): « at the right end
-                // brings it back (H4 of `the mockups`); shown, its own » puts it away
+                // brings it back; shown, its own » puts it away
                 if self.panel_possible() && !self.panel_shown {
                     let show = icons::icon_button(ui, Icon::DoubleLeft, ICON, true, false)
                         .on_hover_text(
@@ -50,7 +50,7 @@ impl App {
                     }
                     pressed.panel = show.clicked();
                 }
-                // the pictures, from the right: ⋯ (the chat's: M1 of `the mockups`; none when there is no
+                // the pictures, from the right: ⋯ (the chat's; none when there is no
                 // chat and no chat page to set up) and a new chat
                 if self.bar_menu_has_items(model_page) {
                     let more = icons::icon_button(ui, Icon::More, ICON, true, false)
@@ -104,7 +104,7 @@ impl App {
                             + 8.0
                             + 8.0
                     };
-                    // (i) beside the name opens the model's details (I1 of `the mockups`)
+                    // (i) beside the name opens the model's details
                     let info_width = if model_page { 30.0 } else { 0.0 };
                     let room = ui.available_width();
                     let name_room = (room - state_width - info_width).max(room * 0.35).max(10.0);

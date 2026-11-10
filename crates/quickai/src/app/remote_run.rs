@@ -1,9 +1,8 @@
 //! Runs of configurations on computers QuickAI sets up (WP4.33, docs/remote-runs.md): Start sends the selected
 //! configuration to the computer chosen in the status bar with QuickAI's own headless program, the window follows it
 //! until it is ready and brings its ports here, and Stop stops it there. Each computer has a run of its own, and one
-//! here can go on at the same time: choosing a computer in the status bar shows its run, and the chat talks to it
-//! (the user: "It should also be able to run locally or run multiple remotes ... the chat attaches automatically to
-//! the connected (running cfg)"). Another run there is said, and the person chooses: override it, stop it, or leave
+//! here can go on at the same time: choosing a computer in the status bar shows its run, and the chat talks to it.
+//! Another run there is said, and the person chooses: override it, stop it, or leave
 //! it (section 3.2). A run lives until it is stopped, from here or there; the window finds the ones that go on when
 //! it starts (`find`). The steps are `remote::job`'s, on threads of their own; this is what the window keeps of them.
 
@@ -808,7 +807,7 @@ mod tests {
             pressed,
             modifiers: egui::Modifiers::NONE,
         };
-        // a quick click, as a person's (and the GUI suites') is: the pointer there, pressed and let go in one frame
+        // a quick click, as a person's (and a test's) is: the pointer there, pressed and let go in one frame
         for events in [
             vec![
                 egui::Event::PointerMoved(accept),

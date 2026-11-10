@@ -5,9 +5,7 @@
 //! - macOS: `say`; Linux: `espeak-ng`, `espeak` or speech-dispatcher's `spd-say`, a run of the program a sentence,
 //!   with the text on its input (never on a command line);
 //! - Windows: System.Speech through one PowerShell kept running, a line a sentence (PowerShell takes a while to start);
-//! - `QUICKAI_SPEECH_COMMAND`: a shell line that reads its input aloud (the GUI suites write it to a file).
-//!
-//! The twin of `the read-aloud MCP server's` (the MCP server that reads aloud).
+//! - `QUICKAI_SPEECH_COMMAND`: a shell line that reads its input aloud (tests write it to a file).
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -785,7 +783,7 @@ mod tests {
         );
     }
 
-    /// A speaker whose program writes each sentence to a file, as the GUI suites' does.
+    /// A speaker whose program writes each sentence to a file.
     #[cfg(unix)]
     #[test]
     fn sentences_are_read_in_order_and_said_as_they_begin_and_a_new_reading_ends_the_last() {

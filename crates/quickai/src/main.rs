@@ -19,8 +19,7 @@ use quickai_runtime::run_file;
 #[cfg(test)]
 use quickai_runtime::{golden, testkit};
 
-/// Must match the AppImage's `.desktop` file (`StartupWMClass=quickai`, made
-/// by `build/appimage.sh` in the `the packaging repository` repository) so window managers
+/// Must match the AppImage's `.desktop` file (`StartupWMClass=quickai`) so window managers
 /// associate the running window with the launcher icon — otherwise "pin to
 /// taskbar" after launch doesn't stick.
 const APP_ID: &str = "quickai";

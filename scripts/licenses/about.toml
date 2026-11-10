@@ -20,7 +20,7 @@ accepted = [
     "Ubuntu-font-1.0",
 ]
 
-# What the packages are built for: build/common.sh and build/windows.bat for Linux and Windows, build/macos.sh for macOS.
+# What the packages are built for: Linux, Windows and macOS.
 targets = [
     "x86_64-unknown-linux-gnu",
     "x86_64-pc-windows-gnu",

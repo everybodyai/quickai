@@ -1,5 +1,4 @@
-//! Where an engine that places a model itself puts it (C213, the user: "Does the cfgs ... also work well with ollama -
-//! also the depiction about how its run (specifically with gpus/ cpu-gpu combinantions and so on?)"). llama.cpp is told
+//! Where an engine that places a model itself puts it (C213). llama.cpp is told
 //! where to run a model; Ollama decides it, so the panel learns it from Ollama: the cards it names in its log when it
 //! starts (`[devices]` of its document), and while a model runs, how much of it is on them (`[models] loaded`, its
 //! `/api/ps`, asked every few seconds). Graphics, This computer and the chips of a run say what it said.

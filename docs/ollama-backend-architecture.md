@@ -7,7 +7,7 @@ sections carry over into architecture.md._
 
 QuickAI today starts and stops one kind of server, `llama-server` from llama.cpp, which the packages bundle.
 This document proposes how it gains **Ollama** as a second engine. Ollama is **downloaded on demand and never
-bundled**, so the bundles built by `the packaging repository` do not change. The emphasis is modularity: after this work,
+bundled**, so the packages do not change. The emphasis is modularity: after this work,
 adding a third engine should mean adding one folder, not editing the core.
 
 ## 1. Summary
@@ -30,10 +30,10 @@ adding a third engine should mean adding one folder, not editing the core.
   the download. Attaching to an Ollama that is already running needs no binary at all.
 - **Isolation.** Ollama gets its own install root (`~/.quickai/ollama/`) and its own model store. Neither
   collides with `~/.quickai/llama-bin` or with the user's own `~/.ollama`.
-- **Additive settings.** Every existing `settings.json` key keeps its name and meaning (the GUI suite probes
+- **Additive settings.** Every existing `settings.json` key keeps its name and meaning (the GUI tests probe
   them). New: `backend`, plus one `backends.<id>` object per new engine.
 - **The window does not move in llama.cpp mode.** The Engine selector lives in Settings. The header and main
-  panel keep their layout in llama.cpp mode, because the GUI suite's OCR crops are calibrated to it.
+  panel keep their layout in llama.cpp mode, because the GUI tests' OCR crops are calibrated to it.
 - **Phased.** Phase 0 is a behaviour-preserving refactor with llama.cpp only, gated by the existing 213-case
   suite. Ollama arrives in Phases 1-3 on top of it (§9).
 
@@ -59,7 +59,7 @@ Each has a recommended default. The rest of the document assumes the recommendat
 | D4 | Where does the engine switch live? | **Settings → Engine.** | A header or main-panel control would move the "Live traffic" tab and shift the existing suite's OCR crops. |
 | D5 | "Open Chat UI" for Ollama | **Hide it in v1.** A QuickAI-hosted chat page, served by the proxy for both engines, is a separate feature. | Ollama has nothing to open. |
 | D6 | The bundled Bonsai Q1_0 models under Ollama | **Not offered** until a smoke chat proves Ollama can run them. | They are llama.cpp-specific today (A5). |
-| D7 | zstd decoder | **`ruzstd`** (pure Rust), behind a throughput check; `zstd` (C) if too slow. | Builds go through `cross` in old-glibc Docker images and cross-compile for Windows. A C dependency adds risk there. |
+| D7 | zstd decoder | **`ruzstd`** (pure Rust), behind a throughput check; `zstd` (C) if too slow. | A C dependency makes the builds for older Linux systems and for Windows harder. |
 | D8 | Cargo feature | An `ollama` feature, on by default. | Lets a build leave the runtime downloader out if a channel's policy requires it (§8). |
 
 ## 3. Goals and non-goals
@@ -68,7 +68,7 @@ Each has a recommended default. The rest of the document assumes the recommendat
 
 - Ollama is selectable as an engine. It can be installed in the app or found on the machine; started, attached
   to and stopped; models can be pulled, listed and deleted; the Connect an app panel and Live traffic tab work.
-- llama.cpp behaves exactly as it does today, including the layout the GUI suite reads.
+- llama.cpp behaves exactly as it does today, including the layout the GUI tests read.
 - Packaging is untouched: nothing Ollama-related is bundled.
 - A new backend needs no change to the core or to another backend.
 - The logic is testable headless: `plan()` is pure, the API client runs against a fake.
@@ -300,8 +300,8 @@ Where this differs from `llama_install` today:
   and 1.4 GB of libraries after it, so the extract-then-rename step is a requirement.
 - **Verification.** The API reports a sha256 `digest` per asset, and the installer checks the download against it.
   That catches truncation and corruption. It does not defend against a tampered release, so the tested tag's
-  digests are also pinned in the source (`backend/ollama/runtime.rs`, as `build/config.env` does for llama.cpp;
-  the base repository plays no part because it does not fetch Ollama).
+  digests are also pinned in the source (`backend/ollama/runtime.rs`, as the packaging pins llama.cpp; the
+  packaging plays no part because it does not fetch Ollama).
 - **Archive kinds.** `Zip`, `TarGz` and `TarZst`.
 - **Entry filter.** Extraction goes through an `EntryFilter` instead of unpacking the whole archive. It must keep
   refusing paths that escape the target (`tar::Entry::unpack_in`, `zip::ZipFile::enclosed_name`). Default policy:
@@ -445,8 +445,8 @@ environment-based settings, and the UI says so.
   "Advanced: llama.cpp" block (moved out of `app.rs` unchanged) and "Advanced: Ollama" (mode, runtime card with
   installed versions, look up and install, binary override, models folder, extra environment).
 - **Crash panel** renders `diagnose()` hints.
-- **Layout invariants for llama.cpp mode:** the header (`HEADER_Y`, icon x positions, tab x positions in
-  `test/resources/keywords.resource`) and the main panel's row order. The Settings window gains an Engine row at
+- **Layout invariants for llama.cpp mode:** the header (`HEADER_Y`, icon x positions, tab x positions, which the
+  GUI tests read) and the main panel's row order. The Settings window gains an Engine row at
   the top, so re-run the settings suites and recalibrate if needed. The dialog crops are centred on the window,
   and the ✕ x positions are unaffected by added rows.
 
@@ -540,10 +540,10 @@ Phase 0 moves files; it does not rewrite their logic.
 | Another client asks for a different model | Ollama loads it, evicting ours (`MAX_LOADED_MODELS=1`). The Live traffic row shows the model name. |
 | Ollama finds no usable GPU | Its log says so; the hint explains the Vulkan driver requirement on Linux. |
 
-## 8. Impact outside `quickai/`
+## 8. Impact on the packages and the GUI tests
 
-**Packaging (`the packaging repository`).** No change to `build/`, `stage_bundle`, bundle size (about 1.4 GB) or the channel
-manifests' payload; `build/config.env` gains nothing. Notes:
+**The packages.** No change to what they hold, their size (about 1.4 GB) or the channel manifests' payload; no pin
+is added. Notes:
 
 - `THIRD_PARTY_LICENSES.md` and the About text: Ollama is "downloaded on demand, not distributed".
 - MSIX / Microsoft Store: running a downloaded 1.4 GB executable is today's "Look up llama.cpp builds" behaviour
@@ -553,28 +553,24 @@ manifests' payload; `build/config.env` gains nothing. Notes:
 - AppImage: nothing is written inside the image; installs go to `~/.quickai`.
 - Optional: manifests whose package manager carries an `ollama` package can list it as an optional dependency,
   since detection of an installed Ollama avoids the 1.4 GB download.
-- The base README's "What goes into a bundle" gets a line saying Ollama is not part of it.
 
-**Test suite (`the GUI test suite`).** The same operating rules apply: one suite run at a time, because runs share
-the staged package.
+**The GUI tests** (the GUI test suite, which the maintainers keep outside this repository):
 
-- `resources/fake_ollama.py`, modelled on `fake_llama_server.py`. It speaks `GET /`, `/api/version`, `/api/tags`,
+- A fake Ollama, modelled on the fake `llama-server`. It speaks `GET /`, `/api/version`, `/api/tags`,
   `/api/ps`, `POST /api/pull` (NDJSON progress), `DELETE /api/delete`, `POST /api/generate` (empty prompt loads;
-  `keep_alive: 0` unloads; NDJSON stream), `POST /api/chat` (NDJSON) and `POST /v1/chat/completions` (SSE, reused
-  from the llama fake). Its command line is `serve` and `--version` only; anything else exits 1, like the real
-  thing. Because Ollama is configured through environment, it records the `OLLAMA_*` variables it received to a
-  file, the counterpart of the fake llama's argv file. Environment switches provide the `--fake-*` behaviours.
-  It handles SIGTERM, and an optional ignore-SIGTERM mode tests escalation to kill. It spawns a child process, so
-  a test can assert that neither the daemon nor its child survives Stop.
-- A new suite `ollama_backend` with `docs/15_ollama_backend.md`: engine selection, runtime found in the throw-away
-  HOME (`~/.quickai/ollama/<tag>/bin/ollama`), attach, Start/Stop, the exact environment mapping, pull progress,
-  delete confirm, picker, API panel text, no "Open Chat UI", and Live traffic with NDJSON.
-- Existing suites to update: settings_window (Engine row), persistence (`backend`, `backends`), network_privacy (an
-  idle session with the Ollama engine makes no outside request; install and pull are the only triggers).
+  `keep_alive: 0` unloads; NDJSON stream), `POST /api/chat` (NDJSON) and `POST /v1/chat/completions` (SSE). Its
+  command line is `serve` and `--version` only; anything else exits 1, like the real thing. Because Ollama is
+  configured through environment, it records the `OLLAMA_*` variables it received, as the fake llama records its
+  argv. It handles SIGTERM, and an optional ignore-SIGTERM mode tests escalation to kill. It spawns a child process,
+  so a test can assert that neither the daemon nor its child survives Stop.
+- New cases: engine selection, runtime found in the throw-away HOME (`~/.quickai/ollama/<tag>/bin/ollama`),
+  attach, Start/Stop, the exact environment mapping, pull progress, delete confirm, picker, API panel text, no
+  "Open Chat UI", and Live traffic with NDJSON; and the settings, persistence and network-privacy cases updated
+  (an idle session with the Ollama engine makes no outside request; install and pull are the only triggers).
 - The download and extract pipeline is tested in Rust, not through the GUI: an in-process `tiny_http` server serves
   generated archives of all three kinds and a GitHub-shaped JSON fixture (the v0.35.1 asset list is a ready-made
   one). One `--online` check lists real releases without downloading anything.
-- After Phase 0, llama.cpp mode must pass all 213 existing cases unchanged.
+- After Phase 0, llama.cpp mode must pass all the existing GUI cases unchanged.
 
 ## 9. Delivery plan
 
@@ -583,9 +579,9 @@ launching) even if Ollama were never added.
 
 | Phase | Content | Size | Exit gate |
 |---|---|---|---|
-| 0 | Behaviour-preserving refactor, llama.cpp only: `events.rs`; `Job`; the traits and `LlamaCppBackend`; `LaunchPlan` and `Session`; `process.rs`; split `app/`; `BackendInfo.help`; update the README layout section | L | `cargo fmt`, `clippy -D warnings` and `cargo test` clean; `build/test.sh` passes 213 cases with no crop changes; the two `#[ignore]`d real-model tests pass; the architecture guard test is in |
+| 0 | Behaviour-preserving refactor, llama.cpp only: `events.rs`; `Job`; the traits and `LlamaCppBackend`; `LaunchPlan` and `Session`; `process.rs`; split `app/`; `BackendInfo.help`; update the README layout section | L | `cargo fmt`, `clippy -D warnings` and `cargo test` clean; the GUI tests pass with no crop changes; the two `#[ignore]`d real-model tests pass; the architecture guard test is in |
 | 1 | Runtime acquisition: the generalised installer (tar.zst, sha256, atomic rename, entry filter), `ollama/runtime.rs`, the setup card, and the **spike** for A1-A4 and A9 on a throw-away HOME, including the AMD/Vulkan machine | M | Install and `--version` smoke on Linux (Windows through the VM rig); spike results written into §11 |
-| 2 | Ollama launch: `ollama/launcher.rs`, attach, warm-up and unload, `backends.ollama` settings, API panel, crash hints; `fake_ollama.py` and the lifecycle part of `ollama_backend` | M | Lifecycle cases green; no orphan process after Stop or after app exit |
+| 2 | Ollama launch: `ollama/launcher.rs`, attach, warm-up and unload, `backends.ollama` settings, API panel, crash hints; the fake Ollama and the lifecycle cases of the GUI tests | M | Lifecycle cases green; no orphan process after Stop or after app exit |
 | 3 | Models: `ollama/api.rs`, the catalog (list, cache, pull, delete, curated, Hugging Face refs), management mode, the NDJSON decoder | M | Pull, delete and list cases green; decoder unit tests |
 | 4 | Polish: skip-CUDA filter, ranged Windows download, resume, version look-up UI, PRIVACY, README and About text, packaging notes | M | PRIVACY.md reviewed against the network_privacy suite |
 

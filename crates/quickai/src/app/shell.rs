@@ -1,4 +1,4 @@
-//! The main window (UI v3, C203, the user's A6 of `the mockups` with the QuickAI menu of S2): the sidebar down
+//! The main window (UI v3, C203): the sidebar down
 //! the left (`sidebar.rs`: the QuickAI menu, the computer and the engine, Recommended, MCP servers and the models), and
 //! at its right one bar over the page (`model_bar.rs`: the model's name and its (i), what it is doing, Start or Stop, a
 //! new chat and the chat's ⋯), the panel at the right (`inspector.rs`: how the model runs, and Connect an app while it
@@ -96,7 +96,7 @@ impl App {
                     .show(ui, |ui| self.show_inspector(ui));
             }
         }
-        // the log under the page, or the strip at its foot that brings it up (L1 of `the mockups`)
+        // the log under the page, or the strip at its foot that brings it up
         if self.dock_open {
             self.show_dock(ui);
         } else {
@@ -198,7 +198,7 @@ impl App {
         ))
     }
 
-    /// What the list says of a model under its name (option D of the samples in `the mockups`, C185: the facts left
+    /// What the list says of a model under its name (C185: the facts left
     /// the head of the page for the list): its size, how fast it should be here (only when it is fast or slower),
     /// recommended, bundled, and how it is started when that is not as a chat model.
     pub(super) fn row_facts(

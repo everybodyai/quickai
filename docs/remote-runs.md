@@ -145,7 +145,7 @@ about.
 
 ### 3.3 Several runs at once, and the page of each
 
-The user picked option A of the samples (`the mockups`), and: "It should also be able to run locally or run
+The user asked: "It should also be able to run locally or run
 multiple remotes. The user has option to switch as he chooses the computer - the chat attaches automatically to the
 connected (running cfg) etc".
 
@@ -177,14 +177,13 @@ are small beside the model (today 4.6 MB and 8.4 MB as tarballs, against about 1
 access to GitHub to get QuickAI, and always gets the version of the window that drives it.
 
 Windows, macOS and Linux are all built for, from the start (the user: "implement for all win/mac/linux"). What this
-asks of the packaging repository (`the packaging repository`):
+asks of the packages:
 
-- **A Windows build of `quickai-run`**, which does not exist yet, cross-built as the window's is. The runtime already runs
+- **A Windows build of `quickai-run`**, which does not exist yet, built as the window's is. The runtime already runs
   on Windows under the window; the headless program's own parts (the stop, the console, `--detach`) are new there.
-- **The macOS program is built on the Mac** (`macos-headless.sh`: `lipo`, `codesign`), and this computer cannot build it.
-  The user: "just make provision for the build if you cannot - it will be built for you". So the packaging takes it from
-  a known place, `dist/remote/` (or a path in `QUICKAI_RUN_MACOS`), where the Mac's run puts it, and a package made
-  without it stops with a sentence that says where to put it; a flag builds one without it, for a test only.
+- **The macOS program is built on a Mac**, apart from the others. The packaging takes it from where that build puts
+  it, and a package made without it stops with a sentence that says where to put it; a flag builds one without it,
+  for a test only.
 - **Linux on ARM** (rented ARM servers, Jetson) is not built today; it is a target to add later.
 
 ## 5. Modules
@@ -265,16 +264,16 @@ Not answered, and done as recommended unless the user says otherwise:
 ## 8. Work packages (WP4.33)
 
 Written 2026-10-28, each clippy-clean and committed on the branch `remote-runs`; none has been run yet (the tests come
-when the user asks for them). 4.33.1 to 4.33.9 are written; the GUI suites are not.
+when the user asks for them). 4.33.1 to 4.33.9 are written; the GUI tests are not.
 
 | WP | Work | Verified by |
 |---|---|---|
-| 4.33.1 | `quickai-run` on Windows: it builds, stops (the stop file) and runs a configuration there | a cross build here; a run on Windows (as A8) |
+| 4.33.1 | `quickai-run` on Windows: it builds, stops (the stop file) and runs a configuration there | a build for Windows here; a run on Windows (as A8) |
 | 4.33.2 | `run.detach`: `up --detach`, the run file, `status --json`, `down`, one run at a time, on all three systems | tests that start, find and stop a detached run here; a Windows run |
-| 4.33.3 | Every package carries `quickai-run` for Linux, macOS and Windows (`the packaging repository`), the macOS one taken from where the Mac's run puts it | the packaged-bundle check finds the three, with their SHA-256 |
+| 4.33.3 | Every package carries `quickai-run` for Linux, macOS and Windows, the macOS one taken from where its build on a Mac puts it | the packaged-bundle check finds the three, with their SHA-256 |
 | 4.33.4 | `remote.ssh` and `remote.probe`: run a command and copy a file over the person's `ssh` and `scp`; identify a computer, Windows' shell too | the stand-in for ssh (`testkit::fake_ssh`) runs them on this machine |
 | 4.33.5 | `remote.deploy`: copy, check, replace another version; the selected configuration and its environment file | the stand-in, and a computer with an older copy |
 | 4.33.6 | `resolve` with alternatives, for this computer first, then in `quickai-run check --json` | planner tests with documents that lack a build, a program, or room |
-| 4.33.7 | `remote.run` and `remote.tunnel`: start detached, follow `status`, tunnel every port it reports, find a run again, stop; an engine already running there said, with override (stop it and run ours), stop it, or cancel (section 3.2) | the stand-in end to end, then the rented server for real |
-| 4.33.8 | The window: a computer's way, the run's progress, the alternatives to accept or reject, the addresses here, a run that goes on when the window closes | the GUI suites, when the user asks for them |
+| 4.33.7 | `remote.run` and `remote.tunnel`: start detached, follow `status`, tunnel every port it reports, find a run again, stop; an engine already running there said, with override (stop it and run ours), stop it, or cancel (section 3.2) | the stand-in end to end, then a rented server for real |
+| 4.33.8 | The window: a computer's way, the run's progress, the alternatives to accept or reject, the addresses here, a run that goes on when the window closes | the GUI tests, when the user asks for them |
 | 4.33.9 | The modules as features, and their switches in the settings | a build with each feature off compiles and hides its part |

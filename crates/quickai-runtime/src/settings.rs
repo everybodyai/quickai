@@ -54,7 +54,7 @@ pub const PANEL_HIDDEN_KEY: &str = "app.panel_hidden";
 /// model is run the same way with its own numbers; absent, nothing was chosen yet.
 pub const RUN_CHOICE_KEY: &str = "app.run_choice";
 
-/// Whether what the window holds is a configuration with no name (C213, N1 of `the mockups`): another
+/// Whether what the window holds is a configuration with no name (C213): another
 /// model was picked than the one the configuration in use names, which is left as it was saved; `app.configuration` is
 /// still the one it came from. Absent, it is the named one.
 pub const CONFIGURATION_UNNAMED_KEY: &str = "app.configuration_unnamed";
@@ -641,8 +641,8 @@ mod tests {
 
     // ---- compatibility contract (docs/implementation-plan.md, WP0.5) ---------------------------
     //
-    // `settings.json` keeps these nine keys at its top level for as long as the GUI suite and users'
-    // existing files depend on them; the declarative core maps fields onto them with `legacy_key`
+    // `settings.json` keeps these nine keys at its top level for as long as users' existing files and
+    // the tools that read them depend on them; the declarative core maps fields onto them with `legacy_key`
     // (architecture.md section 6.5). The goldens pin today's exact output.
 
     const LEGACY_KEYS: [&str; 9] = [
@@ -806,7 +806,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// The GUI suite's seeding helper relies on this: a wrongly typed value does not fall back
+    /// Tools that write the file rely on this: a wrongly typed value does not fall back
     /// field by field, it discards the whole file.
     #[test]
     fn a_wrongly_typed_value_discards_the_whole_file() {

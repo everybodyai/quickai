@@ -5,8 +5,8 @@
 //!   `libasound.so.2` when the microphone is first used: the window links no sound library, so it starts on a system
 //!   that has none, and only the microphone says it cannot work there.
 //! - Windows and macOS: cpal (WASAPI, CoreAudio), resampled here.
-//! - `QUICKAI_FAKE_MIC=<file.wav>`: the file is played in the microphone's place, in real time, then silence (the
-//!   GUI suites); `QUICKAI_FAKE_MIC=blocked` is a microphone the system keeps from the app.
+//! - `QUICKAI_FAKE_MIC=<file.wav>`: the file is played in the microphone's place, in real time, then silence (for
+//!   tests); `QUICKAI_FAKE_MIC=blocked` is a microphone the system keeps from the app.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};

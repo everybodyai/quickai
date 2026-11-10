@@ -1,7 +1,6 @@
 //! What a configuration lacks on another computer, and the other way for each, to be accepted or rejected before
-//! anything is installed there (WP4.33.6, docs/remote-runs.md section 6; the user: "It will provide alternatives that
-//! could be accepted or rejected by the user"). `quickai-run check` says what the run would do there and what stops
-//! it; what it says is turned into the questions the window asks:
+//! anything is installed there (WP4.33.6, docs/remote-runs.md section 6). `quickai-run check` says what the run would
+//! do there and what stops it; what it says is turned into the questions the window asks:
 //!
 //! - packages the computer lacks (a compiler, the headers of Python): installed with its own package manager
 //!   (`--install-system-packages`, C138);

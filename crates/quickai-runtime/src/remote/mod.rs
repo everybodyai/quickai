@@ -452,8 +452,8 @@ pub fn identity(local_port: u16, path: &str, pointer: &str) -> Option<String> {
 }
 
 /// `identity` with a reply awaited `read` at most: an engine on this computer answers its version at once, and a program
-/// that holds the port and says nothing must not keep the window waiting the eight seconds a tunnel is given (TC-CFL-027:
-/// the question about the port came after the suites stopped looking for it).
+/// that holds the port and says nothing must not keep the window waiting the eight seconds a tunnel is given (the
+/// question about the port would come too late to be seen).
 pub fn identity_within(
     local_port: u16,
     path: &str,
@@ -690,7 +690,7 @@ mod tests {
 
     #[test]
     fn a_program_that_holds_the_port_and_says_nothing_is_given_up_on_within_the_time_asked() {
-        // a listener that takes the connection and never answers (TC-CFL-027's: another program on the engine's port)
+        // a listener that takes the connection and never answers (another program on the engine's port)
         let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
         let held = std::thread::spawn(move || {

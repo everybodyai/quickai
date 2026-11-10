@@ -168,12 +168,12 @@ Rows V01 to V16 and B01 to B20 of [phase3-test-plan.md](phase3-test-plan.md), wr
 logic was broken one piece at a time and a test failed every time): the pure half in `crates/quickai-core/tests/p3_entries.rs` and `p3_bundles.rs`
 on the recorded answers of the real Hugging Face (`crates/quickai-runtime/tests/fixtures/huggingface/`, made by `record.sh`) and on the documents the
 application ships; the primitive in `prims/hub.rs` against `testkit::fake_hub`; the download, the record, the picker, Start and Delete in
-`downloader.rs`, `bundles.rs`, `models.rs` and `app/engine.rs`; the window in the GUI suite `lookup_results` (against `test/resources/fake_hub.py`)
-and in `ollama_lookup` for Ollama's side. V15 (and U18 for Ollama) run by hand against the real sites:
-`cargo test -p quickai p3_v15 -- --ignored`, and `build/test.sh --online` for the window against them; B21 runs the whole chain with a real
+`downloader.rs`, `bundles.rs`, `models.rs` and `app/engine.rs`; the window in the GUI test suite, which the maintainers keep outside this
+repository (against a fake hub), for both engines. V15 (and U18 for Ollama) run by hand against the real sites:
+`cargo test -p quickai p3_v15 -- --ignored`, and the GUI tests online for the window against them; B21 runs the whole chain with a real
 vision bundle (`ggml-org/SmolVLM-256M-Instruct-GGUF`, 365 MB) and a real `llama-server`, whose `/props` must then say it takes pictures.
 
-To try it by hand: `scripts/run.sh --fresh`, **Add a model** and a word such as `qwen`; with llama.cpp chosen a vision repository has the two rows.
+To try it by hand: start the window with a fresh data folder, **Add a model** and a word such as `qwen`; with llama.cpp chosen a vision repository has the two rows.
 
 ## 6a. Files that go by themselves, and an engine that is searched by pipeline (WP4.13)
 

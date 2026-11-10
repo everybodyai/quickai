@@ -346,7 +346,7 @@ fn p3_d07_the_stream_reaches_the_client_exactly_as_the_engine_sent_it() {
     );
 }
 
-/// Finding F1 of the GUI suite (TC-LIVE-008): a streamed reply was held back until the engine had
+/// A streamed reply was once held back until the engine had
 /// finished (tiny_http fills a kilobyte before it sends a chunk), which defeats the point of a chat that
 /// is written as it is thought, and Ollama streams by default.
 #[test]
@@ -514,7 +514,7 @@ skip_roles = ["rules"]
 
 #[test]
 fn p3_d09_an_error_status_reaches_the_client_as_it_is_and_is_shown_as_an_error() {
-    // the engine's own 404 with its own sentence, not a 502 from the proxy (TC-LIVE-017)
+    // the engine's own 404 with its own sentence, not a 502 from the proxy
     let rig = Rig::new();
     let reply = post_json(
         &rig.url("/api/chat"),

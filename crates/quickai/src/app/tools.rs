@@ -1,4 +1,4 @@
-//! The tools of QuickAI's own chat (C204; the user: "lets now fix the mcp-ollama stuff", of MCP that worked with
+//! The tools of QuickAI's own chat (C204; MCP had worked with
 //! llama.cpp only, in its chat page): the person's MCP servers run by QuickAI itself on this computer
 //! (`quickai_runtime::mcp_client`), so that the chat offers their tools with every engine that chats (llama.cpp, Ollama)
 //! and with a model on another computer. Each server has a thread of its own: it is started when the chat or the page of
@@ -626,10 +626,9 @@ impl App {
         }
     }
 
-    /// Tools in the panel (T1 of `the mockups`): its head with how many servers are on and the
+    /// Tools in the panel: its head with how many servers are on and the
     /// sliders that open the MCP servers page; the head opens a switch for each server, with what it has or what went
-    /// wrong (closed at first: the user, "let the tools not show all the tools at first, only when clicked it should
-    /// show").
+    /// wrong (closed at first, so that the tools show only when asked for).
     pub(super) fn show_tools_rows(&mut self, ui: &mut egui::Ui, hover: &str) {
         let p = theme::palette();
         let servers = self.mcp_list();

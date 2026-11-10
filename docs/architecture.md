@@ -42,7 +42,7 @@ new engine built on it.
   load only from the embedded, bundle and user layers; remote content is data-only. All HTTP passes one
   allow-list. A broken document becomes a diagnostic, and the embedded defaults keep the app working.
 - **Dogfooded.** The built-in llama.cpp and Ollama are ordinary documents. Parity with today is a golden test:
-  the plan's argv equals today's argv, the `settings.json` keys are unchanged, the 215-case GUI suite passes
+  the plan's argv equals today's argv, the `settings.json` keys are unchanged, the GUI test suite passes
   untouched.
 - **The cost, stated plainly.** This is a larger rewrite than the first proposal, and Ollama arrives later
   (Phase 3 rather than Phase 2). UI parity is the main risk (§17). The design pays off when several axes vary
@@ -80,14 +80,14 @@ Each has a recommendation. The rest of the document assumes the recommendations.
 | Q4 | Trust: who may define things that run programs or reach hosts? | **Tiers.** Privileged documents (engine, policy, ui, bundle) only from embedded, bundle and user layers; data documents (vocab, catalog, profile) may later also come from remote content packs. A user-layer engine that names a program the app did not install asks for confirmation once | A document that says `program = …` is code |
 | Q5 | Format and expression language | **TOML** for authored documents (JSON accepted, same schema), JSON Schema generated from the Rust types for editor completion and CI. A **closed, hand-written expression language** (§7), no scripting. Alternatives: YAML (footguns), JSON (no comments), CEL (heavier), Lua or Rhai (arbitrary logic) | It is the surface everything else rests on |
 | Q6 | How much is data in the first releases? | **A ladder:** engines and launch, then forms, then catalog, recipes and adapters, then layout, policy and strings. The shell (window, tab strip, log pane) stays code until Phase 5 | Parity risk |
-| Q7 | Layout rule | **Until Phase 5 the data-driven UI renders exactly today's window in llama.cpp mode.** Redesigns come after. *The window was regrouped and restyled on 2026-10-23 (WP4.21), at the user's request and before Phase 5: the same panels in the same order, on cards, in a theme of its own, with the GUI suite recalibrated in the same change.* | The GUI suite's OCR crops are calibrated to it |
+| Q7 | Layout rule | **Until Phase 5 the data-driven UI renders exactly today's window in llama.cpp mode.** Redesigns come after. *The window was regrouped and restyled on 2026-10-23 (WP4.21), at the user's request and before Phase 5: the same panels in the same order, on cards, in a theme of its own, with the GUI test suite recalibrated in the same change.* | The GUI test suite's OCR crops are calibrated to it |
 | Q8 | Sequencing | **Declarative core first** (Phases 1-2), Ollama as the first new engine (Phase 3). The alternative, Ollama on the first proposal's design and a migration later, reaches a first Ollama sooner but throws away the per-engine Rust (API client, catalog, launcher, panel). Run the Ollama spike (A1-A9) **now, in parallel**; it does not depend on the architecture | Time to first Ollama versus rework |
-| Q9 | Packaging contract with `the packaging repository` | **Keep today's convention** (`llama-server` and `models/` next to the executable) as the built-in `next_to_exe` locate strategy, so existing bundles keep working. Later, `stage_bundle` also writes a `bundle.toml` (what ships, with hashes) | It changes the contract between the two repositories and the `packaged_bundle` suite |
+| Q9 | Packaging contract | **Keep today's convention** (`llama-server` and `models/` next to the executable) as the built-in `next_to_exe` locate strategy, so existing bundles keep working. Later, the packaging also writes a `bundle.toml` (what ships, with hashes) | It changes the contract between the application and its packages |
 | Q10 | Profiles in the UI? | **Data model now** (a selection already is a profile), **save/load UI later**, in Settings first. *Built as WP4.17 (2026-10-11), at the user's request and in another place than Settings: "configurations", a dropdown in a section under the title row that says when a change was made, and a window of its own, [configurations.md](configurations.md).* | Layout parity |
 | Q11 | (was D1) When an Ollama already answers on the port, attach to it? | **Yes.** Strategy `attach_if_running`; field `mode` (auto, attach, spawn) | Most Ollama users run it as a service |
 | Q12 | (was D2) Own model store for a QuickAI-started Ollama? | **Yes** (`models_dir`), with a `use_default_store` switch | Pull and Delete must not touch models pulled with the Ollama CLI |
 | Q13 | (was D3) Version policy | **A `tested` tag with pinned digests in the engine document**; newest through an explicit look-up | Ollama ships often (v0.35.1 on 2026-09-29) |
-| Q14 | (was D7) zstd decoder | **`ruzstd`** (pure Rust), behind a throughput check (A9) | Cross-builds in old-glibc Docker images |
+| Q14 | (was D7) zstd decoder | **`ruzstd`** (pure Rust), behind a throughput check (A9) | A C dependency makes the builds for older Linux systems and for Windows harder |
 | Q15 | Will the Microsoft Store or Snap Store be a channel? | If yes, a **locked build mode** (`--features locked-config`) that ignores user-layer privileged documents and runtime downloads. Check each store's policy on downloaded executables before submitting | A runtime that downloads and launches configured programs may conflict |
 
 Dissolved into data, so no decision is needed: **D4** (the engine selector is a `ui` panel, placed in Settings by
@@ -119,7 +119,7 @@ no `run.ollama` is not offered under Ollama), **D8** (a document can be removed;
 | R1 | Everything that defines how the app runs is configuration: engines (find, install, launch, probe, stop), models and their sources, adapters and the runner arguments they need, settings fields, layouts, limits, policies. The app ships its defaults as configuration too. |
 | R2 | A model can run with adapters (picture, audio, video and more). Their extra models and the per-runner arguments are configuration, and the UI shows extra controls when the configuration calls for them. |
 | R3 | Extremely modular and extensible: a new engine, model, adapter or setting is a document, not a recompile. A new *kind* of behaviour is a primitive that leaves existing documents untouched. |
-| R4 | Nothing existing breaks: bundles, `settings.json`, the packaging contract, the 215-case GUI suite. (Added constraint.) |
+| R4 | Nothing existing breaks: bundles, `settings.json`, the packaging contract, the GUI test suite. (Added constraint.) |
 | R5 | A configuration system that can launch programs and fetch URLs needs a trust model and a network policy. (Added.) |
 | R6 | A broken document never bricks the app. (Added.) |
 
@@ -169,7 +169,7 @@ serving; making egui rendering itself data (widgets stay Rust).
 | `profile` | A saved selection, or a stack of units | data | user |
 | `ui` | Window, screens and panels, settings sections, app-level fields, strings, theme | privileged | embedded, bundle, user |
 | `policy` | Paths, the network allow-list, limits, timeouts, heuristics | privileged | embedded, bundle, user |
-| `bundle` | What the package ships, with hashes (written by `the packaging repository`) | privileged | next to the executable |
+| `bundle` | What the package ships, with hashes (written by the packaging) | privileged | next to the executable |
 
 ### 5.2 Envelope, layers, merging
 
@@ -264,7 +264,7 @@ model that takes images).
 ### 6.4 Recipes and components
 
 A recipe ([`catalog/starter.toml`](examples/catalog/starter.toml)) names its components and, per engine, how to
-run it. Today's `KNOWN_MODELS` and the bundled-model pins of `build/config.env` become recipes:
+run it. Today's `KNOWN_MODELS` and the bundled-model pins of the packaging become recipes:
 
 ```toml
 [[model]]
@@ -293,7 +293,7 @@ of their own, as they add a field.
 
 **What is built of the catalog kind (WP4.10, [catalog.md](catalog.md)).** The kind is read now: `[[model]]` with `[model.run.<engine>]` (files for an engine whose models are files,
 a name for one that pulls), checked against the vocabulary and the engines, offered per engine as the entries the look-up draws, and shipped as eight pages
-(81 models) that `scripts/catalog.py` makes from the real sites. It is the first piece of 4.1 and of `catalog.curated` (done as documents, not as a primitive: nothing is
+(81 models) that a tool makes from the real sites ([catalog.md](catalog.md), section 5). It is the first piece of 4.1 and of `catalog.curated` (done as documents, not as a primitive: nothing is
 asked of a network to list the models); components other than a file beside the weights, `sources` other than a repository, and verification modes other than a SHA-256 are Phase 4's.
 `[[models.mode]]` of an engine document (how the engine is started for a kind of model) is new with it, so that a document that is data never carries a command-line word.
 
@@ -307,7 +307,7 @@ Selection { engine, model, components: { kind: [ { source, values } ] }, values:
   attached component, because the fields come from the adapter kind, not from the engine.
 - `persist` says where a value is remembered: `global`, `per_model`, `profile`, `session`.
 - **Compatibility.** A field with `legacy_key` is stored at the top level of `settings.json` under that key, so
-  files written today load unchanged and files written later still carry the old keys (the GUI suite probes
+  files written today load unchanged and files written later still carry the old keys (the GUI test suite probes
   them). Everything else goes under `values`. Unknown keys are preserved, so removing an engine document does not
   lose its stored values.
 
@@ -521,7 +521,7 @@ primitive: code, documentation and a snapshot test.
 
 ### 9.4 Parity strategy
 
-The GUI suite reads pixels: header icon positions, tab positions, crops of the main buttons, a crop of the Live
+The GUI test suite reads pixels: header icon positions, tab positions, crops of the main buttons, a crop of the Live
 tab. So the data-driven UI is adopted on a ladder, each rung gated by the suite:
 
 1. The shell (window, tab strip, log pane) stays code until Phase 5.
@@ -833,14 +833,14 @@ changes in the policy text when Ollama arrives:
 | Form model | Schema plus values to visible fields, defaults and errors | headless unit tests |
 | Primitives | Each against a real resource, as the project does: `tiny_http` fakes, generated archives of all three kinds, a fake release feed | `cargo test`; real-binary tests `#[ignore]`d |
 | Settings compatibility | Old `settings.json` files load; saved files keep the legacy keys | extend `loads_settings_json_missing_newer_fields` |
-| GUI suite | Rendering parity and behaviour (215 cases) | `build/test.sh`, unchanged |
-| Fake engines | A fake engine is a document plus the existing `fake_llama_server.py` or a new `fake_ollama.py`, dropped into the throw-away HOME's user layer (or the override layer). Suites for adapters and dynamic UI need no GPU and no model | new suites |
+| GUI tests | Rendering parity and behaviour | the GUI test suite, kept outside this repository, unchanged |
+| Fake engines | A fake engine is a document plus a fake program (a fake `llama-server`, a fake Ollama), dropped into the throw-away HOME's user layer (or the override layer). Suites for adapters and dynamic UI need no GPU and no model | new suites |
 | Privacy | No request outside the allow-list; hosts used are a subset of the documented ones | network_privacy suite plus the generated table |
 
 A bonus of the design: tests that today stage a fake `llama-server` next to the executable can instead drop a
 document into the throw-away HOME, so a test can describe any engine, recipe or UI it needs.
 
-## 14. Layout and impact on the other repositories
+## 14. Layout, and the packages
 
 **Crates and modules**
 
@@ -864,19 +864,18 @@ manager is the one program it starts), neither program knows how the other works
 forbidden `use` lines (`quickai-core/tests/purity.rs`, `quickai-runtime/tests/no_window.rs`). New dependencies: `toml`, `schemars` (build and docs), `regex`, `semver`, `sha2`,
 `ruzstd` (Q14), `libc` (Unix only), `windows-sys` (Windows only, job objects).
 
-**`the packaging repository`.** Bundle contents and size do not change; nothing Ollama-related is bundled. `next_to_exe`
-keeps today's contract (Q9). In Phase 5 `stage_bundle` also writes `bundle.toml` from `config.env` (what ships,
-with hashes), the `packaged_bundle` suite checks it, and the channel notes of the first proposal still apply
-(Store policy for downloaded executables: Q15; snap plugs `network` and `network-bind`; optional-dependency hints
-in package manifests, since detecting an installed Ollama avoids a 1.4 GB download).
+**The packages.** Bundle contents and size do not change; nothing Ollama-related is bundled. `next_to_exe`
+keeps today's contract (Q9). In Phase 5 the packaging also writes `bundle.toml` (what ships, with hashes), and the
+channel notes of the first proposal still apply (Store policy for downloaded executables: Q15; snap plugs `network`
+and `network-bind`; optional-dependency hints in package manifests, since detecting an installed Ollama avoids a
+1.4 GB download).
 
-**`the GUI test suite`.** New suites for adapters and dynamic UI, config diagnostics, engine selection and the
-Ollama lifecycle; `fake_ollama.py` modelled on `fake_llama_server.py` (it speaks `GET /`, `/api/version`,
-`/api/tags`, `/api/ps`, `POST /api/pull` as NDJSON, `DELETE /api/delete`, `/api/generate` for load and unload,
-`/api/chat` as NDJSON and `/v1/chat/completions` as SSE; its command line is `serve` and `--version`; it records
-the `OLLAMA_*` environment it received; it handles SIGTERM, with an ignore mode to test escalation; it spawns a
-child so a test can assert that neither survives Stop). Existing suites that change: settings_window (Engine
-row), persistence, network_privacy. One suite at a time, as before.
+**The GUI tests.** New cases for adapters and dynamic UI, config diagnostics, engine selection and the Ollama
+lifecycle, against a fake Ollama (it speaks `GET /`, `/api/version`, `/api/tags`, `/api/ps`, `POST /api/pull` as
+NDJSON, `DELETE /api/delete`, `/api/generate` for load and unload, `/api/chat` as NDJSON and `/v1/chat/completions`
+as SSE; its command line is `serve` and `--version`; it records the `OLLAMA_*` environment it received; it handles
+SIGTERM, with an ignore mode to test escalation; it spawns a child so a test can assert that neither survives
+Stop).
 
 ## 15. Migration plan
 
@@ -886,9 +885,9 @@ before the old path is deleted.
 | Phase | Content | Size | Gate |
 |---|---|---|---|
 | 0 | Contracts and a parity harness: capture today's argv, environment and `settings.json` round-trips as golden data; `events.rs`; `Job`; split `app.rs` by panel (pure moves) | M | fmt, `clippy -D warnings`, tests, 213 cases |
-| 1 | Kernel: `quickai-core` (schema, expressions, config, registry, planner); the embedded `llamacpp.toml`; `Session` executes a run plan; `process.rs` | L | golden parity (argv, environment, ports); GUI suite unchanged; diagnostics tested |
+| 1 | Kernel: `quickai-core` (schema, expressions, config, registry, planner); the embedded `llamacpp.toml`; `Session` executes a run plan; `process.rs` | L | golden parity (argv, environment, ports); GUI test suite unchanged; diagnostics tested |
 | 2 | Forms: the form model and renderer; "Advanced: llama.cpp" and the primary controls row from data; `legacy_key` compatibility; the runtime-manager widget | L | OCR suite unchanged; `settings.json` round-trips |
-| 3 | **Ollama as data:** new primitives (tar.zst, sha256, atomic install; releases with digests; `http_call` with NDJSON progress; attach; group or job stop; `catalog.engine_list`; NDJSON decode); the engine selector; `fake_ollama` | L | lifecycle suite; spike A1-A9 settled; no orphan process after Stop or exit |
+| 3 | **Ollama as data:** new primitives (tar.zst, sha256, atomic install; releases with digests; `http_call` with NDJSON progress; attach; group or job stop; `catalog.engine_list`; NDJSON decode); the engine selector; a fake Ollama for the GUI tests | L | lifecycle suite; spike A1-A9 settled; no orphan process after Stop or exit |
 | 4 | Catalog, recipes, adapters: the recipe schema; components; an acquire phase for several artifacts; the Adapters panel; discovery; profiles; `/props` and `/api/show` discovery | L | new suites with fake engines and recipes; a manual smoke test with a real vision model |
 | 5 | Layout, policy and strings as data; hot reload; `bundle.toml`; `config check` and `plan --explain`; generated reference and privacy table; ranged Windows download | M | `PRIVACY.md` checked against the generated table |
 | 6 | Optional: several units and gateway routing (sidecars); remote content packs with signing; router-mode variant; external drivers | XL | per feature |
@@ -915,7 +914,7 @@ see, by design; Ollama arrives in Phase 3, adapters in Phase 4.
 | Risk | Mitigation |
 |---|---|
 | **DSL creep:** documents grow logic | Closed vocabulary and language; no loops or scripts; each new primitive needs docs, golden tests and a version; review rule "no logic in documents" |
-| **UI parity:** data-driven rendering shifts pixels | The ladder (§9.4); labels verbatim; the GUI suite gates every phase |
+| **UI parity:** data-driven rendering shifts pixels | The ladder (§9.4); labels verbatim; the GUI test suite gates every phase |
 | **Debuggability:** why did it run with that flag? | `plan --explain` with provenance; a "View plan" panel; diagnostics with file and line; safe mode |
 | **Trust and supply chain** | Tiers, one allow-list, hashes, no shell, confirmation for foreign programs (§12) |
 | **Drift between documents and primitives** | `requires` with versions; `config check --strict` in CI; golden plans |

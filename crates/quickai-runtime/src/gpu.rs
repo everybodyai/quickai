@@ -216,7 +216,7 @@ pub fn detect() -> Vec<GpuVendor> {
 
 /// `detect` for what the tool answered (`None`: it could not be run) and the root of the files the kernel
 /// keeps. A tool that answered is believed, even when it says nothing: a computer it lists no card on has
-/// none, and whoever puts a stand-in of their own first on the path (the GUI suite does) decides what the
+/// none, and whoever puts a stand-in of their own first on the path (as tests do) decides what the
 /// application is told. The kernel's own files are for a computer that has no such tool (a server's minimal
 /// image) and not a second opinion.
 fn detect_from(tool: Option<Vec<String>>, root: &std::path::Path) -> Vec<GpuVendor> {
@@ -376,8 +376,8 @@ mod tests {
     }
 
     /// O44: a tool that answered is believed, even when it says nothing; the kernel's files are for a computer that
-    /// has no such tool. (The GUI suite puts a stand-in `lspci` first on the path to decide what the application is
-    /// told; a fallback that looked past it would make the suite depend on the card of the computer it runs on.)
+    /// has no such tool. (A test puts a stand-in `lspci` first on the path to decide what the application is
+    /// told; a fallback that looked past it would make the test depend on the card of the computer it runs on.)
     #[cfg(target_os = "linux")]
     #[test]
     fn p3_o44_a_tool_that_answered_is_believed_and_the_kernels_files_are_for_one_that_is_missing() {

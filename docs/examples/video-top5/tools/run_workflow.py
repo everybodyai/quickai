@@ -195,7 +195,7 @@ def main() -> int:
         if len(files) > len(places):
             raise SystemExit(f"this workflow has {len(places)} place(s) for {kind}, {len(files)} given")
         for k, target in enumerate(places):
-            f = files[k] if k < len(files) else files[0]          # a place left over takes the first again, as the calling program does
+            f = files[k] if k < len(files) else files[0]          # a place left over takes the first again
             graph_value = ("DRY:" + Path(f).name) if a.dry_run else upload(a.server, Path(f))
             set_slot(graph, target, graph_value)
 

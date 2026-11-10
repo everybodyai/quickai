@@ -1,18 +1,17 @@
-//! Talking to QuickAI (C216; the user: "interacting with quickai via mic/speaker", "implement fully - include hands
-//! free too"): what the window needs to hear a person and to read answers aloud, apart from how it draws it
-//! (`app/talk.rs`).
+//! Talking to QuickAI (C216): what the window needs to hear a person and to read answers aloud, apart from how it
+//! draws it (`app/talk.rs`).
 //!
 //! - `capture`: the microphone, as 16 kHz mono samples. ALSA (loaded when first used) on Linux, cpal elsewhere, or a
 //!   recording played in its place for tests (`QUICKAI_FAKE_MIC`).
 //! - `vad`: when someone is talking, and when they stopped: hands-free and "send when I stop talking".
-//! - `transcribe`: whisper.cpp on a thread of its own (feature `voice`).
+//! - `transcribe`: the speech program quickai-whisper (whisper.cpp), run beside the app (feature `voice`).
 //! - `speak`: the computer's own voice (`say`, Windows' speech, espeak-ng or speech-dispatcher), a sentence at a
 //!   time, so that the one being read can be shown.
 //! - `spoken`: what a model wrote, made into what should be heard, and cut into sentences, also as it streams in.
 //! - `settings`: the person's choices (`app.voice`), the speech models and the languages.
 //!
-//! Nothing of it leaves the computer: the microphone's samples go to whisper.cpp in this process, and the answers to
-//! the system's speech program.
+//! Nothing of it leaves the computer: the microphone's samples go to the speech program beside the app, and the
+//! answers to the system's speech program.
 
 // hearing (feature `voice`): the microphone, when someone talks, and whisper.cpp
 #[cfg(feature = "voice")]

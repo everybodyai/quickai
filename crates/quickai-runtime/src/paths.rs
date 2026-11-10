@@ -1,6 +1,6 @@
 //! Locates the `llama-server` binary and the two models directories. In a
 //! packaged build the binary and the *bundled* models live right next to
-//! this executable (see the build scripts in the `the packaging repository` repository);
+//! this executable (the packages lay them out so);
 //! in the macOS app the models are in the app's `Contents/Resources` instead
 //! (`packaging_dir`); under `cargo run` neither does, so we fall back to the
 //! paths this repo's own `llama.cpp`/`models` directories live at, resolved at
@@ -31,7 +31,7 @@ pub(crate) fn dev_repo_root() -> PathBuf {
 /// Where a package keeps what is not a program, for an executable in `exe_dir`: that folder itself,
 /// or, for the program of a macOS app (`QuickAI.app/Contents/MacOS/quickai`), the app's
 /// `Contents/Resources`. macOS keeps an app's data there: the `MacOS` folder of a signed app holds
-/// programs only (`build/macos.sh` of the `the packaging repository` repository lays the app out so).
+/// programs only (the macOS package lays the app out so).
 pub fn packaging_dir(exe_dir: &Path) -> PathBuf {
     if exe_dir.ends_with("Contents/MacOS") {
         let resources = exe_dir.with_file_name("Resources");
@@ -80,22 +80,14 @@ pub fn user_speech_dir() -> PathBuf {
 
 /// Where quickai-whisper (everybodyai/quickai-whisper, the program that writes down what is said) is looked for, first
 /// to last: next to the app (the packages carry it there, as they carry llama-server; in the macOS app, beside the
-/// program in `Contents/MacOS`), then `~/.quickai/speech/bin` (one put there by hand), then, under `cargo run`, the
-/// builds of `quickai-whisper` beside this checkout (its `build/local.sh`).
+/// program in `Contents/MacOS`), then `~/.quickai/speech/bin` (one put there by hand, e.g. from its releases).
+/// `QUICKAI_WHISPER_BIN` names a program of one's own instead (`voice::transcribe::program`).
 pub fn speech_program_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(dir) = exe_dir() {
         dirs.push(dir);
     }
     dirs.push(user_speech_dir().join("bin"));
-    let builds = dev_repo_root()
-        .join("..")
-        .join("thirdparty")
-        .join("whisper")
-        .join("build")
-        .join("out");
-    dirs.push(builds.join("local-avx2"));
-    dirs.push(builds.join("local-portable"));
     dirs
 }
 

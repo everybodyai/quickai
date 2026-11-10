@@ -1479,35 +1479,7 @@ fn p3_j08_the_list_the_application_ships_is_valid_complete_and_pinned() {
         }
     }
 
-    // the model that ships with the packages is the one the packaging pins, byte for byte (when the packaging's
-    // checkout is beside this one, or this one is inside it)
-    let above = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let config = ["the packaging's config.env", "build/config.env"]
-        .iter()
-        .find_map(|c| std::fs::read_to_string(above.join(c)).ok());
-    if let Some(text) = config {
-        let pin = |key: &str| {
-            text.lines()
-                .find_map(|l| l.strip_prefix(&format!("{key}=")))
-                .map(str::to_string)
-                .unwrap_or_else(|| panic!("{key} is not in build/config.env"))
-        };
-        let m = r.catalog().model("bonsai-2-4b").unwrap();
-        assert!(m.bundled);
-        let Run::Files(run) = &m.runs["llamacpp"] else {
-            panic!()
-        };
-        assert_eq!(run.files[0].path, pin("BONSAI2_4B_FILE"));
-        assert_eq!(
-            run.files[0].sha256.as_deref(),
-            Some(pin("BONSAI2_4B_SHA256").as_str())
-        );
-        assert!(
-            pin("BONSAI2_4B_URL").contains(&run.rev),
-            "the commit of config.env"
-        );
-    }
-    // and nothing else claims to ship with them
+    // one model ships with the packages, and nothing else claims to
     assert_eq!(models.iter().filter(|m| m.bundled).count(), 1);
 }
 

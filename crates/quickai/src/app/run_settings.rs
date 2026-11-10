@@ -1,5 +1,5 @@
-//! How the model runs, in the panel at the right (C212, P1 of `the mockups`, the user's pick of
-//! 2026-11-09): the context as a grid of lengths, **4K** to **256K** and **Other…**, each with a dot of where it would
+//! How the model runs, in the panel at the right (C212):
+//! the context as a grid of lengths, **4K** to **256K** and **Other…**, each with a dot of where it would
 //! fit (on the graphics card, partly in the computer's memory, or not at all) and the lengths past what the model was
 //! trained for dashed; then Graphics (`graphics.rs`). It took the place of Light, Balanced and Long, which stopped at
 //! 32K.
@@ -25,7 +25,7 @@ const CONTEXT: &str = "ctx_size";
 const FIRST_RUN_CONTEXT: i64 = 4096;
 
 /// The lengths of the grid, in tokens: 4K to 256K in its two rows, then 512K, 1M and 2M, in a third row that Other…
-/// opens (C213, the user: "on clicking 'other..' add another row - show also 512, 1M, 2M").
+/// opens (C213).
 const LENGTHS: [i64; 10] = [
     4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152,
 ];
@@ -330,7 +330,7 @@ impl App {
             .collect()
     }
 
-    /// How the model runs (P1 of `the mockups`): the configuration in one line, the context as
+    /// How the model runs: the configuration in one line, the context as
     /// a grid of lengths, and Graphics. An engine with no context (ComfyUI), or one on another computer, has its fields.
     pub(super) fn show_change_panel(&mut self, ui: &mut egui::Ui) {
         let running = self.session.is_active();

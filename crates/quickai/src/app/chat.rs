@@ -1826,8 +1826,7 @@ impl App {
             })
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    // the clip and the tools side by side, with no room between them (the user: "get it closer to
-                    // the attachment icon - so it doesnt waste space")
+                    // the clip and the tools side by side, with no room between them (no space wasted)
                     ui.scope(|ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
                         let clip = icons::icon_button(ui, Icon::Clip, egui::vec2(24.0, 28.0), ready, false)
@@ -1936,7 +1935,7 @@ impl App {
     }
 
     /// The options of a reply: the instructions, the temperature and the length, each the model's own until set.
-    /// The window of the chat's options (C208, `the mockups`): the instructions the model reads before
+    /// The window of the chat's options (C208): the instructions the model reads before
     /// every message, how free its answers are, and how long a reply may be; each left to the model until set. What is
     /// set is used from the next message on; Reset gives all three back to the model, Close closes it.
     pub(super) fn show_chat_options_window(&mut self, ctx: &egui::Context) {

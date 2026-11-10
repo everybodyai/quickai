@@ -28,9 +28,9 @@ You need Rust (stable, through [rustup](https://rustup.rs)) and, to run a model 
 
 The microphone's speech to text is a program of its own, `quickai-whisper` (whisper.cpp,
 [everybodyai/quickai-whisper](https://github.com/everybodyai/quickai-whisper)), which the packages carry next to the app
-as they carry llama-server. Under `cargo run` it is found in a checkout of that repository beside this one,
-`../quickai-whisper` (run its `build/local.sh` once: it needs cmake and a C++ compiler), in `~/.quickai/speech/bin`, or
-where `QUICKAI_WHISPER_BIN` says. Without it the window works as before and the microphone says what is missing. Released packages bundle a pinned official llama.cpp build
+as they carry llama-server. Under `cargo run`, take the program from that repository's releases (or build it there) and
+put it in `~/.quickai/speech/bin`, or point `QUICKAI_WHISPER_BIN` at it. Without it the window works as before and the
+microphone says what is missing. Released packages bundle a pinned official llama.cpp build
 instead, so packaging does not need this.
 
 `llama.cpp/` and `models/` are git-ignored. Build llama.cpp once, with the Vulkan backend (it runs on AMD, NVIDIA

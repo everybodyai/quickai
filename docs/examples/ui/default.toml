@@ -1,7 +1,7 @@
 # ILLUSTRATIVE. The window, the screens and their panels, the settings sections, the strings and the theme.
 # This is today's UI (app.rs, main.rs) as data. It is the LAST thing to become data (Phase 5 of
 # docs/architecture.md): until then the shell stays code, and the default layout below must reproduce the
-# current one exactly, because the GUI suite's OCR crops are calibrated to it.
+# current one exactly, because the GUI tests (kept outside this repository) are calibrated to it.
 schema = 1
 kind = "ui"
 id = "default"

@@ -2,9 +2,9 @@
 //!
 //! The recordings in `tests/fixtures/ollama/recorded` were made by `record.sh` against a real
 //! release. C01 replays every recorded request against the Rust fake and compares the answer by
-//! shape; the same is done for `fake_ollama.py` in the GUI suite's repository. C02 re-records with
-//! a real binary and compares with what is stored, which is how the recordings are renewed when
-//! Ollama is upgraded. C03 pins the facts about a real pull that the code must be written around.
+//! shape. C02 re-records with a real binary and compares with what is stored, which is how the
+//! recordings are renewed when Ollama is upgraded. C03 pins the facts about a real pull that the code
+//! must be written around.
 
 use serde_json::Value;
 

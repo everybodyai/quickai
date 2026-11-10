@@ -339,8 +339,8 @@ fn write_down(running: &mut Option<Running>, job: Job) -> Result<Written, String
 pub fn missing() -> String {
     format!(
         "QuickAI's speech program (quickai-whisper{}) is not next to it. The packages of QuickAI carry it; a build of \
-         your own finds it in quickai-whisper (its build/local.sh), in ~/.quickai/speech/bin, or where \
-         QUICKAI_WHISPER_BIN says",
+         your own finds it in ~/.quickai/speech/bin, or where QUICKAI_WHISPER_BIN says (the program's releases are at \
+         github.com/everybodyai/quickai-whisper)",
         std::env::consts::EXE_SUFFIX
     )
 }
@@ -428,9 +428,9 @@ mod tests {
         }
     }
 
-    /// With the program, the model and the recording of whisper.cpp's own sample (`QUICKAI_WHISPER_BIN` or a build in
-    /// quickai-whisper, `QUICKAI_TEST_WHISPER_MODEL`, `QUICKAI_TEST_WHISPER_WAV`), what it says is written down, and the
-    /// program stays running for the next one. Left out when they are not there.
+    /// With the program, the model and the recording of whisper.cpp's own sample (the program where `program` finds it,
+    /// `QUICKAI_TEST_WHISPER_MODEL`, `QUICKAI_TEST_WHISPER_WAV`), what it says is written down, and the program stays
+    /// running for the next one. Left out when they are not there.
     #[test]
     fn a_recording_is_written_down_by_the_program() {
         let (Some(model), Some(wav)) = (

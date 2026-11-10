@@ -246,7 +246,7 @@ mod tests {
 
     /// The labels, hover texts and hints moved out of the window's code into the engine document.
     /// `tests/golden/ui_texts.json` was extracted from the code before it was deleted, so this fails
-    /// if a word of what the user reads (and the GUI suite's OCR looks for) has changed on the way.
+    /// if a word of what the user reads (and tests that read the window look for) has changed on the way.
     #[test]
     fn the_engine_documents_texts_are_the_texts_the_window_always_had() {
         let registry = build_registry(&ConfigDirs::default());
@@ -328,7 +328,7 @@ mod tests {
         }
     }
 
-    /// `settings.json` has nine keys the GUI suite and users' files depend on. Seven belong to the
+    /// `settings.json` has nine keys that users' files and the tools that read them depend on. Seven belong to the
     /// engine's fields (each names its key with `legacy_key`); the other two, `dark_mode` and
     /// `enable_traffic_proxy`, are the application's own until the `ui` document exists.
     #[test]

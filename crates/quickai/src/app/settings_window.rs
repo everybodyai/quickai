@@ -1593,8 +1593,8 @@ mod tests {
     fn p3_f92_the_builds_are_read_from_the_disk_again_when_the_settings_window_is_opened_again() {
         // The window of the Settings is a window of its own, and the passes it counts begin again from none each time it is
         // opened: what tells the manager of builds that it was away (a build installed, an install that stopped, meanwhile)
-        // must not be a count of the window's own. (Found by the GUI suite, TC-CFR-013: a stopped install was not listed
-        // when the Settings were opened again.)
+        // must not be a count of the window's own. (A stopped install was once not listed when the Settings were opened
+        // again.)
         let dir = scratch("f92");
         let mut app = app_in(&dir, "comfyui");
         app.runtime.disk.reader = Some(counting_reader);

@@ -150,7 +150,7 @@ mod tests {
     }
 
     /// One frame of the whole window (the menu bar, the list of models, the page with its tabs, the status bar and the
-    /// windows over them), in a window of the size the GUI suites use. `_whole` is what the frame of the old title row was asked:
+    /// windows over them), in a window of the size tests use. `_whole` is what the frame of the old title row was asked:
     /// the window is drawn whole either way.
     fn frame(app: &mut App, ctx: &egui::Context, _whole: bool) -> egui::FullOutput {
         frame_with(app, ctx, true, Vec::new())

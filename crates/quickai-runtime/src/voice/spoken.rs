@@ -2,8 +2,6 @@
 //! voice would read "asterisk"), a block of code is said to be there rather than read, a link is its words and an
 //! address its site, and a heading or an item of a list ends with a pause. `SentenceFeed` does it as an answer streams
 //! in, so that its first sentence can be read while the rest is written.
-//!
-//! The twin of `the read-aloud MCP server's` (the MCP server that reads aloud): a change to one belongs in the other.
 
 /// The most that is read of one answer, in characters.
 pub const MAX_CHARS: usize = 20_000;

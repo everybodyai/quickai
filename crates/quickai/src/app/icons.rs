@@ -29,12 +29,11 @@ pub(super) enum Icon {
     /// A graphics card: a chip with its pins (the panel's Graphics, C213).
     Chip,
     Sliders,
-    /// « and »: the sidebar and the panel at the right are put away and brought back with them (H4 of
-    /// `the mockups`), each pointing the way its side goes.
+    /// « and »: the sidebar and the panel at the right are put away and brought back with them, each
+    /// pointing the way its side goes.
     DoubleLeft,
     DoubleRight,
-    /// ︽ and ︾: the log under the page is brought up and put away with them (L1 of
-    /// `the mockups`).
+    /// ︽ and ︾: the log under the page is brought up and put away with them.
     DoubleUp,
     DoubleDown,
     Chat,
@@ -75,7 +74,7 @@ pub(super) enum Icon {
     /// An address opened in the browser: a box, and an arrow out of its corner.
     #[cfg_attr(not(feature = "remote-setup"), allow(dead_code))]
     External,
-    /// What Connect an app gives (R1 of `the mockups`): the address, two links of a chain; the key.
+    /// What Connect an app gives: the address, two links of a chain; the key.
     Link,
     Key,
     /// Hands-free (C216): the lines of a voice.

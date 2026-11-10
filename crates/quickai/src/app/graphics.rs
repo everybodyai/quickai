@@ -1,6 +1,5 @@
-//! The panel's Graphics and This computer (C213, P1 and G of `the mockups`, the user's pick of
-//! 2026-11-09: "if the selected cfg could be running on a graphics card - then you may have to adjust it accordingly
-//! (probably considering its memory also) - or a system may have multiple interconnected cards etc - cater to that").
+//! The panel's Graphics and This computer (C213): a configuration that can run on a graphics card is fitted to the
+//! card's memory, and a computer with several cards, linked or not, is catered for.
 //!
 //! The cards are what the installed llama.cpp lists (`llama-server --list-devices`), with their memory. What a model
 //! needs is read from its file (`quickai_core::gguf`): its layers, and the bytes a token of context takes. From the two,

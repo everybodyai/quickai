@@ -1,14 +1,14 @@
-# video-top5: configurations and workflows for the five ways to make clips with the calling program
+# video-top5: configurations and workflows for five ways to make video clips with ComfyUI
 
-Prepared on 2026-10-13, for later use. The findings behind it (the models compared, their licences, speeds and voices) are in a separate
-document, `the findings`, that is not part of this repository.
+Prepared on 2026-10-13: QuickAI configurations that set up ComfyUI and its models on a GPU server, and the ComfyUI workflows that make clips with
+them, for five video models.
 
-This copy sits in QuickAI's examples and differs from the original in three things. The folder of the configurations is called `profiles/`, because
-a `.toml` below `docs/examples` must be a configuration in a folder named after its kind (`crates/quickai-core/tests/examples.rs`). The sample
-environment file is a block under [Fetch the models on the server](#fetch-the-models-on-the-server-quickai), because it is not a configuration.
-And `profiles/minimax-h3.toml` is a copy of [../profiles/minimax-h3.toml](../profiles/minimax-h3.toml): keep the two the same.
+The folder of the configurations is called `profiles/`, because a `.toml` below `docs/examples` must be a configuration in a folder named after its
+kind (`crates/quickai-core/tests/examples.rs`). The sample environment file is a block under
+[Fetch the models on the server](#fetch-the-models-on-the-server-quickai), because it is not a configuration. And `profiles/minimax-h3.toml` is a
+copy of [../profiles/minimax-h3.toml](../profiles/minimax-h3.toml): keep the two the same.
 
-**Nothing here has been run on a GPU.** You asked for the tests to wait. What was checked is listed under
+**Nothing here has been run on a GPU.** What was checked is listed under
 [What was checked, and what was not](#what-was-checked-and-what-was-not); the main thing not checked is how good any of it looks.
 
 ## What is here
@@ -16,8 +16,6 @@ And `profiles/minimax-h3.toml` is a copy of [../profiles/minimax-h3.toml](../pro
 ```
 profiles/     QuickAI configurations (quickai-run): where each model file comes from, with size, SHA-256 and commit
 workflows/    ComfyUI workflows in the API format, one folder for each option, and slots.json (where a caller puts its values)
-bakeoff/      the test plan (PLAN.md), six real shots of the series, 54 prompts written from them, the commands to run, and the places for
-              the pictures, voice clips and results
 tools/        what made these files and what runs them (below)
 ```
 
@@ -31,8 +29,8 @@ tools/        what made these files and what runs them (below)
 | 4 | LTX-2.5, distilled | `profiles/ltx-2.5-distilled.toml` | `04-ltx-2.5`: t2v, i2v, flf2v | 4 files, 38.7 GB, and the 1.0 GB upscaler **by hand** (see Known gaps) | yes | words; a first (and last) picture | 8, then 3 | LTX-2.x Community: free under 10 million US dollars of yearly revenue; a gated repository |
 | 5 | Wan 2.2 14B, image to video | `profiles/wan22-14b-i2v-lightning.toml` | `05-wan22-14b`: i2v and flf2v, each as `lightning` (4 steps) and `full` (20) | 6 files, 38.0 GB | **none** | a first (and last) picture | 4 or 20 | Apache-2.0 |
 
-Sizes are decimal gigabytes; the programs count 1024-based ("GiB"). The disk of the rented server had 32 GiB free after H3 was installed, so only
-option 3 fits beside H3 without more disk.
+Sizes are decimal gigabytes; the programs count 1024-based ("GiB"). On a disk with 32 GiB free after H3 is installed, only option 3 fits beside H3
+without more disk.
 
 ## Using it
 
@@ -60,8 +58,7 @@ huggingface_token = ""                      # the LTX-2.5 files need one (a gate
 Before the first job, the server needs **gcc and the Python headers** (on Ubuntu 24.04: `build-essential` and `python3.12-dev`), and to install ComfyUI at all
 the venv module of its Python (`python3.12-venv`). ComfyUI compiles small Triton helpers on first use (H3's 4-bit text encoder does; the int8 and
 sparse-attention kernels of the others very likely do); without the headers the job stops at once with a message that says only that gcc "returned
-non-zero exit status 1" (the cause, `Python.h: No such file`, is in the server's log). This is what stopped the first the calling program job on the rented server:
-the headers were missing there on 2026-10-13, and they stay missing until someone installs them.
+non-zero exit status 1" (the cause, `Python.h: No such file`, is in the server's log).
 
 **`quickai-run` checks all of that now** (WP4.20, [docs/headless.md](../../headless.md) section 12): each configuration here lists what the computer has to have
 (`[[needs]] system = ...`: the venv module, the driver of the 580 series, and, for H3, FastH3 and LTX-2.5, a compiler, the headers of Python and a test that a
@@ -72,29 +69,23 @@ and before the models are fetched it builds and runs a Triton kernel once. `--sk
 Each configuration starts ComfyUI on 127.0.0.1:8188 of the server; from your computer: `ssh -N -L 8189:127.0.0.1:8188 you@server`.
 The LTX-2.5 files are in a gated repository: accept the terms on its page with the account whose token you give.
 
-### Run one workflow, without the calling program
+### Run one workflow
 
 ```sh
 python3 tools/run_workflow.py --server http://127.0.0.1:8189 workflows/04-ltx-2.5/ltx25-i2v.json \
-    --prompt-file bakeoff/prompts/ltx/s3.txt --first-image bakeoff/pics/key_s3.png --aspect 16:9 --seconds 6 --label try1 --out bakeoff/runs
+    --prompt-file prompt.txt --first-image first.png --aspect 16:9 --seconds 6 --label try1 --out runs
 ```
 
 It uploads the pictures and sounds, puts the values into the slots of `workflows/slots.json`, sends the graph, waits, fetches the clip, and writes
-`bakeoff/runs/try1.json`: the seconds ComfyUI took, the seconds from sending to the file, the most graphics memory it held, the version of ComfyUI,
+`runs/try1.json`: the seconds ComfyUI took, the seconds from sending to the file, the most graphics memory it held, the version of ComfyUI,
 the card. `--dry-run` prints the graph that would be sent and stops. `python3 tools/run_workflow.py --help` says the rest.
 
-### Put one into the calling program (not done)
+### Put one into another program
 
 `workflows/slots.json` says, for each workflow, the node and input that take the prompt, the seed, the width, the height, the frames, the pictures and
-the voice clips, the sizes of each aspect, the rule for the number of frames and the frame rate. That is what a the calling program service needs
-(`[capability.slots]`, `[capability.request]`); the H3 service files of the kit in `the calling program's folder` have the shape. The one thing that kit
-cannot do and these workflows can is hand the model a **voice clip** (`h3-ref2v-voice`, `ref_audios`): the calling program would have to upload a sound the way it
-uploads a picture (`POST /upload/image` takes any file) and name it in the slot.
-
-### Test them (when you say so)
-
-`bakeoff/PLAN.md` is the plan: six shots of your series, which workflow makes each, what to measure, how to score it. `python3 tools/make_commands.py`
-prints the commands.
+the voice clips, the sizes of each aspect, the rule for the number of frames and the frame rate: what a program that calls ComfyUI needs to fill a
+workflow in. To hand the model a **voice clip** (`h3-ref2v-voice`, `ref_audios`), such a program uploads the sound the way it uploads a picture
+(`POST /upload/image` takes any file) and names it in the slot.
 
 ## The slots
 
@@ -151,7 +142,7 @@ Checked, without a GPU (`tools/check_package.py`, 2026-10-13):
 
 * all 195 slots of the 22 workflows name a node and an input that exist; every model a workflow loads is a file its configuration fetches, into the
   folder that loader reads (and, against the template, a file the template itself declares for that folder);
-* ComfyUI 0.39.0 (the version the server runs, here on a CPU with empty stand-in model files, in a private folder, never the one anybody works with)
+* ComfyUI 0.39.0 (on a CPU, with empty stand-in model files, in a throw-away folder)
   accepts all 22 workflows: node classes, inputs, types, ranges, links. A converter bug found on the way (a subgraph input typed `IMAGE,MASK` shifted
   every value after it) was why the loaders were first wired to the wrong files; the audit against the template's own file list is what shows it;
 * `quickai-run check` (the current build, without a network) reads the four configurations and prints the plan; a fresh run of the two builders
@@ -159,30 +150,28 @@ Checked, without a GPU (`tools/check_package.py`, 2026-10-13):
 
 **Not checked:** a clip, its quality, its time, its memory; how the voice references, the first/last frame of FastH3, LTX-2.5's two stages at the sizes
 chosen, or the 16-frames-a-second Wan clip behave; the SHA-256 of the five LTX-2.5 files (the hub hides it for a gated repository); that the Triton
-helpers compile once the Python headers are installed on the rented server (the test that says so was run for real only on the development computer's AMD
-card, with and without the headers of its Python); anything on the rented server (nothing was changed there).
+helpers compile on an NVIDIA card once the Python headers are installed (the test that says so was run for real only on an AMD card, with and without
+the headers of its Python).
 
 ## Known gaps
 
 * **LTX-2.5's spatial upscaler cannot be fetched by `quickai-run` yet.** QuickAI's ComfyUI document lists the folders a configuration may fill
-  (`places` under `[models.acquire]` in `quickai/crates/quickai-runtime/manifests/engines/comfyui.toml`) and `latent_upscale_models` is not among them;
+  (`places` under `[models.acquire]` in `crates/quickai-runtime/manifests/engines/comfyui.toml`) and `latent_upscale_models` is not among them;
   adding the word (and the same for `model_patches` and `audio_encoders`, which other templates use) is a change in QuickAI. Until then the file is put
   in by hand (the header of `profiles/ltx-2.5-distilled.toml` has the command). The text-to-video and image-to-video LTX workflows need it; first/last
   frame does not.
 * The LTX-2.5 configuration has sizes but no checksums (gated repository). `python3 tools/hubmeta.py --token ... Lightricks/LTX-2.5:<path>` prints them
   once the terms are accepted.
-* A sound for H3 (a voice clip or a track) has to be uploaded by whatever calls the workflow; the calling program does not do it yet. The two ways differ: in
+* A sound for H3 (a voice clip or a track) has to be uploaded by whatever calls the workflow. The two ways differ: in
   `ref2v-voice` the clip gives the *timbre* and the model speaks the words of the prompt (users report it replays the clip or starts with garble about
   half the time); in `ref2v-track` the clip is used *as it is* and the model animates the mouth to it (users report this works), which is the way a
   text-to-speech line would be fed in.
-* The prompts in `bakeoff/prompts` are drafts written from MiniMax's guides, LTX's template and ComfyUI's templates; none has been tried.
 
 ## Rebuilding
 
 ```sh
 python3 tools/build_top5.py --templates <comfyui_workflow_templates_json/templates> --object-info <GET /object_info of ComfyUI 0.39.0, saved> --out workflows
 python3 tools/hubmeta.py <repo>:<path> ... > hubmeta.json && python3 tools/build_configs.py --meta hubmeta.json --out profiles
-python3 tools/render_prompts.py bakeoff/shots.json bakeoff/prompts
 python3 tools/check_package.py . --templates <the same templates> --object-info <the same file> [--server URL --base DIR]
 ```
 

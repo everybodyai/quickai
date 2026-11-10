@@ -89,7 +89,7 @@ on_timeout = "wait"
 root = "${data}/llama-bin"
 # Every CI build is a GitHub prerelease: there is no separate stable release with binaries attached.
 feed = { use = "github_release", repo = "ggml-org/llama.cpp", per_page = 10, show = 5, prereleases = true }
-# offered first, and what "Install llama.cpp" takes: the release the packages ship (build/config.env of the packaging repository),
+# offered first, and what "Install llama.cpp" takes: the release the packages ship,
 # the first that runs Bonsai 2's ternary weights (Q2_0 with the Hadamard runtime, llama.cpp #29600)
 tested = { tag = "b11889" }
 # A `cudart-*` file is the CUDA runtime alone, with no llama-server inside it.

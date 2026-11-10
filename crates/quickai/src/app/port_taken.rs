@@ -1,6 +1,5 @@
 //! A run on this computer whose port another program holds (docs/remote-runs.md section 3.2, as it is for a computer
-//! QuickAI sets up; the user: "if an engine is already running, inform the user and confirm over-ride - provide an
-//! option to stop it also"). Before Start, the port the engine is to listen on is looked at; when another program
+//! QuickAI sets up). Before Start, the port the engine is to listen on is looked at; when another program
 //! holds it, the person is told what it is and chooses:
 //!
 //! - an engine that already runs there, which QuickAI did not start (an Ollama installed as a service): **Use it**

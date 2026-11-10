@@ -84,8 +84,8 @@ impl App {
         }
     }
 
-    /// *Connect an app*, while the server runs and it was asked for: a popover under the plug button beside the model
-    /// (option A of the samples, `the mockups`): the address and the model's name, each with its copy button, the
+    /// *Connect an app*, while the server runs and it was asked for: a popover under the plug button beside the model:
+    /// the address and the model's name, each with its copy button, the
     /// API key in a word, and the example in curl, Python and JavaScript, a tab each. A click outside it, Escape, or
     /// the plug again closes it.
     pub(super) fn show_connect_popover(&mut self, ctx: &egui::Context) {
@@ -258,7 +258,7 @@ pub(super) fn show_connection_details(ui: &mut egui::Ui, panel: &ApiPanel) {
     });
 }
 
-/// Connect an app in the panel (R1 of `the mockups`, the user's pick of 2026-11-10): the address,
+/// Connect an app in the panel (C213): the address,
 /// the model's name and the key in one box, each with its picture in place of its label (which the hover says) and a
 /// copy button; under it the example in a line (its language, a copy button, and the arrow that shows the code), closed
 /// at first. The language chosen last is kept, as in the popover.

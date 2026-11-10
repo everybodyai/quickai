@@ -1517,7 +1517,7 @@ mod tests {
 
     /// The sentences moved out of the window's code into templates over the engine's names.
     /// `tests/golden/ui_texts.json` was extracted from the code before it was deleted, so this fails
-    /// if a word of what the user reads (and the GUI suite's OCR looks for) changed on the way.
+    /// if a word of what the user reads (and tests that read the window look for) changed on the way.
     #[test]
     fn the_managers_sentences_for_llamacpp_are_the_ones_the_window_always_had() {
         let golden: std::collections::BTreeMap<String, String> =

@@ -1,6 +1,6 @@
 //! The devices llama.cpp can put a model on, as its server lists them (`llama-server --list-devices`): each graphics
 //! card with its memory, and whether two NVIDIA cards are linked (NVLink). The panel's Graphics and This computer
-//! sections are drawn from them (C213, P1 and G of `the mockups`).
+//! sections are drawn from them (C213).
 //!
 //! The list is what the build of llama.cpp that is installed can use, which is what matters: a CUDA build sees the
 //! NVIDIA cards, a Vulkan one every card with a driver, Metal the Apple graphics, and an OpenVINO build its device.

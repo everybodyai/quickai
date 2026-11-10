@@ -28,12 +28,11 @@ Generated from the code, so always current:
 
 ## Design records
 
-How QuickAI was designed, built and verified, kept as written. They include notes on the machines things were
-measured on.
+How QuickAI was designed, built and verified, kept as written.
 
 - [architecture.md](architecture.md): the declarative runtime (start here)
 - [implementation-plan.md](implementation-plan.md): the phases and work packages, with their logs
 - [phase3-test-plan.md](phase3-test-plan.md): the acceptance tests, written before the code
 - [engine-facts.md](engine-facts.md): what was verified about each engine, and how
-- [reports-and-community.md](reports-and-community.md): the telemetry of 0.2.1 to 0.2.5 (removed in 0.2.6 for problem reports posted by hand, C202), the admin, and the community configurations (planned)
+- [reports-and-community.md](reports-and-community.md): the telemetry of 0.2.1 to 0.2.5 (removed in 0.2.6 for problem reports posted by hand, C202) and the community configurations (planned)
 - [ollama-backend-architecture.md](ollama-backend-architecture.md): the first Ollama design, superseded by architecture.md

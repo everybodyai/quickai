@@ -1,7 +1,7 @@
-//! The sidebar of UI v3 (C203, the user's A6 with the QuickAI menu of S2, `the mockups`): at its head the
+//! The sidebar of UI v3 (C203): at its head the
 //! QuickAI menu (Settings, Configurations and Quit) and the button that puts the sidebar away, then where the models run
 //! and the engine that runs them, in one box, a box that narrows the list, and the models, with + for what the Models
-//! menu had. At its foot (C206, `the mockups`) Recommended and MCP servers, and under them Help (its
+//! menu had. At its foot (C206) Recommended and MCP servers, and under them Help (its
 //! menu: Help, the tour, the keys, Report a problem), About and the theme. The menu bar and the status bar are gone.
 
 use eframe::egui;
@@ -25,8 +25,7 @@ impl App {
         self.show_app_menu_row(ui);
         ui.add_space(8.0);
         self.show_where_and_engine(ui);
-        // Recommended and MCP servers at the foot, under a line, and the models in the room above them (the user, on
-        // 2026-11-09)
+        // Recommended and MCP servers at the foot, under a line, and the models in the room above them
         egui::Panel::bottom("sidebar_foot")
             .resizable(false)
             .show_separator_line(false)
@@ -69,7 +68,7 @@ impl App {
         self.show_models_list(ui);
     }
 
-    /// The head of the sidebar: the logo and QuickAI, a menu (S2 of the samples): Settings, Configurations, the theme,
+    /// The head of the sidebar: the logo and QuickAI, a menu: Settings, Configurations, the theme,
     /// Help, Report a problem, About QuickAI and Quit.
     fn show_app_menu_row(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette();
@@ -431,7 +430,7 @@ impl App {
         self.do_engine_choice(chosen);
     }
 
-    /// Recommended and MCP servers, a row each (option A6 of the samples): the recommended models of this computer, and
+    /// Recommended and MCP servers, a row each: the recommended models of this computer, and
     /// the tools the model can use, with how many servers are on (llama.cpp's for now).
     fn show_nav_rows(&mut self, ui: &mut egui::Ui) {
         if self.can_recommend() {

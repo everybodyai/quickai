@@ -5,8 +5,8 @@
 //! window for a moment, and the main window comes to the front. A step that can be done for the person has a button
 //! that does it. **Take the tour** goes round the main window one part at a time.
 //!
-//! The pictures are real screenshots of QuickAI, in the dark theme and the light, that `a script kept outside this repository`
-//! takes; the marks are drawn on them here, in their pixels. They are in the program, so Help needs no network.
+//! The pictures are real screenshots of QuickAI, in the dark theme and the light, taken from the window
+//! itself; the marks are drawn on them here, in their pixels. They are in the program, so Help needs no network.
 //!
 //! The words are written for a person who has never run a model: short sentences, one action to a step, a button
 //! by the name the window shows it by, in bold.

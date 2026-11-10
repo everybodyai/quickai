@@ -8,8 +8,8 @@ still Phase 4's. Where this document and the generated page ([reference/catalog-
 
 **Models → Recommended** (and *See all recommended models* under the suggestions of **Add a model**, which are the
 list's own models to start with, of the kinds the chat can talk to, in the size that fits this computer), for
-llama.cpp, Ollama and ComfyUI, opens a window on **what the person wants to do** (work package 4.34; the user picked this
-of four mockups, and said that a person can choose several, and that a choice nothing does may show nothing):
+llama.cpp, Ollama and ComfyUI, opens a window on **what the person wants to do** (work package 4.34; a person can choose several, and a choice
+nothing does may show nothing):
 
 ```
 Recommended models                                                                        x
@@ -96,7 +96,7 @@ What was fetched is **named as the list names it** in the model picker (`Qwen3.5
 ## 2. The list
 
 One document for each category, in `crates/quickai-runtime/manifests/catalog/` (compiled into the application). They are **generated** by
-`scripts/catalog.py` from picks (section 5), so that every commit, size, SHA-256 and pull size is read from the real site and none is typed.
+a tool the maintainers run (section 5), so that every commit, size, SHA-256 and pull size is read from the real site and none is typed.
 
 | Page | Models | What is in it |
 |---|---|---|
@@ -191,22 +191,17 @@ size = 3320000000                 # what the pull downloads, from the registry
 
 ## 5. How the list is made and kept honest
 
-`scripts/catalog.py` (Python 3.11, standard library only; in the packaging repository like the other scripts):
-
-| Command | What it does |
-|---|---|
-| `build` | reads `scripts/catalog/picks/*.toml` (a pick says which model, which quantizations, what to say of it) and the sites, and writes the documents |
-| `check` | does the same in memory and says what differs from the shipped documents: nothing is written; run it to see what has moved |
-| `add OWNER/REPO` | prints a pick to start from: the commit, the architecture, the licence, the quantizations and projectors a repository has |
+The documents are written by a tool the maintainers run, not by hand: from a short pick for each model (which model,
+which quantizations, what to say of it) it reads the sites and writes the documents, and it can also say what has moved
+since, without writing anything.
 
 What it reads: **huggingface.co** (the repository's commit, its files with size and SHA-256, its licence and architecture, and the first bytes of a file when the API's answer is a projector's),
 **registry.ollama.ai** (the manifest of a tag: a pull's size is the sum of its layers, drafts and projectors included, which is why an Ollama size is not a Hugging Face file's), and **GitHub** (the
-architectures in `src/llama-arch.cpp` of the llama.cpp tag in `build/config.env`). It sends `User-Agent: quickai-catalog` and nothing of a person. It refuses what cannot be offered: a repository
+architectures in `src/llama-arch.cpp` of the pinned llama.cpp release). It sends `User-Agent: quickai-catalog` and nothing of a person. It refuses what cannot be offered: a repository
 that needs a login, an architecture the release does not read, a licence it cannot find (the pick says it), a file with no hash. Licences are written as their makers name them (`Apache-2.0`,
 `Llama 3.2 Community License`, `LFM Open License v1.0`, `Gemma Terms of Use`).
 
-**To add a model**: `scripts/catalog.py add OWNER/REPO`, write the pick (a note is a sentence from the card, or a fact), `scripts/catalog.py build`, then
-`cargo test -p quickai-core --test p3_catalog` (J08 holds the list to what it must be). To refresh the list: `build`, read the diff.
+After a change to the list, `cargo test -p quickai-core --test p3_catalog` (J08 holds the list to what it must be).
 
 Real runs (section 7) and the lists of checks of the opt-in tests (`p3_j22`, `p3_j23`) are how "runs today" is known: **a catalog entry is not a promise that a model runs on every
 computer** (a 5 GB model needs memory), but each was found by the tool to be a repository that exists, at a commit, with the hashes it says, of an architecture the pinned llama.cpp reads.
@@ -219,15 +214,14 @@ computer** (a 5 GB model needs memory), but each was found by the tool to be a r
 
 ## 7. What was checked
 
-All on 2026-10-07, on this machine (Linux, CPU only, the pinned llama.cpp b11007).
+All on 2026-10-07 (Linux, CPU only, the pinned llama.cpp b11007).
 
 - **Every model, by the tool** (section 5): the repository exists at its commit and needs no login; each file has the size and SHA-256 the hub reports (the hash of the file in LFS); the licence is on the card (or on
   the card of the model it was made from); the architecture, read from the first bytes of the weights, is in the table of the pinned release; an Ollama name has a manifest, and what a pull downloads is the sum of its layers.
-  `scripts/catalog.py check` says so again, offline, from what it learned (`build/.cache/catalog`).
 - **The list against the sites, again, by hand** (`p3_j22`): the 78 llama.cpp runs and the 50 Ollama runs (128 for 81 models) still have the commit, the files, the sizes and the hashes the list says. The `video` page (WP4.11, one model, one run for ComfyUI) was read from the hub the same way on 2026-10-08, and its files were fetched by the window's button, hashed again and listed by a ComfyUI started on them.
 - **The list as a document** (`p3_j08` and the rest of group J, `cargo test -p quickai-core --test p3_catalog` and the application's `app/engine.rs`): it loads without a warning, every category has at least three models, every pin is a commit, every model that
-  reads pictures or listens has its projector and the bundle that fetches it, 8 to 16 models are "Start here" with one for each need, no more than a twentieth is large, and the Bonsai 2 4B pin is the packaging's (`build/config.env`).
-- **The window and what a click does, by the GUI suite** `catalog` (14 cases, [the test repository's docs/17_catalog.md](../../test/docs/17_catalog.md)), against a fake Hugging Face and a fake `llama-server`: opening asks no site anything, the categories and their counts, words, the two rows of a model with a projector, the bundled download as one job and the model alone as the other, a file that is not the one the list was made for refused and not kept, `--embeddings` and `--mmproj` on the command line, a person's documents adding and hiding models, Escape, Ollama's names pulled, a note shown to its end, and every section under the one before it.
+  reads pictures or listens has its projector and the bundle that fetches it, 8 to 16 models are "Start here" with one for each need, no more than a twentieth is large, and one model, and only one, is marked as the one the packages ship.
+- **The window and what a click does, by the GUI test suite, which the maintainers keep outside this repository**, against a fake Hugging Face and a fake `llama-server`: opening asks no site anything, the categories and their counts, words, the two rows of a model with a projector, the bundled download as one job and the model alone as the other, a file that is not the one the list was made for refused and not kept, `--embeddings` and `--mmproj` on the command line, a person's documents adding and hiding models, Escape, Ollama's names pulled, a note shown to its end, and every section under the one before it.
 - **Real models, run for real** (the files of the list fetched from the hub, each checked against its hash, started by the pinned `llama-server` the way the application starts it, with `--mmproj` and the mode words, and asked one thing of the right kind; context 4096, no GPU):
 
 | Model | Kind | Asked | Result | Answer |
@@ -271,9 +265,9 @@ off the right edge of the window, where a list that scrolls only down cannot be 
 nothing else. Nothing noticed it because the checks read what the window holds (the counts of the sidebar, the first card, a search that left one model) and the application's tests
 drew the window without looking at where anything was; the screenshot of a person scrolling it is what showed it. `p3_j24` (every card of the shipped list is whole, for both engines),
 `p3_j24b` (the window in three views has nothing cut off or outside it: this one fails on the old layout in all three) and `p3_j24c` (a new page starts at its top) hold it in the
-application's tests, and the GUI cases TC-CAT-013 and TC-CAT-014 hold it from outside (both fail on a build with the old drawing).
+application's tests, and two cases of the GUI tests hold it from outside (both fail on a build with the old drawing).
 
-**What this does not show:** that every one of the 81 models loads and answers. The real runs above are the models that cost little to fetch or whose family could fail in a way the metadata cannot show (a projector, a mode, a new architecture, a different chat template); the other 52 are known by the checks of the first two points and by their family having run (a Qwen3.5 0.8B with its projector was also run, earlier, and read a picture: L19). The Ollama names were checked against the registry, not pulled (pulling is what the look-up of Ollama already does, and TC-REAL-001 does it for real). The runs are CPU-only and Linux-only.
+**What this does not show:** that every one of the 81 models loads and answers. The real runs above are the models that cost little to fetch or whose family could fail in a way the metadata cannot show (a projector, a mode, a new architecture, a different chat template); the other 52 are known by the checks of the first two points and by their family having run (a Qwen3.5 0.8B with its projector was also run, earlier, and read a picture: L19). The Ollama names were checked against the registry, not pulled (pulling is what the look-up of Ollama already does, and a GUI case does it for real). The runs are CPU-only and Linux-only.
 
 ## 8. What is not done
 

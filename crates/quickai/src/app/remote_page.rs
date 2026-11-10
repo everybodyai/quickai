@@ -1,5 +1,5 @@
-//! The page of a computer QuickAI sets up, when it is the one chosen in the status bar (WP4.33, option A of the
-//! samples in `the mockups`, the user: "I pick A"): the configuration's name in the head with what its run
+//! The page of a computer QuickAI sets up, when it is the one chosen in the status bar (WP4.33):
+//! the configuration's name in the head with what its run
 //! is doing, the computer under it, and the buttons of what can be done with it (play; while it runs the chat page
 //! in a browser, Connect an app and Stop). While it gets ready its steps are listed, each with how far it has gone;
 //! once it runs, the addresses here. The chat and the log are under it, as on the page of a model, and the chat

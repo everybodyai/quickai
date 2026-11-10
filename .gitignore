@@ -2,12 +2,11 @@
 /target/
 
 # GGUF models — large binaries, not source. `cargo run` and the real-model
-# integration tests read them from here (see README.md, "Layout"); packaging
-# keeps its own pinned copies in the the packaging repository repository.
+# integration tests read them from here (see docs/development.md, "Layout").
 /models/
 
-# Vendored llama.cpp checkout (its own git repo — built locally via cmake,
-# see README.md "Rebuilding llama.cpp"). Not our source, and huge.
+# llama.cpp checkout (its own git repo, built locally via cmake, see
+# docs/development.md, "First-time setup"). Not our source, and huge.
 /llama.cpp/
 
 # What Python writes beside the files it runs (the tests of the bridge, crates/quickai/assets/comfyui)

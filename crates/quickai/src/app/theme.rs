@@ -78,7 +78,7 @@ const DARK_PALETTE: Palette = Palette {
     muted: Color32::from_rgb(164, 168, 175),
     faint: Color32::from_rgb(142, 146, 153),
     // a step brighter than the website's green on dark (#2E8545): the button stands 3 to 1 from the toolbar and 3.6 from
-    // the page, where (36, 110, 55) stood 2.6 and a control wants 3; white on it is 4.55. The GUI suites find the green
+    // the page, where (36, 110, 55) stood 2.6 and a control wants 3; white on it is 4.55. Tests find the green
     // within a band that holds both (WP4.26)
     accent: Color32::from_rgb(46, 134, 69),
     accent_hover: Color32::from_rgb(41, 122, 63),

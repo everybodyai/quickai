@@ -452,7 +452,7 @@ ui = { section = "advanced", widget = "runtime_manager", order = 2, hint = "Loca
 # Why these: Triton, which the PyTorch of a graphics card brings, builds a small helper in C the first time a kernel is
 # launched, with the computer's compiler and the headers of Python; the int8 and 4-bit builds of MiniMax H3 launch kernels
 # of their own, so on a computer without them the first clip fails with a message that says only that gcc "returned
-# non-zero exit status 1", and the cause stays in the log of the server (measured on a rented server, 2026-10-13: Python.h
+# non-zero exit status 1", and the cause stays in the log of the server (measured on a GPU server, 2026-10-13: Python.h
 # was missing; F29). Triton's own build.py (3.8) takes the compiler from the variable CC, else gcc, else clang (not `cc`),
 # and the headers from the folder the default scheme of sysconfig names (Debian's `posix_local` read as `posix_prefix`).
 

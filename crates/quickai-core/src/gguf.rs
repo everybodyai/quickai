@@ -1,6 +1,6 @@
 //! What QuickAI reads of a GGUF model file's header: the longest context the model was trained for, how many layers it
 //! has, and how much memory each token of context takes. The panel's context grid says from these where each length
-//! fits (C212, P1 of `the mockups`).
+//! fits (C212).
 //!
 //! The header is a list of keys and values before the tensors: `GGUF`, a version, the number of tensors and of keys,
 //! then each key (a text) with its type and value. Only a few numbers are kept; the rest (the tokenizer's lists, which

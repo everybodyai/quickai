@@ -372,7 +372,7 @@ link; what it has beside it is a place for a host program, which ComfyUI Desktop
   it can check. A token for a hub that wants a login is not used.
 - The window of the application shows nothing of a fetch the page asked for (the page does): a list that shows it, from the `.part` files, is possible.
 - A download the window starts (a result, the box) does not go on from where it stopped; the page's Download does.
-- **A real ComfyUI in the GUI suite.** The GUI suite (`the GUI test suite`, [the test repository's docs/18_comfyui.md](../../test/docs/18_comfyui.md): 175 cases in nine suites and thirteen in four older ones) drives the window against fakes (a stand-in `main.py` that refuses what the real one refuses and hosts the bridge, a stand-in Python, a GitHub, a Hugging Face, the same over TLS); a real ComfyUI is installed by hand, as the lines above say.
+- **A real ComfyUI in the GUI tests.** The GUI test suite, which the maintainers keep outside this repository, drives the window against fakes (a stand-in `main.py` that refuses what the real one refuses and hosts the bridge, a stand-in Python, a GitHub, a Hugging Face, the same over TLS); a real ComfyUI is installed by hand, as the lines above say.
 - The installer was run on Linux only, with the AMD (ROCm) PyTorch; the CUDA, CPU and macOS steps follow from the same
   document and are tested by their conditions (F05), not by a machine.
 - A model that needs more than ComfyUI's default nodes and the pack of GGUF nodes is not in the list, and its nodes are not

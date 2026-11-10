@@ -1,5 +1,5 @@
-//! The list of models of a computer QuickAI sets up (option D of `the mockups`, the user: "option D it
-//! is"). The computer is chosen at the top of the list (`show_computer_switch`), and the list under it is that
+//! The list of models of a computer QuickAI sets up (C199).
+//! The computer is chosen at the top of the list (`show_computer_switch`), and the list under it is that
 //! computer's: the model files it keeps, as `quickai-run models` said them when the window looked for its run, after a
 //! run came up there, or at Refresh. The model picked there is the one its next run starts with, and the one that runs
 //! has its green dot. This computer's models are under them, folded: one picked there is copied over when its run

@@ -3,7 +3,7 @@
 //! post with one click: on QuickAI's site, whose page the report fills in from the link, or as a GitHub issue, filled
 //! in the same way. Help → Report a problem opens the same window. QuickAI sends nothing by itself: the page opens in
 //! the browser, and nothing leaves until the person presses its button. `QUICKAI_REPORTS=off` keeps the window from
-//! opening by itself (the GUI suites set it, so that it is never over what they read); Help still opens it.
+//! opening by itself (tests that read the window set it, so that it is never over what they read); Help still opens it.
 //!
 //! A report names no one (`quickai_core::report`): the build and the computer in ranges, what happened, and the last
 //! lines of the engine's log, cleaned of the home folder, the user's and the computer's names and anything like an
@@ -43,7 +43,7 @@ pub(super) struct ReportsUi {
     pub waiting: VecDeque<Shown>,
     /// The build and the computer, found out at the start.
     environment: Option<Environment>,
-    /// The window does not open by itself (`QUICKAI_REPORTS=off`: the GUI suites, a kiosk); Help still opens it.
+    /// The window does not open by itself (`QUICKAI_REPORTS=off`: tests, a kiosk); Help still opens it.
     quiet: bool,
     /// What the panic hook reads of the window.
     context: Option<Arc<Mutex<CrashContext>>>,

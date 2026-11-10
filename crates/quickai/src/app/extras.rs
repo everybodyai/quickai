@@ -1,6 +1,5 @@
-//! Extras in the panel at the right (C213, X1 of `the mockups`, the user's pick of 2026-11-10:
-//! "bring in the extra configuration like tools - i.e. the extra arguments and environment - e.g. show the projector
-//! and so on - upon click"): what QuickAI adds when the model starts besides the context and the graphics. Closed, one
+//! Extras in the panel at the right (C213), shown when clicked: what QuickAI adds when the model starts besides the
+//! context and the graphics. Closed, one
 //! line says what there is; opened, a vision model's projector has a switch, the mode a model is started in is shown,
 //! and the person's own arguments and lines of environment are a chip each: a click changes one, × takes it out, and
 //! *+ Add* adds one. *Copy the whole command* copies what Start runs. They are the fields of Settings › Advanced, so

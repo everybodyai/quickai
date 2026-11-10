@@ -4,8 +4,8 @@
 # `companions` and `mode`, or a `ref` and a `size` for an engine that pulls names. The components, sources and adapters shown
 # here are the later recipe tier of Phase 4, which this version does not interpret.
 #
-# ILLUSTRATIVE. Model recipes. Today's KNOWN_MODELS (models.rs) and the bundled-model pins of
-# the packaging's config.env become data here. This tier is data-only: a recipe can name sources,
+# ILLUSTRATIVE. Model recipes. Today's KNOWN_MODELS (models.rs) and the pins of the model the packages
+# bundle become data here. This tier is data-only: a recipe can name sources,
 # but the network policy decides which hosts may actually be contacted.
 #
 # A recipe names its components (main weights, a projector, adapters) and, per engine, how to run it.

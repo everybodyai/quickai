@@ -71,7 +71,7 @@ pub(super) struct Configs {
     pub confirm: Option<super::configurations_window::Confirm>,
     /// The last thing that was done in the window, in a sentence.
     pub status: Option<String>,
-    /// The window holds a configuration with no name (C213, N1 of `the mockups`): another model was
+    /// The window holds a configuration with no name (C213): another model was
     /// picked than the one `active` names, and `active` is left as it was saved.
     pub unnamed: bool,
     /// Whether the window holds something other than the configuration in use, for what the window held then (a hash of
@@ -287,7 +287,7 @@ impl App {
         modified
     }
 
-    /// Another model was picked in the list (C213, the user's N1): the configuration in use, when it names a model and
+    /// Another model was picked in the list (C213): the configuration in use, when it names a model and
     /// it is not this one, is left as it was saved, and the window holds a new configuration with no name. One that
     /// names no model runs whatever is picked, and keeps its name.
     pub(super) fn leave_configuration_for_model(&mut self) {
@@ -705,12 +705,12 @@ impl App {
 
     // ---- drawing ----------------------------------------------------------------------------------------
 
-    /// The configuration in one line at the head of the panel (A2 of `the mockups`, the user's pick of
-    /// 2026-11-09): its name in a box that opens the list. Choosing one uses it; under the list are *Save to* the one in
+    /// The configuration in one line at the head of the panel:
+    /// its name in a box that opens the list. Choosing one uses it; under the list are *Save to* the one in
     /// use (when the window holds something else), *Save as a new configuration…* and *Manage configurations…*. The
     /// window keeps how it ran last; what it holds that the configuration does not say gives the box an amber outline, and
-    /// its hover says what changed (Y1 of `the mockups`). Another model picked makes it *Unnamed*, in
-    /// grey italics, until it is saved (N1).
+    /// its hover says what changed. Another model picked makes it *Unnamed*, in
+    /// grey italics, until it is saved.
     pub(super) fn show_configuration_section(&mut self, ui: &mut egui::Ui) {
         let p = super::theme::palette();
         let all = self.configuration_entries();
@@ -1310,7 +1310,7 @@ mod tests {
     }
 
     /// A file with the name of an entry of the recommended list and not its size (a person's own copy, or a
-    /// stand-in of the GUI suite's), where the models are.
+    /// test's stand-in), where the models are.
     fn model_file_of_another_size(dir: &Path) {
         std::fs::create_dir_all(dir.join("models")).unwrap();
         let file = std::fs::File::create(dir.join("models/Ternary-Bonsai-2-4B-Q2_0.gguf")).unwrap();
@@ -1672,7 +1672,7 @@ mod tests {
     }
 
     #[test]
-    /// A73, since C213 (Y1 of `the mockups`): a change moves nothing, and gives the line's box an amber
+    /// A73, since C213: a change moves nothing, and gives the line's box an amber
     /// edge, which it has not before.
     fn p3_a73_a_change_moves_nothing_and_gives_the_box_an_amber_edge() {
         let dir = scratch("a73");
@@ -2078,7 +2078,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// C213 (N1 of `the mockups`): another model picked leaves the configuration in use as it was
+    /// C213: another model picked leaves the configuration in use as it was
     /// saved, and the window holds one with no name: its line says Unnamed in amber, its list has no Save to, the next
     /// start finds it so, Save as names it after the model, and choosing the one it came from goes back to it with its
     /// model. One that names no model keeps its name.

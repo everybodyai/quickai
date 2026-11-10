@@ -1404,7 +1404,7 @@ fn p3_k05_a_daemon_follows_the_app_when_the_app_is_killed() {
 }
 
 /// K11: the same for a program with no process group of its own (llama-server, whose document says
-/// `group = false`): it used to outlive an application that was killed (finding F6, TC-SRV-022).
+/// `group = false`): it used to outlive an application that was killed.
 #[cfg(target_os = "linux")]
 #[test]
 fn p3_k11_a_program_that_leads_no_group_follows_the_app_too() {

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Records what a real Ollama answers, as fixtures for the contract tests of the fakes
 # (docs/phase3-test-plan.md, group C). A fake of a program is only as good as its likeness to the
-# program, so the answers the application depends on are recorded from the real one, and both
-# fakes (the Rust one in the application's tests, `fake_ollama.py` in the GUI suite's repository)
-# are held to the *shape* of every recording: the same keys with the same kinds of value.
+# program, so the answers the application depends on are recorded from the real one, and the fake
+# in the application's tests is held to the *shape* of every recording: the same keys with the same
+# kinds of value.
 #
 #   record.sh --bin PATH/TO/ollama --gguf SMALL.gguf [--pull all-minilm] [--out DIR]
 #

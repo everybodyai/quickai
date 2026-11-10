@@ -1,4 +1,4 @@
-//! The panel at the right of the page (UI v3, C203, the user's A6 of `the mockups`): how the model runs while
+//! The panel at the right of the page (UI v3, C203): how the model runs while
 //! it is stopped (the configuration, the presets or the engine's fields, the MCP servers in a line, and how it fits this
 //! computer), and Connect an app while it runs (the addresses, the model's name, the key, the examples and the chat in a
 //! browser). It is what *Change* under the model's name and the Connect an app popover were.
@@ -11,8 +11,8 @@ use super::App;
 use crate::events::ServerState;
 
 impl App {
-    /// The panel at the right of the page: This computer at its foot while the model is stopped (P1 of
-    /// `the mockups`), the rest over it.
+    /// The panel at the right of the page: This computer at its foot while the model is stopped, the rest
+    /// over it.
     pub(super) fn show_inspector(&mut self, ui: &mut egui::Ui) {
         self.refresh_facts();
         self.poll_devices(ui.ctx());
@@ -28,8 +28,7 @@ impl App {
                     top: 10,
                     bottom: 0,
                 }))
-                // the foot's own edge is the one line over it (D1 of `the mockups`: a second one,
-                // drawn 4 px under it, made two)
+                // the foot's own edge is the one line over it (a second one, drawn 4 px under it, made two)
                 .show(ui, |ui| {
                     let foot = ui
                         .scope(|ui| self.show_this_computer(ui, meters))
@@ -94,8 +93,8 @@ impl App {
         }
     }
 
-    /// Connect an app, while it runs (R1 of `the mockups`, the user's pick of 2026-11-10: "make the
-    /// text less textier on run"): the address, the model's name and the key in one box, with a picture each for its
+    /// Connect an app, while it runs (C213), in few words:
+    /// the address, the model's name and the key in one box, with a picture each for its
     /// label; the example closed, copied without being shown; the chat in a browser; how it runs as chips with a lock;
     /// and the tools. The sentences are in the (i) and the hovers.
     fn show_connect_section(&mut self, ui: &mut egui::Ui) {
@@ -174,8 +173,8 @@ impl App {
 
 impl App {
     /// The head of the panel: the name of its section, an (i) that says `info` when there is one, and at its right » that
-    /// puts the panel away (H4 of `the mockups`; « at the right end of the bar brings it back), with
-    /// the gear of All settings for starting it beside it when `settings` (S1 of `the mockups`).
+    /// puts the panel away (« at the right end of the bar brings it back), with
+    /// the gear of All settings for starting it beside it when `settings`.
     fn panel_head(&mut self, ui: &mut egui::Ui, text: &str, settings: bool, info: Option<&str>) {
         let mut hide = false;
         let mut open_settings = false;

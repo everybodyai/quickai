@@ -1,4 +1,4 @@
-//! Talking to QuickAI (C216, `the mockups`: M1, R1, S1 with S2, H1): the microphone in the chat's box, what
+//! Talking to QuickAI (C216): the microphone in the chat's box, what
 //! was said written down by whisper.cpp and put in the box (or sent), answers read aloud by the computer's own voice,
 //! and hands-free: listen, send, read the answer, listen again. What hears and speaks is `crate::voice`; this is how
 //! the window uses and shows it.
@@ -969,7 +969,7 @@ impl App {
         }
     }
 
-    /// The microphone, before the send arrow (the user: "just keep the mic button on the chat - no need of speaker":
+    /// The microphone, before the send arrow (and no speaker button:
     /// reading every answer aloud is a setting of Settings › Voice, off unless turned on).
     pub(super) fn show_talk_buttons(&mut self, ui: &mut egui::Ui, ready: bool) {
         if !CAN_HEAR {
@@ -1404,7 +1404,7 @@ impl App {
 
     // ---- Settings › Voice ----------------------------------------------------------------------------------------
 
-    /// The Voice page of the Settings (`the mockups`, V1).
+    /// The Voice page of the Settings.
     pub(super) fn show_voice_page(&mut self, ui: &mut egui::Ui) {
         use super::settings_window::{group, page_head, row_line, setting_row, switch_row};
         let p = theme::palette();
