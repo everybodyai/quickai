@@ -5,7 +5,7 @@
 //!   recording played in its place for tests (`QUICKAI_FAKE_MIC`).
 //! - `vad`: when someone is talking, and when they stopped: hands-free and "send when I stop talking".
 //! - `transcribe`: the speech program quickai-whisper (whisper.cpp), run beside the app (feature `voice`).
-//! - `speak`: the computer's own voice (`say`, Windows' speech, espeak-ng or speech-dispatcher), a sentence at a
+//! - `speak`: reading aloud with a voice the person installed (never a robotic one of the system's), a sentence at a
 //!   time, so that the one being read can be shown.
 //! - `spoken`: what a model wrote, made into what should be heard, and cut into sentences, also as it streams in.
 //! - `settings`: the person's choices (`app.voice`), the speech models and the languages.

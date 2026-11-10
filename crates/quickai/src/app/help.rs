@@ -360,9 +360,9 @@ const PAGES: &[Page] = &[
                  one that hears accents and noise better is in **Settings › Voice**.",
             ),
             step(
-                "**Read aloud** under an answer reads it in the computer's own voice, lighting the sentence being read. \
-                 **Read answers aloud**, in Settings › Voice, reads every answer as it comes; it is off until you turn it \
-                 on.",
+                "**Read aloud** under an answer reads it, lighting the sentence being read, once QuickAI has a voice to read \
+                 with. **Read answers aloud**, in Settings › Voice, reads every answer as it comes; it is off until you turn \
+                 it on.",
             ),
             step(
                 "**Hands-free**, in the {more} at the right end of the bar or by right-clicking the microphone: it \
@@ -375,10 +375,7 @@ const PAGES: &[Page] = &[
             ),
         ],
         numbered: true,
-        tip: Some(
-            "Nothing you say leaves this computer. On Linux, reading aloud needs a speech program: install espeak-ng \
-             (sudo apt install espeak-ng) if Read aloud says there is none.",
-        ),
+        tip: Some("Nothing you say leaves this computer."),
     },
     Page {
         page: HelpPage::ConnectApp,

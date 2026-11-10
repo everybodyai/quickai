@@ -42,7 +42,7 @@ no telemetry, and your prompts never leave your computer.
   Bonsai 2 4B (ternary weights, 1.2 GB) and a speech model, so your first chat needs no download at all. The app
   alone is about 30 MB and fetches them when you ask.
 - **Talk to it (experimental).** Turn on voice in Settings → Voice, and the microphone in the chat writes down what
-  you say, **Read aloud** reads an answer in your computer's own voice, and hands-free mode lets you talk with nothing
+  you say, **Read aloud** reads an answer with a voice you install, and hands-free mode lets you talk with nothing
   to press. Your voice never leaves your computer either.
 - **Runs on ordinary hardware.** GPU acceleration through Vulkan on AMD, NVIDIA and Intel, and Metal on Apple
   silicon. QuickAI suggests a model that fits your memory and estimates how fast it will run before you start it,
@@ -126,15 +126,15 @@ hands-free.
 
 Voice is new, and off until you turn on **Use voice** in **Settings → Voice**: until then QuickAI shows no microphone
 and never opens it. Then the microphone in the chat's box writes down what you say: press it and talk, or hold
-**Ctrl+Space**. Your words go in the box, to change before you send them. **Read aloud** under an answer reads it in
-your computer's own voice, lighting the sentence it is reading. **Hands-free** (in the **⋯**, or Ctrl+Shift+Space)
+**Ctrl+Space**. Your words go in the box, to change before you send them. **Read aloud** under an answer reads it
+with a voice you install, lighting the sentence it is reading. **Hands-free** (in the **⋯**, or Ctrl+Shift+Space)
 listens, sends what you said when you pause, reads the answer and listens again; **Esc** ends it.
 
 It all happens on your computer: [quickai-whisper](https://github.com/everybodyai/quickai-whisper), built on
-[whisper.cpp](https://github.com/ggml-org/whisper.cpp), writes your words down on the processor, and your system's own
-voices read (on Linux, install `espeak-ng`). The speech model (82 MB) comes with the bundled packages and is downloaded
-the first time otherwise. **Settings → Voice** has the language you speak, larger speech models, the voice and its
-speed, and reading every answer aloud, which is off until you turn it on.
+[whisper.cpp](https://github.com/ggml-org/whisper.cpp), writes your words down on the processor, and the answers are
+read on it too. The speech model (82 MB) comes with the bundled packages and is downloaded the first time otherwise.
+**Settings → Voice** has the language you speak, larger speech models, the voice and its speed, and reading every
+answer aloud, which is off until you turn it on.
 
 ## Give your model tools
 

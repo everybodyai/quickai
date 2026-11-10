@@ -38,7 +38,7 @@ anything the app does; see [Stores and package managers](#stores-and-package-man
   you press it (or hold Ctrl+Space), or while hands-free is on, which the window shows. What it records is written down
   by quickai-whisper (whisper.cpp), a program that runs beside QuickAI on your computer and connects to nothing, and is
   kept nowhere: the recording is dropped once its words are in the chat's box (or sent, when you chose that). Answers
-  read aloud go to your computer's own speech program. Nothing of either is sent anywhere. The speech model it needs is
+  are read aloud on this computer, with a voice you installed. Nothing of either is sent anywhere. The speech model it needs is
   downloaded once, from Hugging Face (below), unless your package came with it.
 - **Ollama, if you choose it.** Ollama is a separate program, MIT-licensed, that QuickAI downloads on request
   (Settings, **Look up Ollama builds**) and never ships. QuickAI starts it as `ollama serve` so that it listens

@@ -1,5 +1,5 @@
 //! Talking to QuickAI (C216): the microphone in the chat's box, what
-//! was said written down by whisper.cpp and put in the box (or sent), answers read aloud by the computer's own voice,
+//! was said written down by whisper.cpp and put in the box (or sent), answers read aloud by a voice the person installed,
 //! and hands-free: listen, send, read the answer, listen again. What hears and speaks is `crate::voice`; this is how
 //! the window uses and shows it.
 //!
@@ -158,6 +158,9 @@ pub(super) struct Talk {
     /// What is typed in the search box at the top of the lists of languages and of voices.
     language_search: String,
     voice_search: String,
+    /// There is something to read aloud with (a voice the person installed); without it Read aloud is not offered and
+    /// hands-free does not read.
+    pub(super) can_read: bool,
 }
 
 /// How long a recording may be, and how much is kept before someone talks in hands-free (so that the first syllable is
@@ -171,8 +174,14 @@ impl Talk {
     pub(super) fn new(settings: VoiceSettings) -> Talk {
         Talk {
             settings,
+            can_read: crate::voice::speak::detect().is_some(),
             ..Talk::default()
         }
+    }
+
+    /// Hands-free does not read its answers: muted, or there is nothing to read with.
+    fn quiet(&self) -> bool {
+        self.settings.hands_free_muted || !self.can_read
     }
 
     /// The microphone is recording for the box (not hands-free, which shows itself).
@@ -522,7 +531,7 @@ impl App {
     /// Reads every answer as it comes (the speaker in the box), and hands-free's answer: a reading follows the answer
     /// that is being written, a sentence as soon as it is whole.
     fn follow_answer(&mut self, ctx: &egui::Context) {
-        if !self.talk.settings.enabled {
+        if !self.talk.settings.enabled || !self.talk.can_read {
             return;
         }
         let last = self.chat.turns.len().checked_sub(1);
@@ -531,8 +540,7 @@ impl App {
         // the answer to follow, and whether it is hands-free's
         let wanted = match &self.talk.hands_free {
             Some(hf)
-                if !self.talk.settings.hands_free_muted
-                    && matches!(hf.phase, Phase::Waiting | Phase::Answering) =>
+                if !self.talk.quiet() && matches!(hf.phase, Phase::Waiting | Phase::Answering) =>
             {
                 last_reply
                     .filter(|&i| hf.after.is_some_and(|a| i > a) && hf.read_turn != Some(i))
@@ -787,7 +795,7 @@ impl App {
         let reading = self.talk.reading.as_ref().is_some_and(|r| r.hands_free);
         let last_reply = self.chat.turns.iter().rposition(|t| !t.from_person);
         let answered = last_reply.filter(|&i| hf.after.is_some_and(|a| i > a));
-        let heard_all = self.talk.settings.hands_free_muted
+        let heard_all = self.talk.quiet()
             || answered.is_none()
             || hf.read_turn == answered
             || answered.is_some_and(|i| self.chat.turns[i].text.trim().is_empty());
@@ -1117,7 +1125,7 @@ impl App {
 
     /// Read aloud (or Stop reading) under an answer.
     pub(super) fn show_read_aloud(&self, ui: &mut egui::Ui, turn: usize) -> Option<bool> {
-        if !self.talk.settings.enabled {
+        if !self.talk.settings.enabled || !self.talk.can_read {
             return None;
         }
         let reading = self
@@ -1134,7 +1142,7 @@ impl App {
             .on_hover_text(if reading {
                 "Stop reading this answer (Esc)."
             } else {
-                "Read this answer aloud in the computer's own voice."
+                "Read this answer aloud."
             })
             .clicked();
         pressed.then_some(!reading)
@@ -1150,7 +1158,7 @@ impl App {
         let phase = hf.phase;
         let heard = hf.heard.clone();
         let note = hf.note.clone();
-        let muted = self.talk.settings.hands_free_muted;
+        let muted = self.talk.quiet();
         #[cfg(feature = "voice")]
         let level = self.talk.listening.as_ref().map_or(0.0, |l| l.vad.level);
         #[cfg(not(feature = "voice"))]
@@ -1443,7 +1451,7 @@ impl App {
         page_head(
             ui,
             "Voice",
-            Some("Experimental. Talk to QuickAI and hear its answers. What you say is written down on this computer, and the answers are read by its own voice."),
+            Some("Experimental. Talk to QuickAI and hear its answers. What you say is written down on this computer, and the answers are read aloud on it."),
         );
         let mut changed = false;
         // the switch for all of it: off, QuickAI shows no microphone, no Read aloud and no hands-free, and never opens
@@ -1642,6 +1650,15 @@ impl App {
         ui.add_space(14.0);
         ui.label(theme::muted("ANSWERS").small());
         ui.add_space(4.0);
+        if !self.talk.can_read {
+            group(ui, |ui| {
+                ui.label(theme::muted("No voice to read the answers with yet."));
+            });
+            if changed {
+                self.voice_changed();
+            }
+            return;
+        }
         let available = self.speaker(&ctx).available();
         if self.talk.voices.is_none() && self.talk.voices_asked.is_none() {
             self.talk.voices_asked = Some(self.speaker(&ctx).voices());
@@ -1765,8 +1782,8 @@ impl App {
         ui.add_space(10.0);
         ui.label(
             theme::muted(
-                "Nothing you say leaves this computer: QuickAI writes it down itself, and the answers are read by its own \
-                 voice. Shortcuts: hold Ctrl+Space to talk, Ctrl+Shift+Space for hands-free, Esc to stop.",
+                "Nothing you say leaves this computer: QuickAI writes it down itself, and reads the answers on it. \
+                 Shortcuts: hold Ctrl+Space to talk, Ctrl+Shift+Space for hands-free, Esc to stop.",
             )
             .small(),
         );
