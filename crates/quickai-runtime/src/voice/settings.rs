@@ -28,6 +28,8 @@ pub struct VoiceSettings {
     pub speed: f64,
     /// Hands-free shows the answers without reading them.
     pub hands_free_muted: bool,
+    /// Symbols are read too (`#`, `/`, arrows, emoji…), by their names; off, they are left out.
+    pub read_symbols: bool,
     /// What reads the answers aloud: nothing until the person chooses (QuickAI ships no voice).
     pub reader: Reader,
 }
@@ -103,6 +105,7 @@ impl Default for VoiceSettings {
             voice: None,
             speed: 1.0,
             hands_free_muted: false,
+            read_symbols: false,
             reader: Reader::None,
         }
     }
@@ -140,6 +143,7 @@ impl VoiceSettings {
                 .map(|s| s.clamp(0.5, 2.0))
                 .unwrap_or(d.speed),
             hands_free_muted: flag("hands_free_muted", d.hands_free_muted),
+            read_symbols: flag("read_symbols", d.read_symbols),
             reader: Reader::from_value(v.get("reader")),
         }
     }
@@ -174,6 +178,9 @@ impl VoiceSettings {
         }
         if self.hands_free_muted != d.hands_free_muted {
             map.insert("hands_free_muted".into(), json!(self.hands_free_muted));
+        }
+        if self.read_symbols != d.read_symbols {
+            map.insert("read_symbols".into(), json!(self.read_symbols));
         }
         if let Some(reader) = self.reader.to_value() {
             map.insert("reader".into(), reader);
@@ -327,6 +334,7 @@ mod tests {
             voice: Some("en-gb".into()),
             speed: 1.25,
             hands_free_muted: true,
+            read_symbols: true,
             reader: Reader::Server {
                 url: "http://127.0.0.1:8880".into(),
                 model: "kokoro".into(),

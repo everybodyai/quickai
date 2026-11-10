@@ -32,7 +32,9 @@ impl Engine {
     /// `Input::Event` on `feed`, and `Input::Gone` when it ends.
     fn start(backend: &Backend, feed: Sender<Input>) -> Result<Engine, String> {
         let program = match backend {
-            Backend::Voice { program, .. } | Backend::Server { program, .. } => program,
+            Backend::Voice { program, .. }
+            | Backend::Server { program, .. }
+            | Backend::Player { program } => program,
             Backend::Command(_) => return Err("not quickai-voice".into()),
         };
         let mut command = Command::new(program);
@@ -339,6 +341,31 @@ impl Reading {
                     self.check_done();
                 }
             }
+            Order::Play { utterance, sound } => {
+                self.halt();
+                if let Some(u) = self.utterance.take() {
+                    if u != utterance {
+                        self.tell(Spoken::Ended { utterance: u });
+                    }
+                }
+                if let Err(why) = self.ready() {
+                    self.tell(Spoken::Failed { utterance, why });
+                    return;
+                }
+                self.utterance = Some(utterance);
+                self.open = false;
+                let id = self.next_id;
+                self.next_id += 1;
+                self.waiting.insert(id, 0);
+                let played = self
+                    .engine
+                    .as_mut()
+                    .ok_or_else(|| "quickai-voice is not running".to_string())
+                    .and_then(|e| e.play(id, &sound));
+                if let Err(why) = played {
+                    self.fail(why);
+                }
+            }
             Order::Stop => {
                 self.halt();
                 if let Some(u) = self.utterance.take() {
@@ -415,7 +442,9 @@ impl Reading {
                     })
                     .map_err(|_| "the speech server is not being asked".to_string())
                 }),
-            Backend::Command(_) => Err("not quickai-voice".into()),
+            Backend::Command(_) | Backend::Player { .. } => {
+                Err("there is no voice to read with".into())
+            }
         };
         if let Err(why) = sent {
             self.fail(why);
@@ -509,12 +538,19 @@ def player():
         if gen != stops[0]: continue
         say({{"id": i, "ended": True}})
 threading.Thread(target=player, daemon=True).start()
-for line in sys.stdin:
-    line = line.rstrip("\n")
+while True:
+    raw = sys.stdin.buffer.readline()
+    if not raw:
+        break
+    line = raw.decode().rstrip("\n")
     if line.startswith("load	"):
         say({{"loaded": True, "speakers": 54, "rate": 24000}} if {loads} else {{"loaded": False, "error": "no such voice"}})
     elif line.startswith("say	"):
         _, i, speaker, speed, text = line.split("	", 4)
+        q.put((stops[0], int(i)))
+    elif line.startswith("play	"):
+        _, i, size = line.split("	")
+        sys.stdin.buffer.read(int(size))
         q.put((stops[0], int(i)))
     elif line == "stop":
         stops[0] += 1; say({{"stopped": True}})
@@ -619,6 +655,21 @@ for line in sys.stdin:
                 index: 0
             }),
             "{heard:?}"
+        );
+        // a recording played back
+        speaker.play(9, crate::voice::speak::wav16(&[0.0; 1600], 16_000));
+        let heard = heard_until(&speaker, &wake, |h| {
+            h.contains(&Spoken::Ended { utterance: 9 })
+        });
+        assert_eq!(
+            heard,
+            [
+                Spoken::Began {
+                    utterance: 9,
+                    index: 0
+                },
+                Spoken::Ended { utterance: 9 }
+            ]
         );
         drop(speaker);
 

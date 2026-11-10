@@ -55,6 +55,8 @@ pub enum Backend {
     /// A shell line that reads its input aloud, given the voice and the speed as `READALOUD_VOICE` and
     /// `READALOUD_SPEED`.
     Command(String),
+    /// quickai-voice with no voice loaded, to play sound it is given (a recording played back, `Speaker::play`).
+    Player { program: PathBuf },
 }
 
 pub(crate) enum Order {
@@ -71,6 +73,11 @@ pub(crate) enum Order {
     },
     NoMore {
         utterance: u64,
+    },
+    /// Plays a WAV file's bytes as `utterance` (one sentence, index 0).
+    Play {
+        utterance: u64,
+        sound: Vec<u8>,
     },
     Stop,
 }
@@ -111,9 +118,9 @@ impl Speaker {
         std::thread::Builder::new()
             .name("read aloud".into())
             .spawn(move || match backend {
-                Ok(b @ (Backend::Voice { .. } | Backend::Server { .. })) => {
-                    super::engine::run(b, inbox, feed, out, wake)
-                }
+                Ok(
+                    b @ (Backend::Voice { .. } | Backend::Server { .. } | Backend::Player { .. }),
+                ) => super::engine::run(b, inbox, feed, out, wake),
                 Ok(b) => Worker::new(Some(b), inbox, out, wake).run(),
                 Err(_) => Worker::new(None, inbox, out, wake).run(),
             })
@@ -163,6 +170,13 @@ impl Speaker {
 
     pub fn stop(&self) {
         let _ = self.orders.send(Input::Order(Order::Stop));
+    }
+
+    /// Plays `sound`, the bytes of a WAV file, as `utterance`, ending what it was reading (quickai-voice only).
+    pub fn play(&self, utterance: u64, sound: Vec<u8>) {
+        let _ = self
+            .orders
+            .send(Input::Order(Order::Play { utterance, sound }));
     }
 
     /// What it did since the last time.
@@ -246,7 +260,9 @@ pub fn backend_for(settings: &VoiceSettings) -> Result<Backend, String> {
 impl Backend {
     fn name(&self) -> &str {
         match self {
-            Backend::Voice { .. } | Backend::Server { .. } => "quickai-voice",
+            Backend::Voice { .. } | Backend::Server { .. } | Backend::Player { .. } => {
+                "quickai-voice"
+            }
             Backend::Command(_) => "the speech program",
         }
     }
@@ -261,9 +277,9 @@ impl Backend {
                 c
             }
             // quickai-voice is kept running (`engine`), never run a sentence at a time
-            Backend::Voice { program, .. } | Backend::Server { program, .. } => {
-                Command::new(program)
-            }
+            Backend::Voice { program, .. }
+            | Backend::Server { program, .. }
+            | Backend::Player { program } => Command::new(program),
         }
     }
 }
@@ -421,6 +437,12 @@ impl Worker {
                     self.open = false;
                 }
             }
+            Order::Play { utterance, .. } => {
+                self.tell(Spoken::Failed {
+                    utterance,
+                    why: "only QuickAI's voice program plays a recording".into(),
+                });
+            }
             Order::Stop => {
                 self.queue.clear();
                 self.open = false;
@@ -494,6 +516,28 @@ impl Worker {
     }
 }
 
+/// A WAV file of `samples` (-1 to 1, mono, at `rate`) in 16-bit PCM: a recording, for quickai-voice to play.
+pub fn wav16(samples: &[f32], rate: u32) -> Vec<u8> {
+    let data = (samples.len() * 2) as u32;
+    let mut out = Vec::with_capacity(44 + data as usize);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&1u16.to_le_bytes()); // mono
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * 2).to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data.to_le_bytes());
+    for s in samples {
+        let v = (s.clamp(-1.0, 1.0) * 32767.0).round() as i16;
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out
+}
 #[cfg(test)]
 mod tests {
     use super::*;

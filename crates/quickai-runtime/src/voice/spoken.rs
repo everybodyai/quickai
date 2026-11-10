@@ -8,9 +8,18 @@ pub const MAX_CHARS: usize = 20_000;
 /// A sentence longer than this is cut at a comma or a space, so that the voice starts before the end of a long one.
 const LONGEST: usize = 280;
 
-/// `raw` as it should be heard, in one line.
+/// `raw` as it should be heard, in one line, without the symbols a voice would name.
 pub fn for_speech(raw: &str) -> String {
-    let mut state = LineState::default();
+    for_speech_with(raw, false)
+}
+
+/// `raw` as it should be heard, in one line; `symbols` keeps the symbols too (`#`, `/`, arrows, emoji…), which a voice
+/// reads by their names.
+pub fn for_speech_with(raw: &str, symbols: bool) -> String {
+    let mut state = LineState {
+        symbols,
+        ..LineState::default()
+    };
     let lines: Vec<String> = raw
         .lines()
         .filter_map(|line| clean_line(line, &mut state))
@@ -18,19 +27,25 @@ pub fn for_speech(raw: &str) -> String {
     cut(&collapse(&lines.join(" ")))
 }
 
-/// `raw` as it should be heard, in sentences.
+/// `raw` as it should be heard, in sentences, without the symbols a voice would name.
 pub fn sentences(raw: &str) -> Vec<String> {
-    let cleaned = for_speech(raw);
+    sentences_with(raw, false)
+}
+
+/// `raw` as it should be heard, in sentences; `symbols` keeps the symbols too.
+pub fn sentences_with(raw: &str, symbols: bool) -> Vec<String> {
+    let cleaned = for_speech_with(raw, symbols);
     let (mut done, rest) = split_sentences(&cleaned);
     // the last one has no space after its mark: it is a sentence all the same, cut when it is long
     done.extend(cut_long(rest.trim()));
     done
 }
 
-/// What is carried from one line to the next: whether it is inside a block of code.
+/// What is carried from one line to the next: whether it is inside a block of code, and whether symbols are read.
 #[derive(Clone, Debug, Default)]
 pub struct LineState {
     in_code: bool,
+    symbols: bool,
 }
 
 /// One whole line of Markdown as it should be heard, or nothing (a rule, a fence's inside, an empty line).
@@ -56,6 +71,10 @@ fn clean_line(line: &str, state: &mut LineState) -> Option<String> {
             .collect::<Vec<_>>()
             .join(", ");
     }
+    // the symbols left once a table's cells are its words (a `|` between them is a comma)
+    if !state.symbols {
+        spoken = without_symbols(&spoken);
+    }
     let spoken = collapse(&spoken);
     if spoken.is_empty() {
         return None;
@@ -68,6 +87,36 @@ fn clean_line(line: &str, state: &mut LineState) -> Option<String> {
             spoken
         },
     )
+}
+
+/// `text` without the symbols a voice reads by their names ("hash", "slash", "rightwards arrow", "grinning face"), each
+/// made a space. Kept: letters and digits of every script with their marks, the marks of a sentence, quotes, brackets,
+/// hyphens and dashes, and the symbols that are read as words (`% $ € £ ¥ & °`, and a slash between digits, as in 1/2).
+pub fn without_symbols(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    for (i, &c) in chars.iter().enumerate() {
+        let between_digits = i > 0
+            && chars[i - 1].is_ascii_digit()
+            && chars.get(i + 1).is_some_and(char::is_ascii_digit);
+        let symbol = match c {
+            '/' => !between_digits,
+            '#' | '*' | '_' | '`' | '~' | '^' | '|' | '\\' | '<' | '>' | '=' | '+' | '@' | '['
+            | ']' | '{' | '}' => true,
+            // bullets, daggers, marks of a section or a trade
+            '\u{2022}' | '\u{2023}' | '\u{2043}' | '\u{00B7}' | '\u{2020}' | '\u{2021}'
+            | '\u{00A7}' | '\u{00B6}' | '\u{00A9}' | '\u{00AE}' | '\u{2122}' | '\u{203B}' => true,
+            // emoji's joiners and selectors, and the keycap
+            '\u{200D}' | '\u{FE0E}' | '\u{FE0F}' | '\u{20E3}' => true,
+            _ => matches!(c as u32,
+                // arrows, maths, the technical, box drawing, blocks, shapes, symbols, dingbats, more arrows
+                0x2190..=0x23FF | 0x2500..=0x27BF | 0x27F0..=0x27FF | 0x2900..=0x297F | 0x2B00..=0x2BFF
+                // emoji and pictographs
+                | 0x1F000..=0x1FAFF),
+        };
+        out.push(if symbol { ' ' } else { c });
+    }
+    collapse(&out)
 }
 
 fn collapse(text: &str) -> String {
@@ -184,6 +233,27 @@ pub struct SentenceFeed {
 }
 
 impl SentenceFeed {
+    /// Words of a line that was begun already: its inline marks left out, and its symbols unless they are read.
+    fn speakable(&self, text: &str) -> String {
+        let words = collapse(&inline(text));
+        if self.state.symbols {
+            words
+        } else {
+            without_symbols(&words)
+        }
+    }
+
+    /// A feed that reads the symbols too (`symbols`), or leaves them out.
+    pub fn new(symbols: bool) -> SentenceFeed {
+        SentenceFeed {
+            state: LineState {
+                symbols,
+                ..LineState::default()
+            },
+            ..SentenceFeed::default()
+        }
+    }
+
     pub fn push(&mut self, piece: &str) -> Vec<String> {
         let mut out = Vec::new();
         self.line.push_str(piece);
@@ -196,7 +266,7 @@ impl SentenceFeed {
             let cleaned = if fresh {
                 clean_line(whole.trim_end_matches('\n'), &mut self.state)
             } else {
-                Some(collapse(&inline(unsaid.trim_end_matches('\n'))))
+                Some(self.speakable(unsaid.trim_end_matches('\n')))
             };
             if let Some(words) = cleaned.filter(|w| !w.is_empty()) {
                 self.add(&words, &mut out);
@@ -225,7 +295,7 @@ impl SentenceFeed {
             let unsaid = &self.line[from..];
             // up to the last end of a sentence in it, before a space
             if let Some(end) = last_sentence_end(unsaid) {
-                let words = collapse(&inline(&unsaid[..end]));
+                let words = self.speakable(&unsaid[..end]);
                 self.given = from + end;
                 if !words.is_empty() {
                     self.add(&words, &mut out);
@@ -423,12 +493,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn symbols_are_left_out_unless_they_are_read_as_words_and_kept_when_asked() {
+        assert_eq!(
+            for_speech("Use the A → B path #2 with C++ and/or x = y @home 😀 • done"),
+            "Use the A B path 2 with C and or x y home done"
+        );
+        assert_eq!(
+            for_speech("It costs $5, 20% off, 1/2 of it & 20°C."),
+            "It costs $5, 20% off, 1/2 of it & 20°C."
+        );
+        assert_eq!(for_speech("the snake_case name"), "the snake case name");
+        // the marks of other scripts are not symbols
+        assert_eq!(for_speech("മലയാളം हिन्दी 中文。"), "മലയാളം हिन्दी 中文。");
+        assert_eq!(for_speech_with("A → B #2", true), "A → B #2");
+        let mut feed = SentenceFeed::new(false);
+        let mut heard = feed.push("Arrows → go here. ");
+        heard.extend(feed.finish());
+        assert_eq!(heard, ["Arrows go here."]);
+    }
+
+    #[test]
     fn marks_are_not_read() {
         assert_eq!(
             for_speech("This is **very** _important_ and `cargo run`."),
             "This is very important and cargo run."
         );
-        assert_eq!(for_speech("keep snake_case names"), "keep snake_case names");
+        assert_eq!(for_speech("keep snake_case names"), "keep snake case names");
         assert_eq!(
             for_speech("# Fried rice\n\nYou need:\n- rice\n- two eggs\n1. Fry the eggs"),
             "Fried rice. You need: rice. two eggs. Fry the eggs."

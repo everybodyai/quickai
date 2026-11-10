@@ -48,6 +48,8 @@ pub(super) enum Purpose {
     /// Ctrl+Space was held: they go in the box when it is let go.
     Hold,
     HandsFree,
+    /// Settings › Voice's try: the recording is kept, to be played back and written down when asked.
+    Test,
 }
 
 /// What hands-free is doing.
@@ -159,12 +161,28 @@ pub(super) struct Talk {
     voice_download: Option<(Job<String>, VoiceFetch)>,
     voice_unpacking: Option<Receiver<Result<(), String>>>,
     voice_note: Option<String>,
+    /// Settings › Voice's try of speech to text.
+    trial: Trial,
     /// What is typed in the search box at the top of the lists of languages and of voices.
     language_search: String,
     voice_search: String,
     /// There is something to read aloud with (a voice the person installed); without it Read aloud is not offered and
     /// hands-free does not read.
     pub(super) can_read: bool,
+}
+
+/// Settings › Voice's try of speech to text: a recording, played back and written down when asked.
+#[derive(Default)]
+pub(super) struct Trial {
+    samples: Vec<f32>,
+    /// What the speech model wrote down of it, which model, and how long it took; or why it could not.
+    result: Option<Result<(String, &'static str, Duration), String>>,
+    /// It is being written down, since then, by that model.
+    writing: Option<(Instant, &'static str)>,
+    note: Option<String>,
+    /// quickai-voice playing the recording back, and the playing.
+    player: Option<Speaker>,
+    playing: Option<u64>,
 }
 
 /// What a voice's download brings: a pack, quickai-voice, or both.
@@ -415,6 +433,10 @@ impl App {
             }
             // the program that writes down what was said (quickai-whisper), which the packages carry next to the app
             if crate::voice::transcribe::program().is_none() {
+                if purpose == Purpose::Test {
+                    self.talk.trial.note = Some(crate::voice::transcribe::missing());
+                    return;
+                }
                 self.talk.card = Some(Card::Said {
                     title: "Speech to text is not here".into(),
                     words: crate::voice::transcribe::missing(),
@@ -425,6 +447,12 @@ impl App {
                 return;
             }
             if self.speech_model_path().is_none() {
+                if purpose == Purpose::Test {
+                    self.talk.trial.note = Some(
+                        "The speech model is not on this computer yet: download it above.".into(),
+                    );
+                    return;
+                }
                 if !matches!(self.talk.card, Some(Card::Downloading { .. })) {
                     self.talk.card = Some(Card::Download {
                         model: self.speech_model_now(),
@@ -454,6 +482,9 @@ impl App {
                     });
                     ctx.request_repaint();
                 }
+                Err(e) if purpose == Purpose::Test => {
+                    self.talk.trial.note = Some(card_words(&blocked_card(&e)));
+                }
                 Err(e) => {
                     self.talk.card = Some(blocked_card(&e));
                     if purpose == Purpose::HandsFree {
@@ -478,6 +509,14 @@ impl App {
             let mut samples = l.samples;
             samples.extend(l.rec.take());
             drop(l.rec);
+            if l.purpose == Purpose::Test {
+                if keep {
+                    self.talk.trial.samples = samples;
+                    self.talk.trial.result = None;
+                    self.talk.trial.note = None;
+                }
+                return;
+            }
             if !keep {
                 return;
             }
@@ -536,10 +575,18 @@ impl App {
             && (purpose == Purpose::HandsFree || (purpose == Purpose::Box && send_when_stopped)))
             || (purpose == Purpose::HandsFree && l.voiced && elapsed > LONGEST_HANDS_FREE)
             || elapsed > LONGEST_RECORDING;
-        if let Some(e) = error {
+        if let (Some(e), Purpose::Test) = (&error, purpose) {
+            self.talk.listening = None;
+            self.talk.trial.note = Some(card_words(&blocked_card(e)));
+        } else if let Some(e) = error {
             self.talk.listening = None;
             self.talk.card = Some(blocked_card(&e));
             self.talk.hands_free = None;
+        } else if silent && purpose == Purpose::Test {
+            self.talk.listening = None;
+            self.talk.trial.note = Some(card_words(&blocked_card(&MicError::Blocked(
+                "only silence came from it".into(),
+            ))));
         } else if silent {
             self.talk.listening = None;
             self.talk.card = Some(blocked_card(&MicError::Blocked(
@@ -568,6 +615,18 @@ impl App {
                 continue;
             }
             self.talk.writing = None;
+            if purpose == Purpose::Test {
+                let (took, model) = self
+                    .talk
+                    .trial
+                    .writing
+                    .take()
+                    .map_or((Duration::ZERO, ""), |(since, model)| {
+                        (since.elapsed(), model)
+                    });
+                self.talk.trial.result = Some(result.map(|text| (text, model, took)));
+                continue;
+            }
             match (purpose, result) {
                 (Purpose::HandsFree, Ok(text)) => self.hands_free_heard(text, ctx),
                 (Purpose::HandsFree, Err(why)) => {
@@ -611,7 +670,7 @@ impl App {
         let Some(text) = self.chat.turns.get(turn).map(|t| t.text.clone()) else {
             return;
         };
-        let sentences = spoken::sentences(&text);
+        let sentences = spoken::sentences_with(&text, self.talk.settings.read_symbols);
         if sentences.is_empty() {
             return;
         }
@@ -696,7 +755,7 @@ impl App {
                 self.begin_reading(
                     turn,
                     Vec::new(),
-                    Some((SentenceFeed::default(), 0)),
+                    Some((SentenceFeed::new(self.talk.settings.read_symbols), 0)),
                     hands_free,
                     ctx,
                 );
@@ -970,6 +1029,7 @@ impl App {
         self.poll_spoken(ctx);
         self.step_hands_free(ctx);
         self.poll_voice_download(ctx);
+        self.poll_trial();
     }
 
     /// Ctrl+Space held records for the box; Ctrl+Shift+Space starts and ends hands-free; Escape stops reading and ends
@@ -1571,6 +1631,207 @@ impl App {
         }
     }
 
+    /// The try's recording written down by the speech model chosen.
+    fn write_down_trial(&mut self, ctx: &egui::Context) {
+        #[cfg(feature = "voice")]
+        {
+            if self.talk.trial.samples.is_empty() || self.talk.writing.is_some() {
+                return;
+            }
+            let Some(path) = self.speech_model_path() else {
+                self.talk.trial.note =
+                    Some("The speech model is not on this computer yet: download it above.".into());
+                return;
+            };
+            let model = self.speech_model_now().name;
+            self.talk.next += 1;
+            let id = self.talk.next;
+            let wake = ctx.clone();
+            let transcriber = self
+                .talk
+                .transcriber
+                .get_or_insert_with(|| Transcriber::new(move || wake.request_repaint()));
+            transcriber.write(
+                id,
+                &path,
+                self.talk.trial.samples.clone(),
+                self.talk.settings.language.clone(),
+            );
+            self.talk.writing = Some((id, Purpose::Test));
+            self.talk.trial.writing = Some((Instant::now(), model));
+            self.talk.trial.result = None;
+            self.talk.trial.note = None;
+        }
+        #[cfg(not(feature = "voice"))]
+        {
+            let _ = ctx;
+        }
+    }
+
+    /// The try's recording played back, by quickai-voice.
+    fn play_trial(&mut self, ctx: &egui::Context) {
+        if self.talk.trial.samples.is_empty() {
+            return;
+        }
+        let Some(program) = voices::program() else {
+            self.talk.trial.note = Some(
+                "Playing it back needs QuickAI's voice program: it comes with a voice (Answers, below).".into(),
+            );
+            return;
+        };
+        let wake = ctx.clone();
+        let player = self.talk.trial.player.get_or_insert_with(|| {
+            Speaker::new(Ok(speak::Backend::Player { program }), move || {
+                wake.request_repaint()
+            })
+        });
+        self.talk.next += 1;
+        let id = self.talk.next;
+        player.play(
+            id,
+            speak::wav16(&self.talk.trial.samples, crate::voice::RATE),
+        );
+        self.talk.trial.playing = Some(id);
+    }
+
+    /// What the try's player did: playing ended, or could not.
+    fn poll_trial(&mut self) {
+        let Some(player) = &self.talk.trial.player else {
+            return;
+        };
+        for spoken in player.take() {
+            match spoken {
+                Spoken::Ended { utterance } if self.talk.trial.playing == Some(utterance) => {
+                    self.talk.trial.playing = None;
+                }
+                Spoken::Failed { utterance, why } if self.talk.trial.playing == Some(utterance) => {
+                    self.talk.trial.playing = None;
+                    self.talk.trial.note = Some(format!("It could not be played back: {why}"));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// The try of speech to text on the Voice page: record, play it back, write it down.
+    fn show_trial(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let p = theme::palette();
+        #[cfg(feature = "voice")]
+        let recording = self
+            .talk
+            .listening
+            .as_ref()
+            .filter(|l| l.purpose == Purpose::Test)
+            .map(|l| (l.started.elapsed(), l.vad.level));
+        #[cfg(not(feature = "voice"))]
+        let recording: Option<(Duration, f32)> = None;
+        let busy_elsewhere = {
+            #[cfg(feature = "voice")]
+            {
+                self.talk
+                    .listening
+                    .as_ref()
+                    .is_some_and(|l| l.purpose != Purpose::Test)
+            }
+            #[cfg(not(feature = "voice"))]
+            {
+                false
+            }
+        };
+        let has = !self.talk.trial.samples.is_empty();
+        let seconds = self.talk.trial.samples.len() as f32 / crate::voice::RATE as f32;
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Try it").color(p.text)).on_hover_text(
+                "Record a few words, play them back, and see what the speech model above writes down of them.",
+            );
+            ui.add_space(8.0);
+            let size = egui::vec2(30.0, 28.0);
+            if let Some((elapsed, _)) = recording {
+                if icons::icon_button(ui, Icon::Stop, size, true, true)
+                    .on_hover_text("Stop recording")
+                    .clicked()
+                {
+                    self.stop_listening(true, ctx);
+                }
+                ui.label(theme::muted(format!("{:.1} s", elapsed.as_secs_f32())).small());
+            } else if icons::icon_button(ui, Icon::Mic, size, !busy_elsewhere, false)
+                .on_hover_text("Record what you say, until you stop it")
+                .clicked()
+            {
+                self.talk.trial.note = None;
+                self.start_listening(Purpose::Test, ctx);
+            }
+            if self.talk.trial.playing.is_some() {
+                if icons::icon_button(ui, Icon::Stop, size, true, true)
+                    .on_hover_text("Stop playing")
+                    .clicked()
+                {
+                    if let Some(player) = &self.talk.trial.player {
+                        player.stop();
+                    }
+                }
+            } else if icons::icon_button(ui, Icon::Play, size, has && recording.is_none(), false)
+                .on_hover_text("Play the recording")
+                .clicked()
+            {
+                self.play_trial(ctx);
+            }
+            let can_write = has && recording.is_none() && self.talk.trial.writing.is_none();
+            if icons::icon_button(ui, Icon::Pencil, size, can_write, false)
+                .on_hover_text("Write it down with the speech model above")
+                .clicked()
+            {
+                self.write_down_trial(ctx);
+            }
+            if has && recording.is_none() {
+                ui.label(theme::muted(format!("{seconds:.1} s")).small());
+            }
+        });
+        if let Some((_, level)) = recording {
+            ui.add(egui::ProgressBar::new(level.clamp(0.0, 1.0)).desired_height(4.0));
+            ctx.request_repaint_after(Duration::from_millis(50));
+        }
+        if let Some((since, model)) = self.talk.trial.writing {
+            ui.horizontal(|ui| {
+                ui.add(egui::Spinner::new().size(14.0).color(p.muted));
+                ui.label(
+                    theme::muted(format!("{model} · {:.1} s", since.elapsed().as_secs_f32()))
+                        .small(),
+                );
+            });
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
+        match &self.talk.trial.result {
+            Some(Ok((text, model, took))) => {
+                ui.add_space(4.0);
+                if text.trim().is_empty() {
+                    ui.label(theme::muted("Nothing heard.").small());
+                } else {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(format!("“{}”", text.trim())).color(p.text),
+                        )
+                        .wrap(),
+                    );
+                }
+                ui.label(theme::muted(format!("{model} · {:.1} s", took.as_secs_f32())).small());
+            }
+            Some(Err(why)) => {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(format!("It could not be written down: {why}"))
+                        .small()
+                        .color(p.warn),
+                );
+            }
+            None => {}
+        }
+        if let Some(note) = &self.talk.trial.note {
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(note).small().color(p.warn));
+        }
+    }
+
     /// A pack chosen: its download, or once here, which of its voices reads.
     fn show_pack(
         &mut self,
@@ -1907,6 +2168,8 @@ impl App {
                 self.talk.settings.send_when_stopped = send;
                 changed = true;
             }
+            row_line(ui);
+            self.show_trial(ui, &ctx);
         });
         ui.add_space(14.0);
         ui.label(theme::muted("ANSWERS").small());
@@ -2121,6 +2384,19 @@ impl App {
                 changed = true;
             }
             row_line(ui);
+            let mut symbols = self.talk.settings.read_symbols;
+            if switch_row(
+                ui,
+                "Read symbols aloud",
+                Some("Off, symbols such as # / → and emoji are left out of what is read, rather than named."),
+                None,
+                &mut symbols,
+                true,
+            ) {
+                self.talk.settings.read_symbols = symbols;
+                changed = true;
+            }
+            row_line(ui);
             let mut speed = self.talk.settings.speed as f32;
             setting_row(ui, "Speed", None, None, |ui| {
                 let slider = ui.add(
@@ -2180,6 +2456,17 @@ impl App {
         if changed {
             self.voice_changed();
         }
+    }
+}
+
+/// A card's words on one line, for where a card is not shown (Settings › Voice's try).
+#[cfg(feature = "voice")]
+fn card_words(card: &Card) -> String {
+    match card {
+        Card::Blocked { title, words, .. } | Card::Said { title, words } => {
+            format!("{title}: {words}")
+        }
+        _ => String::new(),
     }
 }
 
