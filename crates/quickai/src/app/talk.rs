@@ -26,11 +26,13 @@ use super::theme::{self, Role};
 use super::App;
 use crate::jobs::Job;
 use crate::paths;
+use crate::voice::settings::Reader;
 use crate::voice::settings::{
     language_name, speech_model, SpeechModel, VoiceSettings, LANGUAGES, SPEECH_MODELS,
 };
-use crate::voice::speak::{Speaker, Spoken, VoiceInfo};
+use crate::voice::speak::{self, Speaker, Spoken};
 use crate::voice::spoken::{self, SentenceFeed};
+use crate::voice::voices::{self, VoicePack, VOICE_PACKS, VOICE_PROGRAM};
 #[cfg(feature = "voice")]
 use crate::voice::{
     capture::{self, MicError, Microphone},
@@ -153,14 +155,22 @@ pub(super) struct Talk {
     nothing_heard: Option<Instant>,
     #[cfg(feature = "voice")]
     mics: Option<Vec<Microphone>>,
-    voices: Option<Result<Vec<VoiceInfo>, String>>,
-    voices_asked: Option<Receiver<Result<Vec<VoiceInfo>, String>>>,
+    /// A voice (and quickai-voice with it) being downloaded, then unpacked; what came of it, said under the choice.
+    voice_download: Option<(Job<String>, VoiceFetch)>,
+    voice_unpacking: Option<Receiver<Result<(), String>>>,
+    voice_note: Option<String>,
     /// What is typed in the search box at the top of the lists of languages and of voices.
     language_search: String,
     voice_search: String,
     /// There is something to read aloud with (a voice the person installed); without it Read aloud is not offered and
     /// hands-free does not read.
     pub(super) can_read: bool,
+}
+
+/// What a voice's download brings: a pack, quickai-voice, or both.
+pub(super) struct VoiceFetch {
+    pack: Option<&'static VoicePack>,
+    program: bool,
 }
 
 /// How long a recording may be, and how much is kept before someone talks in hands-free (so that the first syllable is
@@ -173,8 +183,8 @@ const PRE_ROLL: usize = crate::voice::RATE as usize / 2;
 impl Talk {
     pub(super) fn new(settings: VoiceSettings) -> Talk {
         Talk {
+            can_read: speak::backend_for(&settings).is_ok(),
             settings,
-            can_read: crate::voice::speak::detect().is_some(),
             ..Talk::default()
         }
     }
@@ -233,9 +243,10 @@ impl App {
 
     fn speaker(&mut self, ctx: &egui::Context) -> &Speaker {
         let ctx = ctx.clone();
-        self.talk
-            .speaker
-            .get_or_insert_with(|| Speaker::new(move || ctx.request_repaint()))
+        let settings = self.talk.settings.clone();
+        self.talk.speaker.get_or_insert_with(|| {
+            Speaker::new(speak::backend_for(&settings), move || ctx.request_repaint())
+        })
     }
 
     /// Voice turned off in the Settings: whatever of it was going stops.
@@ -250,6 +261,130 @@ impl App {
     /// The person changed something of the voice: it is kept.
     fn voice_changed(&mut self) {
         self.save_settings();
+        // what reads may have changed: the next reading starts it again, with the choice as it is now
+        self.stop_reading();
+        self.talk.speaker = None;
+        self.talk.can_read = speak::backend_for(&self.talk.settings).is_ok();
+    }
+
+    /// Downloads what reading with `pack` needs that is not here (quickai-voice, and the pack), or quickai-voice alone
+    /// for a voice of the person's own; then unpacks it.
+    fn download_voice(&mut self, pack: Option<&'static VoicePack>, ctx: &egui::Context) {
+        if self.talk.voice_download.is_some() || self.talk.voice_unpacking.is_some() {
+            return;
+        }
+        use quickai_core::lookup::present::{Download, Piece};
+        let piece = |label: &str, url: String, archive: &str, bytes: u64, sha256: &str| Piece {
+            kind: None,
+            label: label.into(),
+            url,
+            store_as: archive.into(),
+            name: archive.into(),
+            size: Some(bytes),
+            sha256: Some(sha256.into()),
+            place: None,
+        };
+        let mut files = Vec::new();
+        let program = voices::program().is_none();
+        if program {
+            let Some(asset) = VOICE_PROGRAM.here() else {
+                self.talk.voice_note = Some(
+                    "The voice program cannot be downloaded yet: its first release is still being made.".into(),
+                );
+                return;
+            };
+            files.push(piece(
+                "voice program",
+                VOICE_PROGRAM.url(&asset),
+                asset.archive,
+                asset.bytes,
+                asset.sha256,
+            ));
+        }
+        let pack = pack.filter(|p| !p.installed());
+        if let Some(pack) = pack {
+            files.push(piece(
+                "voice",
+                pack.url(),
+                pack.archive,
+                pack.bytes,
+                pack.sha256,
+            ));
+        }
+        if files.is_empty() {
+            return;
+        }
+        let download = Download {
+            files,
+            bundle: None,
+            source: "github".into(),
+            mode: None,
+        };
+        let with = crate::downloader::FetchWith {
+            strict_size: true,
+            ..Default::default()
+        };
+        let job = crate::downloader::spawn_files_with(
+            download,
+            voices::voice_dir().join("downloads"),
+            with,
+            super::calm_wake(ctx.clone()),
+        );
+        self.talk.voice_note = None;
+        self.talk.voice_download = Some((job, VoiceFetch { pack, program }));
+    }
+
+    /// The voice's download ended: what came is unpacked, on a thread of its own (a pack is a few hundred MB).
+    fn poll_voice_download(&mut self, ctx: &egui::Context) {
+        if let Some(rx) = &self.talk.voice_unpacking {
+            ctx.request_repaint_after(Duration::from_millis(250));
+            if let Ok(done) = rx.try_recv() {
+                self.talk.voice_unpacking = None;
+                match done {
+                    Ok(()) => {
+                        self.talk.voice_note = None;
+                        self.push_log("[quickai] The voice is on this computer.".to_string());
+                    }
+                    Err(why) => self.talk.voice_note = Some(why),
+                }
+                self.voice_changed();
+            }
+            return;
+        }
+        let Some((job, _)) = &mut self.talk.voice_download else {
+            return;
+        };
+        ctx.request_repaint_after(Duration::from_millis(250));
+        let Some(done) = job.poll() else {
+            return;
+        };
+        let Some((_, fetch)) = self.talk.voice_download.take() else {
+            return;
+        };
+        match done {
+            Ok(_) => {
+                let (tx, rx) = std::sync::mpsc::channel();
+                let wake = ctx.clone();
+                std::thread::spawn(move || {
+                    let downloads = voices::voice_dir().join("downloads");
+                    let mut done = Ok(());
+                    if fetch.program {
+                        if let Some(asset) = VOICE_PROGRAM.here() {
+                            done = voices::install_program(&downloads.join(asset.archive));
+                        }
+                    }
+                    if let (Ok(()), Some(pack)) = (&done, fetch.pack) {
+                        done = voices::install_pack(pack, &downloads.join(pack.archive));
+                    }
+                    let _ = tx.send(done);
+                    wake.request_repaint();
+                });
+                self.talk.voice_unpacking = Some(rx);
+            }
+            Err(why) => {
+                self.talk.voice_note = Some(format!("The voice could not be downloaded: {why}"))
+            }
+        }
     }
 
     /// Whether a message can be sent now: a model runs and the box takes it.
@@ -834,12 +969,7 @@ impl App {
         self.follow_answer(ctx);
         self.poll_spoken(ctx);
         self.step_hands_free(ctx);
-        if let Some(rx) = &self.talk.voices_asked {
-            if let Ok(voices) = rx.try_recv() {
-                self.talk.voices = Some(voices);
-                self.talk.voices_asked = None;
-            }
-        }
+        self.poll_voice_download(ctx);
     }
 
     /// Ctrl+Space held records for the box; Ctrl+Shift+Space starts and ends hands-free; Escape stops reading and ends
@@ -1441,6 +1571,137 @@ impl App {
         }
     }
 
+    /// A pack chosen: its download, or once here, which of its voices reads.
+    fn show_pack(
+        &mut self,
+        ui: &mut egui::Ui,
+        pack: &'static VoicePack,
+        ctx: &egui::Context,
+    ) -> bool {
+        use super::settings_window::setting_row;
+        let p = theme::palette();
+        let mut changed = false;
+        let here = pack.installed() && voices::program().is_some();
+        if !here {
+            let downloading = self
+                .talk
+                .voice_download
+                .as_ref()
+                .map(|(job, _)| (job.downloaded, job.total));
+            if let Some((done, total)) = downloading {
+                let total = total.unwrap_or(pack.bytes).max(1);
+                ui.label(
+                    theme::muted(format!(
+                        "Downloading {}: {} of {}",
+                        pack.name,
+                        megabytes(done),
+                        megabytes(total)
+                    ))
+                    .small(),
+                );
+                ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_height(6.0));
+            } else if self.talk.voice_unpacking.is_some() {
+                ui.horizontal(|ui| {
+                    ui.add(egui::Spinner::new().size(14.0).color(p.muted));
+                    ui.label(theme::muted(format!("Unpacking {}…", pack.name)).small());
+                });
+            } else {
+                let what = if pack.installed() {
+                    "The voice program is not on this computer yet.".to_string()
+                } else {
+                    format!(
+                        "{} is not on this computer yet ({}, {} licence).",
+                        pack.name,
+                        megabytes(pack.bytes),
+                        pack.license
+                    )
+                };
+                ui.label(theme::muted(what).small());
+                if theme::button_sized(ui, Role::Primary, true, "Download", egui::vec2(96.0, 26.0))
+                    .clicked()
+                {
+                    self.download_voice(Some(pack), ctx);
+                }
+            }
+            return changed;
+        }
+        let voice = self
+            .talk
+            .settings
+            .voice
+            .clone()
+            .filter(|v| pack.speaker(v).is_some());
+        let shown = voices::speaker_label(
+            voice
+                .as_deref()
+                .unwrap_or(pack.speakers[3.min(pack.speakers.len() - 1)]),
+        );
+        setting_row(ui, "Voice", Some("The voices of this pack."), None, |ui| {
+            egui::ComboBox::from_id_salt("voice_voice")
+                .selected_text(shown)
+                .width(220.0)
+                .height(320.0)
+                .truncate()
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .show_ui(ui, |ui| {
+                    let query = search_box(ui, &mut self.talk.voice_search, "Search voices");
+                    for name in pack
+                        .speakers
+                        .iter()
+                        .filter(|n| matches(&query, &[n, &voices::speaker_label(n)]))
+                    {
+                        if ui
+                            .selectable_label(
+                                voice.as_deref() == Some(*name),
+                                voices::speaker_label(name),
+                            )
+                            .clicked()
+                        {
+                            self.talk.settings.voice = Some(name.to_string());
+                            changed = true;
+                            ui.close();
+                        }
+                    }
+                });
+        });
+        changed
+    }
+
+    /// A voice of the person's own, or a speech server, is played by quickai-voice: its download when it is not here.
+    fn show_program_needed(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) -> bool {
+        if voices::program().is_some() {
+            return false;
+        }
+        let p = theme::palette();
+        ui.add_space(4.0);
+        if let Some((done, total)) = self
+            .talk
+            .voice_download
+            .as_ref()
+            .map(|(job, _)| (job.downloaded, job.total))
+        {
+            let total = total.unwrap_or(1).max(1);
+            ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_height(6.0));
+        } else if self.talk.voice_unpacking.is_some() {
+            ui.add(egui::Spinner::new().size(14.0).color(p.muted));
+        } else {
+            ui.horizontal(|ui| {
+                ui.label(
+                    theme::muted(
+                        "It plays through QuickAI's voice program, which is not here yet.",
+                    )
+                    .small(),
+                );
+                if theme::button_sized(ui, Role::Normal, true, "Download it", egui::vec2(0.0, 24.0))
+                    .clicked()
+                {
+                    self.download_voice(None, ctx);
+                }
+            });
+        }
+        false
+    }
+
     // ---- Settings › Voice ----------------------------------------------------------------------------------------
 
     /// The Voice page of the Settings.
@@ -1650,20 +1911,202 @@ impl App {
         ui.add_space(14.0);
         ui.label(theme::muted("ANSWERS").small());
         ui.add_space(4.0);
-        if !self.talk.can_read {
-            group(ui, |ui| {
-                ui.label(theme::muted("No voice to read the answers with yet."));
-            });
-            if changed {
-                self.voice_changed();
-            }
-            return;
-        }
-        let available = self.speaker(&ctx).available();
-        if self.talk.voices.is_none() && self.talk.voices_asked.is_none() {
-            self.talk.voices_asked = Some(self.speaker(&ctx).voices());
-        }
         group(ui, |ui| {
+            // what reads aloud: nothing until the person chooses, for QuickAI ships no voice
+            let reader = self.talk.settings.reader.clone();
+            let mut chosen: Option<Reader> = None;
+            setting_row(
+                ui,
+                "Read with",
+                Some("No voice comes with QuickAI: download one, or use one of your own."),
+                None,
+                |ui| {
+                    egui::ComboBox::from_id_salt("voice_reader")
+                        .selected_text(reader_label(&reader))
+                        .width(220.0)
+                        .truncate()
+                        .show_ui(ui, |ui| {
+                            if ui.selectable_label(reader == Reader::None, "Nothing").clicked() {
+                                chosen = Some(Reader::None);
+                            }
+                            for pack in &VOICE_PACKS {
+                                let on = reader == Reader::Pack(pack.id.into());
+                                if ui
+                                    .selectable_label(on, format!("{} · {}", pack.name, megabytes(pack.bytes)))
+                                    .on_hover_text(format!("{}. {} licence.", pack.about, pack.license))
+                                    .clicked()
+                                {
+                                    chosen = Some(Reader::Pack(pack.id.into()));
+                                }
+                            }
+                            if ui
+                                .selectable_label(matches!(reader, Reader::Folder(_)), "A voice from a folder…")
+                                .on_hover_text("A voice of sherpa-onnx's you have: Kokoro, Kitten, Piper or another VITS voice, Matcha.")
+                                .clicked()
+                            {
+                                chosen = Some(Reader::Folder(String::new()));
+                            }
+                            if ui
+                                .selectable_label(matches!(reader, Reader::Server { .. }), "A speech server…")
+                                .on_hover_text("A server that speaks OpenAI's /v1/audio/speech, for voices QuickAI cannot run itself.")
+                                .clicked()
+                            {
+                                chosen = Some(Reader::Server { url: String::new(), model: String::new(), key: String::new() });
+                            }
+                            if ui
+                                .selectable_label(matches!(reader, Reader::Program(_)), "A program of my own…")
+                                .on_hover_text("A command that reads its input aloud.")
+                                .clicked()
+                            {
+                                chosen = Some(Reader::Program(String::new()));
+                            }
+                        });
+                },
+            );
+            if let Some(next) = chosen {
+                // a different kind of reader keeps nothing of the last one's voice
+                if std::mem::discriminant(&next) != std::mem::discriminant(&reader) {
+                    self.talk.settings.voice = None;
+                }
+                if next != reader {
+                    self.talk.settings.reader = next;
+                    changed = true;
+                }
+            }
+            let reader = self.talk.settings.reader.clone();
+            match &reader {
+                Reader::None => {}
+                Reader::Pack(id) => {
+                    if let Some(pack) = voices::voice_pack(id) {
+                        row_line(ui);
+                        changed |= self.show_pack(ui, pack, &ctx);
+                    }
+                }
+                Reader::Folder(path) => {
+                    row_line(ui);
+                    let mut text = path.clone();
+                    setting_row(
+                        ui,
+                        "Folder",
+                        Some("The folder of the voice, with its .onnx model and tokens.txt."),
+                        None,
+                        |ui| {
+                            if ui.button("Choose…").clicked() {
+                                if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                                    text = dir.to_string_lossy().into_owned();
+                                }
+                            }
+                            ui.add(
+                                egui::TextEdit::singleline(&mut text)
+                                    .desired_width(220.0)
+                                    .hint_text("/path/to/the/voice"),
+                            );
+                        },
+                    );
+                    if text != *path {
+                        self.talk.settings.reader = Reader::Folder(text.clone());
+                        changed = true;
+                    }
+                    if !text.trim().is_empty() {
+                        match voices::describe_folder(std::path::Path::new(text.trim())) {
+                            Ok(spec) => {
+                                ui.label(
+                                    theme::muted(format!("A {} voice.", kind_words(spec.kind)))
+                                        .small(),
+                                );
+                            }
+                            Err(why) => {
+                                ui.label(egui::RichText::new(why).small().color(p.warn));
+                            }
+                        }
+                    }
+                    row_line(ui);
+                    let mut number: u32 = self
+                        .talk
+                        .settings
+                        .voice
+                        .as_deref()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    setting_row(
+                        ui,
+                        "Speaker",
+                        Some("The number of the voice in it, for a voice that has several."),
+                        None,
+                        |ui| {
+                            if ui
+                                .add(egui::DragValue::new(&mut number).range(0..=999))
+                                .changed()
+                            {
+                                self.talk.settings.voice = Some(number.to_string());
+                                changed = true;
+                            }
+                        },
+                    );
+                    changed |= self.show_program_needed(ui, &ctx);
+                }
+                Reader::Server { url, model, key } => {
+                    let (mut url_text, mut model_text, mut key_text) =
+                        (url.clone(), model.clone(), key.clone());
+                    let mut voice_text = self.talk.settings.voice.clone().unwrap_or_default();
+                    for (label, desc, text, hint, secret) in [
+                        ("Address", "Where the server is; QuickAI asks …/v1/audio/speech there.", &mut url_text, "http://127.0.0.1:8880", false),
+                        ("Model", "The model to ask it for, if it has several.", &mut model_text, "kokoro", false),
+                        ("Voice", "The voice to ask it for.", &mut voice_text, "af_heart", false),
+                        ("Key", "Its API key, if it asks for one. It is kept in QuickAI's settings on this computer.", &mut key_text, "", true),
+                    ] {
+                        row_line(ui);
+                        setting_row(ui, label, Some(desc), None, |ui| {
+                            ui.add(egui::TextEdit::singleline(text).desired_width(220.0).hint_text(hint).password(secret));
+                        });
+                    }
+                    if url_text != *url || model_text != *model || key_text != *key {
+                        self.talk.settings.reader = Reader::Server {
+                            url: url_text,
+                            model: model_text,
+                            key: key_text,
+                        };
+                        changed = true;
+                    }
+                    if voice_text != self.talk.settings.voice.clone().unwrap_or_default() {
+                        self.talk.settings.voice =
+                            (!voice_text.trim().is_empty()).then(|| voice_text.trim().to_string());
+                        changed = true;
+                    }
+                    ui.label(
+                        theme::muted(
+                            "Each sentence of the answers is sent to this address to be read.",
+                        )
+                        .small(),
+                    );
+                    changed |= self.show_program_needed(ui, &ctx);
+                }
+                Reader::Program(command) => {
+                    row_line(ui);
+                    let mut text = command.clone();
+                    setting_row(
+                        ui,
+                        "Command",
+                        Some("Reads its input aloud; it is given READALOUD_VOICE and READALOUD_SPEED."),
+                        None,
+                        |ui| {
+                            ui.add(egui::TextEdit::singleline(&mut text).desired_width(220.0).hint_text("piper … | aplay"));
+                        },
+                    );
+                    if text != *command {
+                        self.talk.settings.reader = Reader::Program(text);
+                        changed = true;
+                    }
+                }
+            }
+            if let Some(note) = &self.talk.voice_note {
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(note).small().color(p.warn));
+            }
+            if reader == Reader::None {
+                return;
+            }
+            row_line(ui);
             let mut read = self.talk.settings.read_answers;
             if switch_row(
                 ui,
@@ -1678,61 +2121,6 @@ impl App {
                 changed = true;
             }
             row_line(ui);
-            let voices = match &self.talk.voices {
-                Some(Ok(v)) => v.clone(),
-                _ => Vec::new(),
-            };
-            let voice = self.talk.settings.voice.clone();
-            let shown = voice.clone().unwrap_or_else(|| "The usual one".into());
-            setting_row(
-                ui,
-                "Voice",
-                Some("The voices this computer has."),
-                None,
-                |ui| {
-                    egui::ComboBox::from_id_salt("voice_voice")
-                        .selected_text(shown)
-                        .width(220.0)
-                        .height(320.0)
-                        .truncate()
-                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                        .show_ui(ui, |ui| {
-                            let query =
-                                search_box(ui, &mut self.talk.voice_search, "Search voices");
-                            if query.is_empty()
-                                && ui
-                                    .selectable_label(voice.is_none(), "The usual one")
-                                    .clicked()
-                            {
-                                self.talk.settings.voice = None;
-                                changed = true;
-                                ui.close();
-                            }
-                            for v in voices
-                                .iter()
-                                .filter(|v| matches(&query, &[&v.id, &v.language, &v.about]))
-                            {
-                                let words = if v.about.is_empty() {
-                                    format!("{} · {}", v.id, v.language)
-                                } else {
-                                    format!("{} · {}", v.about, v.language)
-                                };
-                                if ui
-                                    .selectable_label(
-                                        voice.as_deref() == Some(v.id.as_str()),
-                                        words,
-                                    )
-                                    .clicked()
-                                {
-                                    self.talk.settings.voice = Some(v.id.clone());
-                                    changed = true;
-                                    ui.close();
-                                }
-                            }
-                        });
-                },
-            );
-            row_line(ui);
             let mut speed = self.talk.settings.speed as f32;
             setting_row(ui, "Speed", None, None, |ui| {
                 let slider = ui.add(
@@ -1746,11 +2134,12 @@ impl App {
             });
             self.talk.settings.speed = f64::from(speed);
             row_line(ui);
+            let why_not = speak::backend_for(&self.talk.settings).err();
             ui.horizontal(|ui| {
                 if theme::button_sized(
                     ui,
                     Role::Normal,
-                    available.is_ok(),
+                    why_not.is_none(),
                     "Hear it",
                     egui::vec2(0.0, 26.0),
                 )
@@ -1770,10 +2159,10 @@ impl App {
                 }
                 ui.label(theme::muted("“Hello. This is how QuickAI reads its answers.”").small());
             });
-            if let Err(why) = &available {
+            if let Some(why) = why_not {
                 ui.add_space(4.0);
                 ui.label(
-                    egui::RichText::new(format!("It cannot read aloud here: {why}."))
+                    egui::RichText::new(format!("It cannot read aloud yet: {why}."))
                         .small()
                         .color(p.warn),
                 );
@@ -1782,8 +2171,9 @@ impl App {
         ui.add_space(10.0);
         ui.label(
             theme::muted(
-                "Nothing you say leaves this computer: QuickAI writes it down itself, and reads the answers on it. \
-                 Shortcuts: hold Ctrl+Space to talk, Ctrl+Shift+Space for hands-free, Esc to stop.",
+                "Nothing you say leaves this computer: QuickAI writes it down itself, and reads the answers on it (unless you \
+                 chose a speech server elsewhere). Shortcuts: hold Ctrl+Space to talk, Ctrl+Shift+Space for hands-free, Esc \
+                 to stop.",
             )
             .small(),
         );
@@ -1832,6 +2222,32 @@ fn blocked_card(e: &MicError) -> Card {
             words: format!("{detail}. Another program may be using it, or choose another in Settings › Voice."),
             settings: None,
         },
+    }
+}
+
+/// What reads aloud, in a few words, for the list's head.
+fn reader_label(reader: &Reader) -> String {
+    match reader {
+        Reader::None => "Nothing".into(),
+        Reader::Pack(id) => {
+            voices::voice_pack(id).map_or_else(|| id.clone(), |p| p.name.to_string())
+        }
+        Reader::Folder(_) => "A voice from a folder".into(),
+        Reader::Server { .. } => "A speech server".into(),
+        Reader::Program(_) => "A program of my own".into(),
+    }
+}
+
+fn megabytes(bytes: u64) -> String {
+    format!("{} MB", (bytes + 500_000) / 1_000_000)
+}
+
+fn kind_words(kind: voices::ModelKind) -> &'static str {
+    match kind {
+        voices::ModelKind::Kokoro => "Kokoro",
+        voices::ModelKind::Kitten => "Kitten",
+        voices::ModelKind::Vits => "VITS (Piper)",
+        voices::ModelKind::Matcha => "Matcha",
     }
 }
 

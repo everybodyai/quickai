@@ -130,6 +130,12 @@ pub fn tar_gz(entries: &[Entry]) -> Vec<u8> {
     encoder.finish().unwrap()
 }
 
+pub fn tar_bz2(entries: &[Entry]) -> Vec<u8> {
+    let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::fast());
+    encoder.write_all(&tar(entries)).unwrap();
+    encoder.finish().unwrap()
+}
+
 /// One zstd frame holding `data` in raw blocks: no checksum, a window of 128 KiB.
 pub fn zst_frame(data: &[u8]) -> Vec<u8> {
     const BLOCK: usize = 64 * 1024;

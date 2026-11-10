@@ -31,6 +31,8 @@ pub enum ArchiveKind {
     Zip,
     TarGz,
     TarZst,
+    /// The voices of sherpa-onnx come as `.tar.bz2`.
+    TarBz2,
 }
 
 impl ArchiveKind {
@@ -45,6 +47,8 @@ impl ArchiveKind {
             Some(ArchiveKind::TarZst)
         } else if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
             Some(ArchiveKind::TarGz)
+        } else if name.ends_with(".tar.bz2") || name.ends_with(".tbz2") {
+            Some(ArchiveKind::TarBz2)
         } else if name.ends_with(".zip") {
             Some(ArchiveKind::Zip)
         } else {
@@ -57,11 +61,12 @@ impl ArchiveKind {
             ArchiveKind::Zip => "zip",
             ArchiveKind::TarGz => "tar.gz",
             ArchiveKind::TarZst => "tar.zst",
+            ArchiveKind::TarBz2 => "tar.bz2",
         }
     }
 
     /// The sentence for a file this installer cannot read.
-    pub const EXPECTED: &'static str = "expected a .zip, .tar.gz, .tgz or .tar.zst";
+    pub const EXPECTED: &'static str = "expected a .zip, .tar.gz, .tgz, .tar.zst or .tar.bz2";
 }
 
 /// Why unpacking stopped.
@@ -108,6 +113,12 @@ pub fn extract(
         ArchiveKind::TarZst => File::open(archive)
             .map_err(Refusal::from)
             .and_then(|file| extract_tar(ZstdReader::new(file), &mut extractor)),
+        ArchiveKind::TarBz2 => File::open(archive).map_err(Refusal::from).and_then(|file| {
+            extract_tar(
+                bzip2::read::BzDecoder::new(std::io::BufReader::new(file)),
+                &mut extractor,
+            )
+        }),
     };
     outcome
         .map(|()| extractor.bytes)
@@ -560,6 +571,7 @@ mod tests {
             ("https://x/a.zip#frag", Some(Zip)),
             ("https://x/a.rar", None),
             ("https://x/a.zst", None),
+            ("https://x/kokoro-multi-lang-v1_0.tar.bz2", Some(TarBz2)),
             ("https://x/a.tar", None),
         ] {
             assert_eq!(ArchiveKind::from_url(url), kind, "{url}");
@@ -569,7 +581,7 @@ mod tests {
 
     // ---- the extractor on archives made by hand ----------------------------------------------------
 
-    use crate::testkit::archives::{tar_gz, zip, Entry};
+    use crate::testkit::archives::{tar_bz2, tar_gz, zip, Entry};
     use crate::testkit::{scratch, Scratch};
 
     /// Unpacks `archive` (written to a file named `name`) into a fresh staging directory and gives
@@ -686,6 +698,24 @@ mod tests {
         assert_eq!(
             std::fs::read(staging.join("data")).unwrap(),
             b"second version"
+        );
+    }
+
+    #[test]
+    fn a_tar_bz2_is_unpacked_as_a_tar_gz_is() {
+        let (outcome, staging, _outer) = unpack(
+            "kokoro.tar.bz2",
+            tar_bz2(&[
+                Entry::file("kokoro/model.onnx", b"weights"),
+                Entry::file("kokoro/tokens.txt", b"a 0"),
+            ]),
+            &[],
+        );
+        outcome.expect("a .tar.bz2 unpacks");
+        assert_eq!(names(&staging), ["kokoro"]);
+        assert_eq!(
+            std::fs::read(staging.join("kokoro/model.onnx")).unwrap(),
+            b"weights"
         );
     }
 

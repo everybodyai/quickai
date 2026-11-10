@@ -15,7 +15,7 @@
 
 use std::path::{Path, PathBuf};
 
-fn exe_dir() -> Option<PathBuf> {
+pub fn exe_dir() -> Option<PathBuf> {
     std::env::current_exe()
         .ok()?
         .parent()
@@ -76,6 +76,11 @@ pub fn bundled_speech_dir() -> PathBuf {
 /// Where speech models are downloaded to: `~/.quickai/speech`.
 pub fn user_speech_dir() -> PathBuf {
     home_dir().join(".quickai").join("speech")
+}
+
+/// QuickAI's own folder in the person's home: `~/.quickai`.
+pub fn user_quickai_dir() -> PathBuf {
+    home_dir().join(".quickai")
 }
 
 /// Where quickai-whisper (everybodyai/quickai-whisper, the program that writes down what is said) is looked for, first

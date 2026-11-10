@@ -28,6 +28,67 @@ pub struct VoiceSettings {
     pub speed: f64,
     /// Hands-free shows the answers without reading them.
     pub hands_free_muted: bool,
+    /// What reads the answers aloud: nothing until the person chooses (QuickAI ships no voice).
+    pub reader: Reader,
+}
+
+/// What reads the answers aloud. `voice` (in `VoiceSettings`) is the voice in it: a speaker's name of a pack, the
+/// number of a speaker of a folder's voice, or the voice a speech server is asked for.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum Reader {
+    #[default]
+    None,
+    /// A pack downloaded from `voices::VOICE_PACKS`, read by quickai-voice.
+    Pack(String),
+    /// A folder of a voice sherpa-onnx can read, the person's own, read by quickai-voice.
+    Folder(String),
+    /// A speech server that speaks OpenAI's `/v1/audio/speech` (for voices quickai-voice cannot run): its address,
+    /// the model to ask for, and its key when it wants one. What it sends back is played by quickai-voice.
+    Server {
+        url: String,
+        model: String,
+        key: String,
+    },
+    /// A program of the person's own that reads its input aloud (a shell line).
+    Program(String),
+}
+
+impl Reader {
+    fn to_value(&self) -> Option<Value> {
+        match self {
+            Reader::None => None,
+            Reader::Pack(id) => Some(json!({ "kind": "pack", "id": id })),
+            Reader::Folder(path) => Some(json!({ "kind": "folder", "path": path })),
+            Reader::Server { url, model, key } => {
+                Some(json!({ "kind": "server", "url": url, "model": model, "key": key }))
+            }
+            Reader::Program(command) => Some(json!({ "kind": "program", "command": command })),
+        }
+    }
+
+    fn from_value(value: Option<&Value>) -> Reader {
+        let Some(v) = value.and_then(Value::as_object) else {
+            return Reader::None;
+        };
+        let text = |key: &str| {
+            v.get(key)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or("")
+                .to_string()
+        };
+        match v.get("kind").and_then(Value::as_str) {
+            Some("pack") if !text("id").is_empty() => Reader::Pack(text("id")),
+            Some("folder") if !text("path").is_empty() => Reader::Folder(text("path")),
+            Some("server") => Reader::Server {
+                url: text("url"),
+                model: text("model"),
+                key: text("key"),
+            },
+            Some("program") if !text("command").is_empty() => Reader::Program(text("command")),
+            _ => Reader::None,
+        }
+    }
 }
 
 impl Default for VoiceSettings {
@@ -42,6 +103,7 @@ impl Default for VoiceSettings {
             voice: None,
             speed: 1.0,
             hands_free_muted: false,
+            reader: Reader::None,
         }
     }
 }
@@ -78,6 +140,7 @@ impl VoiceSettings {
                 .map(|s| s.clamp(0.5, 2.0))
                 .unwrap_or(d.speed),
             hands_free_muted: flag("hands_free_muted", d.hands_free_muted),
+            reader: Reader::from_value(v.get("reader")),
         }
     }
 
@@ -111,6 +174,9 @@ impl VoiceSettings {
         }
         if self.hands_free_muted != d.hands_free_muted {
             map.insert("hands_free_muted".into(), json!(self.hands_free_muted));
+        }
+        if let Some(reader) = self.reader.to_value() {
+            map.insert("reader".into(), reader);
         }
         (!map.is_empty()).then_some(Value::Object(map))
     }
@@ -261,6 +327,11 @@ mod tests {
             voice: Some("en-gb".into()),
             speed: 1.25,
             hands_free_muted: true,
+            reader: Reader::Server {
+                url: "http://127.0.0.1:8880".into(),
+                model: "kokoro".into(),
+                key: String::new(),
+            },
         };
         let kept = chosen.to_value().unwrap();
         assert_eq!(VoiceSettings::from_value(Some(&kept)), chosen);

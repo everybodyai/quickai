@@ -26,6 +26,8 @@ mod journal;
 mod python_app;
 mod zstd;
 
+/// The voices of reading aloud are unpacked as an install is (`voice::voices`).
+pub(crate) use extract::{extract as unpack_archive, ArchiveKind};
 pub use journal::{is_unfinished, list_unfinished, SourceRecord, Unfinished};
 #[cfg(any(test, feature = "testkit"))]
 pub use journal::{Journal, StepRecord};
@@ -55,7 +57,7 @@ use sha2::{Digest, Sha256};
 use crate::hardware::format_bytes;
 use crate::jobs::{Job, JobEvent};
 use crate::runtime::process::{run_captured_until, without_package_loader_env, RunFailure};
-use extract::{extract, ArchiveKind};
+use extract::extract;
 
 const CHUNK: usize = 256 * 1024;
 
@@ -1167,7 +1169,7 @@ mod tests {
         let error = install(&spec(&root), &fake.url("/b.rar"), "b1").unwrap_err();
         assert!(error.contains("don't know how to extract"), "{error}");
         assert!(
-            error.contains("expected a .zip, .tar.gz, .tgz or .tar.zst"),
+            error.contains("expected a .zip, .tar.gz, .tgz, .tar.zst or .tar.bz2"),
             "{error}"
         );
         assert_eq!(fake.requests(), 0);

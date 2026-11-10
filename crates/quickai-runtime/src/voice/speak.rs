@@ -2,15 +2,20 @@
 //! can light it) and when it has read them all. More sentences can be given while it reads (an answer that is still
 //! being written), and a new reading or Stop ends the one going on at once.
 //!
-//! QuickAI reads with a voice the person chose to have, never with a robotic one of the system's: today the program of
-//! `QUICKAI_SPEECH_COMMAND`, a shell line that reads its input aloud (tests write it to a file). Without one there is
-//! nothing to read with, and Read aloud is not offered.
+//! QuickAI reads with a voice the person chose to have, never with a robotic one of the system's, and ships none
+//! (`voices`): a pack downloaded or a folder of their own, read by the program quickai-voice (`engine`); a speech
+//! server, whose sound quickai-voice plays; or a program of their own, a shell line that reads its input aloud (also
+//! `QUICKAI_SPEECH_COMMAND`, which tests use). Without one there is nothing to read with, and Read aloud is not offered.
 
 use std::collections::VecDeque;
 use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::Duration;
+
+use super::settings::{Reader, VoiceSettings};
+use super::voices::{self, ModelSpec};
 
 /// What the voice did.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,24 +35,29 @@ pub enum Spoken {
     },
 }
 
-/// A voice the program can read in.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct VoiceInfo {
-    /// What to name it by.
-    pub id: String,
-    pub language: String,
-    pub about: String,
-}
-
 /// What reads aloud.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Backend {
+    /// quickai-voice, reading with the voice it loads: speaker `speaker` of `spec`.
+    Voice {
+        program: PathBuf,
+        spec: ModelSpec,
+        speaker: usize,
+    },
+    /// A speech server (OpenAI's `/v1/audio/speech`), whose sound quickai-voice plays.
+    Server {
+        program: PathBuf,
+        url: String,
+        model: String,
+        key: String,
+        voice: String,
+    },
     /// A shell line that reads its input aloud, given the voice and the speed as `READALOUD_VOICE` and
     /// `READALOUD_SPEED`.
     Command(String),
 }
 
-enum Order {
+pub(crate) enum Order {
     Say {
         utterance: u64,
         sentences: Vec<String>,
@@ -65,37 +75,59 @@ enum Order {
     Stop,
 }
 
+/// What a reading thread is told: the speaker's orders, and for quickai-voice what it and a speech server said.
+pub(crate) enum Input {
+    Order(Order),
+    /// A line quickai-voice wrote.
+    Event(serde_json::Value),
+    /// The sound a speech server made for sentence `id` of round `round`.
+    Fetched {
+        round: u64,
+        id: u64,
+        sound: Result<Vec<u8>, String>,
+    },
+    /// quickai-voice ended.
+    Gone,
+    /// The speaker is gone.
+    Quit,
+}
+
 /// The voice's thread; it ends when this is dropped.
 pub struct Speaker {
-    orders: Sender<Order>,
+    orders: Sender<Input>,
     spoken: Receiver<Spoken>,
-    backend: Option<Backend>,
+    ready: Result<(), String>,
 }
 
 impl Speaker {
-    /// `wake` is called when it began a sentence or ended, for the window to look.
-    pub fn new(wake: impl Fn() + Send + 'static) -> Speaker {
-        let backend = detect();
+    /// Reads with `backend` (or says why it cannot); `wake` is called when it began a sentence or ended, for the
+    /// window to look.
+    pub fn new(backend: Result<Backend, String>, wake: impl Fn() + Send + 'static) -> Speaker {
         let (orders, inbox) = std::sync::mpsc::channel();
         let (out, spoken) = std::sync::mpsc::channel();
-        let worker_backend = backend.clone();
+        let ready = backend.as_ref().map(|_| ()).map_err(Clone::clone);
+        let feed = orders.clone();
+        let wake: Box<dyn Fn() + Send> = Box::new(wake);
         std::thread::Builder::new()
             .name("read aloud".into())
-            .spawn(move || Worker::new(worker_backend, inbox, out, Box::new(wake)).run())
+            .spawn(move || match backend {
+                Ok(b @ (Backend::Voice { .. } | Backend::Server { .. })) => {
+                    super::engine::run(b, inbox, feed, out, wake)
+                }
+                Ok(b) => Worker::new(Some(b), inbox, out, wake).run(),
+                Err(_) => Worker::new(None, inbox, out, wake).run(),
+            })
             .expect("a thread for reading aloud");
         Speaker {
             orders,
             spoken,
-            backend,
+            ready,
         }
     }
 
     /// Whether it can read aloud here, or why not.
     pub fn available(&self) -> Result<(), String> {
-        match self.backend {
-            Some(_) => Ok(()),
-            None => Err(no_program()),
-        }
+        self.ready.clone()
     }
 
     /// Reads `sentences` as `utterance`, ending what it was reading; `more` says more will come (`more`, `no_more`).
@@ -107,54 +139,42 @@ impl Speaker {
         voice: Option<String>,
         speed: f64,
     ) {
-        let _ = self.orders.send(Order::Say {
+        let _ = self.orders.send(Input::Order(Order::Say {
             utterance,
             sentences,
             more,
             voice,
             speed,
-        });
+        }));
     }
 
     pub fn more(&self, utterance: u64, sentences: Vec<String>) {
         if !sentences.is_empty() {
-            let _ = self.orders.send(Order::More {
+            let _ = self.orders.send(Input::Order(Order::More {
                 utterance,
                 sentences,
-            });
+            }));
         }
     }
 
     pub fn no_more(&self, utterance: u64) {
-        let _ = self.orders.send(Order::NoMore { utterance });
+        let _ = self.orders.send(Input::Order(Order::NoMore { utterance }));
     }
 
     pub fn stop(&self) {
-        let _ = self.orders.send(Order::Stop);
+        let _ = self.orders.send(Input::Order(Order::Stop));
     }
 
     /// What it did since the last time.
     pub fn take(&self) -> Vec<Spoken> {
         self.spoken.try_iter().collect()
     }
-
-    /// The voices of the program, asked on a thread of its own: the answer comes on the receiver.
-    pub fn voices(&self) -> Receiver<Result<Vec<VoiceInfo>, String>> {
-        let (tx, rx) = std::sync::mpsc::channel();
-        let backend = self.backend.clone();
-        std::thread::spawn(move || {
-            let _ = tx.send(match backend {
-                Some(b) => b.voices(),
-                None => Err(no_program()),
-            });
-        });
-        rx
-    }
 }
 
 impl Drop for Speaker {
     fn drop(&mut self) {
-        let _ = self.orders.send(Order::Stop);
+        let _ = self.orders.send(Input::Order(Order::Stop));
+        let _ = self.orders.send(Input::Quit);
     }
 }
 
@@ -162,20 +182,76 @@ fn no_program() -> String {
     "QuickAI has no voice to read with yet".into()
 }
 
-/// What this computer reads with: the program of `QUICKAI_SPEECH_COMMAND` when it is set, else nothing.
-pub fn detect() -> Option<Backend> {
-    let line = std::env::var("QUICKAI_SPEECH_COMMAND").ok()?;
-    (!line.trim().is_empty()).then_some(Backend::Command(line))
+/// Kokoro's voice read when none was chosen: af_heart.
+const FIRST_SPEAKER: usize = 3;
+
+/// What reads aloud with the person's choices, or why nothing can: `QUICKAI_SPEECH_COMMAND` when it is set (tests),
+/// else the reader of the settings.
+pub fn backend_for(settings: &VoiceSettings) -> Result<Backend, String> {
+    if let Ok(line) = std::env::var("QUICKAI_SPEECH_COMMAND") {
+        if !line.trim().is_empty() {
+            return Ok(Backend::Command(line));
+        }
+    }
+    let program = || {
+        voices::program().ok_or_else(|| "the voice program is not on this computer yet".to_string())
+    };
+    match &settings.reader {
+        Reader::None => Err(no_program()),
+        Reader::Pack(id) => {
+            let pack = voices::voice_pack(id).ok_or("that voice is no longer offered")?;
+            if !pack.installed() {
+                return Err(format!("{} is not on this computer yet", pack.name));
+            }
+            let speaker = settings
+                .voice
+                .as_deref()
+                .and_then(|v| pack.speaker(v))
+                .unwrap_or(FIRST_SPEAKER.min(pack.speakers.len().saturating_sub(1)));
+            Ok(Backend::Voice {
+                program: program()?,
+                spec: pack.spec(),
+                speaker,
+            })
+        }
+        Reader::Folder(path) => {
+            let spec = voices::describe_folder(Path::new(path))?;
+            let speaker = settings
+                .voice
+                .as_deref()
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(0);
+            Ok(Backend::Voice {
+                program: program()?,
+                spec,
+                speaker,
+            })
+        }
+        Reader::Server { url, model, key } => {
+            if url.trim().is_empty() {
+                return Err("the speech server has no address yet".into());
+            }
+            Ok(Backend::Server {
+                program: program()?,
+                url: url.trim().to_string(),
+                model: model.clone(),
+                key: key.clone(),
+                voice: settings.voice.clone().unwrap_or_default(),
+            })
+        }
+        Reader::Program(line) => Ok(Backend::Command(line.clone())),
+    }
 }
 
 impl Backend {
     fn name(&self) -> &str {
         match self {
+            Backend::Voice { .. } | Backend::Server { .. } => "quickai-voice",
             Backend::Command(_) => "the speech program",
         }
     }
 
-    /// The command that reads one sentence on its input aloud.
+    /// The command that reads one sentence on its input aloud (a program of the person's own).
     pub fn command(&self, voice: Option<&str>, speed: f64) -> Command {
         match self {
             Backend::Command(line) => {
@@ -184,12 +260,10 @@ impl Backend {
                 c.env("READALOUD_SPEED", format!("{speed}"));
                 c
             }
-        }
-    }
-
-    fn voices(&self) -> Result<Vec<VoiceInfo>, String> {
-        match self {
-            Backend::Command(_) => Ok(Vec::new()),
+            // quickai-voice is kept running (`engine`), never run a sentence at a time
+            Backend::Voice { program, .. } | Backend::Server { program, .. } => {
+                Command::new(program)
+            }
         }
     }
 }
@@ -227,7 +301,7 @@ enum Outcome {
 
 struct Worker {
     backend: Option<Backend>,
-    inbox: Receiver<Order>,
+    inbox: Receiver<Input>,
     out: Sender<Spoken>,
     wake: Box<dyn Fn() + Send>,
     utterance: Option<u64>,
@@ -241,7 +315,7 @@ struct Worker {
 impl Worker {
     fn new(
         backend: Option<Backend>,
-        inbox: Receiver<Order>,
+        inbox: Receiver<Input>,
         out: Sender<Spoken>,
         wake: Box<dyn Fn() + Send>,
     ) -> Worker {
@@ -272,14 +346,19 @@ impl Worker {
                     self.tell(Spoken::Ended { utterance: u });
                 }
             }
-            let order = if self.queue.is_empty() {
+            let input = if self.queue.is_empty() {
                 match self.inbox.recv_timeout(Duration::from_millis(500)) {
-                    Ok(o) => Some(o),
+                    Ok(i) => Some(i),
                     Err(RecvTimeoutError::Timeout) => None,
                     Err(RecvTimeoutError::Disconnected) => break,
                 }
             } else {
                 self.inbox.try_recv().ok()
+            };
+            let order = match input {
+                Some(Input::Order(o)) => Some(o),
+                Some(Input::Quit) => break,
+                _ => None,
             };
             if let Some(order) = order {
                 self.obey(order);
@@ -393,13 +472,18 @@ impl Worker {
                 Err(e) => return Outcome::Failed(e.to_string()),
             }
             match self.inbox.recv_timeout(Duration::from_millis(20)) {
-                Ok(order @ (Order::Say { .. } | Order::Stop)) => {
+                Ok(Input::Order(order @ (Order::Say { .. } | Order::Stop))) => {
                     let _ = child.kill();
                     let _ = child.wait();
                     return Outcome::Cut(order);
                 }
-                Ok(other) => self.obey(other),
-                Err(RecvTimeoutError::Timeout) => {}
+                Ok(Input::Order(other)) => self.obey(other),
+                Ok(Input::Quit) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Outcome::Cut(Order::Stop);
+                }
+                Ok(_) | Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => {
                     let _ = child.kill();
                     let _ = child.wait();
@@ -442,7 +526,7 @@ mod tests {
         let speaker = Speaker {
             orders,
             spoken,
-            backend: None,
+            ready: Ok(()),
         };
         speaker.say(1, vec!["One.".into(), "Two.".into()], true, None, 1.0);
         speaker.more(1, vec!["Three.".into()]);
