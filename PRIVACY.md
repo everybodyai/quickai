@@ -221,6 +221,14 @@ while it runs, not while you chat. It does so only when you press a button, or E
   the microphone offers to download it; **Download** fetches one file of `ggerganov/whisper.cpp` from Hugging Face
   (`huggingface.co`, about 82 MB, checked against the checksum the app pins). A larger one is fetched the same way when
   you choose it in Settings › Voice.
+- **A voice to read the answers aloud.** No voice comes with QuickAI. When you choose Kokoro in Settings › Voice › Read
+  with and press **Download**, the voice is fetched from sherpa-onnx's releases on GitHub (`github.com`, 350 MB or 132
+  MB, checked against the checksum the app pins), and with the first voice QuickAI's voice program, quickai-voice, from
+  its releases on GitHub (`github.com/everybodyai/quickai-voice`). Both are kept in `~/.quickai/voice`. Reading aloud
+  then happens on this computer and contacts no one.
+- **A speech server, if you choose one.** With **A speech server** as what reads, each sentence of an answer is sent to
+  the address you give, which turns it into sound: a server on this computer keeps it here, one elsewhere sees the
+  text it reads. Its key, if you give one, is kept in QuickAI's settings on this computer.
 - **The recommended models.** **Add a model** with its box empty suggests models from a list that is part of the
   application, and **Recommended** (in the Models menu) opens the whole list: opening them, searching the list and
   closing them contact no one. A button of it fetches what it says (below), from the host the list names: Hugging Face

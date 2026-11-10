@@ -42,8 +42,8 @@ no telemetry, and your prompts never leave your computer.
   Bonsai 2 4B (ternary weights, 1.2 GB) and a speech model, so your first chat needs no download at all. The app
   alone is about 30 MB and fetches them when you ask.
 - **Talk to it (experimental).** Turn on voice in Settings → Voice, and the microphone in the chat writes down what
-  you say, **Read aloud** reads an answer with a voice you install, and hands-free mode lets you talk with nothing
-  to press. Your voice never leaves your computer either.
+  you say, **Read aloud** reads an answer with a natural voice you download (Kokoro) or one of your own, and hands-free
+  mode lets you talk with nothing to press. Your voice never leaves your computer either.
 - **Runs on ordinary hardware.** GPU acceleration through Vulkan on AMD, NVIDIA and Intel, and Metal on Apple
   silicon. QuickAI suggests a model that fits your memory and estimates how fast it will run before you start it,
   on the graphics card, the processor, or both.
@@ -131,10 +131,19 @@ with a voice you install, lighting the sentence it is reading. **Hands-free** (i
 listens, sends what you said when you pause, reads the answer and listens again; **Esc** ends it.
 
 It all happens on your computer: [quickai-whisper](https://github.com/everybodyai/quickai-whisper), built on
-[whisper.cpp](https://github.com/ggml-org/whisper.cpp), writes your words down on the processor, and the answers are
-read on it too. The speech model (82 MB) comes with the bundled packages and is downloaded the first time otherwise.
-**Settings → Voice** has the language you speak, larger speech models, the voice and its speed, and reading every
-answer aloud, which is off until you turn it on.
+[whisper.cpp](https://github.com/ggml-org/whisper.cpp), writes your words down on the processor. The speech model
+(82 MB) comes with the bundled packages and is downloaded the first time otherwise. **Settings → Voice** has the
+language you speak, larger speech models, and reading every answer aloud, which is off until you turn it on.
+
+No voice to read with comes with QuickAI: in **Settings → Voice → Read with**, choose one.
+
+- **Kokoro**: natural voices for English and eight other languages
+  ([Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), Apache-2.0), downloaded when you ask (350 MB, or 132 MB
+  smaller), with QuickAI's voice program [quickai-voice](https://github.com/everybodyai/quickai-voice) (GPL-3.0), built
+  on [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). They read on this computer.
+- **A voice from a folder**: any voice sherpa-onnx reads that you have, such as Kokoro, Kitten, Piper or Matcha.
+- **A speech server**: a server that speaks OpenAI's `/v1/audio/speech`, for voices QuickAI cannot run itself.
+- **A program of your own**: a command that reads its input aloud.
 
 ## Give your model tools
 

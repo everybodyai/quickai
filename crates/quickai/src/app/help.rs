@@ -360,9 +360,12 @@ const PAGES: &[Page] = &[
                  one that hears accents and noise better is in **Settings › Voice**.",
             ),
             step(
-                "**Read aloud** under an answer reads it, lighting the sentence being read, once QuickAI has a voice to read \
-                 with. **Read answers aloud**, in Settings › Voice, reads every answer as it comes; it is off until you turn \
-                 it on.",
+                "No voice comes with QuickAI: choose one in **Settings › Voice › Read with**. **Kokoro** is downloaded \
+                 when you ask; a voice from a folder, a speech server or a program of your own work too.",
+            ),
+            step(
+                "**Read aloud** under an answer reads it, lighting the sentence being read. **Read answers aloud**, in \
+                 Settings › Voice, reads every answer as it comes; it is off until you turn it on.",
             ),
             step(
                 "**Hands-free**, in the {more} at the right end of the bar or by right-clicking the microphone: it \
@@ -371,7 +374,7 @@ const PAGES: &[Page] = &[
             .at(Spot::ChatMenu),
             step(
                 "**Settings › Voice** also has the microphone, the language you speak, the speech model, sending when you \
-                 stop talking, and the voice and its speed.",
+                 stop talking, and the reading's voice and speed.",
             ),
         ],
         numbered: true,
