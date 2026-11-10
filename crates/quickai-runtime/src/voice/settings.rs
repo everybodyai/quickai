@@ -5,6 +5,11 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
+/// The pause in talking that ends what was said, by default and at the least and most it may be set to.
+pub const DEFAULT_PAUSE_MS: u32 = 1200;
+pub const MIN_PAUSE_MS: u32 = 300;
+pub const MAX_PAUSE_MS: u32 = 3000;
+
 /// The person's choices. The defaults: voice off (nothing of it shows, and the microphone is never opened, until the
 /// person turns it on in Settings › Voice), the system's microphone, the language heard, the base model, the words put
 /// in the box to check, answers not read aloud, the system's voice at its usual speed.
@@ -20,6 +25,8 @@ pub struct VoiceSettings {
     pub model: String,
     /// What was said is sent when the person stops talking, not put in the box first.
     pub send_when_stopped: bool,
+    /// How long a pause in talking ends what was said, in milliseconds (send when stopped, and hands-free).
+    pub pause_ms: u32,
     /// Every answer is read aloud as it comes.
     pub read_answers: bool,
     /// The voice to read in, by the name the speech program knows; `None` is its usual one.
@@ -101,6 +108,7 @@ impl Default for VoiceSettings {
             language: None,
             model: SPEECH_MODELS[0].id.to_string(),
             send_when_stopped: false,
+            pause_ms: DEFAULT_PAUSE_MS,
             read_answers: false,
             voice: None,
             speed: 1.0,
@@ -135,6 +143,11 @@ impl VoiceSettings {
                 .filter(|m| speech_model(m).is_some())
                 .unwrap_or(d.model),
             send_when_stopped: flag("send_when_stopped", d.send_when_stopped),
+            pause_ms: v
+                .get("pause_ms")
+                .and_then(Value::as_u64)
+                .map(|ms| (ms as u32).clamp(MIN_PAUSE_MS, MAX_PAUSE_MS))
+                .unwrap_or(d.pause_ms),
             read_answers: flag("read_answers", d.read_answers),
             voice: text("voice"),
             speed: v
@@ -166,6 +179,9 @@ impl VoiceSettings {
         }
         if self.send_when_stopped != d.send_when_stopped {
             map.insert("send_when_stopped".into(), json!(self.send_when_stopped));
+        }
+        if self.pause_ms != d.pause_ms {
+            map.insert("pause_ms".into(), json!(self.pause_ms));
         }
         if self.read_answers != d.read_answers {
             map.insert("read_answers".into(), json!(self.read_answers));
@@ -330,6 +346,7 @@ mod tests {
             language: Some("ml".into()),
             model: "small".into(),
             send_when_stopped: true,
+            pause_ms: 800,
             read_answers: true,
             voice: Some("en-gb".into()),
             speed: 1.25,

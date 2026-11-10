@@ -26,10 +26,10 @@ use super::theme::{self, Role};
 use super::App;
 use crate::jobs::Job;
 use crate::paths;
-use crate::voice::settings::Reader;
 use crate::voice::settings::{
     language_name, speech_model, SpeechModel, VoiceSettings, LANGUAGES, SPEECH_MODELS,
 };
+use crate::voice::settings::{Reader, MAX_PAUSE_MS, MIN_PAUSE_MS};
 use crate::voice::speak::{self, Speaker, Spoken};
 use crate::voice::spoken::{self, SentenceFeed};
 use crate::voice::voices::{self, VoicePack, VOICE_PACKS, VOICE_PROGRAM};
@@ -472,11 +472,8 @@ impl App {
                         purpose,
                         started: Instant::now(),
                         samples: Vec::new(),
-                        vad: Vad::new(if purpose == Purpose::HandsFree {
-                            1000
-                        } else {
-                            1400
-                        }),
+                        // the pause that ends what was said is the person's (Settings › Voice)
+                        vad: Vad::new(self.talk.settings.pause_ms),
                         voiced: false,
                         levels: VecDeque::new(),
                     });
@@ -2168,6 +2165,28 @@ impl App {
                 self.talk.settings.send_when_stopped = send;
                 changed = true;
             }
+            row_line(ui);
+            let mut pause = self.talk.settings.pause_ms as f32 / 1000.0;
+            setting_row(
+                ui,
+                "Pause",
+                Some("How long you pause before what you said is sent: with Send when I stop talking, and in hands-free."),
+                None,
+                |ui| {
+                    let slider = ui.add(
+                        egui::Slider::new(
+                            &mut pause,
+                            MIN_PAUSE_MS as f32 / 1000.0..=MAX_PAUSE_MS as f32 / 1000.0,
+                        )
+                        .step_by(0.1)
+                        .custom_formatter(|v, _| format!("{v:.1} s")),
+                    );
+                    if slider.drag_stopped() || (slider.changed() && !slider.dragged()) {
+                        changed = true;
+                    }
+                },
+            );
+            self.talk.settings.pause_ms = (pause * 1000.0).round() as u32;
             row_line(ui);
             self.show_trial(ui, &ctx);
         });
