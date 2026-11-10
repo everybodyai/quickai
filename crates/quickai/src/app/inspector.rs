@@ -31,7 +31,11 @@ impl App {
                 // the foot's own edge is the one line over it (D1 of `the mockups`: a second one,
                 // drawn 4 px under it, made two)
                 .show(ui, |ui| {
-                    self.show_this_computer(ui, meters);
+                    let foot = ui
+                        .scope(|ui| self.show_this_computer(ui, meters))
+                        .response
+                        .rect;
+                    super::help::mark_spot(ui, super::help::Spot::ThisComputer, foot);
                 });
         }
         // a scroll bar that takes its own room when the panel is longer than the window (several cards), so that it is
@@ -71,7 +75,10 @@ impl App {
         }
         // what is added when it starts: the projector, the mode, the person's arguments and environment (X1)
         if self.remote_in_use().is_none() {
-            self.show_extras_rows(ui);
+            let extras = ui.scope(|ui| self.show_extras_rows(ui)).response.rect;
+            if extras.height() > 1.0 {
+                super::help::mark_spot(ui, super::help::Spot::Extras, extras);
+            }
         }
         // the tools are the chat's: an engine that does not chat (ComfyUI) has none to show
         if !self.runs_alone() && self.can_chat() {
@@ -82,7 +89,8 @@ impl App {
             } else {
                 "The MCP servers the model can use when you chat here. QuickAI asks before a tool runs."
             };
-            self.show_tools_rows(ui, hover);
+            let tools = ui.scope(|ui| self.show_tools_rows(ui, hover)).response.rect;
+            super::help::mark_spot(ui, super::help::Spot::Tools, tools);
         }
     }
 

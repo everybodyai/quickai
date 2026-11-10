@@ -531,6 +531,7 @@ llamacpp.mcp_servers never
 llamacpp.models_dir never
 llamacpp.n_gpu_layers yes
 llamacpp.port yes
+llamacpp.projector yes
 llamacpp.split_mode yes
 llamacpp.tensor_split never
 ollama.bin_override never

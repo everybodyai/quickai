@@ -62,6 +62,8 @@ pub struct Engine {
     pub diagnostics: Vec<CompiledDiagnostic>,
     /// How each kind of companion file is attached, by kind.
     pub components: Vec<CompiledComponent>,
+    /// The cards the engine names in its log (`[devices]`), for an engine that finds them itself.
+    pub devices: Option<CompiledDevicesLog>,
     /// What `doc.prerequisites` hold that is a condition or a duration, parsed: one for each, in the
     /// document's order.
     pub prerequisites: Vec<CompiledPrerequisite>,
@@ -133,6 +135,8 @@ pub struct CompiledDiagnostic {
 pub struct CompiledModels {
     pub needs_server: bool,
     pub list: Option<CompiledList>,
+    /// What the engine has loaded and how much of it is on the cards (C213).
+    pub loaded: Option<CompiledLoaded>,
     pub pull: Option<CompiledPull>,
     /// The call that removes a model: `${ref}` is its name.
     pub remove: Option<CompiledStep>,
@@ -229,6 +233,24 @@ pub struct CompiledList {
     pub cache: Option<Template>,
     /// Patterns over a whole name: the models the picker does not show.
     pub hide: Vec<String>,
+}
+
+/// `[models] loaded`, checked: the call and its JSON pointers.
+#[derive(Clone, Debug)]
+pub struct CompiledLoaded {
+    pub call: CompiledStep,
+    pub items: String,
+    pub id: String,
+    pub size_bytes: String,
+    pub on_cards: String,
+    pub context: Option<String>,
+}
+
+/// `[devices]`, checked: the patterns that find a card in a line of the log.
+#[derive(Clone, Debug)]
+pub struct CompiledDevicesLog {
+    pub log: Vec<Regex>,
+    pub not_cards: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -617,6 +639,7 @@ pub fn compile(
         .as_ref()
         .map(|a| compile_acquire(&mut c, &doc, a));
     let components = compile_components(&mut c, &doc);
+    let devices = doc.devices.as_ref().map(|d| compile_devices(&mut c, d));
     let models = doc
         .models
         .as_ref()
@@ -648,10 +671,39 @@ pub fn compile(
             api_info,
             diagnostics,
             components,
+            devices,
             prerequisites,
         }),
         out,
     )
+}
+
+/// `[devices]`: each pattern compiles and names the groups `name` and `total`.
+fn compile_devices(c: &mut Checker, doc: &crate::doc::engine::DevicesDoc) -> CompiledDevicesLog {
+    let at = DocPath::default().key("devices");
+    let mut log = Vec::new();
+    for (i, pattern) in doc.log.iter().enumerate() {
+        let here = at.clone().key("log").index(i);
+        match Regex::new(pattern) {
+            Ok(re) => {
+                let names: Vec<&str> = re.capture_names().flatten().collect();
+                if names.contains(&"name") && names.contains(&"total") {
+                    log.push(re);
+                } else {
+                    c.error_hint(
+                        &here,
+                        "a pattern of the log names no group `name` or `total`".to_string(),
+                        "(?P<name>[^\"]+) and (?P<total>[0-9.]+ GiB)",
+                    );
+                }
+            }
+            Err(e) => c.error(&here, format!("`{pattern}` is not a valid pattern: {e}")),
+        }
+    }
+    CompiledDevicesLog {
+        log,
+        not_cards: doc.not_cards.iter().map(|l| l.to_lowercase()).collect(),
+    }
 }
 
 /// One entry of an `env` list (`[[launch.spawn.env]]` or a field's `bind.env`): a name, and what
@@ -3019,6 +3071,41 @@ fn compile_models(
         })
     });
 
+    let loaded = models.loaded.as_ref().and_then(|loaded| {
+        let at = at.clone().key("loaded");
+        let call = compile_call(
+            c,
+            &at.clone().key("call"),
+            &loaded.call,
+            DEFAULT_MODEL_CALL_TIMEOUT,
+            &engine_schema,
+            false,
+        );
+        let map_at = at.clone().key("map");
+        let mut ok = pointer(c, at.clone().key("items"), &loaded.items);
+        for (key, value) in [
+            ("id", &loaded.map.id),
+            ("size_bytes", &loaded.map.size_bytes),
+            ("on_cards", &loaded.map.on_cards),
+        ] {
+            ok &= pointer(c, map_at.clone().key(key), value);
+        }
+        if let Some(context) = &loaded.map.context {
+            ok &= pointer(c, map_at.clone().key("context"), context);
+        }
+        if !ok {
+            return None;
+        }
+        Some(CompiledLoaded {
+            call: call?,
+            items: loaded.items.clone(),
+            id: loaded.map.id.clone(),
+            size_bytes: loaded.map.size_bytes.clone(),
+            on_cards: loaded.map.on_cards.clone(),
+            context: loaded.map.context.clone(),
+        })
+    });
+
     let pull = models.pull.as_ref().map(|pull| {
         let at = at.clone().key("pull");
         let call = compile_call(
@@ -3150,6 +3237,7 @@ fn compile_models(
     CompiledModels {
         needs_server: models.needs_server,
         list: list.flatten(),
+        loaded,
         pull: pull.flatten(),
         remove,
         input_rules: compile_input_rules(c, &at, &models.input_rules),

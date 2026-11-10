@@ -43,6 +43,61 @@ impl Device {
     }
 }
 
+/// A device an engine that finds them itself names in a line of its log (`[devices]` of its document, C213: Ollama's
+/// `inference compute` lines), the `n`th it named. One of a library its document says is no card (`cpu`) is the
+/// processor: it says the engine found what it has, and that it is not graphics.
+pub fn from_log_line(
+    spec: &quickai_core::registry::engine::CompiledDevicesLog,
+    line: &str,
+    n: usize,
+) -> Option<Device> {
+    let found = spec.log.iter().find_map(|re| re.captures(line))?;
+    let library = found
+        .name("library")
+        .map(|m| m.as_str().trim_matches('"').to_string())
+        .unwrap_or_default();
+    let name = found
+        .name("name")?
+        .as_str()
+        .trim()
+        .trim_matches('"')
+        .to_string();
+    let total = bytes_of(found.name("total")?.as_str())?;
+    let free = found
+        .name("available")
+        .and_then(|m| bytes_of(m.as_str()))
+        .unwrap_or(total);
+    let id = format!("{library}{n}");
+    let kind = if spec.not_cards.contains(&library.to_lowercase()) {
+        DeviceKind::Processor
+    } else {
+        kind_of(&id, &name)
+    };
+    Some(Device {
+        id,
+        name: short_name(&name),
+        total_bytes: total,
+        free_bytes: free,
+        kind,
+    })
+}
+
+/// `12.0 GiB`, `512 MiB` in bytes.
+fn bytes_of(text: &str) -> Option<u64> {
+    let text = text.trim().trim_matches('"');
+    let (number, unit) = text.split_once(' ').unwrap_or((text, "B"));
+    let number: f64 = number.trim().parse().ok()?;
+    let scale = match unit.trim().to_ascii_lowercase().as_str() {
+        "b" => 1.0,
+        "kib" | "kb" => 1024.0,
+        "mib" | "mb" => 1024.0 * 1024.0,
+        "gib" | "gb" => 1024.0 * 1024.0 * 1024.0,
+        "tib" | "tb" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => return None,
+    };
+    Some((number * scale) as u64)
+}
+
 /// The devices `llama-server --list-devices` printed. Cards of the same name are told apart by their number in the list
 /// (`RTX 4090 (1)`, `RTX 4090 (2)`).
 pub fn parse(text: &str) -> Vec<Device> {

@@ -1242,13 +1242,18 @@ impl App {
                             } else {
                                 ""
                             };
+                            // the row wraps in a narrow window: what it says last (the version it was tested with) is
+                            // what matters most
                             if from_source {
-                                ui.label(format!("{}{tested}", b.tag));
+                                ui.add(egui::Label::new(format!("{}{tested}", b.tag)).wrap());
                             } else {
-                                ui.label(format!(
-                                    "{} — {} ({backend}, {size}){tested}",
-                                    b.tag, b.asset_name
-                                ));
+                                ui.add(
+                                    egui::Label::new(format!(
+                                        "{} — {} ({backend}, {size}){tested}",
+                                        b.tag, b.asset_name
+                                    ))
+                                    .wrap(),
+                                );
                             }
                         });
                         if b.conflict {

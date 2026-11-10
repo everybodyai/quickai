@@ -548,7 +548,7 @@ impl App {
     fn show_models_list(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette();
         let words = self.model_filter.trim().to_lowercase();
-        egui::ScrollArea::vertical()
+        let list = egui::ScrollArea::vertical()
             .id_salt("models_list")
             .auto_shrink([false, false])
             .show(ui, |ui| {
@@ -633,6 +633,17 @@ impl App {
                     self.leave_configuration_for_model();
                 }
             });
+        // the rows there are, for Help's tour (the list itself goes down to the foot)
+        if !self.models.is_empty() {
+            let shown = egui::Rect::from_min_size(
+                list.inner_rect.min,
+                egui::vec2(
+                    list.inner_rect.width(),
+                    list.content_size.y.min(list.inner_rect.height()),
+                ),
+            );
+            mark_spot(ui, Spot::Models, shown);
+        }
     }
 
     /// The logo in `rect`.

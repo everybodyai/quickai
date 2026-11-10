@@ -30,6 +30,7 @@ pub mod jobs;
 pub mod launch;
 pub mod mcp_bridge;
 pub mod mcp_client;
+pub mod model_store;
 pub mod models;
 #[cfg(test)]
 mod p3;

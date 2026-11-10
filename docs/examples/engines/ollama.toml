@@ -144,7 +144,7 @@ ui = { section = "primary", order = 10 }
 id = "ctx_size"
 label = "Context size"
 type = "int"
-range = [256, 131072]
+range = [256, 2097152]
 step = 64
 optional = true                 # no default: Ollama's own is tiered by the VRAM it can see (O12), which QuickAI cannot, so a number made up from RAM would only override something better informed
 bind.env = [ { name = "OLLAMA_CONTEXT_LENGTH", value = "${value}" } ]
@@ -217,6 +217,8 @@ list = { call = { method = "GET", path = "/api/tags" }, items = "/models", map =
 pull = { call = { method = "POST", path = "/api/pull", body = { model = "${ref}" }, stream = "ndjson" }, progress = { key = "/digest", completed = "/completed", total = "/total", status = "/status" } }
 remove = { call = { method = "DELETE", path = "/api/delete", body = { model = "${ref}" } } }
 capabilities = { call = { method = "POST", path = "/api/show", body = { model = "${ref}" } }, pointer = "/capabilities" }   # discovered modalities: "vision" and so on
+# what is loaded, and how much of it is on the graphics cards (C213): Ollama places a model itself, so the panel asks
+loaded = { call = { method = "GET", path = "/api/ps" }, items = "/models", map = { id = "/name", size_bytes = "/size", on_cards = "/size_vram", context = "/context_length" } }
 # first match wins (docs/phase3-test-plan.md, M01). What "Look up online" fills the list from is `[[models.lookup]]` below, not a rule here
 input_rules = [
   { when = 'matches(input, "^hf\.co/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+(:[A-Za-z0-9._-]+)?$")', do = "pull", ref = "${input}" },
@@ -259,3 +261,14 @@ hint = "The model does not fit in memory. Pick a smaller model or a smaller cont
 [[diagnostic]]
 when = { log_matches = '(?i)no (compatible|usable) gpus?' }
 hint = "Ollama found no usable GPU and will run on the CPU. On Linux, AMD and Intel GPUs need Vulkan drivers (Mesa) installed."
+
+# The devices Ollama found, as it logs them once it listens (C213): one line of "inference compute" each. 0.12 and later
+# name a card in `description` (`name` is ROCm0); 0.5 to 0.11 in `name`. Its processor is a line too (`library=cpu
+# name=cpu description=cpu`, recorded from 0.35.1 on a computer with no card), and is no card: with only it, the model
+# runs on the processor. The panel's Graphics and This computer say them, since QuickAI does not place Ollama's models.
+[devices]
+log = [
+  'msg="inference compute" .*?\blibrary=(?P<library>\S+) .*?\bdescription=(?P<name>"[^"]*"|\S+) .*?\btotal="(?P<total>[0-9.]+ [KMGT]i?B)" available="(?P<available>[0-9.]+ [KMGT]i?B)"',
+  'msg="inference compute" .*?\blibrary=(?P<library>\S+) .*?\bname=(?P<name>"[^"]*"|\S+) total="(?P<total>[0-9.]+ [KMGT]i?B)" available="(?P<available>[0-9.]+ [KMGT]i?B)"',
+]
+not_cards = ["cpu"]

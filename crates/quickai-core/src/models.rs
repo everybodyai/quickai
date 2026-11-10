@@ -303,6 +303,32 @@ pub fn list_call(engine: &Engine, facts: &HostFacts) -> Option<Result<ListCall, 
     })())
 }
 
+/// The request that says what the engine has loaded, and where the parts of one are in the reply (`[models] loaded`,
+/// C213): how much of each model is on the graphics cards, for an engine that places a model itself.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LoadedCall {
+    pub call: ModelCall,
+    pub items: String,
+    pub id: String,
+    pub size_bytes: String,
+    pub on_cards: String,
+    pub context: Option<String>,
+}
+
+/// The call that asks what is loaded. `None` when the document says nothing about it.
+pub fn loaded_call(engine: &Engine, facts: &HostFacts) -> Option<Result<LoadedCall, String>> {
+    let loaded = engine.models.as_ref()?.loaded.as_ref()?;
+    let context = base_context(&Selection::default(), facts);
+    Some(render(&loaded.call, &context).map(|call| LoadedCall {
+        call,
+        items: loaded.items.clone(),
+        id: loaded.id.clone(),
+        size_bytes: loaded.size_bytes.clone(),
+        on_cards: loaded.on_cards.clone(),
+        context: loaded.context.clone(),
+    }))
+}
+
 /// The call that pulls `reference`. `None` when the document says nothing about pulling.
 pub fn pull_call(engine: &Engine, reference: &str) -> Option<Result<PullCall, String>> {
     let pull = engine.models.as_ref()?.pull.as_ref()?;

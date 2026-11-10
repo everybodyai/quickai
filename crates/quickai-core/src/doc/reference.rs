@@ -294,6 +294,7 @@ pub const GROUPS: &[Group] = &[
             a("pull", "table, below", "The call that fetches a model by name, with its progress."),
             a("remove", "table, below", "The call that removes a model."),
             a("capabilities", "table, below", "The call that asks what one model can do."),
+            a("loaded", "table, below", "The call that says what the engine has loaded, and how much of each model is on the graphics cards: how the window says where a model runs when the engine places it itself (Ollama)."),
             a("input_rules", "list of tables, below", "What the model box makes of what was typed: the first rule whose `when` holds. Nothing typed is nothing; text no rule takes is refused."),
             a("sources", "list of tables, below", "For an engine whose models are files: where they are kept (read by Phase 4)."),
             a("acquire", "table, below", "For an engine whose models are files: how one gets into the folder (read by Phase 4)."),
@@ -403,6 +404,7 @@ pub const GROUPS: &[Group] = &[
             a("order", "whole number", "Where its arguments stand among the fields': after those of a lower `order`, before those of a higher one. Default 80, which is before `extra_args` (90)."),
             a("bind", "table, below", "What it adds."),
             a("place", "text", "For an engine that finds its files by the folder they are in (ComfyUI): the folder of the models folder this kind of file is kept in (`text_encoders`), a plain name. A component needs `place` or `bind.arg`, and may have both."),
+            a("switch", "text", "The id of a field of type `bool` that turns this kind of file on and off (llama.cpp's `projector`): while it is false, no file of the kind is attached and the model starts without it. Without one, a file of the kind is always attached. A field that is not of type `bool` is an error."),
         ],
     },
     Group {
@@ -435,6 +437,36 @@ pub const GROUPS: &[Group] = &[
             a("size_bytes", "pointer", "How big it is: what the context size and the speed estimate are worked out from."),
             a("digest", "pointer", "Its checksum."),
             a("capabilities", "pointer", "A list of what it can do (`completion`, `vision`)."),
+        ],
+    },
+    Group {
+        heading: "`[models]` `loaded`",
+        intro: "What the engine has loaded now, asked every few seconds while a model runs: for an engine that decides itself how much of a model goes on the graphics cards (Ollama's `GET /api/ps`). Graphics, This computer and the chips of a run say what it answered.",
+        source: Some("ModelLoaded"),
+        attributes: &[
+            a("call", "table", "The request (`GET /api/ps`)."),
+            a("items", "pointer", "The array of loaded models in the reply (`/models`). Required."),
+            a("map", "table, below", "Where the parts of one are. Required."),
+        ],
+    },
+    Group {
+        heading: "`[models]` `loaded.map`",
+        intro: "JSON pointers into one loaded model.",
+        source: Some("LoadedMap"),
+        attributes: &[
+            a("id", "pointer", "The name the engine knows it by (`/name`). Required."),
+            a("size_bytes", "pointer", "The bytes it takes in all: weights, context and the rest (`/size`). Required."),
+            a("on_cards", "pointer", "The bytes of it on the graphics cards (`/size_vram`); the rest is in the computer's memory. Required."),
+            a("context", "pointer", "The context it was loaded with, in tokens (`/context_length`)."),
+        ],
+    },
+    Group {
+        heading: "`[devices]`",
+        intro: "The graphics cards an engine that finds them itself names in its log when it starts (Ollama's lines of `inference compute`), for the panel's Graphics and This computer. llama.cpp's are asked of its program instead (`--list-devices`).",
+        source: Some("DevicesDoc"),
+        attributes: &[
+            a("log", "list of patterns", "Patterns over a line of the log, tried in order: the first that matches says a device, with the named groups `name` and `total` (`12.0 GiB`), and `library` and `available` when there are. A pattern without `name` or `total` is an error."),
+            a("not_cards", "list of text", "The libraries whose devices are not graphics cards (`cpu`), compared without regard to case."),
         ],
     },
     Group {

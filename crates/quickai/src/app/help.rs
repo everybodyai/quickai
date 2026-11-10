@@ -90,6 +90,8 @@ impl Group {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum Spot {
     EngineMenu,
+    /// The models of the list in the sidebar (C213: the tour stops at the parts of the window one by one).
+    Models,
     AddModel,
     Play,
     Plug,
@@ -101,6 +103,14 @@ pub(super) enum Spot {
     Computer,
     Settings,
     Help,
+    /// The parts of the panel at the right (C213): the configuration's box, Context, Graphics, Extras, Tools and This
+    /// computer at its foot.
+    Configuration,
+    Context,
+    Graphics,
+    Extras,
+    Tools,
+    ThisComputer,
 }
 
 impl Spot {
@@ -108,7 +118,27 @@ impl Spot {
     fn in_sidebar(self) -> bool {
         matches!(
             self,
-            Spot::EngineMenu | Spot::AddModel | Spot::Computer | Spot::Settings | Spot::Help
+            Spot::EngineMenu
+                | Spot::Models
+                | Spot::AddModel
+                | Spot::Computer
+                | Spot::Settings
+                | Spot::Help
+        )
+    }
+
+    /// Whether it is in the panel at the right, which can be put away.
+    fn in_panel(self) -> bool {
+        matches!(
+            self,
+            Spot::Change
+                | Spot::Plug
+                | Spot::Configuration
+                | Spot::Context
+                | Spot::Graphics
+                | Spot::Extras
+                | Spot::Tools
+                | Spot::ThisComputer
         )
     }
 }
@@ -462,24 +492,29 @@ const PAGES: &[Page] = &[
                  a number of your own and the longer ones, **512K** to **2M**. A dot on each says where it fits: green \
                  on the graphics card, amber partly in the computer's memory (slower), red too big. The underlined one \
                  suits this model here.",
-            ),
+            )
+            .at(Spot::Context),
             step(
                 "**Graphics** is where it runs: **Card**, **Card + processor** (part of the model on the card) or \
                  **Processor**. QuickAI fits it to the card for each model until you choose. With several cards, tick \
-                 the ones to use. **This computer**, at the foot, shows what it takes of each card and of the memory.",
-            ),
+                 the ones to use. **This computer**, at the foot, shows what it takes of each card and of the memory. \
+                 Ollama places a model itself: Graphics then names the cards it found and says how much it put on them.",
+            )
+            .at(Spot::Graphics),
             step(
                 "**Extras** opens what is added when it starts: a vision model's projector, with a switch, and your own \
                  arguments and environment, a chip each to change or take out. **Tools** opens a switch for each MCP \
                  server. The gear at the top of the panel has the rest of the settings for starting it, the port among \
                  them.",
-            ),
+            )
+            .at(Spot::Extras),
             step(
                 "**Configuration** at the top of the panel keeps how it runs under a name: **Save as a new \
                  configuration…**. Choose one from the same list to use it again. Its box has an amber edge while the \
                  panel holds something it does not say. Picking another model leaves it as it was saved: the panel then \
                  holds an **Unnamed** one until you save it.",
-            ),
+            )
+            .at(Spot::Configuration),
             step("**Configurations…** in the **QuickAI** menu has them all: use, rename or delete one, or save it as a file to share.")
                 .does(Deed::Configurations),
         ],
@@ -564,8 +599,10 @@ const PAGES: &[Page] = &[
             step("**Add a model** suggests what fits this computer's memory.").does(Deed::AddModel),
             step(
                 "**Graphics** in the panel: when the whole model does not fit on the card, **Card + processor** puts as \
-                 many of its layers on it as fit. **This computer**, at the foot of the panel, shows what it takes.",
-            ),
+                 many of its layers on it as fit. **This computer**, at the foot of the panel, shows what it takes. \
+                 With Ollama, which decides it, Graphics says how much of the model is on the card while it runs.",
+            )
+            .at(Spot::Graphics),
             step("Other programs that use the graphics card (a game, another model) leave it less room."),
         ],
         numbered: true,
@@ -642,17 +679,62 @@ fn page_of(page: HelpPage) -> &'static Page {
         .expect("every page is written")
 }
 
-/// A stop of the tour: the part of the main window, and what is said beside it.
+/// A stop of the tour: the part of the main window, and what is said beside it. It goes round the window as it is
+/// used: where the model runs and which, how it runs (the panel, part by part), then the chat, the log and Help. A part
+/// the window does not show now (the panel's parts with no model, Connect an app while it is stopped) is passed.
 const TOUR: &[(Spot, &str, &str)] = &[
+    (
+        Spot::Computer,
+        "Where it runs",
+        "This computer, or a more powerful one you add. Everything below is about the computer chosen here.",
+    ),
     (
         Spot::EngineMenu,
         "The engine",
         "The program that runs your models. llama.cpp is ready; Ollama and ComfyUI install from here.",
     ),
     (
+        Spot::Models,
+        "Your models",
+        "Pick one to use it. The dot is green while it runs, and its ⋯ has its details and Delete.",
+    ),
+    (
         Spot::AddModel,
         "Add a model",
-        "The + of the list: suggestions that fit this computer, a search online, or a file you already have. Ctrl+K too.",
+        "Suggestions that fit this computer, a search online, or a file you already have. Ctrl+K too.",
+    ),
+    (
+        Spot::Configuration,
+        "Configuration",
+        "How it runs, kept under a name. An amber edge means it has changes you have not saved; picking another \
+         model makes an Unnamed one, and the saved one stays as it was.",
+    ),
+    (
+        Spot::Context,
+        "Context",
+        "How much of the chat it remembers. The dot says where each length fits: green on the graphics card, amber \
+         partly in memory, red too big. Other… has 512K to 2M and a number of your own.",
+    ),
+    (
+        Spot::Graphics,
+        "Graphics",
+        "Where it runs: on the card, part on the card and part on the processor, or the processor alone. With Ollama, \
+         it says what Ollama chose.",
+    ),
+    (
+        Spot::Extras,
+        "Extras",
+        "What is added when it starts: a vision model's projector, and your own arguments and environment, a chip each.",
+    ),
+    (
+        Spot::Tools,
+        "Tools",
+        "The MCP servers the model can use in the chat, a switch each. QuickAI asks before a tool runs.",
+    ),
+    (
+        Spot::ThisComputer,
+        "This computer",
+        "What the model and its context take of each card and of the memory, and how fast it should be.",
     ),
     (
         Spot::Play,
@@ -660,19 +742,19 @@ const TOUR: &[(Spot, &str, &str)] = &[
         "Starts the model chosen in the list. Ctrl+Enter does it too, and stops it.",
     ),
     (
-        Spot::Change,
-        "How it runs",
-        "The panel at the right: how much of the chat it remembers, and where it runs. Keep it as a configuration.",
+        Spot::Plug,
+        "Connect an app",
+        "While it runs, the panel gives other apps its address, the model's name and an example to copy.",
     ),
     (
         Spot::ChatBox,
         "Chat",
-        "Type here once the model runs. The paper clip adds a picture or a file.",
+        "Type here once the model runs. The paper clip adds a picture or a file, and the wrench says which tools it has.",
     ),
     (
-        Spot::Computer,
-        "Where it runs",
-        "This computer, or a more powerful one you add.",
+        Spot::LogTab,
+        "Log and Live traffic",
+        "What the engine says, word for word, and the requests apps make to it. Here when something goes wrong.",
     ),
     (
         Spot::Help,
@@ -1168,7 +1250,8 @@ impl App {
                 ui.horizontal(|ui| {
                     if let Some(spot) = step.spot {
                         // a part of the sidebar put away is there once the sidebar is shown again
-                        let tucked = spot.in_sidebar() && !self.sidebar_open;
+                        let tucked = (spot.in_sidebar() && !self.sidebar_open)
+                            || (spot.in_panel() && !self.panel_open);
                         let there = tucked || spot_rect(ui.ctx(), spot).is_some();
                         let showing = self.help.shown.is_some_and(|(s, _)| s == spot);
                         let shown = icons::labelled_button(
@@ -1185,7 +1268,11 @@ impl App {
                         .on_disabled_hover_text("It is not on the main window now.");
                         if shown.clicked() {
                             if tucked {
-                                self.sidebar_open = true;
+                                if spot.in_sidebar() {
+                                    self.sidebar_open = true;
+                                } else {
+                                    self.panel_open = true;
+                                }
                             }
                             self.help.shown = Some((spot, Instant::now()));
                             ui.ctx().send_viewport_cmd_to(
@@ -1413,8 +1500,9 @@ impl App {
     }
 
     pub(super) fn start_tour(&mut self, ctx: &egui::Context) {
-        // most of what it is about is in the sidebar
+        // what it is about is in the sidebar and the panel
         self.sidebar_open = true;
+        self.panel_open = true;
         self.help.tour = Some(0);
         self.help.shown = None;
         ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
@@ -1447,15 +1535,25 @@ impl App {
             self.help.tour = None;
             return;
         }
-        let Some((n, (spot, title, said))) = TOUR
-            .iter()
-            .enumerate()
-            .skip(at)
-            .find(|(_, (spot, _, _))| spot_rect(ctx, *spot).is_some())
-        else {
+        // the stops the window shows now: the count is of them, and Back goes to the one shown before
+        let shown: Vec<usize> = (0..TOUR.len())
+            .filter(|i| spot_rect(ctx, TOUR[*i].0).is_some())
+            .collect();
+        let Some(n) = shown.iter().copied().find(|i| *i >= at) else {
             self.help.tour = None;
             return;
         };
+        let (spot, title, said) = &TOUR[n];
+        let place = shown.iter().position(|i| *i == n).unwrap_or(0);
+        let before = place.checked_sub(1).map(|p| shown[p]);
+        let after = shown.get(place + 1).copied();
+        // the arrows and Enter go round it too
+        let (next_key, back_key) = ctx.input(|i| {
+            (
+                i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::Enter),
+                i.key_pressed(egui::Key::ArrowLeft),
+            )
+        });
         let rect = spot_rect(ctx, *spot).expect("it was found");
         let screen = ctx.content_rect();
         let hole = rect.expand(6.0);
@@ -1510,7 +1608,7 @@ impl App {
                     .show(ui, |ui| {
                         ui.set_width(width - 28.0);
                         ui.label(
-                            egui::RichText::new(format!("{} OF {}", n + 1, TOUR.len()))
+                            egui::RichText::new(format!("{} OF {}", place + 1, shown.len()))
                                 .size(11.0)
                                 .family(theme::semibold(ui))
                                 .color(p.accent_text),
@@ -1531,7 +1629,7 @@ impl App {
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    let last = n + 1 == TOUR.len();
+                                    let last = after.is_none();
                                     if theme::button_sized(
                                         ui,
                                         Role::Primary,
@@ -1539,27 +1637,38 @@ impl App {
                                         if last { "Done" } else { "Next" },
                                         egui::vec2(64.0, 26.0),
                                     )
+                                    .on_hover_text(if last { "Enter" } else { "Enter or →" })
                                     .clicked()
                                     {
-                                        go = Some((!last).then_some(n + 1));
+                                        go = Some(after);
                                     }
-                                    if n > 0
-                                        && theme::button_sized(
+                                    if let Some(before) = before {
+                                        if theme::button_sized(
                                             ui,
                                             Role::Normal,
                                             true,
                                             "Back",
                                             egui::vec2(56.0, 26.0),
                                         )
+                                        .on_hover_text("←")
                                         .clicked()
-                                    {
-                                        go = Some(Some(n - 1));
+                                        {
+                                            go = Some(Some(before));
+                                        }
                                     }
                                 },
                             );
                         });
                     });
             });
+        if go.is_none() && next_key {
+            go = Some(after);
+        }
+        if go.is_none() && back_key {
+            if let Some(before) = before {
+                go = Some(Some(before));
+            }
+        }
         match go {
             Some(next) => self.help.tour = next,
             None => self.help.tour = Some(n),
@@ -2190,12 +2299,12 @@ mod tests {
             shown[2..at].iter().all(|s| !s),
             "only what is not shown is passed: {at} {shown:?}"
         );
-        // with a model, How it runs is there and the tour stops at it
+        // with a model, How it runs is there and the tour stops at its parts (C213: the configuration's box first)
         let mut app = app_in(&dir.join("model"), &["Small-Q4_K_M.gguf"]);
         frame(&mut app, &ctx, Vec::new(), |_| ());
         let change = TOUR
             .iter()
-            .position(|(spot, _, _)| *spot == Spot::Change)
+            .position(|(spot, _, _)| *spot == Spot::Configuration)
             .unwrap();
         app.help.tour = Some(change);
         frame(&mut app, &ctx, Vec::new(), |_| ());

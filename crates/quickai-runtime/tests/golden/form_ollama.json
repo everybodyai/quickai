@@ -43,7 +43,7 @@
             "persist": "global",
             "range": [
               256.0,
-              131072.0
+              2097152.0
             ],
             "required": false,
             "step": 64.0,
@@ -260,7 +260,7 @@
             "persist": "global",
             "range": [
               256.0,
-              131072.0
+              2097152.0
             ],
             "required": false,
             "step": 64.0,
@@ -477,7 +477,7 @@
             "persist": "global",
             "range": [
               256.0,
-              131072.0
+              2097152.0
             ],
             "required": false,
             "step": 64.0,
@@ -694,7 +694,7 @@
             "persist": "global",
             "range": [
               256.0,
-              131072.0
+              2097152.0
             ],
             "required": false,
             "step": 64.0,

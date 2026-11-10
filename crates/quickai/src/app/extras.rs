@@ -270,35 +270,32 @@ impl App {
         (args, env)
     }
 
-    /// What the closed line of Extras says: the projector (and the mode) by name, then how many more; with neither,
-    /// how many arguments and variables; with nothing, "none".
+    /// What the closed line of Extras says, in a few words: the projector (on or off), that the model is started in a mode
+    /// of its own (its words are in the opened rows: they can be long), and how many arguments and variables; with
+    /// nothing, "none".
     pub(super) fn extras_summary(&self) -> String {
         let (args, env) = self.extra_pieces();
-        let mut named = Vec::new();
+        let mut said = Vec::new();
         if self.projector_of_selected().is_some() {
-            named.push(if self.projector_on() {
+            said.push(if self.projector_on() {
                 "projector".to_string()
             } else {
                 "projector off".to_string()
             });
         }
-        if let Some(mode) = self.mode_of_selected() {
-            named.push(mode.arg.join(" "));
+        if self.mode_of_selected().is_some() {
+            said.push("mode".to_string());
         }
-        let more = args.len() + env.len();
-        if named.is_empty() {
-            return match (args.len(), env.len()) {
-                (0, 0) => "none".to_string(),
-                (a, 0) => counted(a, "argument"),
-                (0, e) => counted(e, "variable"),
-                (a, e) => format!("{} · {}", counted(a, "argument"), counted(e, "variable")),
-            };
+        if !args.is_empty() {
+            said.push(counted(args.len(), "argument"));
         }
-        let named = named.join(" · ");
-        if more > 0 {
-            format!("{named} · {more} more")
+        if !env.is_empty() {
+            said.push(counted(env.len(), "variable"));
+        }
+        if said.is_empty() {
+            "none".to_string()
         } else {
-            named
+            said.join(" · ")
         }
     }
 
@@ -677,10 +674,22 @@ impl App {
     fn place_chip(&self) -> String {
         use super::graphics::Place;
         if !self.lists_devices() {
-            return if self.gpu_offload() {
-                "graphics card".to_string()
-            } else {
+            // an engine that places it itself (Ollama): its cards, and the share it says it put on them
+            if !self.gpu_offload() {
+                return "processor".to_string();
+            }
+            let named = match self.ticked_cards().as_slice() {
+                [one] => one.name.clone(),
+                [] => "graphics card".to_string(),
+                many => format!("{} cards", many.len()),
+            };
+            let share = self.card_share();
+            return if share >= 0.995 {
+                named
+            } else if share <= 0.005 {
                 "processor".to_string()
+            } else {
+                format!("{:.0}% on {named}", share * 100.0)
             };
         }
         let cards = self.ticked_cards();

@@ -1532,7 +1532,7 @@ for line in sys.stdin:
         let running = painted(&mut app, &ctx);
         for text in [
             "Connect an app",
-            "Address",
+            "http://127.0.0.1",
             "Ollama API",
             "MCP servers",
             "1 on",

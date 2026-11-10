@@ -115,6 +115,75 @@ impl ListSpec {
     }
 }
 
+/// A model the engine has loaded, and how much of it is on the graphics cards (C213).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LoadedRow {
+    pub id: String,
+    /// The bytes it takes in all: the weights, the context and the rest.
+    pub size_bytes: u64,
+    /// The bytes of it on the cards.
+    pub on_cards: u64,
+    /// The context it was loaded with, in tokens, when the engine says.
+    pub context: Option<u64>,
+}
+
+impl LoadedRow {
+    /// The share of it on the cards, 0 to 1.
+    pub fn card_share(&self) -> f64 {
+        if self.size_bytes == 0 {
+            return 0.0;
+        }
+        (self.on_cards as f64 / self.size_bytes as f64).clamp(0.0, 1.0)
+    }
+}
+
+/// Asks the engine what it has loaded (`[models] loaded`): a row for each model, with what it takes and how much of
+/// that is on the cards. A row with no name or no size is left out.
+pub fn loaded_models(
+    endpoint: &Endpoint,
+    spec: &quickai_core::models::LoadedCall,
+) -> Result<Vec<LoadedRow>, CallError> {
+    let reply = call(
+        endpoint,
+        &Call {
+            method: spec.call.method.clone(),
+            path: spec.call.path.clone(),
+            body: spec.call.body.clone(),
+            framing: Framing::Json,
+            timeout: spec.call.timeout,
+        },
+    )?;
+    Ok(read_loaded(&reply.body, spec))
+}
+
+fn read_loaded(body: &Value, spec: &quickai_core::models::LoadedCall) -> Vec<LoadedRow> {
+    body.pointer(&spec.items)
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|item| {
+            let id = item.pointer(&spec.id)?.as_str()?.to_string();
+            let size_bytes = item.pointer(&spec.size_bytes)?.as_u64()?;
+            let on_cards = item
+                .pointer(&spec.on_cards)
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let context = spec
+                .context
+                .as_deref()
+                .and_then(|p| item.pointer(p))
+                .and_then(Value::as_u64);
+            Some(LoadedRow {
+                id,
+                size_bytes,
+                on_cards,
+                context,
+            })
+        })
+        .collect()
+}
+
 /// Asks the engine for its models. An answer is remembered; when the engine does not answer, what
 /// was remembered is given back and marked as stale, and only when there is nothing the failure
 /// is returned.

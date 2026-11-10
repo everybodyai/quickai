@@ -225,6 +225,19 @@ impl App {
 
     /// The graphics llama.cpp can use (not the processor under another name).
     pub(super) fn graphics_cards(&self) -> Vec<Device> {
+        // an engine that finds its cards itself (Ollama) names them in its log when it starts (C213)
+        if !self.lists_devices() {
+            if self.remote_in_use().is_some() || self.setup_in_use().is_some() || self.in_companion
+            {
+                return Vec::new();
+            }
+            return self
+                .engine_cards
+                .iter()
+                .filter(|d| d.is_graphics())
+                .cloned()
+                .collect();
+        }
         match &self.devices {
             Devices::Known { list, .. } => {
                 list.iter().filter(|d| d.is_graphics()).cloned().collect()
@@ -305,30 +318,115 @@ impl App {
 
     /// The facts of the selected model's file, read once for each file.
     pub(super) fn refresh_facts(&mut self) {
-        let path = self
+        let key = self
             .models
             .get(self.selected)
-            .map(|m| m.path.clone())
+            .map(facts_key)
             .unwrap_or_default();
-        if self.facts.as_ref().is_some_and(|(p, _)| *p == path) {
+        if self.facts.as_ref().is_some_and(|(p, _)| *p == key) {
             return;
         }
-        let facts = (path.is_file() && is_gguf(&path))
+        // a model an engine lists by name (Ollama's) is read from the weights in its store (C213)
+        let path = match self.models.get(self.selected) {
+            Some(m) if m.path.as_os_str().is_empty() => {
+                self.weights_in_store(&m.filename).unwrap_or_default()
+            }
+            _ => key.clone(),
+        };
+        let facts = (path.is_file() && (is_gguf(&path) || key != path))
             .then(|| {
                 std::fs::File::open(&path)
                     .and_then(|f| quickai_core::gguf::parse(std::io::BufReader::new(f)))
                     .ok()
             })
             .flatten();
-        self.facts = Some((path, facts));
+        self.facts = Some((key, facts));
+    }
+
+    /// The weights of a model the engine lists by name, in the store it keeps them in: the one it is told to use, else
+    /// the ones it uses of itself.
+    fn weights_in_store(&self, name: &str) -> Option<PathBuf> {
+        if !self.lists_models() {
+            return None;
+        }
+        let form = self.form();
+        let theirs = form
+            .as_ref()
+            .and_then(|f| f.field("use_default_store"))
+            .and_then(|f| f.value.as_bool())
+            .unwrap_or(false);
+        let told = form
+            .as_ref()
+            .and_then(|f| f.field("models_dir"))
+            .and_then(|f| f.value.as_str().map(PathBuf::from))
+            .filter(|_| !theirs);
+        let home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
+        crate::model_store::ollama_stores(told.as_deref(), home.as_deref())
+            .iter()
+            .find_map(|store| crate::model_store::weights_in_store(store, name))
     }
 
     /// What the selected model's file says of it, when it was read.
     pub(super) fn model_facts(&self) -> Option<&ModelFacts> {
         let model = self.models.get(self.selected)?;
         match &self.facts {
-            Some((path, Some(facts))) if *path == model.path => Some(facts),
+            Some((key, Some(facts))) if *key == facts_key(model) => Some(facts),
             _ => None,
+        }
+    }
+
+    /// Whether an engine that finds its devices itself said them, and none is a card (Ollama on a computer whose only
+    /// device it can use is the processor).
+    pub(super) fn engine_found_no_card(&self) -> bool {
+        !self.lists_devices() && !self.engine_cards.is_empty() && self.graphics_cards().is_empty()
+    }
+
+    /// What the engine says it has loaded of the selected model, while it runs (`[models] loaded`, C213).
+    pub(super) fn loaded_now(&self) -> Option<&crate::prims::engine_models::LoadedRow> {
+        if !self.session.is_active() {
+            return None;
+        }
+        let model = self.models.get(self.selected)?;
+        self.loaded.as_ref().filter(|row| {
+            row.id == model.filename
+                || row.id.strip_suffix(":latest") == Some(model.filename.as_str())
+        })
+    }
+
+    /// The share of the model on the cards, 0 to 1: llama.cpp's from its layers; for an engine that places a model
+    /// itself (Ollama), what it says while the model runs, and before, the share that would fit on its cards.
+    pub(super) fn card_share(&self) -> f64 {
+        if self.engine_has_layers().is_some() {
+            return match self.place() {
+                Place::Card => 1.0,
+                Place::Mixed(n) => self
+                    .need()
+                    .map_or(0.5, |need| n as f64 / need.layers.max(1) as f64),
+                Place::Processor => 0.0,
+            };
+        }
+        if !self.gpu_offload() {
+            return 0.0;
+        }
+        if let Some(row) = self.loaded_now() {
+            return row.card_share();
+        }
+        // the engine said what it found, and none of it is a card: the processor
+        if self.engine_found_no_card() {
+            return 0.0;
+        }
+        let cards = self.ticked_cards();
+        match self.need().filter(|_| !cards.is_empty()) {
+            Some(need) => {
+                let tokens = self.context_tokens();
+                let room = room_of(&cards);
+                if need.total(tokens) <= room {
+                    1.0
+                } else {
+                    layers_that_fit(&need, tokens, room) as f64 / need.layers.max(1) as f64
+                }
+            }
+            None => 1.0,
         }
     }
 
@@ -354,6 +452,20 @@ impl App {
 
     /// Where the model runs, from the GPU layers field.
     pub(super) fn place(&self) -> Place {
+        if self.engine_has_layers().is_none() && self.context_field().is_some() {
+            let share = self.card_share();
+            return if share >= 0.995 {
+                Place::Card
+            } else if share <= 0.005 {
+                Place::Processor
+            } else {
+                let layers = self.need().map_or(100, |n| n.layers);
+                Place::Mixed(
+                    ((layers as f64 * share).round() as u64)
+                        .clamp(1, layers.saturating_sub(1).max(1)),
+                )
+            };
+        }
         let layers = self.values.int(LAYERS).unwrap_or(ALL_LAYERS);
         let of = self.need().map(|n| n.layers);
         if layers <= 0 {
@@ -436,20 +548,21 @@ impl App {
     pub(super) fn takes(&self) -> Option<(Vec<(Device, Takes)>, Takes)> {
         let model = self.models.get(self.selected)?;
         let tokens = self.context_tokens();
-        let context = self
-            .model_facts()
-            .and_then(|f| f.context_bytes(tokens))
-            .unwrap_or(0);
         // the projector, when it is attached, is counted with the model
         let weights = model.size_bytes + self.projector_bytes();
+        // what a loaded model takes in all is what the engine says (Ollama's /api/ps): the rest of it is its context
+        let context = match self.loaded_now() {
+            Some(row) => row.size_bytes.saturating_sub(weights + WORK),
+            None => self
+                .model_facts()
+                .and_then(|f| f.context_bytes(tokens))
+                .unwrap_or(0),
+        };
         let cards = self.ticked_cards();
-        let share = match self.place() {
-            _ if cards.is_empty() => 0.0,
-            Place::Card => 1.0,
-            Place::Mixed(n) => self
-                .need()
-                .map_or(0.5, |need| n as f64 / need.layers.max(1) as f64),
-            Place::Processor => 0.0,
+        let share = if cards.is_empty() {
+            0.0
+        } else {
+            self.card_share()
         };
         let on_cards = Takes {
             model: (weights as f64 * share) as u64,
@@ -488,7 +601,9 @@ impl App {
     /// How fast it should be: on the cards whole, fast; partly, medium; on the processor, as its size and the memory say.
     pub(super) fn speed(&self) -> Option<SpeedTier> {
         let model = self.models.get(self.selected)?;
-        if self.lists_devices() && matches!(self.devices, Devices::Known { .. }) {
+        let known = (self.lists_devices() && matches!(self.devices, Devices::Known { .. }))
+            || (!self.lists_devices() && !self.graphics_cards().is_empty());
+        if known {
             let cards = self.ticked_cards();
             return Some(match self.place() {
                 Place::Card if !cards.is_empty() => match self.fit(self.context_tokens()) {
@@ -509,7 +624,10 @@ impl App {
 
     /// Where it runs, in words, for the line of the run (`on the RTX 4090`, `38 of 62 layers on the card`).
     pub(super) fn place_words(&self) -> Option<String> {
-        if !self.lists_devices() || !matches!(self.devices, Devices::Known { .. }) {
+        if !self.lists_devices() {
+            return self.engine_place_words();
+        }
+        if !matches!(self.devices, Devices::Known { .. }) {
             return None;
         }
         let cards = self.ticked_cards();
@@ -528,6 +646,47 @@ impl App {
         })
     }
 
+    /// Where an engine that places a model itself (Ollama) runs it, in words: what it says while the model runs (`3.1 of
+    /// 4.4 GB on the Radeon RX 6700 XT, the rest in memory`), and before, what would fit on the cards it named.
+    fn engine_place_words(&self) -> Option<String> {
+        self.context_field()?;
+        if !self.gpu_offload() {
+            return Some("on the processor".to_string());
+        }
+        let cards = self.ticked_cards();
+        let named = match cards.as_slice() {
+            [one] => format!("the {}", one.name),
+            [] => "the graphics card".to_string(),
+            many => format!("{} cards", many.len()),
+        };
+        if let Some(row) = self.loaded_now() {
+            let share = row.card_share();
+            return Some(if share >= 0.995 {
+                format!("on {named}")
+            } else if share <= 0.005 {
+                "on the processor".to_string()
+            } else {
+                format!(
+                    "{} of {} GB on {named}, the rest in memory",
+                    gb(row.on_cards),
+                    gb(row.size_bytes)
+                )
+            });
+        }
+        if self.engine_found_no_card() {
+            return Some("on the processor".to_string());
+        }
+        if cards.is_empty() {
+            return None;
+        }
+        let share = self.card_share();
+        Some(if share >= 0.995 {
+            format!("on {named}")
+        } else {
+            format!("about {:.0}% on {named}, the rest in memory", share * 100.0)
+        })
+    }
+
     // ---- what is drawn ------------------------------------------------------------------------------------
 
     /// Graphics: where the model runs, and with more than one card, which cards and how it is split between them.
@@ -536,15 +695,26 @@ impl App {
         if self.engine_has_layers().is_some() && self.lists_devices() {
             self.show_llama_graphics(ui, enabled);
         } else if let Some(field) = self.form().and_then(|f| f.field("gpu").cloned()) {
-            // Ollama: its own say of the cards, on or off
+            // Ollama: its own say of the cards, on or off; the cards it named, and how much of the model it put on them
             let on = field.value.as_str() != Some("off");
+            let cards = self.graphics_cards();
+            let head = match cards.as_slice() {
+                [] if self.engine_found_no_card() => "no graphics card found".to_string(),
+                [] => "Ollama decides how".to_string(),
+                [one] => format!("{} · {} GB", one.name, gb(one.total_bytes)),
+                many => format!("{} cards", many.len()),
+            };
             super::inspector::section_head(
                 ui,
                 Icon::Chip,
                 "Graphics",
-                Some("Ollama puts the model on the graphics cards it finds, or on the processor if you turn them off."),
+                Some(
+                    "Ollama puts as much of the model on the graphics cards it finds as fits, and the rest on the \
+                     processor; or all of it on the processor if you turn them off. The cards are the ones it named when \
+                     it last started.",
+                ),
                 |ui| {
-                    ui.label(theme::muted("Ollama decides how").small());
+                    ui.add(egui::Label::new(theme::muted(head).small()).truncate());
                 },
             );
             let chosen = ui
@@ -560,6 +730,20 @@ impl App {
                 Some(0) => self.values.set("gpu", "auto"),
                 Some(1) => self.values.set("gpu", "off"),
                 _ => {}
+            }
+            // how it is split, said: what Ollama says while it runs, else what would fit
+            if on {
+                let said = match (self.loaded_now(), self.engine_place_words()) {
+                    (Some(_), Some(words)) => Some(format!("Now {words}.")),
+                    (None, Some(words)) if words.starts_with("about") => {
+                        Some(format!("It would run {words}: Ollama decides at Start."))
+                    }
+                    _ => None,
+                };
+                if let Some(said) = said {
+                    ui.add_space(4.0);
+                    ui.label(theme::muted(said).small());
+                }
             }
         }
     }
@@ -1010,6 +1194,15 @@ pub(super) fn segments(
         }
     }
     chosen
+}
+
+/// What the facts of a model are kept under: its file, or for a model an engine lists by name, its name.
+fn facts_key(model: &crate::models::ModelEntry) -> PathBuf {
+    if model.path.as_os_str().is_empty() {
+        PathBuf::from(format!("\u{0}listed/{}", model.filename))
+    } else {
+        model.path.clone()
+    }
 }
 
 #[cfg(test)]

@@ -458,9 +458,9 @@ impl App {
             self.configs.error = Some(self.engine_locked_sentence());
             return;
         }
-        // the one in use, picked again, changes nothing: going back to what it says is Revert's, in the window of the
-        // configurations, which asks first
-        if id == self.configs.active && !self.configs.unnamed {
+        // the one in use, picked again, changes nothing while the window holds what it says; with changes (its box's amber
+        // edge, C213) it goes back to it, as choosing the one an unnamed configuration came from does
+        if id == self.configs.active && !self.configs.unnamed && !self.configuration_modified() {
             return;
         }
         // nothing asks about what the window holds (2026-11-09: the window keeps how it ran last, and a configuration is
@@ -729,6 +729,7 @@ impl App {
             egui::Sense::click()
         };
         let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 34.0), sense);
+        super::help::mark_spot(ui, super::help::Spot::Configuration, rect);
         let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
         if ui.is_rect_visible(rect) {
             let fill = if !locked && (open || response.hovered()) {
@@ -1671,7 +1672,9 @@ mod tests {
     }
 
     #[test]
-    fn p3_a73_a_change_says_nothing_and_moves_nothing() {
+    /// A73, since C213 (Y1 of `the mockups`): a change moves nothing, and gives the line's box an amber
+    /// edge, which it has not before.
+    fn p3_a73_a_change_moves_nothing_and_gives_the_box_an_amber_edge() {
         let dir = scratch("a73");
         let mut app = app_in(&dir, "llamacpp");
         let ctx = egui::Context::default();
@@ -1681,10 +1684,18 @@ mod tests {
             let quiet = settled_at(&mut app, &ctx, width);
             app.values.set("port", 9000u16);
             let changed = settled_at(&mut app, &ctx, width);
-            assert_eq!(rects(&quiet), rects(&changed), "{width}: a change showed");
+            assert_eq!(
+                rects(&quiet),
+                rects(&changed),
+                "{width}: a change moved something"
+            );
             assert!(
-                !frames(&changed).iter().any(|(_, color)| *color == amber),
-                "{width}: the line is in the colour of a change"
+                !frames(&quiet).iter().any(|(_, color)| *color == amber),
+                "{width}: the line is amber with nothing changed"
+            );
+            assert!(
+                frames(&changed).iter().any(|(_, color)| *color == amber),
+                "{width}: the line's box has no amber edge after a change"
             );
         }
         // what Save to's hover says: what changed, a line for each, and how many more than eight

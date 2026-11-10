@@ -192,6 +192,8 @@ impl App {
     /// Everything that depends on the engine: its executable, its models and the state of the
     /// panels that were about it. Called when the application starts and when the engine changes.
     pub(super) fn load_engine_state(&mut self) {
+        // what another engine said of its cards and of what it loaded is not this one's (C213)
+        self.forget_engine_place();
         self.runtime = RuntimeManager {
             input: self
                 .values

@@ -343,9 +343,14 @@ impl App {
             self.show_controls(ui);
             return;
         }
-        self.show_context_grid(ui, !running);
+        let context = ui
+            .scope(|ui| self.show_context_grid(ui, !running))
+            .response
+            .rect;
+        super::help::mark_spot(ui, super::help::Spot::Context, context);
         ui.add_space(4.0);
-        self.show_graphics_section(ui);
+        let graphics = ui.scope(|ui| self.show_graphics_section(ui)).response.rect;
+        super::help::mark_spot(ui, super::help::Spot::Graphics, graphics);
         if running {
             ui.add_space(4.0);
             ui.label(theme::muted("Stop the model to change these.").small());

@@ -262,6 +262,7 @@ For an engine that keeps its own models, named references it lists, pulls and re
 | `pull` | table, below | The call that fetches a model by name, with its progress. |
 | `remove` | table, below | The call that removes a model. |
 | `capabilities` | table, below | The call that asks what one model can do. |
+| `loaded` | table, below | The call that says what the engine has loaded, and how much of each model is on the graphics cards: how the window says where a model runs when the engine places it itself (Ollama). |
 | `input_rules` | list of tables, below | What the model box makes of what was typed: the first rule whose `when` holds. Nothing typed is nothing; text no rule takes is refused. |
 | `sources` | list of tables, below | For an engine whose models are files: where they are kept (read by Phase 4). |
 | `acquire` | table, below | For an engine whose models are files: how one gets into the folder (read by Phase 4). |
@@ -404,6 +405,36 @@ JSON pointers into one model of the list.
 | `size_bytes` | pointer | How big it is: what the context size and the speed estimate are worked out from. |
 | `digest` | pointer | Its checksum. |
 | `capabilities` | pointer | A list of what it can do (`completion`, `vision`). |
+
+## `[models]` `loaded`
+
+What the engine has loaded now, asked every few seconds while a model runs: for an engine that decides itself how much of a model goes on the graphics cards (Ollama's `GET /api/ps`). Graphics, This computer and the chips of a run say what it answered.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `call` | table | The request (`GET /api/ps`). |
+| `items` | pointer | The array of loaded models in the reply (`/models`). Required. |
+| `map` | table, below | Where the parts of one are. Required. |
+
+## `[models]` `loaded.map`
+
+JSON pointers into one loaded model.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `id` | pointer | The name the engine knows it by (`/name`). Required. |
+| `size_bytes` | pointer | The bytes it takes in all: weights, context and the rest (`/size`). Required. |
+| `on_cards` | pointer | The bytes of it on the graphics cards (`/size_vram`); the rest is in the computer's memory. Required. |
+| `context` | pointer | The context it was loaded with, in tokens (`/context_length`). |
+
+## `[devices]`
+
+The graphics cards an engine that finds them itself names in its log when it starts (Ollama's lines of `inference compute`), for the panel's Graphics and This computer. llama.cpp's are asked of its program instead (`--list-devices`).
+
+| Key | Value | Meaning |
+|---|---|---|
+| `log` | list of patterns | Patterns over a line of the log, tried in order: the first that matches says a device, with the named groups `name` and `total` (`12.0 GiB`), and `library` and `available` when there are. A pattern without `name` or `total` is an error. |
+| `not_cards` | list of text | The libraries whose devices are not graphics cards (`cpu`), compared without regard to case. |
 
 ## `[models]` `pull`
 

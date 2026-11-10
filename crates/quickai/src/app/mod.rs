@@ -53,6 +53,7 @@ mod mcp_servers;
 mod model_bar;
 mod model_details;
 mod named_models;
+mod placement;
 mod port_taken;
 #[cfg(feature = "remote-setup")]
 mod remote_models;
@@ -96,6 +97,10 @@ fn config_log_lines(registry: &Registry) -> VecDeque<String> {
         })
         .collect()
 }
+
+/// The answer to what the engine has loaded, when it comes (`placement.rs`).
+type LoadedAnswer =
+    crossbeam_channel::Receiver<Result<Vec<crate::prims::engine_models::LoadedRow>, String>>;
 
 pub struct App {
     session: Session,
@@ -277,6 +282,16 @@ pub struct App {
     facts: Option<(PathBuf, Option<quickai_core::gguf::ModelFacts>)>,
     /// Where the model runs is fitted to the cards (Auto) until the person chooses it; picking a model puts it back.
     gpu_auto: bool,
+    /// The cards the engine named in its log, for an engine that finds them itself (Ollama's `inference compute`
+    /// lines, C213), and whether a run started since they were said: its first card says them anew.
+    engine_cards: Vec<crate::devices::Device>,
+    cards_said_anew: bool,
+    /// What the engine said it has loaded the last time it was asked (`[models] loaded`, C213): the model that runs,
+    /// with how much of it is on the cards; and the question in flight, with when it was asked.
+    loaded: Option<crate::prims::engine_models::LoadedRow>,
+    /// The model the engine was asked about, and how many times since it loaded.
+    loaded_asks: Option<(String, u32)>,
+    loaded_asked: Option<(std::time::Instant, Option<LoadedAnswer>)>,
     /// A run went wrong since the log was last looked at: its tab has a red dot.
     log_unread: bool,
     /// The MCP servers being asked why they gave no tools: what the log says, when each has answered.
@@ -536,6 +551,11 @@ impl App {
             devices: graphics::Devices::default(),
             facts: None,
             gpu_auto: true,
+            engine_cards: Vec::new(),
+            cards_said_anew: true,
+            loaded: None,
+            loaded_asked: None,
+            loaded_asks: None,
             log_unread: false,
             mcp_checks: Vec::new(),
             seen_state: None,
@@ -1041,6 +1061,7 @@ impl eframe::App for App {
             });
         for line in new_lines {
             self.note_log_line(&line);
+            self.note_engine_card(&line);
             self.explain_mcp_line(&line, ui.ctx());
             self.push_log(line);
         }
@@ -1053,6 +1074,7 @@ impl eframe::App for App {
         self.poll_runtime_manager();
         self.poll_companion(ui.ctx());
         self.poll_named_models(ui.ctx());
+        self.poll_loaded(ui.ctx());
         self.poll_chat();
         self.poll_tools(ui.ctx());
         self.poll_remote(ui.ctx());

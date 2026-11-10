@@ -283,7 +283,8 @@ pub(super) fn show_connection_box(ui: &mut egui::Ui, panel: &ApiPanel) {
                            what: &str,
                            value: &str,
                            copy: bool,
-                           note: Option<&str>| {
+                           note: Option<&str>,
+                           named: bool| {
                 if !first {
                     let y = ui.cursor().top();
                     let x = ui.max_rect().x_range();
@@ -295,7 +296,7 @@ pub(super) fn show_connection_box(ui: &mut egui::Ui, panel: &ApiPanel) {
                 }
                 first = false;
                 ui.horizontal(|ui| {
-                    ui.set_min_height(34.0);
+                    ui.set_min_height(if named { 44.0 } else { 34.0 });
                     let (rect, response) =
                         ui.allocate_exact_size(egui::vec2(15.0, 15.0), egui::Sense::hover());
                     icons::paint(ui.painter(), rect, icon, p.muted);
@@ -311,12 +312,17 @@ pub(super) fn show_connection_box(ui: &mut egui::Ui, panel: &ApiPanel) {
                         Some(note) => format!("{what}: {value}\n{note}"),
                         None => format!("{what}: {value}"),
                     };
-                    // from the left, cut with … when it is longer than the room
+                    // from the left, cut with … when it is longer than the room; an address after the first says what it is
+                    // for over it (ComfyUI's queue, Ollama's own API), since they look alike
                     ui.allocate_ui_with_layout(
-                        egui::vec2(room, 22.0),
-                        egui::Layout::left_to_right(egui::Align::Center),
+                        egui::vec2(room, if named { 38.0 } else { 22.0 }),
+                        egui::Layout::top_down(egui::Align::Min),
                         |ui| {
                             ui.set_width(room);
+                            ui.spacing_mut().item_spacing.y = 1.0;
+                            if named {
+                                ui.label(egui::RichText::new(what).size(11.0).color(p.faint));
+                            }
                             ui.add(egui::Label::new(words).truncate())
                                 .on_hover_text(hover);
                         },
@@ -328,9 +334,17 @@ pub(super) fn show_connection_box(ui: &mut egui::Ui, panel: &ApiPanel) {
                     }
                 });
             };
-            row(ui, Icon::Link, "Address", &panel.base_url, true, None);
+            row(
+                ui,
+                Icon::Link,
+                "Address",
+                &panel.base_url,
+                true,
+                None,
+                false,
+            );
             for (label, url) in &panel.extra_urls {
-                row(ui, Icon::Link, label, url, true, None);
+                row(ui, Icon::Link, label, url, true, None, true);
             }
             if let Some(model) = &panel.model {
                 row(
@@ -340,6 +354,7 @@ pub(super) fn show_connection_box(ui: &mut egui::Ui, panel: &ApiPanel) {
                     &model.value,
                     true,
                     model.note.as_deref(),
+                    false,
                 );
             }
             if let Some(key) = &panel.api_key {
@@ -351,6 +366,7 @@ pub(super) fn show_connection_box(ui: &mut egui::Ui, panel: &ApiPanel) {
                         "any key, or none",
                         false,
                         key.note.as_deref(),
+                        false,
                     );
                 } else {
                     row(
@@ -360,6 +376,7 @@ pub(super) fn show_connection_box(ui: &mut egui::Ui, panel: &ApiPanel) {
                         &key.value,
                         true,
                         key.note.as_deref(),
+                        false,
                     );
                 }
             }

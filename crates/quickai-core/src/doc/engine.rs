@@ -38,6 +38,8 @@ pub struct EngineDoc {
     /// How each kind of file that goes with a model (a projector) is attached to the program.
     #[serde(default)]
     pub components: std::collections::BTreeMap<String, Component>,
+    /// The cards the engine names in its log, for an engine that finds them itself (C213).
+    pub devices: Option<DevicesDoc>,
 }
 
 /// How one kind of companion file reaches the program (`[components.mmproj]`).
@@ -659,6 +661,9 @@ pub struct Models {
     pub remove: Option<ModelRemove>,
     /// Asks about one model (what it can take as input).
     pub capabilities: Option<ModelCapabilities>,
+    /// What the engine has loaded now, and how much of each model is on the graphics cards (Ollama's `/api/ps`):
+    /// how the window says where a model it does not place itself runs (C213).
+    pub loaded: Option<ModelLoaded>,
     /// What the model box makes of what was typed: the first rule whose `when` holds.
     #[serde(default)]
     pub input_rules: Vec<InputRule>,
@@ -774,6 +779,41 @@ pub struct ModelList {
     /// whole name (`llamacpp:.*`). The picker, the recommendation and the cache never see them.
     #[serde(default)]
     pub hide: Vec<String>,
+}
+
+/// The call that says what the engine has loaded (`[models] loaded`), and where the parts of one are.
+#[derive(Clone, Debug, Deserialize)]
+pub struct ModelLoaded {
+    pub call: CallSpec,
+    /// The array of loaded models in the reply, as a JSON pointer (`/models`).
+    pub items: String,
+    pub map: LoadedMap,
+}
+
+/// Where the parts of one loaded model are, as JSON pointers into it.
+#[derive(Clone, Debug, Deserialize)]
+pub struct LoadedMap {
+    /// The name the engine knows it by. Required.
+    pub id: String,
+    /// The bytes it takes in all. Required.
+    pub size_bytes: String,
+    /// The bytes of it that are on the graphics cards. Required.
+    pub on_cards: String,
+    /// The context it was loaded with, in tokens.
+    pub context: Option<String>,
+}
+
+/// The cards an engine that finds them itself names in its log (`[devices]`, C213): Ollama says each in a line
+/// of `inference compute` when it starts.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct DevicesDoc {
+    /// Patterns over a line of the log, tried in order: the first that matches says a device, with the named
+    /// groups `name` and `total` (`12.0 GiB`), and `library` when there is one.
+    #[serde(default)]
+    pub log: Vec<String>,
+    /// The libraries (lower case) whose devices are not graphics cards (`cpu`).
+    #[serde(default)]
+    pub not_cards: Vec<String>,
 }
 
 /// Where the parts of one listed model are, as JSON pointers into it.
