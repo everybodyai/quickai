@@ -12,7 +12,7 @@ use crossbeam_channel::Receiver;
 use eframe::egui;
 use quickai_core::lookup::huggingface::relevance;
 use quickai_core::lookup::present::{Download, Entry, Fetch, Offer};
-use quickai_core::lookup::view::arrange;
+use quickai_core::lookup::view::{arrange, Section};
 use quickai_core::models::{bundles, lookup_rules, lookups};
 use quickai_core::registry::engine::LookupKind;
 
@@ -74,12 +74,16 @@ impl ResultOrder {
     }
 }
 
-/// The offer a result's Get fetches, of those the size filter shows: the one the look-up recommends, else the first.
+/// The offer a result's Get fetches, of those the size filter shows: the one the look-up recommends, with what goes with it when
+/// there is such a bundle, else the first.
 fn main_of<'a>(entry: &'a Entry, shown: &[usize]) -> Option<&'a Offer> {
     let offers: Vec<&Offer> = shown.iter().map(|i| &entry.offers[*i]).collect();
+    // the size the look-up recommends with what goes with it (a projector: the model then reads pictures, as the main
+    // choice of the recommended list does), else that size alone, else the first
     offers
         .iter()
-        .find(|o| o.recommended)
+        .find(|o| o.recommended && o.bundle.is_some())
+        .or_else(|| offers.iter().find(|o| o.recommended))
         .or_else(|| offers.first())
         .copied()
 }
@@ -366,70 +370,103 @@ impl App {
             kind = None;
         }
 
-        // one heading: what was looked for and how many were found, the order and the size
+        // one heading: what was looked for and how many were found, the order and the size (on a line of their own when
+        // the place is narrow: the results in ComfyUI's page)
         ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            let heading = if words.is_empty() {
-                "Most downloaded".to_string()
+        let heading = if words.is_empty() {
+            "Most downloaded".to_string()
+        } else {
+            format!("Results for \"{words}\"")
+        };
+        let found = format!("· {}", entries.len());
+        let size_label = size
+            .as_deref()
+            .and_then(|id| sizes.iter().find(|c| c.id == id))
+            .map_or_else(|| "Any".to_string(), |c| c.label.clone());
+        let size_text = format!("Size: {size_label}");
+        let sort_text = format!("Sort: {}", order.words());
+        let gap = ui.spacing().item_spacing.x;
+        let needed = super::theme::text_width(ui, &heading, egui::TextStyle::Body)
+            + super::theme::text_width(ui, &found, egui::TextStyle::Body)
+            + 12.0
+            + gap
+            + super::theme::combo_width(ui, &sort_text)
+            + if sizes.is_empty() {
+                0.0
             } else {
-                format!("Results for \"{words}\"")
-            };
-            ui.label(
-                egui::RichText::new(heading)
-                    .color(p.text)
-                    .family(super::theme::semibold(ui)),
-            );
-            ui.label(egui::RichText::new(format!("· {}", entries.len())).color(p.faint));
-            if self.lookup.running() {
-                ui.add(egui::Spinner::new().size(12.0));
+                super::theme::combo_width(ui, &size_text) + gap
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if !sizes.is_empty() {
-                    let label = size
-                        .as_deref()
-                        .and_then(|id| sizes.iter().find(|c| c.id == id))
-                        .map_or_else(|| "Any".to_string(), |c| c.label.clone());
-                    egui::ComboBox::from_id_salt("lookup_size")
-                        .selected_text(format!("Size: {label}"))
-                        .show_ui(ui, |ui| {
-                            if ui.selectable_label(size.is_none(), "Any").clicked() {
-                                size = None;
-                            }
-                            for class in &sizes {
-                                let on = size.as_deref() == Some(class.id.as_str());
-                                let mut item = ui.selectable_label(on, &class.label);
-                                if !class.help.is_empty() {
-                                    item = item.on_hover_text(&class.help);
-                                }
-                                if item.clicked() {
-                                    size = Some(class.id.clone());
-                                }
-                            }
-                        });
-                }
-                egui::ComboBox::from_id_salt("lookup_order")
-                    .selected_text(format!("Sort: {}", order.words()))
+            + 4.0 * gap;
+        let one_line = ui.available_width() >= needed;
+        let mut controls = |ui: &mut egui::Ui| {
+            if !sizes.is_empty() {
+                egui::ComboBox::from_id_salt("lookup_size")
+                    .selected_text(&size_text)
                     .show_ui(ui, |ui| {
-                        for choice in ResultOrder::ALL {
-                            if choice == ResultOrder::Best && words.is_empty() {
-                                continue;
+                        if ui.selectable_label(size.is_none(), "Any").clicked() {
+                            size = None;
+                        }
+                        for class in &sizes {
+                            let on = size.as_deref() == Some(class.id.as_str());
+                            let mut item = ui.selectable_label(on, &class.label);
+                            if !class.help.is_empty() {
+                                item = item.on_hover_text(&class.help);
                             }
-                            if ui
-                                .selectable_label(order == choice, choice.words())
-                                .clicked()
-                            {
-                                order = choice;
+                            if item.clicked() {
+                                size = Some(class.id.clone());
                             }
                         }
                     });
-            });
+            }
+            egui::ComboBox::from_id_salt("lookup_order")
+                .selected_text(&sort_text)
+                .show_ui(ui, |ui| {
+                    for choice in ResultOrder::ALL {
+                        if choice == ResultOrder::Best && words.is_empty() {
+                            continue;
+                        }
+                        if ui
+                            .selectable_label(order == choice, choice.words())
+                            .clicked()
+                        {
+                            order = choice;
+                        }
+                    }
+                });
+        };
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(&heading)
+                    .color(p.text)
+                    .family(super::theme::semibold(ui)),
+            );
+            ui.label(egui::RichText::new(&found).color(p.faint));
+            if self.lookup.running() {
+                ui.add(egui::Spinner::new().size(12.0));
+            }
+            if one_line {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    controls(ui)
+                });
+            }
         });
+        if !one_line {
+            ui.horizontal(|ui| controls(ui));
+        }
         if let Some(more) = &more {
             ui.label(super::theme::muted(more));
         }
+        // All is what the engine runs: a section that is folded (what it does not run) is shown by its own chip, unless
+        // nothing else was found
+        let any_open = sections.iter().any(|s| s.open);
+        let in_all = |s: &&Section| s.open || !any_open;
         if sections.len() > 1 {
             ui.horizontal_wrapped(|ui| {
-                let count: usize = sections.iter().map(|s| s.entries.len()).sum();
+                let count: usize = sections
+                    .iter()
+                    .filter(in_all)
+                    .map(|s| s.entries.len())
+                    .sum();
                 if ui
                     .selectable_label(kind.is_none(), format!("All {count}"))
                     .clicked()
@@ -456,7 +493,10 @@ impl App {
         // the results in one list, in the order chosen: best first is the order they are kept in
         let mut shown: Vec<(usize, Vec<usize>)> = sections
             .iter()
-            .filter(|s| kind.as_deref().is_none_or(|k| s.type_id == k))
+            .filter(|s| {
+                kind.as_deref()
+                    .map_or_else(|| in_all(s), |k| s.type_id == k)
+            })
             .flat_map(|s| s.entries.iter().map(|e| (e.entry, e.offers.clone())))
             .collect();
         shown.sort_by_key(|(i, _)| *i);

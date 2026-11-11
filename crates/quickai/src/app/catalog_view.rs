@@ -367,16 +367,26 @@ impl App {
 
                     // the search, the size, whether it fits, and the order: one row that stays as it is
                     ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 10.0;
-                        let room = (ui.available_width() * 0.4).clamp(220.0, 440.0);
-                        search_box(ui, &mut what.words, room, &mut focus_search);
+                        const GAP: f32 = 10.0;
+                        ui.spacing_mut().item_spacing.x = GAP;
                         let size_label = what
                             .size
                             .as_deref()
                             .and_then(|id| sizes.iter().find(|c| c.id == id))
                             .map_or_else(|| "Any".to_string(), |c| c.label.clone());
+                        let size_text = format!("Size: {size_label}");
+                        let sort_text = format!("Sort: {}", sort.words());
+                        // the search box has what the others leave, so that the row fits the window's own width
+                        let fits_width = if ram > 0 {
+                            theme::SWITCH_WIDTH + GAP + theme::text_width(ui, "Fits this computer", egui::TextStyle::Body) + GAP
+                        } else {
+                            0.0
+                        };
+                        let others = theme::combo_width(ui, &size_text) + GAP + fits_width + theme::combo_width(ui, &sort_text) + GAP;
+                        let room = (ui.available_width() - others - GAP).clamp(160.0, 440.0);
+                        search_box(ui, &mut what.words, room, &mut focus_search);
                         egui::ComboBox::from_id_salt("catalog_size")
-                            .selected_text(format!("Size: {size_label}"))
+                            .selected_text(size_text)
                             .show_ui(ui, |ui| {
                                 if ui.selectable_label(what.size.is_none(), "Any").clicked() {
                                     what.size = None;
@@ -402,7 +412,7 @@ impl App {
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             egui::ComboBox::from_id_salt("catalog_sort")
-                                .selected_text(format!("Sort: {}", sort.words()))
+                                .selected_text(sort_text)
                                 .show_ui(ui, |ui| {
                                     for choice in Sort::ALL {
                                         if ui.selectable_label(sort == choice, choice.words()).clicked() {
@@ -475,8 +485,8 @@ impl App {
                             egui::Stroke::new(1.0, p.line),
                         );
                         ui.vertical(|ui| {
-                            // lines that stay readable in a wide window
-                            ui.set_max_width(900.0);
+                            // lines that stay readable in a wide window (set_max_width would widen a narrower one)
+                            ui.set_max_width(ui.available_width().min(900.0));
                             let count: usize = shown.sections.iter().map(|s| s.entries.len()).sum();
                             let place = match &what.scope {
                                 Scope::Start => "Start here".to_string(),
@@ -1375,7 +1385,7 @@ fn empty_list(ui: &mut egui::Ui, words: &str, site: Option<&str>, listed: usize)
     let mut asked = None;
     ui.add_space(36.0);
     ui.vertical_centered(|ui| {
-        ui.set_max_width(560.0);
+        ui.set_max_width(ui.available_width().min(560.0));
         if words.is_empty() {
             ui.label(
                 egui::RichText::new("Nothing here fits these choices")

@@ -705,12 +705,35 @@ pub(super) fn chip(ui: &mut egui::Ui, text: &str, tone: Option<Tone>) -> egui::R
     response
 }
 
+/// How wide `theme::switch` is.
+pub(super) const SWITCH_WIDTH: f32 = 36.0;
+
+/// How wide `text` is in `style`, on one line.
+pub(super) fn text_width(ui: &egui::Ui, text: &str, style: egui::TextStyle) -> f32 {
+    ui.painter()
+        .layout_no_wrap(
+            text.to_string(),
+            style.resolve(ui.style()),
+            egui::Color32::WHITE,
+        )
+        .size()
+        .x
+}
+
+/// How wide a combo box showing `text` is: egui's rule (the text, the arrow and the padding, at least `combo_width`).
+pub(super) fn combo_width(ui: &egui::Ui, text: &str) -> f32 {
+    let spacing = ui.spacing();
+    let inner =
+        text_width(ui, text, egui::TextStyle::Button) + spacing.icon_spacing + spacing.icon_width;
+    inner.max(spacing.combo_width - 2.0 * spacing.button_padding.x) + 2.0 * spacing.button_padding.x
+}
+
 /// A switch: a setting that is on or off, which a click turns over (C190). On is the soft green of a tag, with a knob in
 /// the green of text, and never the green of the main button: the suites find that button by its colour, and only one
 /// thing on the screen may have it. The response is clicked when it was turned over.
 pub(super) fn switch(ui: &mut egui::Ui, on: &mut bool, enabled: bool) -> egui::Response {
     let p = palette();
-    let size = egui::vec2(36.0, 20.0);
+    let size = egui::vec2(SWITCH_WIDTH, 20.0);
     let sense = if enabled {
         egui::Sense::click()
     } else {

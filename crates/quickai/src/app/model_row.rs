@@ -1,8 +1,8 @@
-//! One model as a row (option A of the mockups the person chose on 2026-11-11, `mockups/models-pages`): the same in the
-//! recommended list, in Add a model's suggestions and in what a look-up found, so that a model looks the same wherever
-//! it is offered. Two lines (its name with who made it, then what it is); what it can do, as pictures each in a place
-//! of its own; the size its Get button fetches and whether that fits this computer; and the Get button, whose ▾ lists
-//! the other sizes in plain words, with the file's own name small beside them for whoever wants it.
+//! One model as a row: the same in the recommended list, in Add a model's suggestions and in what a look-up found, so
+//! that a model looks the same wherever it is offered. Two lines (its name with who made it, then what it is); what it
+//! can do, as pictures each in a place of its own; the size its Get button fetches and whether that fits this computer;
+//! and the Get button, whose ▾ lists the other sizes in plain words, with the file's own name small beside them for
+//! whoever wants it.
 
 use eframe::egui;
 use egui::{Color32, FontId, Pos2, Rect, Sense};
@@ -17,6 +17,9 @@ use crate::hardware::{self, Fit};
 const ROW_HEIGHT: f32 = 52.0;
 /// Narrower than this, a row leaves out the column of what a model can do (its details still say it).
 const ROOM_FOR_ABILITIES: f32 = 620.0;
+/// Narrower than this (the results in ComfyUI's page, beside its panel), a row keeps only Get at the right: the name and
+/// its line have the rest of the width, and the size and whether it fits are a third line under them.
+const COMPACT_BELOW: f32 = 460.0;
 /// The widths of the columns at the right, and the gap between columns.
 const GET_WIDTH: f32 = 96.0;
 const FIT_WIDTH: f32 = 64.0;
@@ -169,8 +172,12 @@ pub(super) fn choice_words(
     bundles: &[BundleWords],
 ) -> (String, String) {
     let code = code_of(offer);
+    // a file of a component by itself (the VAE a model's repository holds), unless the whole repository is such files:
+    // then its sizes are said as a model's are
     if let Some(piece) = offer.only() {
-        return (format!("The {} alone", piece.label), code.to_string());
+        if main.only().is_none() {
+            return (format!("The {} alone", piece.label), code.to_string());
+        }
     }
     let bundle_label = offer.bundle.as_deref().map(|id| {
         bundles
@@ -189,9 +196,15 @@ pub(super) fn choice_words(
     } else {
         quality(code)
     };
-    // two of a kind (Q4_K_S beside Q4_K_M): the one that is not the main one is smaller or bigger than it
+    // two of a grade (Q4_K_S beside Q4_K_M, Q8_0 beside Q6_K): the one that is not the main size is smaller or bigger
+    // than the main size with the same company (alone beside alone, with a projector beside with a projector)
     if !is_main && !same_kind && grade == quality(code_of(main)) {
-        if let (Some(this), Some(that)) = (offer.bytes, main.bytes) {
+        let peer = entry
+            .offers
+            .iter()
+            .find(|o| o.bundle == offer.bundle && code_of(o) == code_of(main))
+            .and_then(|o| o.bytes);
+        if let (Some(this), Some(that)) = (offer.bytes, peer) {
             grade = if this < that { "Smaller" } else { "Bigger" }.to_string();
         }
     }
@@ -199,11 +212,15 @@ pub(super) fn choice_words(
         .offers
         .iter()
         .any(|o| o.bundle.as_deref() == Some("vision"));
+    let bundled = entry.offers.iter().any(|o| o.bundle.is_some());
     let words = match (offer.bundle.as_deref(), pictures) {
         (Some("vision"), _) => format!("{grade} · reads pictures"),
         (Some(_), _) => format!("{grade} · {}", bundle_label.unwrap_or_default()),
         (None, true) if same_kind => "Without picture reading".to_string(),
         (None, true) => format!("{grade}, without pictures"),
+        // the model alone, where other sizes come with what it needs (a text encoder and a VAE)
+        (None, false) if bundled && same_kind => "Model only".to_string(),
+        (None, false) if bundled => format!("{grade}, model only"),
         (None, false) => grade,
     };
     let file = if file.eq_ignore_ascii_case(&words) {
@@ -241,20 +258,24 @@ pub(super) fn show(
     let p = theme::palette();
     let mut action = None;
     let width = ui.available_width();
+    let compact = width < COMPACT_BELOW;
     let abilities = row.abilities && width >= ROOM_FOR_ABILITIES;
     // the words have what the columns at the right leave; the second line may take two lines of it
-    let columns = 8.0
-        + GET_WIDTH
-        + GAP
-        + FIT_WIDTH
-        + GAP
-        + SIZE_WIDTH
-        + GAP
-        + if abilities {
-            ABILITIES_WIDTH + GAP
-        } else {
-            0.0
-        };
+    let columns = if compact {
+        8.0 + GET_WIDTH + GAP
+    } else {
+        8.0 + GET_WIDTH
+            + GAP
+            + FIT_WIDTH
+            + GAP
+            + SIZE_WIDTH
+            + GAP
+            + if abilities {
+                ABILITIES_WIDTH + GAP
+            } else {
+                0.0
+            }
+    };
     let words_left = if row.expandable { 30.0 } else { 8.0 };
     let words_width = (width - columns - words_left).max(60.0);
     let line = lines(
@@ -265,7 +286,10 @@ pub(super) fn show(
         words_width,
         2,
     );
-    let height = (28.0 + line.size().y + 8.0).max(ROW_HEIGHT);
+    let line_height = line.size().y;
+    // (compact: a third line, of the size and whether it fits)
+    let third = if compact { 20.0 } else { 0.0 };
+    let height = (28.0 + line_height + third + 8.0).max(ROW_HEIGHT);
     let sense = if row.expandable {
         Sense::click()
     } else {
@@ -303,7 +327,9 @@ pub(super) fn show(
         egui::vec2(SIZE_WIDTH, 18.0),
     );
     let abilities_left = size_rect.left() - GAP - ABILITIES_WIDTH;
-    let words_right = if abilities {
+    let words_right = if compact {
+        get_rect.left() - GAP
+    } else if abilities {
         abilities_left - GAP
     } else {
         size_rect.left() - GAP
@@ -360,11 +386,32 @@ pub(super) fn show(
         }
     }
 
-    // the size the button fetches, and whether it fits
+    // the size the button fetches, and whether it fits: in their columns, or (compact) a line under the words
     let fit = fit_of(row.main, look.ram);
+    let (size_at, fit_left, fit_mid) = if compact {
+        let y = top + 20.0 + line_height + 11.0;
+        let size_width = row.main.bytes.map_or(0.0, |bytes| {
+            painter
+                .layout_no_wrap(
+                    hardware::format_bytes(bytes),
+                    FontId::proportional(13.0),
+                    p.body,
+                )
+                .size()
+                .x
+        });
+        let left = rect.left() + words_left;
+        (
+            Pos2::new(left + size_width, y),
+            left + size_width + if size_width > 0.0 { 12.0 } else { 0.0 },
+            y,
+        )
+    } else {
+        (Pos2::new(size_rect.right(), mid), fit_rect.left(), mid)
+    };
     if let Some(bytes) = row.main.bytes {
         painter.text(
-            Pos2::new(size_rect.right(), mid),
+            size_at,
             egui::Align2::RIGHT_CENTER,
             hardware::format_bytes(bytes),
             FontId::proportional(13.0),
@@ -373,9 +420,9 @@ pub(super) fn show(
     }
     if let Some(fit) = fit {
         let (words, color) = fit_words(fit);
-        painter.circle_filled(Pos2::new(fit_rect.left() + 4.0, mid), 3.5, color);
+        painter.circle_filled(Pos2::new(fit_left + 4.0, fit_mid), 3.5, color);
         painter.text(
-            Pos2::new(fit_rect.left() + 13.0, mid),
+            Pos2::new(fit_left + 13.0, fit_mid),
             egui::Align2::LEFT_CENTER,
             words,
             FontId::proportional(12.0),
@@ -387,54 +434,60 @@ pub(super) fn show(
         );
     }
 
-    // the button, or that it is there
-    if (look.installed)(row.main) {
-        let square = Rect::from_min_size(
-            Pos2::new(get_rect.left() + 8.0, mid - 7.0),
-            egui::vec2(14.0, 14.0),
-        );
-        icons::paint(&painter, square, Icon::Check, p.ok);
+    // the button, or that it is there; and the ▾ of the other sizes either way (one installed does not take the others away)
+    let installed = (look.installed)(row.main);
+    let more = row.choices.len() > 1;
+    let (get_part, more_part) = if more {
+        let split = get_rect.right() - 28.0;
+        (
+            Rect::from_min_max(get_rect.min, Pos2::new(split, get_rect.bottom())),
+            Some(Rect::from_min_max(
+                Pos2::new(split, get_rect.top()),
+                get_rect.max,
+            )),
+        )
+    } else {
+        (get_rect, None)
+    };
+    let enabled = !look.busy;
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let fill = |r: &egui::Response| {
+        if !enabled {
+            p.raised.gamma_multiply(0.6)
+        } else if r.is_pointer_button_down_on() {
+            p.raised_active
+        } else if r.hovered() {
+            p.raised_hover
+        } else {
+            p.raised
+        }
+    };
+    if installed {
+        // the check mark too when there is room for it (beside the ▾ there is not)
+        let mut words_left = get_part.left() + 6.0;
+        if !more {
+            let square = Rect::from_min_size(
+                Pos2::new(get_part.left() + 8.0, mid - 7.0),
+                egui::vec2(14.0, 14.0),
+            );
+            icons::paint(&painter, square, Icon::Check, p.ok);
+            words_left = square.right() + 6.0;
+        }
         painter.text(
-            Pos2::new(square.right() + 6.0, mid),
+            Pos2::new(words_left, mid),
             egui::Align2::LEFT_CENTER,
             "Installed",
             FontId::proportional(12.5),
             p.ok,
         );
-        ui.interact(get_rect, id.with("there"), Sense::hover())
+        ui.interact(get_part, id.with("there"), Sense::hover())
             .on_hover_text("Already in your models folder.");
     } else {
-        let more = row.choices.len() > 1;
-        let (get_part, more_part) = if more {
-            let split = get_rect.right() - 28.0;
-            (
-                Rect::from_min_max(get_rect.min, Pos2::new(split, get_rect.bottom())),
-                Some(Rect::from_min_max(
-                    Pos2::new(split, get_rect.top()),
-                    get_rect.max,
-                )),
-            )
-        } else {
-            (get_rect, None)
-        };
-        let enabled = !look.busy;
-        let sense = if enabled {
-            Sense::click()
-        } else {
-            Sense::hover()
-        };
         let get = ui.interact(get_part, id.with("get"), sense);
-        let fill = |r: &egui::Response| {
-            if !enabled {
-                p.raised.gamma_multiply(0.6)
-            } else if r.is_pointer_button_down_on() {
-                p.raised_active
-            } else if r.hovered() {
-                p.raised_hover
-            } else {
-                p.raised
-            }
-        };
         let fg = if enabled { p.text } else { p.faint };
         painter.rect_filled(
             get_part,
@@ -471,48 +524,76 @@ pub(super) fn show(
         if get.clicked() {
             action = Some(RowAction::Fetch(row.main.fetch.clone()));
         }
-        if let Some(more_part) = more_part {
-            let others = ui.interact(more_part, id.with("sizes"), sense);
-            painter.rect_filled(
-                more_part,
-                egui::CornerRadius {
-                    nw: 0,
-                    sw: 0,
-                    ne: 7,
-                    se: 7,
-                },
-                fill(&others),
-            );
+    }
+    if let Some(more_part) = more_part {
+        let others = ui.interact(more_part, id.with("sizes"), sense);
+        // beside Get it is the right end of one button; beside Installed, a small button of its own
+        let round = |c: bool| if c || installed { 7 } else { 0 };
+        painter.rect_filled(
+            more_part,
+            egui::CornerRadius {
+                nw: round(false),
+                sw: round(false),
+                ne: round(true),
+                se: round(true),
+            },
+            fill(&others),
+        );
+        if !installed {
             painter.vline(
                 more_part.left(),
                 more_part.y_range().shrink(5.0),
                 egui::Stroke::new(1.0, p.page),
             );
-            icons::paint(
-                &painter,
-                Rect::from_center_size(more_part.center(), egui::vec2(11.0, 11.0)),
-                Icon::Chevron,
-                if enabled { p.muted } else { p.faint },
-            );
-            let others = others.on_hover_text("The other sizes");
-            egui::Popup::menu(&others)
-                .align(egui::RectAlign::BOTTOM_END)
-                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                .width(340.0)
-                .show(|ui| {
-                    ui.set_min_width(340.0);
-                    if let Some(fetch) = size_menu(ui, row, look) {
-                        action = Some(RowAction::Fetch(fetch));
-                        ui.close();
-                    }
-                });
         }
+        icons::paint(
+            &painter,
+            Rect::from_center_size(more_part.center(), egui::vec2(11.0, 11.0)),
+            Icon::Chevron,
+            if enabled { p.muted } else { p.faint },
+        );
+        let others = others.on_hover_text("The other sizes");
+        let menu_width = menu_width(ui, row, look);
+        egui::Popup::menu(&others)
+            .align(egui::RectAlign::BOTTOM_END)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .width(menu_width)
+            .show(|ui| {
+                ui.set_min_width(menu_width);
+                if let Some(fetch) = size_menu(ui, row, look) {
+                    action = Some(RowAction::Fetch(fetch));
+                    ui.close();
+                }
+            });
     }
 
     if row.expandable && response.clicked() && action.is_none() {
         action = Some(RowAction::Toggle);
     }
     action
+}
+
+/// How wide the ▾ of a row is: its longest words (or file) beside the columns of whether it fits and how big it is.
+fn menu_width(ui: &egui::Ui, row: &Row<'_>, look: &RowLook<'_>) -> f32 {
+    let painter = ui.painter();
+    let widest = row
+        .choices
+        .iter()
+        .map(|offer| {
+            let (words, file) = choice_words(row.entry, offer, row.main, look.bundles);
+            let words = painter
+                .layout_no_wrap(words, FontId::proportional(13.0), Color32::WHITE)
+                .size()
+                .x;
+            let file = painter
+                .layout_no_wrap(file, FontId::monospace(11.0), Color32::WHITE)
+                .size()
+                .x;
+            words.max(file)
+        })
+        .fold(0.0, f32::max);
+    // 8 at the left, a gap, the fit (from 124 to 60 from the right) and the size, 8 at the right
+    (8.0 + widest + 16.0 + 124.0 + 8.0).max(340.0)
 }
 
 /// The ▾ of a row: each size in plain words with the file's name under it, whether it fits, and how big it is; the
@@ -829,6 +910,62 @@ mod tests {
         assert_eq!(
             said,
             ["Smaller", "Recommended", "Better quality", "Higher quality"]
+        );
+    }
+
+    #[test]
+    fn the_model_alone_beside_a_bundle_is_compared_with_the_model_alone_and_not_with_the_bundle() {
+        let e = entry(vec![
+            offer("Q6_K", 6600, Some("comfy"), true),
+            offer("Q8_0", 7000, Some("comfy"), false),
+            offer("Q6_K", 1600, None, false),
+            offer("Q8_0", 2000, None, false),
+        ]);
+        let main = &e.offers[0];
+        let said: Vec<String> = e
+            .offers
+            .iter()
+            .map(|o| choice_words(&e, o, main, &[]).0)
+            .collect();
+        assert_eq!(
+            said,
+            [
+                "Recommended · comfy",
+                "Bigger · comfy",
+                "Model only",
+                "Bigger, model only"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_repository_of_components_says_its_sizes_as_a_model_does_and_a_component_of_a_model_is_alone(
+    ) {
+        let component = |label: &str, bytes: u64, recommended: bool| {
+            let mut o = offer(label, bytes, None, recommended);
+            if let Fetch::Files(download) = &mut o.fetch {
+                download.files[0].kind = Some("text_encoder".into());
+                download.files[0].label = "text encoder".into();
+            }
+            o
+        };
+        let encoders = entry(vec![
+            component("Q4_K_M", 18, false),
+            component("Q8_0", 25, true),
+        ]);
+        let said: Vec<String> = encoders
+            .offers
+            .iter()
+            .map(|o| choice_words(&encoders, o, &encoders.offers[1], &[]).0)
+            .collect();
+        assert_eq!(said, ["Standard", "Recommended"]);
+        let model = entry(vec![
+            offer("Q8_0", 49, None, true),
+            component("lima_vae", 12, false),
+        ]);
+        assert_eq!(
+            choice_words(&model, &model.offers[1], &model.offers[0], &[]).0,
+            "The text encoder alone"
         );
     }
 

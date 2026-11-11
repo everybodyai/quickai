@@ -106,8 +106,10 @@ impl App {
         let mut close = false;
         let builder = theme::own_window(ADD_MODEL_TITLE, OPENS_AT, LEAST);
         ctx.show_viewport_immediate(id, builder, |ui, class| {
-            // Escape closes it, and so does the window manager's close button
-            if ui.input(|i| i.key_pressed(egui::Key::Escape))
+            // Escape closes it (unless it closes a menu that is open, a row's sizes or a drop-down), and so does the
+            // window manager's close button
+            if (ui.input(|i| i.key_pressed(egui::Key::Escape))
+                && !egui::Popup::is_any_open(ui.ctx()))
                 || (class != egui::ViewportClass::EmbeddedWindow
                     && ui.input(|i| i.viewport().close_requested()))
             {
@@ -124,7 +126,10 @@ impl App {
     /// The box, what is being fetched, and under it the results of a search or the suggestions.
     pub(super) fn show_add_model_body(&mut self, ui: &mut egui::Ui) {
         // Escape puts the results away (in the window, it closes the window first)
-        if self.lookup.open && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if self.lookup.open
+            && ui.input(|i| i.key_pressed(egui::Key::Escape))
+            && !egui::Popup::is_any_open(ui.ctx())
+        {
             self.lookup.open = false;
         }
         let named = self.lists_models();
