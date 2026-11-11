@@ -74,11 +74,11 @@ const USAGE: &str = "Select a model from the list on the left, or choose one und
 
 /// What QuickAI is designed to keep on this computer, and when it connects.
 const PRIVACY: &str = "QuickAI is designed to keep your prompts, the model's responses, your voice and your files \
-     on this computer. It connects to the internet only at your request: to download an engine, a model or a \
-     voice; to search for models online (on Hugging Face, or at an address you provide); or to use a model on \
-     another computer or server that you have specified, which then receives the data you send to it. QuickAI \
-     does not send reports automatically: when a problem occurs, it displays a report that you may choose to \
-     submit.";
+     on this computer. It connects to the internet only at your request: to look up and download an engine's builds \
+     (from GitHub); to search for and download models (from Hugging Face, or from an address you provide); to \
+     download a voice; or to use a model on another computer or server that you have specified, which then \
+     receives the data you send to it. QuickAI does not send reports automatically: when a problem occurs, it \
+     displays a report that you may choose to submit.";
 
 /// That the above is a design, not a guarantee.
 const NO_GUARANTEE: &str = "While we have taken care to ensure that no other data leaves this computer, we cannot \
