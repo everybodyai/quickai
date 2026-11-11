@@ -370,15 +370,25 @@ impl App {
             kind = None;
         }
 
-        // one heading: what was looked for and how many were found, the order and the size (on a line of their own when
-        // the place is narrow: the results in ComfyUI's page)
+        // All is what the engine runs: a section that is folded (what it does not run) is shown by its own chip, unless
+        // nothing else was found
+        let any_open = sections.iter().any(|s| s.open);
+        let in_all = |s: &&Section| s.open || !any_open;
+        let in_all_count: usize = sections
+            .iter()
+            .filter(in_all)
+            .map(|s| s.entries.len())
+            .sum();
+
+        // one heading: what was looked for and how many of it the engine runs (as All counts them), the order and the
+        // size (on a line of their own when the place is narrow: the results in ComfyUI's page)
         ui.add_space(8.0);
         let heading = if words.is_empty() {
             "Most downloaded".to_string()
         } else {
             format!("Results for \"{words}\"")
         };
-        let found = format!("· {}", entries.len());
+        let found = format!("· {in_all_count}");
         let size_label = size
             .as_deref()
             .and_then(|id| sizes.iter().find(|c| c.id == id))
@@ -456,19 +466,10 @@ impl App {
         if let Some(more) = &more {
             ui.label(super::theme::muted(more));
         }
-        // All is what the engine runs: a section that is folded (what it does not run) is shown by its own chip, unless
-        // nothing else was found
-        let any_open = sections.iter().any(|s| s.open);
-        let in_all = |s: &&Section| s.open || !any_open;
         if sections.len() > 1 {
             ui.horizontal_wrapped(|ui| {
-                let count: usize = sections
-                    .iter()
-                    .filter(in_all)
-                    .map(|s| s.entries.len())
-                    .sum();
                 if ui
-                    .selectable_label(kind.is_none(), format!("All {count}"))
+                    .selectable_label(kind.is_none(), format!("All {in_all_count}"))
                     .clicked()
                 {
                     kind = None;

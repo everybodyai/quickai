@@ -1288,11 +1288,21 @@ fn search_box(ui: &mut egui::Ui, words: &mut String, width: f32, focus: &mut boo
                 ui.spacing_mut().item_spacing.x = 4.0;
                 let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
                 icons::paint(ui.painter(), r, Icon::Search, p.faint);
+                // the longest hint that fits the box whole (a hint cut short is a sentence nobody can finish)
+                let room = ui.available_width() - 30.0 - 4.0;
+                let hint = [
+                    "A name, a maker, or what you need: image, code, thinking...",
+                    "A name, a maker, or what you need...",
+                    "Search the list...",
+                ]
+                .into_iter()
+                .find(|h| theme::text_width(ui, h, egui::TextStyle::Body) <= room)
+                .unwrap_or("Search...");
                 let field = ui.add(
                     egui::TextEdit::singleline(words)
                         .id(search_id())
                         .frame(egui::Frame::NONE)
-                        .hint_text("A name, a maker, or what you need: image, code, thinking...")
+                        .hint_text(hint)
                         .desired_width(ui.available_width() - 30.0)
                         .margin(egui::Margin::symmetric(2, 5)),
                 );

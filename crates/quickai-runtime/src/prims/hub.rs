@@ -396,48 +396,54 @@ fn final_sentence(host: &str, words: &str, tally: &Tally) -> String {
     sentence
 }
 
-/// What is said of a repository that was typed and has nothing QuickAI can fetch: that it has no GGUF file and what
-/// its weights are in, what kind of model the hub says it is (with where QuickAI's own speech models are, for one of
-/// speech), and, once they were looked for, whether GGUF versions of it made by others are in the results.
+/// The note above the results for a repository typed that QuickAI cannot download as it is: the GGUF versions of it first
+/// when there are some, what it comes as in a word a person may know, and where a speech model belongs instead.
+/// `versions`: `None` while they are being looked for, then whether any were found.
 fn cannot_run(id: &str, repo: &Repo, versions: Option<bool>) -> String {
     let has_gguf = repo
         .files
         .iter()
         .any(|f| f.path.to_ascii_lowercase().ends_with(".gguf"));
-    let mut said = if has_gguf {
-        format!("{id} has no model file QuickAI can run.")
+    let fact = if has_gguf {
+        "has no model file QuickAI can run".to_string()
     } else {
-        let largest = repo
-            .files
-            .iter()
-            .filter(|f| f.size.is_some())
-            .max_by_key(|f| f.size)
-            .map(|f| f.path.rsplit('/').next().unwrap_or(&f.path).to_string());
-        match largest {
-            Some(name) => format!(
-                "{id} has no GGUF file, which is what QuickAI downloads from Hugging Face: its largest file is {name}."
-            ),
-            None => format!("{id} has no GGUF file, which is what QuickAI downloads from Hugging Face."),
+        match kind_of_files(repo) {
+            Some(kind) => format!("comes as {kind} files, and QuickAI runs GGUF"),
+            None => "has no GGUF file, the kind QuickAI runs".to_string(),
         }
     };
-    match repo.pipeline.as_deref() {
-        Some("automatic-speech-recognition") => said.push_str(
-            " It is a speech-recognition model: the speech models QuickAI uses are in Settings › Voice.",
-        ),
-        Some("text-to-speech") => said.push_str(
-            " It is a text-to-speech model: the voices QuickAI reads aloud with are in Settings › Voice.",
-        ),
-        Some(pipeline) => said.push_str(&format!(" Hugging Face lists it as {pipeline}.")),
-        None => {}
-    }
-    match versions {
-        Some(true) => said.push_str(" GGUF versions of it made by others are listed first."),
-        Some(false) => {
-            said.push_str(" No GGUF version of it was found; these are models with similar names.")
+    let speech = match repo.pipeline.as_deref() {
+        Some("automatic-speech-recognition") => {
+            " It is a speech-recognition model: the speech models QuickAI uses are in Settings › Voice."
         }
-        None => {}
+        Some("text-to-speech") => {
+            " It is a text-to-speech model: the voices QuickAI reads aloud with are in Settings › Voice."
+        }
+        _ => "",
+    };
+    match versions {
+        Some(true) => format!("GGUF versions of {id} are listed first: the original {fact}.{speech}"),
+        Some(false) => format!(
+            "{id} {fact}.{speech} No GGUF version of it was found; these are models with similar names."
+        ),
+        None => format!("{id} {fact}.{speech}"),
     }
-    said
+}
+
+/// What a repository without GGUF comes as, by the ending of its largest file, when it is a kind a person may know.
+fn kind_of_files(repo: &Repo) -> Option<&'static str> {
+    let largest = repo
+        .files
+        .iter()
+        .filter(|f| f.size.is_some())
+        .max_by_key(|f| f.size)?;
+    let ending = largest.path.rsplit('.').next()?.to_ascii_lowercase();
+    match ending.as_str() {
+        "safetensors" => Some("safetensors"),
+        "bin" | "pt" | "pth" => Some("PyTorch"),
+        "onnx" => Some("ONNX"),
+        _ => None,
+    }
 }
 
 /// `text` with its first letter a capital.
@@ -733,11 +739,15 @@ mod tests {
         assert_eq!(names, ["packer/talky-q4-GGUF", "other/Talk-3B-GGUF"]);
         // said at once, and again once the versions were looked for
         assert_eq!(said.notes.len(), 2, "{:?}", said.notes);
-        assert!(said.notes[0].starts_with(
-            "someone/Talk-3B has no GGUF file, which is what QuickAI downloads from Hugging Face: its largest file is model.safetensors."
-        ), "{}", said.notes[0]);
-        assert!(said.notes[1].ends_with("GGUF versions of it made by others are listed first."));
-        assert!(said.notes[1].contains("Hugging Face lists it as text-generation."));
+        assert_eq!(
+            said.notes[0],
+            "someone/Talk-3B comes as safetensors files, and QuickAI runs GGUF."
+        );
+        assert_eq!(
+            said.notes[1],
+            "GGUF versions of someone/Talk-3B are listed first: the original comes as safetensors files, and QuickAI \
+             runs GGUF."
+        );
     }
 
     #[test]
@@ -749,9 +759,8 @@ mod tests {
         let note = said.notes.last().unwrap();
         assert_eq!(
             note,
-            "lab/ears-ml has no GGUF file, which is what QuickAI downloads from Hugging Face: its largest file is \
-             ears-ml.cact. It is a speech-recognition model: the speech models QuickAI uses are in Settings › Voice. \
-             No GGUF version of it was found; these are models with similar names."
+            "lab/ears-ml has no GGUF file, the kind QuickAI runs. It is a speech-recognition model: the speech models \
+             QuickAI uses are in Settings › Voice. No GGUF version of it was found; these are models with similar names."
         );
     }
 

@@ -3204,12 +3204,6 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
                         || p.text.contains("Fits this computer")),
                 "{scope:?}: the page was not drawn"
             );
-            for p in &painted {
-                eprintln!(
-                    "DBG {scope:?} at=({:.0},{:.0}) right={:.0} clip={:.0} {:?}",
-                    p.at.x, p.at.y, p.right, p.clip_right, p.text
-                );
-            }
             let cut = cut_texts(&painted);
             if !cut.is_empty() {
                 failed.push(format!("{scope:?}: cut short: {cut:#?}"));
