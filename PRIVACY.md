@@ -4,9 +4,9 @@ _Last updated: 2026-11-11_
 
 QuickAI ("the app") is a desktop application for running language models on your own computer. You select a model,
 start it, and chat with it in your browser or from another program on the same computer. The app can run models with
-llama.cpp, which is included with the app, or, if you select them in Settings, with Ollama or with ComfyUI (for images
-and video). Ollama and ComfyUI are not included with the app; they are downloaded only at your request. Open WebUI, a
-chat interface for Ollama, is obtained in the same way.
+llama.cpp, which is included in the bundled edition and downloaded on request otherwise, or, if you select them in
+Settings, with Ollama or with ComfyUI (for images and video). Ollama and ComfyUI are not included with the app; they are
+downloaded only when you ask. Open WebUI, a chat interface for Ollama, is obtained in the same way.
 
 This policy applies to the app however it is installed: from the Microsoft Store, from GitHub Releases (tar.gz,
 AppImage or zip), or through Snap, Homebrew, Scoop, Chocolatey or the AUR.

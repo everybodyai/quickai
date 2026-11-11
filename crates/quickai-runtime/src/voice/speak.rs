@@ -538,12 +538,13 @@ pub fn wav16(samples: &[f32], rate: u32) -> Vec<u8> {
     }
     out
 }
-#[cfg(test)]
+
+/// The test drives a speaker through a shell command, so it runs where there is a POSIX shell.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
     /// A speaker whose program writes each sentence to a file.
-    #[cfg(unix)]
     #[test]
     fn sentences_are_read_in_order_and_said_as_they_begin_and_a_new_reading_ends_the_last() {
         let file = std::env::temp_dir().join(format!("quickai-speak-{}.txt", std::process::id()));

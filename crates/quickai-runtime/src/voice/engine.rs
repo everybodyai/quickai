@@ -516,6 +516,7 @@ impl Reading {
 mod tests {
     use super::*;
     use crate::voice::speak::Speaker;
+    #[cfg(unix)]
     use crate::voice::voices::{ModelKind, ModelSpec};
 
     /// A stand-in for quickai-voice, in Python: its protocol, with each sentence "played" for 50 ms.
