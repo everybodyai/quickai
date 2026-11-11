@@ -18,11 +18,12 @@ use eframe::egui;
 use quickai_core::lookup::picks;
 use quickai_core::lookup::present::{Entry, Fetch, Offer};
 use quickai_core::lookup::types::TaskDef;
-use quickai_core::lookup::view::{browse, Browse, Scope};
+use quickai_core::lookup::view::{browse_where, Browse, Scope};
 use quickai_core::models::{find_listed, recommended};
 
 use super::icons::{self, Icon};
-use super::lookup_view::{bundle_words, show_entry, show_section, BundleWords, Decor};
+use super::lookup_view::{bundle_words, BundleWords};
+use super::model_row::{self, Row, RowAction, RowLook};
 use super::{theme, widgets, App};
 use crate::hardware::{self, Fit};
 
@@ -68,6 +69,47 @@ pub struct CatalogView {
     /// position of the list before it, and a page that opens at its end looks as if it had no more
     /// than its last few models.
     pub drawn: Option<Browse>,
+    /// The key of the model whose details are open under its row.
+    pub expanded: Option<String>,
+    /// Only the models whose size fits this computer are shown (on when the page opens).
+    pub fits_only: bool,
+    /// The order of the rows.
+    pub sort: Sort,
+}
+
+/// The order of the rows of the list.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Sort {
+    #[default]
+    Smallest,
+    Largest,
+    Name,
+}
+
+impl Sort {
+    const ALL: [Sort; 3] = [Sort::Smallest, Sort::Largest, Sort::Name];
+
+    fn words(self) -> &'static str {
+        match self {
+            Sort::Smallest => "Smallest first",
+            Sort::Largest => "Largest first",
+            Sort::Name => "Name",
+        }
+    }
+
+    /// Puts the rows of a section in this order, by the size each one's Get fetches; equals keep the list's order.
+    fn order(self, items: &mut [&quickai_core::lookup::view::Shown], entries: &[Entry]) {
+        let bytes = |i: usize| {
+            picks::main_offer(&entries[i])
+                .and_then(|o| o.bytes)
+                .unwrap_or(0)
+        };
+        match self {
+            Sort::Smallest => items.sort_by_key(|s| bytes(s.entry)),
+            Sort::Largest => items.sort_by_key(|s| std::cmp::Reverse(bytes(s.entry))),
+            Sort::Name => items.sort_by_key(|s| entries[s.entry].name.to_lowercase()),
+        }
+    }
 }
 
 /// Whether what a button fetches is already there: every file in the models folders at the size the
@@ -160,6 +202,9 @@ impl App {
             focus_search: true,
             note: None,
             drawn: None,
+            expanded: None,
+            fits_only: true,
+            sort: Sort::default(),
         };
         // what was said under the box of the page is not about what this page will pull
         if self.named.pull.is_none() && self.named.queued.is_none() {
@@ -202,7 +247,6 @@ impl App {
             self.open_catalog();
         }
         let ctx = ui.ctx().clone();
-        let engine_name = self.engine_name();
         let types = self.registry.vocabulary().model_types().to_vec();
         let sizes = self.registry.vocabulary().size_classes().to_vec();
         let bundle_labels: Vec<BundleWords> =
@@ -224,6 +268,13 @@ impl App {
         let mut page = self.catalog.page;
         let mut tasks_chosen = std::mem::take(&mut self.catalog.chosen);
         let mut sizes_open = self.catalog.sizes_open.take();
+        let mut expanded = self.catalog.expanded.take();
+        let mut fits_only = self.catalog.fits_only;
+        let mut sort = self.catalog.sort;
+        // the site Add a model searches, for what the list does not have
+        let site = self.browse_page().map(|(site, _)| site);
+        let mut search_online: Option<String> = None;
+        let p = theme::palette();
 
         // the progress of what is being fetched, where the person is looking: a download, or a model pulled by the engine
         // (the engine coming up for it, the pull, or why it was not pulled)
@@ -240,7 +291,8 @@ impl App {
         let mut cancel = false;
 
         // the tasks in a row and the three picks under them; Escape goes back to the model
-        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        // (a size menu that is open takes Escape for itself)
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) && !egui::Popup::is_any_open(ui.ctx()) {
             open = false;
         }
         {
@@ -259,6 +311,7 @@ impl App {
                             installed: &installed_fn,
                             verified: verified.as_deref(),
                             note: note.as_deref(),
+                            site: site.as_deref(),
                         };
                         let mut state = TaskState {
                             page: &mut page,
@@ -267,6 +320,7 @@ impl App {
                             browse: &mut what,
                             focus_search: &mut focus_search,
                             fetch: &mut chosen,
+                            online: &mut search_online,
                         };
                         show_task_page(ui, &view, &mut state);
                         return;
@@ -306,171 +360,262 @@ impl App {
                             }
                         });
                     }
-                    let mut line = format!("{} models that run with {engine_name}.", entries.len());
-                    if let Some(day) = &verified {
-                        line.push_str(&format!(" The list was checked on {day}."));
-                    }
-                    line.push_str(" Nothing is downloaded until you click a size.");
-                    ui.label(
-                        egui::RichText::new(line)
-                            .small()
-                            .color(super::theme::palette().muted),
-                    );
-                    if ram > 0 {
-                        ui.label(
-                            egui::RichText::new(format!(
-                            "This computer has {} of memory: sizes that would not fit are greyed.",
-                            hardware::format_bytes(ram)
-                        ))
-                            .small()
-                            .color(super::theme::palette().muted),
-                        );
-                    }
                     if let Some(note) = &note {
-                        ui.label(
-                            egui::RichText::new(note)
-                                .small()
-                                .color(super::theme::palette().bad),
-                        );
+                        ui.label(egui::RichText::new(note).small().color(p.bad));
                     }
-                    ui.add_space(4.0);
-                    // two rows that stay as they are (a button that comes and goes would move the chips)
-                    ui.horizontal(|ui| {
-                        ui.label("Search:");
-                        // the rest of the row, less the Clear button: the hint is the longest thing in it
-                        let room = (ui.available_width() - 64.0).max(160.0);
-                        let field = ui.add(
-                            egui::TextEdit::singleline(&mut what.words)
-                                .id(search_id())
-                                .hint_text(
-                                    "a name, a maker, or what you need: image, code, thinking...",
-                                )
-                                .desired_width(room),
-                        );
-                        if std::mem::take(&mut focus_search) {
-                            field.request_focus();
-                        }
-                        let clear = ui.add_enabled(
-                            !what.words.is_empty(),
-                            egui::Button::new("Clear").small(),
-                        );
-                        if clear.clicked() {
-                            what.words.clear();
-                        }
-                    });
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(egui::RichText::new("Size:").small());
-                        if ui.selectable_label(what.size.is_none(), "Any").clicked() {
-                            what.size = None;
-                        }
-                        for class in &sizes {
-                            let on = what.size.as_deref() == Some(class.id.as_str());
-                            let mut chip = ui.selectable_label(on, &class.label);
-                            if !class.help.is_empty() {
-                                chip = chip.on_hover_text(&class.help);
-                            }
-                            if chip.clicked() {
-                                what.size = Some(class.id.clone());
-                            }
-                        }
-                    });
-                    ui.separator();
+                    ui.add_space(6.0);
 
-                    let shown = browse(&entries, &types, &what);
+                    // the search, the size, whether it fits, and the order: one row that stays as it is
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 10.0;
+                        let room = (ui.available_width() * 0.4).clamp(220.0, 440.0);
+                        search_box(ui, &mut what.words, room, &mut focus_search);
+                        let size_label = what
+                            .size
+                            .as_deref()
+                            .and_then(|id| sizes.iter().find(|c| c.id == id))
+                            .map_or_else(|| "Any".to_string(), |c| c.label.clone());
+                        egui::ComboBox::from_id_salt("catalog_size")
+                            .selected_text(format!("Size: {size_label}"))
+                            .show_ui(ui, |ui| {
+                                if ui.selectable_label(what.size.is_none(), "Any").clicked() {
+                                    what.size = None;
+                                }
+                                for class in &sizes {
+                                    let on = what.size.as_deref() == Some(class.id.as_str());
+                                    let mut item = ui.selectable_label(on, &class.label);
+                                    if !class.help.is_empty() {
+                                        item = item.on_hover_text(&class.help);
+                                    }
+                                    if item.clicked() {
+                                        what.size = Some(class.id.clone());
+                                    }
+                                }
+                            });
+                        if ram > 0 {
+                            let words = format!(
+                                "Show only the models whose size fits this computer's memory ({}).",
+                                hardware::format_bytes(ram)
+                            );
+                            theme::switch(ui, &mut fits_only, true).on_hover_text(&words);
+                            ui.label("Fits this computer").on_hover_text(&words);
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            egui::ComboBox::from_id_salt("catalog_sort")
+                                .selected_text(format!("Sort: {}", sort.words()))
+                                .show_ui(ui, |ui| {
+                                    for choice in Sort::ALL {
+                                        if ui.selectable_label(sort == choice, choice.words()).clicked() {
+                                            sort = choice;
+                                        }
+                                    }
+                                });
+                        });
+                    });
+                    ui.add_space(8.0);
+
+                    let keep = |e: &Entry| {
+                        !fits_only
+                            || picks::main_offer(e)
+                                .and_then(|o| o.bytes)
+                                .is_none_or(|b| hardware::fit(b, ram) != Fit::TooBig)
+                    };
+                    let mut shown = browse_where(&entries, &types, &what, &keep);
+                    // a place that has nothing for these words is not offered: the list is All
+                    let empty_place = match &what.scope {
+                        Scope::Start => shown.counts.start == 0,
+                        Scope::Type(id) => !shown.counts.types.iter().any(|(t, _)| t == id),
+                        Scope::All => false,
+                    };
+                    if empty_place {
+                        what.scope = Scope::All;
+                        shown = browse_where(&entries, &types, &what, &keep);
+                    }
                     let new_list = drawn.as_ref() != Some(&what);
                     drawn_now = Some(what.clone());
                     let installed_fn = |o: &Offer| installed(o, &have, &listed);
-                    let fit_fn = |o: &Offer| match o.bytes {
-                        Some(b) => hardware::fit(b, ram),
-                        None => Fit::Comfortable,
-                    };
-                    let decor = Decor {
+                    let look = RowLook {
                         installed: &installed_fn,
-                        fit: &fit_fn,
                         ram,
+                        busy,
+                        bundles: &bundle_labels,
                     };
-                    let height = (ui.available_height() - 26.0).max(160.0);
+                    let words = what.words.trim().to_string();
+                    // room under the list for the line at its foot
+                    let height = (ui.available_height() - 40.0).max(160.0);
                     ui.horizontal_top(|ui| {
+                        // where to look: Start here, All, each type
                         ui.vertical(|ui| {
-                            ui.set_width(150.0);
+                            ui.set_width(172.0);
                             ui.set_min_height(height);
-                            let mut choose = |ui: &mut egui::Ui, scope: Scope, label: String| {
-                                if ui.selectable_label(what.scope == scope, label).clicked() {
+                            let mut choose = |ui: &mut egui::Ui, scope: Scope, icon: Option<Icon>, label: &str, count: usize| {
+                                if rail_item(ui, what.scope == scope, icon, label, count).clicked() {
                                     what.scope = scope;
                                 }
                             };
                             if shown.counts.start > 0 {
-                                choose(
-                                    ui,
-                                    Scope::Start,
-                                    format!("★ Start here ({})", shown.counts.start),
-                                );
+                                choose(ui, Scope::Start, Some(Icon::Star), "Start here", shown.counts.start);
                             }
-                            choose(ui, Scope::All, format!("All ({})", shown.counts.all));
-                            ui.add_space(4.0);
+                            choose(ui, Scope::All, None, "All", shown.counts.all);
+                            ui.add_space(6.0);
                             for (id, count) in &shown.counts.types {
                                 let label = types
                                     .iter()
                                     .find(|t| &t.id == id)
                                     .map_or(id.clone(), |t| t.label.clone());
-                                choose(ui, Scope::Type(id.clone()), format!("{label} ({count})"));
+                                choose(ui, Scope::Type(id.clone()), Some(type_icon(id)), &label, *count);
                             }
                         });
-                        ui.separator();
-                        // A scroll area lays its content out the way the row it stands in does, and this row
-                        // goes from left to right: in a column of its own, each section and each card is under
-                        // the one before it (beside it, everything but the first was off to the right, where
-                        // a list that scrolls only down cannot be reached).
+                        // the line between them, as tall as the list (a separator takes all the height there is)
+                        let (line, _) =
+                            ui.allocate_exact_size(egui::vec2(9.0, height), egui::Sense::hover());
+                        ui.painter().vline(
+                            line.center().x,
+                            line.y_range(),
+                            egui::Stroke::new(1.0, p.line),
+                        );
                         ui.vertical(|ui| {
-                            // always there, and beside the text and not on it: a list of eighty has to say
-                            // that it goes on
+                            // lines that stay readable in a wide window
+                            ui.set_max_width(900.0);
+                            let count: usize = shown.sections.iter().map(|s| s.entries.len()).sum();
+                            let place = match &what.scope {
+                                Scope::Start => "Start here".to_string(),
+                                Scope::All => "All".to_string(),
+                                Scope::Type(id) => types
+                                    .iter()
+                                    .find(|t| &t.id == id)
+                                    .map_or(id.clone(), |t| t.label.clone()),
+                            };
+                            let counted = match (count, words.is_empty()) {
+                                (1, true) => "1 model".to_string(),
+                                (n, true) => format!("{n} models"),
+                                (1, false) => format!("1 model matches \"{words}\""),
+                                (n, false) => format!("{n} models match \"{words}\""),
+                            };
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(place)
+                                        .color(p.text)
+                                        .family(theme::semibold(ui)),
+                                );
+                                ui.label(egui::RichText::new(counted).small().color(p.faint));
+                            });
+                            ui.add_space(2.0);
+                            // A scroll area lays its content out the way the row it stands in does: in a column of its
+                            // own, each row is under the one before it.
                             ui.spacing_mut().scroll = egui::style::ScrollStyle::thin();
                             let mut area = egui::ScrollArea::vertical()
                                 .id_salt("catalog_entries")
                                 .auto_shrink([false, false])
-                                .max_height(height);
+                                .max_height(height - 24.0);
                             if new_list {
                                 area = area.vertical_scroll_offset(0.0);
                             }
                             area.show(ui, |ui| {
-                                if shown.sections.is_empty() {
-                                    ui.label(
-                                        egui::RichText::new(
-                                            "Nothing matches. Try other words, or another size.",
-                                        )
-                                        .small()
-                                        .color(super::theme::palette().muted),
-                                    );
+                                ui.set_max_width(ui.available_width() - 10.0);
+                                if count == 0 {
+                                    if let Some(asked) = empty_list(ui, &words, site.as_deref(), entries.len()) {
+                                        search_online = Some(asked);
+                                    }
+                                    return;
                                 }
-                                // a single type is a list; several are sections
-                                let single = matches!(what.scope, Scope::Type(_));
+                                let headed = !matches!(what.scope, Scope::Type(_)) && shown.sections.len() > 1;
                                 for section in &shown.sections {
-                                    if single {
-                                        for item in &section.entries {
-                                            show_entry(
-                                                ui,
-                                                &entries[item.entry],
-                                                &item.offers,
-                                                &bundle_labels,
-                                                busy,
-                                                &mut chosen,
-                                                Some(&decor),
-                                            );
-                                        }
-                                    } else {
-                                        show_section(
-                                            ui,
-                                            section,
-                                            &entries,
-                                            &bundle_labels,
-                                            busy,
-                                            &mut chosen,
-                                            Some(&decor),
+                                    if headed && !section.label.is_empty() {
+                                        ui.add_space(8.0);
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "{} · {}",
+                                                section.label.to_uppercase(),
+                                                section.entries.len()
+                                            ))
+                                            .size(11.0)
+                                            .color(p.faint),
                                         );
                                     }
+                                    let mut items: Vec<_> = section.entries.iter().collect();
+                                    sort.order(&mut items, &entries);
+                                    for item in items {
+                                        let entry = &entries[item.entry];
+                                        let choices: Vec<&Offer> =
+                                            item.offers.iter().map(|i| &entry.offers[*i]).collect();
+                                        let main = picks::main_offer(entry)
+                                            .filter(|m| choices.iter().any(|c| std::ptr::eq(*c, *m)))
+                                            .or_else(|| choices.first().copied());
+                                        let Some(main) = main else {
+                                            continue;
+                                        };
+                                        let card = entry.card.as_deref();
+                                        let by = card
+                                            .map(|c| {
+                                                [c.by.as_str(), c.params.as_str()]
+                                                    .into_iter()
+                                                    .filter(|w| !w.is_empty())
+                                                    .collect::<Vec<_>>()
+                                                    .join(" · ")
+                                            })
+                                            .unwrap_or_default();
+                                        let row = Row {
+                                            entry,
+                                            main,
+                                            choices,
+                                            title: entry.name.clone(),
+                                            by,
+                                            line: tagline(entry),
+                                            star: card.is_some_and(|c| c.start),
+                                            abilities: true,
+                                            expandable: true,
+                                        };
+                                        let opened = expanded.as_deref() == Some(entry.key.as_str());
+                                        match model_row::show(ui, &row, &look, opened) {
+                                            Some(RowAction::Fetch(fetch)) => chosen = Some(fetch),
+                                            Some(RowAction::Toggle) => {
+                                                expanded = (!opened).then(|| entry.key.clone());
+                                            }
+                                            None => {}
+                                        }
+                                        if opened {
+                                            model_row::show_details(ui, entry, main);
+                                        }
+                                    }
+                                }
+                                // what the list does not have may be on the site Add a model searches
+                                if let (false, Some(site)) = (words.is_empty(), site.as_deref()) {
+                                    ui.add_space(10.0);
+                                    ui.horizontal(|ui| {
+                                        let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                                        icons::paint(ui.painter(), r, Icon::Search, p.muted);
+                                        ui.label(egui::RichText::new("Not what you are looking for?").color(p.muted));
+                                        if ui
+                                            .link(format!("Search {site} for \"{words}\" ›"))
+                                            .on_hover_text("Opens Add a model with these words searched. QuickAI has not checked the models found there.")
+                                            .clicked()
+                                        {
+                                            search_online = Some(words.clone());
+                                        }
+                                    });
                                 }
                             });
                         });
+                    });
+                    // what is true of the whole list, and the way out of it
+                    ui.horizontal(|ui| {
+                        let mut foot = "Nothing is downloaded until you click Get.".to_string();
+                        if let Some(day) = &verified {
+                            foot.push_str(&format!(" The list was checked on {day}."));
+                        }
+                        ui.label(egui::RichText::new(foot).small().color(p.faint));
+                        if let Some(site) = site.as_deref() {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui
+                                    .link(egui::RichText::new(format!("Not in this list? Search {site} ›")).small())
+                                    .on_hover_text("Opens Add a model, which searches the site for what is in the search box.")
+                                    .clicked()
+                                {
+                                    search_online = Some(words.clone());
+                                }
+                            });
+                        }
                     });
                 });
             if let Some((line, fraction)) = &download {
@@ -519,6 +664,9 @@ impl App {
         self.catalog.page = page;
         self.catalog.chosen = tasks_chosen;
         self.catalog.sizes_open = sizes_open;
+        self.catalog.expanded = expanded;
+        self.catalog.fits_only = fits_only;
+        self.catalog.sort = sort;
         self.catalog.focus_search |= focus_search;
         if !open {
             self.catalog.open = false;
@@ -530,6 +678,9 @@ impl App {
         if let Some(fetch) = chosen {
             self.catalog.note = None;
             self.fetch_offer(&fetch, &ctx);
+        }
+        if let Some(words) = search_online {
+            self.search_online(&words, &ctx);
         }
     }
 }
@@ -545,6 +696,8 @@ struct TaskView<'a> {
     installed: &'a dyn Fn(&Offer) -> bool,
     verified: Option<&'a str>,
     note: Option<&'a str>,
+    /// The site Add a model searches, for what the list does not have.
+    site: Option<&'a str>,
 }
 
 /// What the first page changes.
@@ -555,6 +708,8 @@ struct TaskState<'a> {
     browse: &'a mut Browse,
     focus_search: &'a mut bool,
     fetch: &'a mut Option<Fetch>,
+    /// Words to look up on that site, in Add a model.
+    online: &'a mut Option<String>,
 }
 
 /// The first page: a button for each task, the models that do every task chosen (the best for this
@@ -716,7 +871,20 @@ fn show_task_page(ui: &mut egui::Ui, view: &TaskView<'_>, state: &mut TaskState<
     if let Some(day) = view.verified {
         footer.push_str(&format!(" The list was checked on {day}."));
     }
-    ui.label(egui::RichText::new(footer).small().color(p.faint));
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(footer).small().color(p.faint));
+        if let Some(site) = view.site {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .link(egui::RichText::new(format!("Not in this list? Search {site} ›")).small())
+                    .on_hover_text("Opens Add a model, which searches the site.")
+                    .clicked()
+                {
+                    *state.online = Some(String::new());
+                }
+            });
+        }
+    });
 }
 
 /// A button of a task: its picture over its name, tinted when it is chosen. A click chooses it or takes it
@@ -817,7 +985,7 @@ fn abilities(ui: &mut egui::Ui, entry: &Entry) {
 }
 
 /// What a model is in a few words: the list's tagline, else the first sentence of what it says of it.
-fn tagline(entry: &Entry) -> String {
+pub(super) fn tagline(entry: &Entry) -> String {
     match entry.card.as_ref().map(|c| c.tagline.as_str()) {
         Some(line) if !line.is_empty() => line.to_string(),
         _ => entry
@@ -1089,4 +1257,170 @@ fn back_button(ui: &mut egui::Ui) -> egui::Response {
         24.0,
     )
     .on_hover_text("Back to the models for what you want to do.")
+}
+
+/// The search box of the list: a magnifier, what is typed, and a × inside it that empties it.
+fn search_box(ui: &mut egui::Ui, words: &mut String, width: f32, focus: &mut bool) {
+    let p = theme::palette();
+    egui::Frame::new()
+        .fill(p.well)
+        .stroke(egui::Stroke::new(1.0, p.outline))
+        .corner_radius(8)
+        .inner_margin(egui::Margin {
+            left: 8,
+            right: 4,
+            top: 1,
+            bottom: 1,
+        })
+        .show(ui, |ui| {
+            ui.set_width(width);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                icons::paint(ui.painter(), r, Icon::Search, p.faint);
+                let field = ui.add(
+                    egui::TextEdit::singleline(words)
+                        .id(search_id())
+                        .frame(egui::Frame::NONE)
+                        .hint_text("A name, a maker, or what you need: image, code, thinking...")
+                        .desired_width(ui.available_width() - 30.0)
+                        .margin(egui::Margin::symmetric(2, 5)),
+                );
+                if std::mem::take(focus) {
+                    field.request_focus();
+                }
+                if !words.is_empty()
+                    && icons::icon_button(ui, Icon::Close, egui::vec2(24.0, 22.0), true, false)
+                        .on_hover_text("Clear")
+                        .clicked()
+                {
+                    words.clear();
+                }
+            });
+        });
+}
+
+/// A place of the list at its left: its picture, its name and how many models it has; tinted when it is chosen.
+fn rail_item(
+    ui: &mut egui::Ui,
+    on: bool,
+    icon: Option<Icon>,
+    label: &str,
+    count: usize,
+) -> egui::Response {
+    let p = theme::palette();
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 30.0), egui::Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, label)
+    });
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        if on {
+            painter.rect_filled(rect, 6.0, p.selected);
+        } else if response.hovered() {
+            painter.rect_filled(rect, 6.0, p.raised_hover.gamma_multiply(0.5));
+        }
+        if let Some(icon) = icon {
+            let square = egui::Rect::from_min_size(
+                egui::pos2(rect.left() + 9.0, rect.center().y - 7.0),
+                egui::vec2(14.0, 14.0),
+            );
+            let color = match (icon, on) {
+                (Icon::Star, _) => p.warn,
+                (_, true) => p.accent_text,
+                _ => p.muted,
+            };
+            icons::paint(painter, square, icon, color);
+        }
+        painter.text(
+            egui::pos2(rect.left() + 32.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            label,
+            egui::TextStyle::Body.resolve(ui.style()),
+            if on { p.text } else { p.body },
+        );
+        painter.text(
+            egui::pos2(rect.right() - 8.0, rect.center().y),
+            egui::Align2::RIGHT_CENTER,
+            count.to_string(),
+            egui::FontId::proportional(12.0),
+            p.faint,
+        );
+    }
+    response
+}
+
+/// The picture of a type of model, in the list's left column.
+fn type_icon(id: &str) -> Icon {
+    match id {
+        "chat" => Icon::Chat,
+        "reasoning" => Icon::Bulb,
+        "code" => Icon::Code,
+        "translation" => Icon::Translate,
+        "vision" => Icon::Eye,
+        "documents" => Icon::Document,
+        "embedding" => Icon::FileSearch,
+        "audio" => Icon::Headphones,
+        "image" => Icon::Image,
+        "video" => Icon::Film,
+        _ => Icon::More,
+    }
+}
+
+/// What the list says when nothing in it answers: for words, that the site Add a model searches has more, with a
+/// button that searches it for them (the words, when it is pressed); else, what else to try.
+fn empty_list(ui: &mut egui::Ui, words: &str, site: Option<&str>, listed: usize) -> Option<String> {
+    let p = theme::palette();
+    let mut asked = None;
+    ui.add_space(36.0);
+    ui.vertical_centered(|ui| {
+        ui.set_max_width(560.0);
+        if words.is_empty() {
+            ui.label(
+                egui::RichText::new("Nothing here fits these choices")
+                    .color(p.text)
+                    .family(theme::semibold(ui)),
+            );
+            ui.label(theme::muted("Try another size, or turn off Fits this computer."));
+            return;
+        }
+        ui.label(
+            egui::RichText::new(format!("Nothing in the recommended list matches \"{words}\""))
+                .size(15.0)
+                .color(p.text)
+                .family(theme::semibold(ui)),
+        );
+        let Some(site) = site else {
+            ui.label(theme::muted("Try other words, or another size."));
+            return;
+        };
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new(format!(
+                "The list holds the {listed} models QuickAI has checked. {site} has many more, among them models made for a single language."
+            ))
+            .color(p.muted),
+        );
+        ui.add_space(10.0);
+        if icons::labelled_button(
+            ui,
+            theme::Role::Normal,
+            true,
+            Icon::Search,
+            &format!("Search {site} for \"{words}\""),
+            30.0,
+        )
+        .clicked()
+        {
+            asked = Some(words.to_string());
+        }
+        ui.add_space(6.0);
+        ui.label(
+            egui::RichText::new("Opens Add a model with these words searched. QuickAI has not checked the models found there.")
+                .small()
+                .color(p.faint),
+        );
+    });
+    asked
 }

@@ -11,6 +11,7 @@ use quickai_core::lookup::{huggingface, ollama_library};
 use quickai_core::registry::engine::LookupKind;
 
 use super::icons::{self, Icon};
+use super::model_row::{self, Row, RowAction, RowLook};
 use super::theme;
 use super::App;
 use crate::hardware::{self, Fit};
@@ -48,6 +49,24 @@ impl App {
         }
         self.focus_add_box = true;
         self.refresh_catalog_have();
+    }
+
+    /// The way from the recommended list to the site the box searches: Add a model, with `words` in its box and looked up
+    /// (the most popular models when there are none). A first run's page, which has the box itself, is shown instead of
+    /// a window.
+    pub(super) fn search_online(&mut self, words: &str, ctx: &egui::Context) {
+        self.model_input = words.to_string();
+        if self.models.is_empty() || self.runs_alone() {
+            self.catalog.open = false;
+            self.view = super::MainView::Model;
+            self.focus_add_box = true;
+        } else {
+            self.open_add_model();
+        }
+        if self.can_look_up() {
+            self.named.notice = None;
+            self.start_lookup(ctx, words);
+        }
     }
 
     /// What the page of a first run says under its title.
@@ -285,7 +304,6 @@ impl App {
         };
         let have = &self.catalog.have;
         let picks = suggestions(&entries, ram);
-        let too_big = |o: &Offer| o.bytes.map(|b| hardware::fit(b, ram)) == Some(Fit::TooBig);
         let busy = self.download.is_some() || self.named.pulling();
         let p = theme::palette();
         ui.add_space(14.0);
@@ -308,62 +326,37 @@ impl App {
         });
         ui.add_space(2.0);
         let mut chosen = None;
-        for (i, (entry, offer)) in picks.iter().enumerate() {
-            if i > 0 {
-                let y = ui.cursor().top();
-                ui.painter()
-                    .hline(ui.max_rect().x_range(), y, egui::Stroke::new(1.0, p.line));
+        let bundle_labels = super::lookup_view::bundle_words(engine);
+        let installed_fn = |o: &Offer| super::catalog_view::installed(o, have, &listed);
+        let look = RowLook {
+            installed: &installed_fn,
+            ram,
+            busy,
+            bundles: &bundle_labels,
+        };
+        for (entry, offer) in &picks {
+            // the size that fits is the button's; the ▾ has the model's other sizes
+            let row = Row {
+                entry,
+                main: offer,
+                choices: entry.offers.iter().collect(),
+                title: entry.name.clone(),
+                by: String::new(),
+                line: super::catalog_view::tagline(entry),
+                star: false,
+                abilities: true,
+                expandable: false,
+            };
+            if let Some(RowAction::Fetch(fetch)) = model_row::show(ui, &row, &look, false) {
+                chosen = Some(fetch);
             }
-            let installed = super::catalog_view::installed(offer, have, &listed);
-            let too_big = too_big(offer);
-            ui.horizontal(|ui| {
-                ui.set_min_height(46.0);
-                let words = (ui.available_width() - 130.0).max(120.0);
-                ui.vertical(|ui| {
-                    ui.set_width(words);
-                    ui.add_space(5.0);
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(entry.name.as_str()).color(p.text))
-                            .truncate(),
-                    );
-                    let about = if too_big {
-                        egui::RichText::new("May be too big for this computer").color(p.warn)
-                    } else {
-                        theme::muted(
-                            super::shell::first_sentence(&entry.description).trim_end_matches('.'),
-                        )
-                    };
-                    ui.add(egui::Label::new(about.small()).truncate());
-                });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if installed {
-                        let (rect, _) =
-                            ui.allocate_exact_size(egui::vec2(30.0, 28.0), egui::Sense::hover());
-                        icons::paint(ui.painter(), rect.shrink(6.0), Icon::Check, p.ok);
-                    } else if icons::icon_button(
-                        ui,
-                        Icon::Download,
-                        egui::vec2(30.0, 28.0),
-                        !busy,
-                        false,
-                    )
-                    .on_hover_text(format!("Get {} ({})", entry.name, offer.label))
-                    .clicked()
-                    {
-                        chosen = Some(offer.fetch.clone());
-                    }
-                    if let Some(bytes) = offer.bytes {
-                        ui.label(theme::muted(super::shell::size_text(bytes)));
-                    }
-                });
-            });
         }
         ui.add_space(8.0);
         let mut all = false;
         // on two lines in a narrow window rather than past its edge
         ui.horizontal_wrapped(|ui| {
             all = ui
-                .link("See all recommended models")
+                .link(format!("See all {} recommended models ›", entries.len()))
                 .on_hover_text("The whole list QuickAI checked, by kind and size. Nothing is downloaded until you choose.")
                 .clicked();
             // the page of a first run says it under its title

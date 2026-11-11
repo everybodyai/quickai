@@ -689,12 +689,14 @@ mod tests {
             &mut app,
             "Found 2 models in ollama.com's library. There are more: type some words to narrow the search.",
         );
+        app.lookup.words = "qwen".to_string();
         let found = rects(&settled(&mut app, &ctx, true));
-        // the heading has the count; the sentence that said it again is not drawn, and what it added is, in the row of
-        // the sizes
+        // the heading has the words and the count; the sentence that said it again is not drawn, and what it added is,
+        // under the heading
         let heading = found
-            .get("Results (2)")
+            .get("Results for \"qwen\"")
             .expect("the heading of the results");
+        assert!(found.contains_key("· 2"), "{:?}", found.keys());
         assert!(
             !found.keys().any(|text| text.starts_with("Found ")),
             "{:?}",
@@ -703,25 +705,20 @@ mod tests {
         let more = found
             .get("There are more: type some words to narrow the search.")
             .expect("what the sentence added");
-        let size = found.get("Size:").expect("the row of sizes");
         assert!(more.top() > heading.bottom(), "{more:?} {heading:?}");
-        assert!(
-            more.center().y - size.center().y < 30.0,
-            "{more:?} is not by the sizes {size:?}"
-        );
-        // a model with one row of buttons has them on the line of its name, and its words under that
-        let (name, button, said) = (found["plain"], found["latest"], found["What plain is."]);
-        assert!(
-            (button.center().y - name.center().y).abs() < 6.0 && button.left() > name.right(),
-            "{button:?} is not beside {name:?}"
-        );
+        // a model is a row: its name, what it is under it, and its Get on the line of its name, at the right
+        let (name, said) = (found["plain"], found["What plain is."]);
         assert!(said.top() > name.bottom(), "{said:?} {name:?}");
-        // a model with a row for the model and one for a bundle keeps them under its name, a row each
-        let name = found["bundled"];
-        let (plain, with_eyes) = (found["Q4"], found["Q4 with eyes"]);
+        let (name, get) = (found["bundled"], found["Get"]);
         assert!(
-            plain.top() > name.bottom() && with_eyes.top() > plain.bottom(),
-            "{name:?} {plain:?} {with_eyes:?}"
+            (get.center().y - name.center().y).abs() < 14.0 && get.left() > name.right(),
+            "{get:?} is not beside {name:?}"
+        );
+        // the sizes are in the ▾ of the button, not on the page
+        assert!(
+            !found.contains_key("latest") && !found.contains_key("Q4 with eyes"),
+            "{:?}",
+            found.keys()
         );
 
         // when it could not look, or found nothing, its sentence is what is said

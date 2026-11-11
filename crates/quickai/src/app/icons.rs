@@ -79,6 +79,10 @@ pub(super) enum Icon {
     Key,
     /// Hands-free (C216): the lines of a voice.
     Wave,
+    /// A row that opens: › while it is closed (an open one has the ⌄ of `Chevron`).
+    ChevronRight,
+    /// A model the recommended list says to start with: a star, filled.
+    Star,
 }
 
 /// Draws `icon` in `rect` (it is drawn in the largest square that fits, in the middle) in `color`.
@@ -385,6 +389,24 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
             line(&[(10.9, 13.1), (20.0, 4.0)]);
             line(&[(17.0, 7.0), (19.5, 9.5)]);
             line(&[(14.6, 9.4), (16.6, 11.4)]);
+        }
+        Icon::ChevronRight => line(&[(9.0, 6.0), (15.0, 12.0), (9.0, 18.0)]),
+        Icon::Star => {
+            // five triangles round a pentagon, each convex, in the order of the hands of a clock
+            let point = |r: f32, k: f32| {
+                let a = -std::f32::consts::FRAC_PI_2 + k * std::f32::consts::PI / 5.0;
+                at(12.0 + r * a.cos(), 12.8 + r * a.sin())
+            };
+            let inner: Vec<Pos2> = (0..5).map(|i| point(4.4, (2 * i + 1) as f32)).collect();
+            painter.add(Shape::convex_polygon(inner.clone(), color, Stroke::NONE));
+            for i in 0..5 {
+                let tip = point(10.5, (2 * i) as f32);
+                painter.add(Shape::convex_polygon(
+                    vec![inner[(i + 4) % 5], tip, inner[i]],
+                    color,
+                    Stroke::NONE,
+                ));
+            }
         }
         Icon::Wave => {
             // the lines of a voice, of the heights it has

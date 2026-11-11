@@ -52,6 +52,7 @@ mod lookup_view;
 mod mcp_servers;
 mod model_bar;
 mod model_details;
+mod model_row;
 mod named_models;
 mod placement;
 mod port_taken;

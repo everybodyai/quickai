@@ -191,9 +191,21 @@ fn has_words(text: &str, words: &str) -> bool {
 /// how many entries it would show. An entry counts for a scope when it is in it, says every word and
 /// has a button in the size class.
 pub fn browse(entries: &[Entry], types: &[TypeDef], what: &Browse) -> Browsed {
+    browse_where(entries, types, what, &|_| true)
+}
+
+/// `browse` of the entries `keep` says yes to (those that fit this computer): the others are neither shown nor
+/// counted.
+pub fn browse_where(
+    entries: &[Entry],
+    types: &[TypeDef],
+    what: &Browse,
+    keep: &dyn Fn(&Entry) -> bool,
+) -> Browsed {
     let texts: Vec<String> = entries.iter().map(|e| search_text(e, types)).collect();
     let matches = |i: usize, entry: &Entry| {
-        has_words(&texts[i], &what.words)
+        keep(entry)
+            && has_words(&texts[i], &what.words)
             && does_all(entry, &what.tasks)
             && what
                 .size

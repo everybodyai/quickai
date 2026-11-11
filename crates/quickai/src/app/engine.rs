@@ -3018,10 +3018,12 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
         assert!(card.start);
         let line = super::super::lookup_view::facts_line(tiny);
         assert_eq!(line, "Acme · 0.1B · Apache-2.0 · 8.2K context", "{line}");
-        assert_eq!(
-            super::super::lookup_view::card_chips(card),
-            ["sees images", "fast"]
-        );
+        let can: Vec<&str> = super::super::model_row::ability_slots(tiny)
+            .into_iter()
+            .filter(|(on, _, _)| *on)
+            .map(|(_, _, words)| words)
+            .collect();
+        assert_eq!(can, ["Reads pictures", "Fast"]);
 
         // closed with the window's own X, it is not drawn; another engine starts again from nothing
         app.catalog.open = false;
@@ -3119,28 +3121,37 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
                 .map(super::super::lookup_view::bundle_words)
                 .unwrap_or_default();
 
-            // every card of the shipped list, one under the other, as wide as the list is
+            // every row of the shipped list, open, one under the other, as wide as Add a model's list is
             let installed = |_: &quickai_core::lookup::present::Offer| false;
-            let fit = |_: &quickai_core::lookup::present::Offer| crate::hardware::Fit::Comfortable;
-            let decor = super::super::lookup_view::Decor {
+            let look = super::super::model_row::RowLook {
                 installed: &installed,
-                fit: &fit,
                 ram: 16 * GB,
+                busy: false,
+                bundles: &labels,
             };
-            let mut chosen = None;
-            let output = frame(&ctx, egui::vec2(576.0, 30000.0), |ui| {
+            let output = frame(&ctx, egui::vec2(576.0, 60000.0), |ui| {
                 egui::CentralPanel::default().show(ui, |ui| {
                     for entry in &entries {
-                        let shown: Vec<usize> = (0..entry.offers.len()).collect();
-                        super::super::lookup_view::show_entry(
-                            ui,
+                        let Some(main) = quickai_core::lookup::picks::main_offer(entry) else {
+                            continue;
+                        };
+                        let row = super::super::model_row::Row {
                             entry,
-                            &shown,
-                            &labels,
-                            false,
-                            &mut chosen,
-                            Some(&decor),
-                        );
+                            main,
+                            choices: entry.offers.iter().collect(),
+                            title: entry.name.clone(),
+                            by: entry
+                                .card
+                                .as_ref()
+                                .map(|c| c.by.clone())
+                                .unwrap_or_default(),
+                            line: super::super::catalog_view::tagline(entry),
+                            star: false,
+                            abilities: true,
+                            expandable: true,
+                        };
+                        super::super::model_row::show(ui, &row, &look, true);
+                        super::super::model_row::show_details(ui, entry, main);
                     }
                 });
             });
@@ -3189,7 +3200,8 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
             assert!(
                 painted
                     .iter()
-                    .any(|p| p.text.contains("What do you want to do") || p.text == "Search:"),
+                    .any(|p| p.text.contains("What do you want to do")
+                        || p.text.contains("Fits this computer")),
                 "{scope:?}: the page was not drawn"
             );
             for p in &painted {
