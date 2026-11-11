@@ -154,6 +154,11 @@ QuickAI does not include a voice for reading aloud; choose one in **Settings →
 - **Arabic, Persian and Urdu**: [Nabra](https://huggingface.co/oddadmix/Nabra-82M-v0.1), a Kokoro voice for Modern
   Standard Arabic (Apache-2.0, 83 MB), and the Piper voices Amir for Persian (CC0, 67 MB) and Fasih for Urdu (MIT,
   67 MB), downloaded on request in the same way.
+- **The languages of India**: [Piper](https://github.com/rhasspy/piper) voices for Malayalam (Meera, Arjun), Telugu
+  (Maya, Venkatesh) and Nepali (Chitwan), and Meta's [MMS](https://huggingface.co/facebook/mms-tts) voices for Tamil,
+  Kannada, Marathi, Bengali, Gujarati, Punjabi, Odia and Assamese (63 to 114 MB each), downloaded on request. Each keeps
+  its own license, which Settings shows: MMS's allows non-commercial use only, and the IndicTTS license of IIT Madras
+  (Meera, Arjun, Maya) asks businesses to agree terms with it.
 - **A voice from a folder**: any voice you have that sherpa-onnx can read, such as Kokoro, Kitten, Piper or Matcha.
 - **A speech server**: a server that implements OpenAI's `/v1/audio/speech`, for voices QuickAI cannot run itself.
 - **A program of your own**: a command that reads its input aloud.

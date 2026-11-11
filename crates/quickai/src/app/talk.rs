@@ -185,9 +185,23 @@ pub(super) struct Trial {
     /// It is being written down, since then, by that model.
     writing: Option<(Instant, &'static str)>,
     note: Option<String>,
-    /// quickai-voice playing the recording back, and the playing.
-    player: Option<Speaker>,
-    playing: Option<u64>,
+    /// The recording being played back, on the system's own speaker (no voice is needed).
+    #[cfg(feature = "voice")]
+    playback: Option<capture::Playback>,
+}
+
+impl Trial {
+    /// Its recording is being played back.
+    fn playing(&self) -> bool {
+        #[cfg(feature = "voice")]
+        {
+            self.playback.is_some()
+        }
+        #[cfg(not(feature = "voice"))]
+        {
+            false
+        }
+    }
 }
 
 /// What a voice's download brings: a pack, quickai-voice, or both.
@@ -342,13 +356,30 @@ impl App {
         }
         let pack = pack.filter(|p| !p.installed());
         if let Some(pack) = pack {
-            files.push(piece(
-                "voice",
-                pack.url(),
-                pack.archive,
-                pack.bytes,
-                pack.sha256,
-            ));
+            // an archive, or files kept in a folder of the pack's name
+            let place = match pack.source {
+                voices::PackSource::HuggingFace { .. } => Some(pack.folder.to_string()),
+                voices::PackSource::Archive { .. } => None,
+            };
+            for (url, name, bytes, sha256) in pack.downloads() {
+                files.push(Piece {
+                    place: place.clone(),
+                    ..piece("voice", url, name, bytes, sha256)
+                });
+            }
+            // a voice of Piper's form reads with espeak-ng's data, downloaded once
+            if pack.piper && !voices::espeak_dir().join("phontab").is_file() {
+                let (archive, bytes, sha256) = voices::ESPEAK_DATA;
+                files.push(piece(
+                    "espeak-ng data",
+                    format!(
+                        "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/{archive}"
+                    ),
+                    archive,
+                    bytes,
+                    sha256,
+                ));
+            }
         }
         if files.is_empty() {
             return;
@@ -413,7 +444,7 @@ impl App {
                         }
                     }
                     if let (Ok(()), Some(pack)) = (&done, fetch.pack) {
-                        done = voices::install_pack(pack, &downloads.join(pack.archive));
+                        done = voices::install_pack(pack, &downloads);
                     }
                     let _ = tx.send(done);
                     wake.request_repaint();
@@ -453,14 +484,12 @@ impl App {
                 }
             }
             // the program that writes down what was said with whisper (quickai-whisper), which the packages carry next to
-            // the app; Omnilingual's (quickai-voice) is downloaded with its model
-            if self.speech_model_now().engine == SpeechEngine::Whisper
+            // the app; Omnilingual's (quickai-voice) is downloaded with its model. Settings › Voice › Try it records and
+            // plays back without either: only writing it down needs them, and says so
+            if purpose != Purpose::Test
+                && self.speech_model_now().engine == SpeechEngine::Whisper
                 && crate::voice::transcribe::program().is_none()
             {
-                if purpose == Purpose::Test {
-                    self.talk.trial.note = Some(crate::voice::transcribe::missing());
-                    return;
-                }
                 self.talk.card = Some(Card::Said {
                     title: "Speech to text is not here".into(),
                     words: crate::voice::transcribe::missing(),
@@ -470,13 +499,7 @@ impl App {
                 }
                 return;
             }
-            if self.speech_model_path().is_none() {
-                if purpose == Purpose::Test {
-                    self.talk.trial.note = Some(
-                        "The speech model is not on this computer yet: download it above.".into(),
-                    );
-                    return;
-                }
+            if purpose != Purpose::Test && self.speech_model_path().is_none() {
                 if !matches!(self.talk.card, Some(Card::Downloading { .. })) {
                     self.talk.card = Some(Card::Download {
                         model: self.speech_model_now(),
@@ -1062,7 +1085,7 @@ impl App {
         self.poll_spoken(ctx);
         self.step_hands_free(ctx);
         self.poll_voice_download(ctx);
-        self.poll_trial();
+        self.poll_trial(ctx);
     }
 
     /// Ctrl+Space held records for the box; Ctrl+Shift+Space starts and ends hands-free; Escape stops reading and ends
@@ -1797,48 +1820,43 @@ impl App {
         }
     }
 
-    /// The try's recording played back, by quickai-voice.
+    /// The try's recording played back on the system's own speaker: it needs no voice.
     fn play_trial(&mut self, ctx: &egui::Context) {
-        if self.talk.trial.samples.is_empty() {
-            return;
+        #[cfg(feature = "voice")]
+        {
+            if self.talk.trial.samples.is_empty() {
+                return;
+            }
+            self.talk.trial.note = None;
+            self.talk.trial.playback = Some(capture::play(self.talk.trial.samples.clone()));
+            ctx.request_repaint();
         }
-        let Some(program) = voices::program() else {
-            self.talk.trial.note = Some(
-                "Playing it back needs QuickAI's voice program: it comes with a voice (Answers, below).".into(),
-            );
-            return;
-        };
-        let wake = ctx.clone();
-        let player = self.talk.trial.player.get_or_insert_with(|| {
-            Speaker::new(Ok(speak::Backend::Player { program }), move || {
-                wake.request_repaint()
-            })
-        });
-        self.talk.next += 1;
-        let id = self.talk.next;
-        player.play(
-            id,
-            speak::wav16(&self.talk.trial.samples, crate::voice::RATE),
-        );
-        self.talk.trial.playing = Some(id);
+        #[cfg(not(feature = "voice"))]
+        {
+            let _ = ctx;
+        }
     }
 
-    /// What the try's player did: playing ended, or could not.
-    fn poll_trial(&mut self) {
-        let Some(player) = &self.talk.trial.player else {
-            return;
-        };
-        for spoken in player.take() {
-            match spoken {
-                Spoken::Ended { utterance } if self.talk.trial.playing == Some(utterance) => {
-                    self.talk.trial.playing = None;
+    /// The try's playing back ended, or could not be: it says why.
+    fn poll_trial(&mut self, ctx: &egui::Context) {
+        #[cfg(feature = "voice")]
+        {
+            let Some(playback) = &self.talk.trial.playback else {
+                return;
+            };
+            match playback.finished() {
+                None => ctx.request_repaint_after(Duration::from_millis(100)),
+                Some(done) => {
+                    self.talk.trial.playback = None;
+                    if let Err(why) = done {
+                        self.talk.trial.note = Some(format!("It could not be played back: {why}"));
+                    }
                 }
-                Spoken::Failed { utterance, why } if self.talk.trial.playing == Some(utterance) => {
-                    self.talk.trial.playing = None;
-                    self.talk.trial.note = Some(format!("It could not be played back: {why}"));
-                }
-                _ => {}
             }
+        }
+        #[cfg(not(feature = "voice"))]
+        {
+            let _ = ctx;
         }
     }
 
@@ -1890,13 +1908,14 @@ impl App {
                 self.talk.trial.note = None;
                 self.start_listening(Purpose::Test, ctx);
             }
-            if self.talk.trial.playing.is_some() {
+            if self.talk.trial.playing() {
                 if icons::icon_button(ui, Icon::Stop, size, true, true)
                     .on_hover_text("Stop playing")
                     .clicked()
                 {
-                    if let Some(player) = &self.talk.trial.player {
-                        player.stop();
+                    #[cfg(feature = "voice")]
+                    if let Some(playback) = &self.talk.trial.playback {
+                        playback.stop();
                     }
                 }
             } else if icons::icon_button(ui, Icon::Play, size, has && recording.is_none(), false)
@@ -1979,7 +1998,7 @@ impl App {
                 .as_ref()
                 .map(|(job, _)| (job.downloaded, job.total));
             if let Some((done, total)) = downloading {
-                let total = total.unwrap_or(pack.bytes).max(1);
+                let total = total.unwrap_or(pack.bytes()).max(1);
                 ui.label(
                     theme::muted(format!(
                         "Downloading {}: {} of {}",
@@ -2002,7 +2021,7 @@ impl App {
                     format!(
                         "{} is not on this computer yet ({}, {} licence).",
                         pack.name,
-                        megabytes(pack.bytes),
+                        megabytes(pack.bytes()),
                         pack.license
                     )
                 };
@@ -2376,7 +2395,7 @@ impl App {
                             for pack in &VOICE_PACKS {
                                 let on = reader == Reader::Pack(pack.id.into());
                                 if ui
-                                    .selectable_label(on, format!("{} · {}", pack.name, megabytes(pack.bytes)))
+                                    .selectable_label(on, format!("{} · {}", pack.name, megabytes(pack.bytes())))
                                     .on_hover_text(format!("{}. {} licence.", pack.about, pack.license))
                                     .clicked()
                                 {

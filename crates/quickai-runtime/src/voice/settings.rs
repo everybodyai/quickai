@@ -640,6 +640,14 @@ mod tests {
         );
         assert_eq!(suggestion("hi", model("turbo")), None);
         assert_eq!(suggestion("hi", model("small")), None);
+        // a model of separate files is kept in a folder the downloader takes
+        for model in &SPEECH_MODELS {
+            assert!(
+                model.folder.is_empty() || quickai_core::lookup::present::is_place(model.folder),
+                "{}",
+                model.folder
+            );
+        }
         // nothing for a language whisper writes well
         assert_eq!(suggestion("en", model("base")), None);
     }

@@ -1,5 +1,6 @@
 //! The microphone, as samples of 16 kHz mono from -1 to 1, gathered on a thread of its own and taken by the window
-//! as it draws.
+//! as it draws; and a recording played back on the same sound system (`play`: Settings › Voice › Try it), which needs
+//! no voice and no program of QuickAI's.
 //!
 //! - Linux: ALSA's "default" device (which PipeWire and PulseAudio serve), or one the person chose, loaded from
 //!   `libasound.so.2` when the microphone is first used: the window links no sound library, so it starts on a system
@@ -136,6 +137,71 @@ pub fn start(microphone: Option<&str>) -> Result<Recording, MicError> {
         stop,
         worker: Some(worker),
     })
+}
+
+/// A recording being played back, on a thread of its own: it stops when told, or when it is dropped.
+pub struct Playback {
+    stop: Arc<AtomicBool>,
+    done: Arc<Mutex<Option<Result<(), String>>>>,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl Playback {
+    /// It has been heard to its end, or stopped (`Ok`), or could not be (`Err`, why); `None` while it plays.
+    pub fn finished(&self) -> Option<Result<(), String>> {
+        self.done.lock().ok().and_then(|d| d.clone())
+    }
+
+    /// Ends it now.
+    pub fn stop(&self) {
+        self.stop.store(true, Ordering::SeqCst);
+    }
+}
+
+impl Drop for Playback {
+    fn drop(&mut self) {
+        self.stop();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+/// Plays `samples` (16 kHz mono, -1 to 1) on the system's own speaker or headphones. With `QUICKAI_FAKE_MIC` (tests),
+/// nothing is heard: it lasts as long as the sound would.
+pub fn play(samples: Vec<f32>) -> Playback {
+    play_on(samples, std::env::var_os("QUICKAI_FAKE_MIC").is_some())
+}
+
+/// `play`, on the sound system, or (`fake`) on nothing, for as long as it would last.
+fn play_on(samples: Vec<f32>, fake: bool) -> Playback {
+    let stop = Arc::new(AtomicBool::new(false));
+    let done = Arc::new(Mutex::new(None));
+    let (s, d) = (Arc::clone(&stop), Arc::clone(&done));
+    let worker = std::thread::Builder::new()
+        .name("play back".into())
+        .spawn(move || {
+            let result = if fake {
+                let until = std::time::Instant::now()
+                    + Duration::from_secs_f64(samples.len() as f64 / f64::from(RATE));
+                while !s.load(Ordering::SeqCst) && std::time::Instant::now() < until {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Ok(())
+            } else {
+                platform::play(&samples, &s)
+            };
+            if let Ok(mut done) = d.lock() {
+                *done = Some(result);
+            }
+        })
+        .ok();
+    if worker.is_none() {
+        if let Ok(mut d) = done.lock() {
+            *d = Some(Err("a thread to play it could not be started".into()));
+        }
+    }
+    Playback { stop, done, worker }
 }
 
 /// The microphones the person can choose from (the system's own choice is not among them: it is `None`).
@@ -285,6 +351,7 @@ mod platform {
 
     use super::*;
 
+    const STREAM_PLAYBACK: c_int = 0;
     const STREAM_CAPTURE: c_int = 1;
     const FORMAT_S16_LE: c_int = 2;
     const ACCESS_RW_INTERLEAVED: c_int = 3;
@@ -295,6 +362,9 @@ mod platform {
         set_params:
             unsafe extern "C" fn(*mut c_void, c_int, c_int, c_uint, c_uint, c_int, c_uint) -> c_int,
         readi: unsafe extern "C" fn(*mut c_void, *mut c_void, c_ulong) -> c_long,
+        writei: unsafe extern "C" fn(*mut c_void, *const c_void, c_ulong) -> c_long,
+        drain: unsafe extern "C" fn(*mut c_void) -> c_int,
+        drop: unsafe extern "C" fn(*mut c_void) -> c_int,
         recover: unsafe extern "C" fn(*mut c_void, c_int, c_int) -> c_int,
         close: unsafe extern "C" fn(*mut c_void) -> c_int,
         strerror: unsafe extern "C" fn(c_int) -> *const c_char,
@@ -320,6 +390,9 @@ mod platform {
                     open: get!("snd_pcm_open"),
                     set_params: get!("snd_pcm_set_params"),
                     readi: get!("snd_pcm_readi"),
+                    writei: get!("snd_pcm_writei"),
+                    drain: get!("snd_pcm_drain"),
+                    drop: get!("snd_pcm_drop"),
                     recover: get!("snd_pcm_recover"),
                     close: get!("snd_pcm_close"),
                     strerror: get!("snd_strerror"),
@@ -419,6 +492,72 @@ mod platform {
             // SAFETY: `pcm` is open, and closed once
             unsafe { (alsa.close)(pcm.0) };
         }))
+    }
+
+    /// `samples` played on ALSA's "default" device, 16-bit mono at 16 kHz (its plug layer converts), a fiftieth of a
+    /// second at a time, until they end (and the device has played them) or `stop`.
+    pub fn play(samples: &[f32], stop: &AtomicBool) -> Result<(), String> {
+        let alsa = alsa().map_err(|e| e.detail().to_string())?;
+        let mut pcm: *mut c_void = std::ptr::null_mut();
+        // SAFETY: the arguments are as snd_pcm_open takes them; `pcm` is written on success
+        let opened = unsafe { (alsa.open)(&mut pcm, c"default".as_ptr(), STREAM_PLAYBACK, 0) };
+        if opened < 0 {
+            return Err(format!("the speaker: {}", words(alsa, opened)));
+        }
+        // SAFETY: `pcm` is open
+        let set = unsafe {
+            (alsa.set_params)(
+                pcm,
+                FORMAT_S16_LE,
+                ACCESS_RW_INTERLEAVED,
+                1,
+                RATE,
+                1,
+                100_000,
+            )
+        };
+        if set < 0 {
+            // SAFETY: `pcm` is open
+            unsafe { (alsa.close)(pcm) };
+            return Err(format!(
+                "the speaker does not play as asked: {}",
+                words(alsa, set)
+            ));
+        }
+        let pcm16: Vec<i16> = samples
+            .iter()
+            .map(|s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
+            .collect();
+        let step = (RATE / 50) as usize;
+        let mut at = 0;
+        let mut result = Ok(());
+        while at < pcm16.len() && !stop.load(Ordering::SeqCst) {
+            let chunk = &pcm16[at..(at + step).min(pcm16.len())];
+            // SAFETY: `chunk` holds `chunk.len()` samples of one channel
+            let wrote =
+                unsafe { (alsa.writei)(pcm, chunk.as_ptr().cast(), chunk.len() as c_ulong) };
+            if wrote < 0 {
+                // an underrun (the thread was late): recovered, and on
+                // SAFETY: `pcm` is open
+                let again = unsafe { (alsa.recover)(pcm, wrote as c_int, 1) };
+                if again < 0 {
+                    result = Err(words(alsa, again));
+                    break;
+                }
+                continue;
+            }
+            at += wrote as usize;
+        }
+        // SAFETY: `pcm` is open, and closed once: what is left is played to its end, unless it was stopped
+        unsafe {
+            if stop.load(Ordering::SeqCst) {
+                (alsa.drop)(pcm);
+            } else {
+                (alsa.drain)(pcm);
+            }
+            (alsa.close)(pcm);
+        }
+        result
     }
 
     pub fn microphones() -> Vec<Microphone> {
@@ -598,6 +737,83 @@ mod platform {
         }
     }
 
+    /// `samples` played on the system's own speaker or headphones, at its rate and on each of its channels (a straight
+    /// line between ours), until they end or `stop`.
+    pub fn play(samples: &[f32], stop: &AtomicBool) -> Result<(), String> {
+        use std::sync::atomic::AtomicUsize;
+        let host = cpal::default_host();
+        let device = host
+            .default_output_device()
+            .ok_or("this computer has no speaker or headphones")?;
+        let supported = device.default_output_config().map_err(|e| e.to_string())?;
+        let config = supported.config();
+        let (rate, channels) = (config.sample_rate, usize::from(config.channels.max(1)));
+        let step = f64::from(RATE) / f64::from(rate);
+        let count = (samples.len() as f64 / step) as usize;
+        let sound: Arc<Vec<f32>> = Arc::new(
+            (0..count)
+                .map(|i| {
+                    let at = i as f64 * step;
+                    let k = at as usize;
+                    let (a, b) = (
+                        samples.get(k).copied().unwrap_or(0.0),
+                        samples.get(k + 1).copied().unwrap_or(0.0),
+                    );
+                    a + (b - a) * (at - k as f64) as f32
+                })
+                .collect(),
+        );
+        let at = Arc::new(AtomicUsize::new(0));
+        fn output<T>(
+            device: &cpal::Device,
+            config: cpal::StreamConfig,
+            sound: Arc<Vec<f32>>,
+            at: Arc<AtomicUsize>,
+            channels: usize,
+        ) -> Result<cpal::Stream, cpal::Error>
+        where
+            T: cpal::SizedSample + cpal::FromSample<f32>,
+        {
+            device.build_output_stream::<T, _, _>(
+                config,
+                move |out: &mut [T], _| {
+                    for frame in out.chunks_mut(channels) {
+                        let i = at.fetch_add(1, Ordering::Relaxed);
+                        let v = sound.get(i).copied().unwrap_or(0.0);
+                        for s in frame {
+                            *s = <T as cpal::FromSample<f32>>::from_sample_(v);
+                        }
+                    }
+                },
+                |_| {},
+                Some(Duration::from_secs(3)),
+            )
+        }
+        let (s, a) = (Arc::clone(&sound), Arc::clone(&at));
+        let stream = match supported.sample_format() {
+            cpal::SampleFormat::F32 => output::<f32>(&device, config, s, a, channels),
+            cpal::SampleFormat::I16 => output::<i16>(&device, config, s, a, channels),
+            cpal::SampleFormat::U16 => output::<u16>(&device, config, s, a, channels),
+            cpal::SampleFormat::I32 => output::<i32>(&device, config, s, a, channels),
+            other => {
+                return Err(format!(
+                    "the speaker takes samples of a kind QuickAI does not make ({other:?})"
+                ))
+            }
+        }
+        .map_err(|e| e.to_string())?;
+        stream.play().map_err(|e| e.to_string())?;
+        while !stop.load(Ordering::SeqCst) && at.load(Ordering::Relaxed) < sound.len() {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // what the device has taken but not yet played
+        if !stop.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(150));
+        }
+        drop(stream);
+        Ok(())
+    }
+
     pub fn microphones() -> Vec<Microphone> {
         let host = cpal::default_host();
         let Ok(devices) = host.input_devices() else {
@@ -635,10 +851,65 @@ mod platform {
     pub fn microphones() -> Vec<Microphone> {
         Vec::new()
     }
+
+    pub fn play(_: &[f32], _: &AtomicBool) -> Result<(), String> {
+        Err("this build of QuickAI cannot play sound".into())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    /// With `QUICKAI_TEST_PLAY_SILENCE`, half a second of silence is played on this computer's own sound system (it
+    /// is opened, given the samples and drained). Left out without it: a test machine has no speaker.
+    #[test]
+    fn silence_is_played_on_the_sound_system() {
+        if std::env::var_os("QUICKAI_TEST_PLAY_SILENCE").is_none() {
+            return;
+        }
+        let started = std::time::Instant::now();
+        let silence = play_on(vec![0.0; RATE as usize / 2], false);
+        while silence.finished().is_none() {
+            assert!(
+                started.elapsed() < Duration::from_secs(10),
+                "it never ended"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(silence.finished(), Some(Ok(())));
+        assert!(
+            started.elapsed() >= Duration::from_millis(400),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    /// A recording played back ends by itself, or at once when stopped.
+    #[test]
+    fn a_recording_is_played_back_to_its_end_or_stopped() {
+        let started = std::time::Instant::now();
+        let short = play_on(vec![0.0; RATE as usize / 5], true);
+        while short.finished().is_none() {
+            assert!(started.elapsed() < Duration::from_secs(5), "it never ended");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(short.finished(), Some(Ok(())));
+        assert!(
+            started.elapsed() >= Duration::from_millis(150),
+            "it lasts as long as the sound"
+        );
+        let long = play_on(vec![0.0; RATE as usize * 60], true);
+        assert_eq!(long.finished(), None);
+        long.stop();
+        let stopped = std::time::Instant::now();
+        while long.finished().is_none() {
+            assert!(
+                stopped.elapsed() < Duration::from_secs(2),
+                "it did not stop"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     use super::*;
 
     #[test]
