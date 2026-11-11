@@ -348,7 +348,7 @@ pub struct ProgramAsset {
 }
 
 /// The release of quickai-voice QuickAI downloads (everybodyai/quickai-voice, GPL-3.0: it is a program of its own,
-/// started by QuickAI, as llama.cpp's server is).
+/// started by QuickAI, as llama.cpp's server is). 0.2.0 or later: Omnilingual needs its `--hear`.
 pub struct VoiceProgram {
     pub version: &'static str,
     pub linux: Option<ProgramAsset>,
@@ -357,21 +357,21 @@ pub struct VoiceProgram {
 }
 
 pub const VOICE_PROGRAM: VoiceProgram = VoiceProgram {
-    version: "0.1.0",
+    version: "0.2.0",
     linux: Some(ProgramAsset {
-        archive: "quickai-voice-0.1.0-linux-x86_64.tar.gz",
-        bytes: 10_962_747,
-        sha256: "f0729c0d62195a787bcc3da8c6142eac26b2e3538e7540a94faa31f4f086ef96",
+        archive: "quickai-voice-0.2.0-linux-x86_64.tar.gz",
+        bytes: 10_966_146,
+        sha256: "fa7ee52cd508251745e5caf0b9be4ddc7bb1ec17faa37de1b52a07b0c300b3a8",
     }),
     windows: Some(ProgramAsset {
-        archive: "quickai-voice-0.1.0-windows-x86_64.zip",
-        bytes: 8_524_840,
-        sha256: "b3bbe7258c63c754a98d1b1d21dd6e6e3adb66f9085ac937d65e664ab268f4b3",
+        archive: "quickai-voice-0.2.0-windows-x86_64.zip",
+        bytes: 8_533_969,
+        sha256: "24f4d0ec1d9eec27d9f255c4d8362e1669599f3f98831f9cfd6a4ad0e0952862",
     }),
     macos: Some(ProgramAsset {
-        archive: "quickai-voice-0.1.0-macos-universal.tar.gz",
-        bytes: 20_812_095,
-        sha256: "c447dc110c98faf4cf47a7ce44d7b4de1e761d872491397a6fa50b2be2a174aa",
+        archive: "quickai-voice-0.2.0-macos-universal.tar.gz",
+        bytes: 20_824_408,
+        sha256: "6b338151e0188bd2e4bc6ce23f38b7d912b59a64418e51a73eb3e6cd967340d7",
     }),
 };
 

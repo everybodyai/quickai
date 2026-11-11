@@ -138,9 +138,9 @@ All processing happens on your computer: [quickai-whisper](https://github.com/ev
 [whisper.cpp](https://github.com/ggml-org/whisper.cpp), transcribes your speech on the processor. The speech model
 (82 MB) is included in the bundled packages and is otherwise downloaded on first use. **Settings → Voice** lets you set
 the language you speak, choose larger speech models, and have every response read aloud, which is off by default.
-Whisper writes some languages poorly, often in another script; for these, such as Malayalam, Bengali and Marathi,
-choose **Omnilingual** (Meta's Omnilingual ASR, 1600 languages, 365 MB, downloaded on request), which writes each in
-its own script, without capitals or punctuation.
+For Indian languages, such as Malayalam, Tamil, Hindi and Bengali, choose **Omnilingual** (Meta's Omnilingual ASR,
+1600 languages, 365 MB, downloaded on request): Whisper often writes them in another script or as made-up words, and
+Settings suggests Omnilingual when you select one. Omnilingual writes without capitals or punctuation.
 
 QuickAI does not include a voice for reading aloud; choose one in **Settings → Voice → Read with**:
 

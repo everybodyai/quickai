@@ -306,7 +306,7 @@ pub const SPEECH_MODELS: [SpeechModel; 4] = [
                 sha256: "a7a044c52cb29cbe8b0dc1953e92cefd4ca16b0ed968177b6beab21f9a7d0b31",
             },
         ],
-        about: "1600 languages, Malayalam, Telugu and Kannada among them; quick; no capitals or punctuation",
+        about: "1600 languages; the better choice for the languages of India; quick; no capitals or punctuation",
     },
 ];
 
@@ -360,17 +360,22 @@ impl SpeechModel {
     }
 }
 
-/// The languages whisper writes poorly, by whisper's codes: Settings suggests Omnilingual for them. Measured on read
-/// sentences (2026-11), Whisper small wrote Malayalam as sounds in Latin letters, Punjabi and Gujarati in Devanagari,
-/// and Telugu, Kannada, Marathi and Bengali as made-up or repeated words; Omnilingual wrote all but Gujarati with a few
-/// characters in a hundred wrong. Tamil, which whisper writes fairly, is not among them.
-pub const WHISPER_WRITES_POORLY: [&str; 7] = ["bn", "gu", "kn", "ml", "mr", "pa", "te"];
+/// The languages of India whisper knows, by its codes: Settings suggests Omnilingual for them. Measured on read
+/// sentences (2026-11, characters wrong in a hundred), Whisper small wrote Malayalam as sounds in Latin letters, Punjabi
+/// and Gujarati in Devanagari, Telugu, Kannada, Marathi, Bengali and Assamese as made-up or repeated words, and Tamil
+/// with 19 wrong; Omnilingual wrote Malayalam, Telugu, Kannada, Marathi and Tamil with 2 to 4 wrong, Bengali with 14,
+/// Gujarati with 34 and Assamese with 64 (both partly in Devanagari), Punjabi in its own script. Hindi, Urdu, Nepali,
+/// Sanskrit and Sindhi were not measured.
+pub const OMNILINGUAL_SUGGESTED: [&str; 14] = [
+    "as", "bn", "gu", "hi", "kn", "ml", "mr", "ne", "pa", "sa", "sd", "ta", "te", "ur",
+];
 
 /// The languages whisper hears, as it names them, with their names: the common ones first, then the rest in the
 /// order of their names.
-pub const LANGUAGES: [(&str, &str); 44] = [
+pub const LANGUAGES: [(&str, &str); 47] = [
     ("en", "English"),
     ("ar", "Arabic"),
+    ("as", "Assamese"),
     ("bn", "Bengali"),
     ("zh", "Chinese"),
     ("cs", "Czech"),
@@ -399,7 +404,9 @@ pub const LANGUAGES: [(&str, &str); 44] = [
     ("pa", "Punjabi"),
     ("ro", "Romanian"),
     ("ru", "Russian"),
+    ("sa", "Sanskrit"),
     ("sr", "Serbian"),
+    ("sd", "Sindhi"),
     ("es", "Spanish"),
     ("sw", "Swahili"),
     ("sv", "Swedish"),
@@ -477,7 +484,7 @@ mod tests {
 
     #[test]
     fn the_languages_omnilingual_is_offered_for_are_whispers() {
-        for code in WHISPER_WRITES_POORLY {
+        for code in OMNILINGUAL_SUGGESTED {
             assert_ne!(language_name(code), code, "{code} is not in LANGUAGES");
         }
         assert_eq!(omnilingual().engine, SpeechEngine::Omnilingual);

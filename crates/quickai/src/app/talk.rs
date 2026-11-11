@@ -28,7 +28,7 @@ use crate::jobs::Job;
 use crate::paths;
 use crate::voice::settings::{
     language_name, omnilingual, speech_model, SpeechEngine, SpeechModel, VoiceSettings, LANGUAGES,
-    SPEECH_MODELS, WHISPER_WRITES_POORLY,
+    OMNILINGUAL_SUGGESTED, SPEECH_MODELS,
 };
 use crate::voice::settings::{Reader, MAX_PAUSE_MS, MIN_PAUSE_MS};
 use crate::voice::speak::{self, Speaker, Spoken};
@@ -2162,19 +2162,19 @@ impl App {
                         }
                     });
             });
-            // whisper writes some languages poorly (in another script, or as sounds in Latin letters): Omnilingual is
-            // offered for them
+            // whisper writes the languages of India poorly or not as well (in another script, as sounds in Latin
+            // letters, or as made-up words): Omnilingual is offered for them
             let poorly = self
                 .talk
                 .settings
                 .language
                 .as_deref()
-                .filter(|code| WHISPER_WRITES_POORLY.contains(code));
+                .filter(|code| OMNILINGUAL_SUGGESTED.contains(code));
             if let (Some(code), SpeechEngine::Whisper) = (poorly, self.speech_model_now().engine) {
                 ui.add_space(2.0);
                 ui.label(
                     theme::muted(format!(
-                        "Whisper writes {} poorly, often in another script. Omnilingual writes it in its own.",
+                        "For {}, Omnilingual is usually more accurate than Whisper, which often writes Indian languages in another script.",
                         language_name(code)
                     ))
                     .small(),
