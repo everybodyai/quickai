@@ -380,7 +380,7 @@ const PAGES: &[Page] = &[
                  aloud**, in Settings › Voice, reads every response as it arrives; it is off by default.",
             ),
             step(
-                "**Hands-free**, in the {more} at the right end of the toolbar or by right-clicking the microphone, \
+                "**Hands-free**, in the {more} at the right end of the toolbar or by pressing and holding the microphone, \
                  listens, sends what you said when you pause, reads the response and listens again. Press **Esc** to \
                  end it.",
             )
@@ -853,7 +853,7 @@ const TOUR: &[(Spot, &str, &str)] = &[
     (
         Spot::Mic,
         "Talk",
-        "Press the microphone to speak instead of typing. Right-click it for hands-free mode: it listens, responds \
+        "Press the microphone to speak instead of typing. Press and hold it for hands-free mode: it listens, responds \
          aloud and listens again.",
     ),
     (

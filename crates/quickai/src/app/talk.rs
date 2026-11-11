@@ -7,7 +7,7 @@
 //!   box to be checked, or is sent when "Send when I stop talking" is on (then a pause ends it).
 //! - Read aloud on an answer reads it, lighting the sentence being read; the speaker in the box reads every answer as
 //!   it comes.
-//! - Hands-free (the chat's ⋯, the microphone's right click, Ctrl+Shift+Space) covers the chat with what it is doing.
+//! - Hands-free (the chat's ⋯, the microphone pressed and held, Ctrl+Shift+Space) covers the chat with what it is doing.
 //! - The first time, the speech model is downloaded (82 MB), unless the package came with it; a microphone the system
 //!   keeps from apps is said, with the way to its switch.
 
@@ -156,6 +156,8 @@ pub(super) struct Talk {
     auto_turn: Option<usize>,
     /// Where the microphone is, for the cards over it.
     mic_rect: Option<egui::Rect>,
+    /// The microphone is pressed: since when, and whether holding it has started hands-free already.
+    mic_press: Option<(Instant, bool)>,
     /// The box gets the keys again (what was said was put in it).
     pub(super) focus_box: bool,
     /// Nothing was heard: said in the box's hint for a moment.
@@ -210,6 +212,71 @@ impl Trial {
 pub(super) struct VoiceFetch {
     pack: Option<&'static VoicePack>,
     program: bool,
+}
+
+/// How long the microphone is held to start hands-free (a click is shorter).
+const HOLD_FOR_HANDS_FREE: Duration = Duration::from_millis(600);
+
+/// What the microphone's button comes to in a frame.
+#[derive(Debug, PartialEq)]
+enum MicPress {
+    Nothing,
+    /// It is held, this part of the way to hands-free (0 to 1).
+    Held(f32),
+    /// Held long enough: hands-free starts (once a press).
+    HandsFree,
+    /// A click: what is said goes in the box.
+    Dictate,
+}
+
+/// A press of the microphone, frame by frame: `press` is since when it is held and whether that started hands-free
+/// already; `down` whether it is held now, `clicked` whether egui saw a click this frame.
+fn mic_press(
+    press: &mut Option<(Instant, bool)>,
+    down: bool,
+    clicked: bool,
+    now: Instant,
+) -> MicPress {
+    if down {
+        let (since, started) = *press.get_or_insert((now, false));
+        if started {
+            return MicPress::Nothing;
+        }
+        let held = now.saturating_duration_since(since);
+        if held >= HOLD_FOR_HANDS_FREE {
+            *press = Some((since, true));
+            return MicPress::HandsFree;
+        }
+        return MicPress::Held(held.as_secs_f32() / HOLD_FOR_HANDS_FREE.as_secs_f32());
+    }
+    // let go: a click, unless holding it started hands-free
+    let started = press.take().is_some_and(|(_, started)| started);
+    if clicked && !started {
+        MicPress::Dictate
+    } else {
+        MicPress::Nothing
+    }
+}
+
+/// A ring round `centre`, drawn `part` of the way round (0 to 1) from the top, clockwise: how long the microphone has
+/// been held of what hands-free takes.
+fn paint_ring(
+    painter: &egui::Painter,
+    centre: egui::Pos2,
+    radius: f32,
+    part: f32,
+    colour: egui::Color32,
+) {
+    let part = part.clamp(0.0, 1.0);
+    let steps = 48;
+    let points: Vec<egui::Pos2> = (0..=steps)
+        .map(|k| {
+            let angle = -std::f32::consts::FRAC_PI_2
+                + part * std::f32::consts::TAU * k as f32 / steps as f32;
+            centre + egui::vec2(angle.cos(), angle.sin()) * radius
+        })
+        .collect();
+    painter.add(egui::Shape::line(points, egui::Stroke::new(2.0, colour)));
 }
 
 /// How long a recording may be, and how much is kept before someone talks in hands-free (so that the first syllable is
@@ -1358,21 +1425,28 @@ impl App {
             return;
         }
         let mic = icons::icon_button(ui, Icon::Mic, egui::vec2(30.0, 28.0), ready, false).on_hover_text(
-            "Talk instead of typing: what you say goes in the box (hold Ctrl+Space to talk while it is held). Right-click \
-             for hands-free.",
+            "Talk instead of typing: click, and what you say goes in the box (or hold Ctrl+Space to talk while it is \
+             held). Press and hold for hands-free.",
         );
         self.talk.mic_rect = Some(mic.rect);
         super::help::mark_spot(ui, super::help::Spot::Mic, mic.rect);
-        if mic.clicked() {
-            self.start_listening(Purpose::Box, ui.ctx());
-        }
-        mic.context_menu(|ui| {
-            ui.set_max_width(170.0);
-            if icons::menu_item(ui, Icon::Wave, "Hands-free", ready, false).clicked() {
-                self.start_hands_free(ui.ctx());
-                ui.close();
+        // a click writes what is said into the box; held down, it starts hands-free, with a ring that fills while it is
+        // held, and letting go then does nothing more
+        let down = ready && mic.is_pointer_button_down_on();
+        match mic_press(
+            &mut self.talk.mic_press,
+            down,
+            mic.clicked(),
+            Instant::now(),
+        ) {
+            MicPress::Nothing => {}
+            MicPress::Held(part) => {
+                paint_ring(ui.painter(), mic.rect.center(), 13.0, part, p.accent_text);
+                ui.ctx().request_repaint();
             }
-        });
+            MicPress::HandsFree => self.start_hands_free(ui.ctx()),
+            MicPress::Dictate => self.start_listening(Purpose::Box, ui.ctx()),
+        }
     }
 
     /// The box while the microphone records (R1): how long, how loud, × to throw it away and ■ to stop.
@@ -2861,4 +2935,52 @@ fn search_box(ui: &mut egui::Ui, text: &mut String, hint: &str) -> String {
 /// Whether any of `words` has what was searched for in it (everything, when nothing was).
 fn matches(query: &str, words: &[&str]) -> bool {
     query.is_empty() || words.iter().any(|w| w.to_lowercase().contains(query))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_click_on_the_microphone_dictates_and_holding_it_starts_hands_free_once() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        // a click: pressed, let go soon after
+        let mut press = None;
+        assert_eq!(
+            mic_press(&mut press, true, false, at(0)),
+            MicPress::Held(0.0)
+        );
+        assert!(
+            matches!(mic_press(&mut press, true, false, at(150)), MicPress::Held(p) if p > 0.2 && p < 0.3)
+        );
+        assert_eq!(
+            mic_press(&mut press, false, true, at(200)),
+            MicPress::Dictate
+        );
+        assert_eq!(press, None);
+        // held: the ring fills, hands-free starts once, and letting go (a click to egui or not) does nothing more
+        assert!(matches!(
+            mic_press(&mut press, true, false, at(1000)),
+            MicPress::Held(_)
+        ));
+        assert_eq!(
+            mic_press(&mut press, true, false, at(1600)),
+            MicPress::HandsFree
+        );
+        assert_eq!(
+            mic_press(&mut press, true, false, at(1700)),
+            MicPress::Nothing
+        );
+        assert_eq!(
+            mic_press(&mut press, false, true, at(1750)),
+            MicPress::Nothing
+        );
+        assert_eq!(press, None);
+        // nothing pressed, nothing clicked
+        assert_eq!(
+            mic_press(&mut press, false, false, at(2000)),
+            MicPress::Nothing
+        );
+    }
 }
