@@ -621,7 +621,7 @@ pub const VOICE_PACKS: [VoicePack; 18] = [
     },
 ];
 
-/// The terms of a voice's licence that limits commercial use: what Settings › Voice shows under its warning mark.
+/// The terms of a voice's licence that limits commercial use: what Settings › Voice shows under its (i) mark.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Terms {
     pub title: &'static str,

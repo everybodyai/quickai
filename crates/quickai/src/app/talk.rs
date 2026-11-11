@@ -166,7 +166,7 @@ pub(super) struct Talk {
     voice_download: Option<(Job<String>, VoiceFetch)>,
     voice_unpacking: Option<Receiver<Result<(), String>>>,
     voice_note: Option<String>,
-    /// The terms of the chosen voice's licence are shown (its warning mark was clicked).
+    /// The terms of the chosen voice's licence are shown (its (i) mark was clicked).
     terms_open: bool,
     /// Settings › Voice's try of speech to text.
     trial: Trial,
@@ -2386,16 +2386,17 @@ impl App {
                 Some("No voice comes with QuickAI: download one, or use one of your own."),
                 None,
                 |ui| {
-                    // a voice whose licence limits commercial use: a warning mark beside it, which shows the terms
+                    // a voice whose licence limits commercial use: a quiet mark beside it, whose hover says the terms in
+                    // short and whose click shows them with a link to the licence
                     let terms = match &reader {
                         Reader::Pack(id) => voices::voice_pack(id).and_then(|p| p.terms()),
                         _ => None,
                     };
                     if let Some(terms) = terms {
-                        if warning_mark(ui, self.talk.terms_open)
+                        if licence_mark(ui, self.talk.terms_open)
                             .on_hover_text(format!(
-                                "{}: click for the terms of its license",
-                                terms.title
+                                "{}\n\n{}\n\nClick for the license.",
+                                terms.title, terms.summary
                             ))
                             .clicked()
                         {
@@ -2413,17 +2414,19 @@ impl App {
                             for pack in &VOICE_PACKS {
                                 let on = reader == Reader::Pack(pack.id.into());
                                 let hover = match pack.terms() {
-                                    Some(t) => format!("{}. {} licence: {}.", pack.about, pack.license, t.title.to_lowercase()),
-                                    None => format!("{}. {} licence.", pack.about, pack.license),
+                                    Some(t) => format!("{}. {} license.\n\n{}: {}", pack.about, pack.license, t.title, t.summary),
+                                    None => format!("{}. {} license.", pack.about, pack.license),
                                 };
                                 let clicked = ui
                                     .horizontal(|ui| {
                                         let label = ui
                                             .selectable_label(on, format!("{} · {}", pack.name, megabytes(pack.bytes())))
                                             .on_hover_text(&hover);
-                                        if pack.terms().is_some() {
-                                            let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                                            icons::paint(ui.painter(), r, Icon::Warn, theme::palette().warn);
+                                        if let Some(t) = pack.terms() {
+                                            let (r, mark) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                                            let p = theme::palette();
+                                            icons::paint(ui.painter(), r, Icon::Info, if mark.hovered() { p.text } else { p.faint });
+                                            mark.on_hover_text(format!("{}\n\n{}", t.title, t.summary));
                                         }
                                         label.clicked()
                                     })
@@ -2468,7 +2471,7 @@ impl App {
                 }
             }
             let reader = self.talk.settings.reader.clone();
-            // the terms of the chosen voice's licence, under its warning mark
+            // the terms of the chosen voice's licence, under its (i) mark
             if let Reader::Pack(id) = &reader {
                 if let Some(terms) = voices::voice_pack(id).and_then(|p| p.terms()) {
                     if self.talk.terms_open && show_terms(ui, &terms) {
@@ -2764,8 +2767,8 @@ fn reader_label(reader: &Reader) -> String {
     }
 }
 
-/// The warning mark of a voice whose licence limits commercial use: a button, pressed while its terms are shown.
-fn warning_mark(ui: &mut egui::Ui, open: bool) -> egui::Response {
+/// The mark of a voice whose licence limits commercial use: a quiet (i) button, pressed while its terms are shown.
+fn licence_mark(ui: &mut egui::Ui, open: bool) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::click());
     if ui.is_rect_visible(rect) {
         let p = theme::palette();
@@ -2778,7 +2781,12 @@ fn warning_mark(ui: &mut egui::Ui, open: bool) -> egui::Response {
         };
         ui.painter().rect_filled(rect, 5.0, fill);
         let square = egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0));
-        icons::paint(ui.painter(), square, Icon::Warn, p.warn);
+        let colour = if open || response.hovered() {
+            p.text
+        } else {
+            p.muted
+        };
+        icons::paint(ui.painter(), square, Icon::Info, colour);
     }
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
@@ -2789,15 +2797,15 @@ fn show_terms(ui: &mut egui::Ui, terms: &voices::Terms) -> bool {
     let p = theme::palette();
     let mut close = false;
     egui::Frame::new()
-        .fill(p.raised)
-        .stroke(egui::Stroke::new(1.0, p.warn))
+        .fill(p.card)
+        .stroke(egui::Stroke::new(1.0, p.line))
         .corner_radius(egui::CornerRadius::same(8))
         .inner_margin(egui::Margin::same(12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-                icons::paint(ui.painter(), r, Icon::Warn, p.warn);
+                icons::paint(ui.painter(), r, Icon::Info, p.muted);
                 ui.label(egui::RichText::new(terms.title).family(theme::semibold(ui)).color(p.text));
             });
             ui.add_space(4.0);
