@@ -1212,14 +1212,13 @@ mod tests {
         let amir = voice_pack("persian-amir").unwrap();
         let spec = amir.spec();
         assert_eq!(spec.kind, ModelKind::Vits);
-        assert!(
-            spec.files["model"].ends_with("vits-piper-fa_IR-amir-medium/fa_IR-amir-medium.onnx")
-        );
-        assert!(spec.files["data_dir"].ends_with("espeak-ng-data"));
+        assert!(Path::new(&spec.files["model"])
+            .ends_with("vits-piper-fa_IR-amir-medium/fa_IR-amir-medium.onnx"));
+        assert!(Path::new(&spec.files["data_dir"]).ends_with("espeak-ng-data"));
         assert_eq!(amir.speaker("Amir"), Some(0));
         let nabra = voice_pack("arabic-nabra").unwrap().spec();
         assert_eq!(nabra.kind, ModelKind::Kokoro);
-        assert!(nabra.files["voices"].ends_with("nabra-82m-arabic-int8/voices.bin"));
+        assert!(Path::new(&nabra.files["voices"]).ends_with("nabra-82m-arabic-int8/voices.bin"));
         for pack in &VOICE_PACKS {
             let downloads = pack.downloads();
             assert!(
@@ -1266,7 +1265,7 @@ mod tests {
         let tamil = voice_pack("tamil-mms").unwrap().spec();
         assert_eq!(tamil.kind, ModelKind::Vits);
         assert!(!tamil.files.contains_key("data_dir"));
-        assert!(tamil.files["model"].ends_with("mms-tts-tam/model.onnx"));
+        assert!(Path::new(&tamil.files["model"]).ends_with("mms-tts-tam/model.onnx"));
         // a voice of Piper's form reads with the shared espeak-ng data
         let telugu = voice_pack("telugu-maya").unwrap().spec();
         assert_eq!(telugu.files["data_dir"], espeak_dir().to_string_lossy());
@@ -1386,12 +1385,12 @@ mod tests {
         assert!(k.to_json().contains("\"voices\""), "{}", k.to_json());
         let p = describe_folder(&piper).unwrap();
         assert_eq!(p.kind, ModelKind::Vits);
-        assert!(p.files["model"].ends_with("en_US-amy-low.onnx"));
+        assert!(Path::new(&p.files["model"]).ends_with("en_US-amy-low.onnx"));
         assert!(p.files.contains_key("data_dir"));
         let m = describe_folder(&matcha).unwrap();
         assert_eq!(m.kind, ModelKind::Matcha);
-        assert!(m.files["vocoder"].ends_with("vocos-22khz-univ.onnx"));
-        assert!(m.files["acoustic_model"].ends_with("model-steps-3.onnx"));
+        assert!(Path::new(&m.files["vocoder"]).ends_with("vocos-22khz-univ.onnx"));
+        assert!(Path::new(&m.files["acoustic_model"]).ends_with("model-steps-3.onnx"));
         assert!(describe_folder(&empty).is_err());
         let _ = std::fs::remove_dir_all(&root);
     }
