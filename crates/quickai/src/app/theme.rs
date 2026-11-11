@@ -229,7 +229,8 @@ pub(super) fn semibold(ui: &egui::Ui) -> egui::FontFamily {
 }
 
 /// IBM Plex Sans for the words and Plex Mono for the log, embedded; egui's own fonts stay behind them, for the signs
-/// and symbols Plex does not have (★, the emoji of a model's name).
+/// and symbols Plex does not have (★, the emoji of a model's name), and this computer's fonts for the other scripts
+/// behind those (Malayalam, Arabic, Chinese…).
 fn fonts() -> egui::FontDefinitions {
     use egui::FontFamily::{Monospace, Name, Proportional};
     let mut fonts = egui::FontDefinitions::default();
@@ -270,7 +271,52 @@ fn fonts() -> egui::FontDefinitions {
         .entry(Monospace)
         .or_default()
         .insert(0, "plex-mono".to_string());
+    // behind all of them, this computer's fonts for the other scripts, once they are found
+    for face in SYSTEM_FONTS.get().into_iter().flatten() {
+        fonts.font_data.insert(
+            face.key.clone(),
+            Arc::new(egui::FontData {
+                font: std::borrow::Cow::Borrowed(face.data),
+                index: face.index,
+                tweak: Default::default(),
+            }),
+        );
+        for family in [Proportional, Monospace, Name(SEMIBOLD.into())] {
+            fonts
+                .families
+                .entry(family)
+                .or_default()
+                .push(face.key.clone());
+        }
+    }
     fonts
+}
+
+/// This computer's fonts for the scripts Plex and egui's fonts lack (app/system_fonts.rs), found once.
+static SYSTEM_FONTS: std::sync::OnceLock<Vec<super::system_fonts::Face>> =
+    std::sync::OnceLock::new();
+
+/// Finds this computer's fonts for the other scripts on a thread of its own, once, and gives them to the window when
+/// they are found: the window opens without waiting, and the text of every script is drawn a moment later. Not in
+/// the tests, whose pictures are drawn with the embedded fonts alone.
+fn find_system_fonts(ctx: &egui::Context) {
+    if cfg!(test) {
+        return;
+    }
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        let ctx = ctx.clone();
+        let _ = std::thread::Builder::new()
+            .name("fonts".into())
+            .spawn(move || {
+                let faces = super::system_fonts::find_here();
+                if faces.is_empty() || SYSTEM_FONTS.set(faces).is_err() {
+                    return;
+                }
+                ctx.set_fonts(fonts());
+                ctx.request_repaint();
+            });
+    });
 }
 
 /// Makes `dark` or the light theme the one the window is drawn in: the colours, the type, the sizes of the
@@ -278,6 +324,7 @@ fn fonts() -> egui::FontDefinitions {
 pub(super) fn apply(ctx: &egui::Context, dark: bool) {
     DARK.store(dark, Ordering::Relaxed);
     ctx.set_fonts(fonts());
+    find_system_fonts(ctx);
     ctx.set_visuals_of(egui::Theme::Dark, visuals(true));
     ctx.set_visuals_of(egui::Theme::Light, visuals(false));
     ctx.all_styles_mut(shape);

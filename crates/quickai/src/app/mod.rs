@@ -74,6 +74,7 @@ mod settings_window;
 mod shell;
 mod sidebar;
 mod stall;
+mod system_fonts;
 mod theme;
 mod tools;
 // talking to QuickAI: the microphone, reading aloud and hands-free (C216)
