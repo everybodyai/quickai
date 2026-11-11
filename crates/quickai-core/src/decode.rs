@@ -177,6 +177,30 @@ impl ApiDecoder {
         }
     }
 
+    /// How the conversation of a chat request began: its messages up to and with the first that is not of a role the
+    /// summary skips (the instructions, then the person's first words), as text. Every request of one conversation
+    /// carries the conversation so far, so they all begin alike whatever connection they come on, and the Live tab keeps
+    /// them together by it. `None` for a request that is not a chat: a plain prompt has no conversation to follow.
+    pub fn opening(&self, body: Option<&Value>) -> Option<String> {
+        let chat = self.chat.as_ref()?;
+        let Some(Value::Array(messages)) = body?.pointer(&chat.messages) else {
+            return None;
+        };
+        let mut said = Vec::new();
+        for message in messages {
+            let role = message
+                .pointer(&chat.role)
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let text = summarize_message(chat, message).text.unwrap_or_default();
+            said.push(format!("{role}: {text}"));
+            if !chat.skip_roles.iter().any(|s| s == role) {
+                return Some(said.join("\n"));
+            }
+        }
+        None
+    }
+
     /// The new text of one event of a stream (possibly empty).
     pub fn delta(&self, event: &Value) -> Option<String> {
         first_text(event, &self.delta)
@@ -388,6 +412,37 @@ mod tests {
         assert_eq!(ollama.reading("text/event-stream"), Reading::Whole);
         let streams_only = decoder(None, None, &[Framing::Sse]);
         assert_eq!(streams_only.reading("application/json"), Reading::Skip);
+    }
+
+    #[test]
+    fn every_turn_of_a_conversation_begins_alike_and_another_conversation_does_not() {
+        let d = decoder(Some(chat(true, false)), Some("/prompt"), &[Framing::Json]);
+        let first = json!({"messages": [
+            {"role": "system", "content": "Be brief."},
+            {"role": "user", "content": "How do I make chicken curry?"},
+        ]});
+        let third = json!({"messages": [
+            {"role": "system", "content": "Be brief."},
+            {"role": "user", "content": "How do I make chicken curry?"},
+            {"role": "assistant", "content": "Onions first."},
+            {"role": "user", "content": [{"type": "text", "text": "And then?"}]},
+        ]});
+        let opening = d.opening(Some(&first));
+        assert_eq!(
+            opening.as_deref(),
+            Some("system: Be brief.\nuser: How do I make chicken curry?")
+        );
+        assert_eq!(d.opening(Some(&third)), opening);
+        let other = json!({"messages": [{"role": "user", "content": "Hello"}]});
+        assert_ne!(d.opening(Some(&other)), opening);
+        // not a chat: a prompt alone, an empty list, no body
+        assert_eq!(d.opening(Some(&json!({"prompt": "hi"}))), None);
+        assert_eq!(d.opening(Some(&json!({"messages": []}))), None);
+        assert_eq!(d.opening(None), None);
+        assert_eq!(
+            decoder(None, Some("/prompt"), &[]).opening(Some(&first)),
+            None
+        );
     }
 
     #[test]

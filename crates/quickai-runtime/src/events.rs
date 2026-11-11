@@ -38,13 +38,14 @@ pub enum Event {
 /// window. `id` correlates a request with its (possibly streamed) response.
 #[derive(Clone, Debug)]
 pub enum TrafficEvent {
-    /// `session` identifies which client this came from — the client's
-    /// `ip:port`, which is stable for one TCP connection (so several
-    /// requests over one keep-alive connection share a session) and
-    /// distinct across simultaneous clients (a browser tab vs. an external
-    /// API caller, say). It's a heuristic, not a true higher-level "chat
-    /// session": a client that reconnects (e.g. after an idle timeout)
-    /// shows up as a new one.
+    /// `session` says which conversation this is part of: for a chat, the
+    /// client's address (not its port) and how the conversation began (the
+    /// instructions and the person's first words, which every turn of it
+    /// carries), so its turns are one session whatever connection each
+    /// comes on (QuickAI's own chat opens one a turn; a browser may use
+    /// several); for anything else, its connection (`ip:port`). Two
+    /// conversations that began with the same words from one computer are
+    /// one session.
     Request {
         id: u64,
         session: String,

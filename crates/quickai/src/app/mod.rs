@@ -184,7 +184,7 @@ pub struct App {
     active_tab: Tab,
     traffic: VecDeque<TrafficTurn>,
     /// `None` shows every session at once; `Some(session_key)` filters the
-    /// Live traffic tab down to just that client — see `TrafficTurn::session`.
+    /// Live traffic tab down to just that conversation — see `TrafficTurn::session`.
     selected_session: Option<String>,
     /// GPU vendor(s) this machine looks like it has — see `gpu::detect`.
     /// Best-effort and computed once; only used to warn about a vendor-
@@ -335,7 +335,7 @@ enum Tab {
 /// in as it streams; `done`/`error` mark when there's nothing more coming.
 struct TrafficTurn {
     id: u64,
-    /// Which client this came from — see `TrafficEvent::Request`'s doc.
+    /// Which conversation this is part of — see `TrafficEvent::Request`'s doc.
     session: String,
     method: String,
     path: String,

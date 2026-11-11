@@ -18,7 +18,10 @@
 //! vocabulary's (`decode` blocks of the API definitions, read by `quickai_core::decode`), handed in
 //! with the run plan. A path no decoder claims is relayed and not shown.
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::io::{self, Read};
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -102,6 +105,23 @@ where
     Ok(ProxyHandle { server })
 }
 
+/// Which conversation of the Live tab a request belongs to. A chat by the address it came from and how its conversation
+/// began, not by its connection: a client may open a connection for each request (QuickAI's own chat does, and its
+/// talk mode asks once a turn), and a browser may use several at once. Anything else, by its connection.
+fn session_of(remote: Option<SocketAddr>, opening: Option<&str>) -> String {
+    let Some(addr) = remote else {
+        return "unknown".to_string();
+    };
+    match opening {
+        Some(opening) => {
+            let mut hasher = DefaultHasher::new();
+            opening.hash(&mut hasher);
+            format!("{} {:016x}", addr.ip(), hasher.finish())
+        }
+        None => addr.to_string(),
+    }
+}
+
 fn handle_request<F>(
     mut req: tiny_http::Request,
     upstream_port: u16,
@@ -114,10 +134,7 @@ fn handle_request<F>(
 {
     let method = req.method().as_str().to_string();
     let path = req.url().to_string();
-    let session = req
-        .remote_addr()
-        .map(|a| a.to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+    let remote = req.remote_addr().copied();
     let decoder = decoders.iter().find(|d| d.matches(&path));
 
     let mut body = Vec::new();
@@ -129,12 +146,16 @@ fn handle_request<F>(
     // A request is shown only when its API is one the vocabulary says how to read and it is a
     // conversation: a load or an unload goes through the same path and says no prompt.
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let parsed: Option<Value> = decoder.and_then(|_| serde_json::from_slice(&body).ok());
     let sniff = decoder.and_then(|decoder| {
-        let parsed: Option<Value> = serde_json::from_slice(&body).ok();
         decoder
             .request(parsed.as_ref())
             .map(|summary| (decoder, summary))
     });
+    let session = session_of(
+        remote,
+        decoder.and_then(|d| d.opening(parsed.as_ref())).as_deref(),
+    );
     if let Some((_, summary)) = &sniff {
         send_traffic(
             &evt_tx,
@@ -549,6 +570,29 @@ fn describe_attachment(attachment: &Attachment) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_turns_of_one_conversation_are_one_session_whatever_connection_they_come_on() {
+        let one: SocketAddr = "127.0.0.1:50001".parse().unwrap();
+        let two: SocketAddr = "127.0.0.1:50002".parse().unwrap();
+        let elsewhere: SocketAddr = "192.168.1.9:50001".parse().unwrap();
+        let curry = Some("user: How do I make chicken curry?");
+        // the same conversation on two connections, as QuickAI's talk mode asks once a turn
+        assert_eq!(session_of(Some(one), curry), session_of(Some(two), curry));
+        // another conversation, or the same words from another computer
+        assert_ne!(
+            session_of(Some(one), curry),
+            session_of(Some(two), Some("user: Hello"))
+        );
+        assert_ne!(
+            session_of(Some(one), curry),
+            session_of(Some(elsewhere), curry)
+        );
+        // a request that is not a chat is its connection's, as before
+        assert_eq!(session_of(Some(one), None), "127.0.0.1:50001");
+        assert_ne!(session_of(Some(one), None), session_of(Some(two), None));
+        assert_eq!(session_of(None, curry), "unknown");
+    }
     use crate::testkit::decoders;
 
     /// The decoder the embedded vocabulary has for `path`, as the proxy picks it.

@@ -142,6 +142,46 @@ fn p3_d01_an_openai_chat_through_the_proxy_is_read_as_it_always_was() {
 }
 
 #[test]
+fn p3_d01b_the_turns_of_one_conversation_are_one_session_whatever_connection_they_come_on() {
+    let rig = Rig::new();
+    let session_of = |events: &[TrafficEvent]| {
+        events
+            .iter()
+            .find_map(|e| match e {
+                TrafficEvent::Request { session, .. } => Some(session.clone()),
+                _ => None,
+            })
+            .expect("a Request event")
+    };
+    // QuickAI's chat asks once a turn, each time on a connection of its own (a new agent, as `post_json` is), with what
+    // was said so far; its talk mode does the same a spoken turn at a time
+    let curry = "How do I make chicken curry?";
+    let first = json!({"model": "m", "messages": [{"role": "user", "content": curry}]});
+    let second = json!({"model": "m", "messages": [
+        {"role": "user", "content": curry},
+        {"role": "assistant", "content": REPLY},
+        {"role": "user", "content": "And then?"},
+    ]});
+    let other = json!({"model": "m", "messages": [{"role": "user", "content": "Hello"}]});
+    let mut sessions = Vec::new();
+    for body in [&first, &second, &other] {
+        assert_eq!(
+            post_json(&rig.url("/v1/chat/completions"), body).status,
+            200
+        );
+        sessions.push(session_of(&rig.events()));
+    }
+    assert_eq!(
+        sessions[0], sessions[1],
+        "two turns of one conversation were two sessions"
+    );
+    assert_ne!(
+        sessions[0], sessions[2],
+        "another conversation joined the first"
+    );
+}
+
+#[test]
 fn p3_d02_ollamas_native_chat_is_read_like_an_openai_chat() {
     let rig = Rig::new();
     let reply = post_json(

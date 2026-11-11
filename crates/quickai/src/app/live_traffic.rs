@@ -19,7 +19,7 @@ const ROW_HEIGHT: f32 = 46.0;
 const PREVIEW_CHARS: usize = 120;
 
 impl App {
-    /// Every distinct client (see `TrafficTurn::session`) that has shown up
+    /// Every distinct conversation (see `TrafficTurn::session`) that has shown up
     /// in the Live traffic Traffic feed so far, in first-seen order.
     fn session_keys(&self) -> Vec<String> {
         let mut keys: Vec<String> = Vec::new();
