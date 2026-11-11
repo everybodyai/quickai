@@ -16,7 +16,7 @@ pub fn for_speech(raw: &str) -> String {
 /// `raw` as it should be heard, in one line; `symbols` keeps the symbols too (`#`, `/`, arrows, emoji…), which a voice
 /// reads by their names.
 pub fn for_speech_with(raw: &str, symbols: bool) -> String {
-    cleaned(raw, symbols).replace(PAUSE, "")
+    voiced(&cleaned(raw).replace(PAUSE, ""), symbols)
 }
 
 /// A pause of a dash: the sentence is read in two pieces there (`dashes_as_pauses`), for the voice takes a breath
@@ -24,11 +24,8 @@ pub fn for_speech_with(raw: &str, symbols: bool) -> String {
 const PAUSE: char = '\u{E000}';
 
 /// `raw` cleaned, with the pauses of its dashes marked.
-fn cleaned(raw: &str, symbols: bool) -> String {
-    let mut state = LineState {
-        symbols,
-        ..LineState::default()
-    };
+fn cleaned(raw: &str) -> String {
+    let mut state = LineState::default();
     let lines: Vec<String> = raw
         .lines()
         .filter_map(|line| clean_line(line, &mut state))
@@ -36,14 +33,10 @@ fn cleaned(raw: &str, symbols: bool) -> String {
     cut(&collapse(&lines.join(" ")))
 }
 
-/// `raw` as it should be heard, in sentences, without the symbols a voice would name.
+/// `raw` in the sentences it is read in, as it is written (the chat lights them in the answer): `voiced` makes each
+/// what the voice is given.
 pub fn sentences(raw: &str) -> Vec<String> {
-    sentences_with(raw, false)
-}
-
-/// `raw` as it should be heard, in sentences; `symbols` keeps the symbols too.
-pub fn sentences_with(raw: &str, symbols: bool) -> Vec<String> {
-    let cleaned = cleaned(raw, symbols);
+    let cleaned = cleaned(raw);
     let (mut done, rest) = split_sentences(&cleaned);
     // the last one has no space after its mark: it is a sentence all the same, cut when it is long
     done.extend(cut_long(rest.trim()));
@@ -53,11 +46,10 @@ pub fn sentences_with(raw: &str, symbols: bool) -> Vec<String> {
         .collect()
 }
 
-/// What is carried from one line to the next: whether it is inside a block of code, and whether symbols are read.
+/// What is carried from one line to the next: whether it is inside a block of code.
 #[derive(Clone, Debug, Default)]
 pub struct LineState {
     in_code: bool,
-    symbols: bool,
 }
 
 /// One whole line of Markdown as it should be heard, or nothing (a rule, a fence's inside, an empty line).
@@ -82,10 +74,6 @@ fn clean_line(line: &str, state: &mut LineState) -> Option<String> {
             .filter(|cell| !cell.is_empty())
             .collect::<Vec<_>>()
             .join(", ");
-    }
-    // the symbols left once a table's cells are its words (a `|` between them is a comma)
-    if !state.symbols {
-        spoken = without_symbols(&spoken);
     }
     let spoken = collapse(&spoken);
     if spoken.is_empty() {
@@ -139,6 +127,193 @@ pub fn dashes_as_pauses(text: &str) -> String {
         i += 1;
     }
     out
+}
+
+/// A sentence as the voice is given it: short forms said in words ("e.g." is "for example"), an acronym spelled
+/// ("APIs" is "eigh P I's", for a voice reads "API" as a word and drops the plural of "GPUs"), and the symbols left out
+/// unless they are read (`symbols`).
+pub fn voiced(sentence: &str, symbols: bool) -> String {
+    let words: Vec<&str> = sentence.split_whitespace().collect();
+    let mut out: Vec<String> = Vec::with_capacity(words.len());
+    for (k, word) in words.iter().enumerate() {
+        let last = k + 1 == words.len();
+        let next_is_digit = words
+            .get(k + 1)
+            .is_some_and(|n| n.starts_with(|c: char| c.is_ascii_digit()));
+        // the number a unit follows: "1.1 GB" is "1.1 gigabytes", "1 GB" "1 gigabyte"
+        let after = k.checked_sub(1).map(|p| words[p]).filter(|p| {
+            !p.is_empty()
+                && p.chars()
+                    .all(|c| c.is_ascii_digit() || c == '.' || c == ',')
+        });
+        if let Some(unit) = after.and_then(|number| unit_word(word, number == "1")) {
+            out.push(unit);
+            continue;
+        }
+        out.push(say_word(word, last, next_is_digit));
+    }
+    let said = out.join(" ");
+    if symbols {
+        said
+    } else {
+        without_symbols(&said)
+    }
+}
+
+/// Units after a number, and the words they are said as (in the plural).
+const UNITS: &[(&str, &str)] = &[
+    ("KB", "kilobytes"),
+    ("MB", "megabytes"),
+    ("GB", "gigabytes"),
+    ("TB", "terabytes"),
+    ("KiB", "kibibytes"),
+    ("MiB", "mebibytes"),
+    ("GiB", "gibibytes"),
+    ("TiB", "tebibytes"),
+    ("Hz", "hertz"),
+    ("kHz", "kilohertz"),
+    ("MHz", "megahertz"),
+    ("GHz", "gigahertz"),
+    ("ms", "milliseconds"),
+    ("fps", "frames per second"),
+];
+
+/// `word` as a unit after a number, in words (`one`: after 1, in the singular), with what follows it kept.
+fn unit_word(word: &str, one: bool) -> Option<String> {
+    let core = word.trim_end_matches([',', ';', ':', '!', '?', ')', '.']);
+    let tail = &word[core.len()..];
+    let (_, said) = UNITS.iter().find(|(unit, _)| *unit == core)?;
+    let said = if one && !said.contains(' ') && said.ends_with('s') && *said != "hertz" {
+        &said[..said.len() - 1]
+    } else {
+        said
+    };
+    Some(format!("{said}{tail}"))
+}
+
+/// Short forms and the words they are said as, matched without regard to case (with their dots, when they have some).
+const SHORT_FORMS: &[(&str, &str)] = &[
+    ("e.g.", "for example"),
+    ("i.e.", "that is"),
+    ("etc.", "et cetera"),
+    ("etc", "et cetera"),
+    ("vs.", "versus"),
+    ("vs", "versus"),
+    ("approx.", "approximately"),
+    ("approx", "approximately"),
+    ("incl.", "including"),
+    ("excl.", "excluding"),
+    ("a.k.a.", "also known as"),
+    ("aka", "also known as"),
+    ("w/o", "without"),
+    ("w/", "with"),
+    ("btw", "by the way"),
+    ("fyi", "for your information"),
+    ("imo", "in my opinion"),
+    ("imho", "in my humble opinion"),
+    ("tbd", "to be decided"),
+    ("asap", "as soon as possible"),
+    ("pls", "please"),
+    ("thx", "thanks"),
+    ("mr.", "mister"),
+    ("mrs.", "missus"),
+    ("dr.", "doctor"),
+];
+
+/// Words in capitals that are said as words, not spelled: acronyms read as words, and words written in capitals.
+const SAID_AS_WORDS: &[&str] = &[
+    "NASA", "NATO", "JSON", "YAML", "TOML", "RAM", "ROM", "GIF", "JPEG", "ASCII", "CUDA", "UNIX",
+    "LINUX", "WASM", "SCUBA", "LASER", "RADAR", "LIDAR", "SONAR", "AIDS", "COVID", "FIFA",
+    "UNICEF", "UNESCO", "OPEC", "CAPTCHA", "SIM", "PIN", "LAN", "WAN", "CRUD", "REST", "SOAP",
+    "AJAX", "BIOS", "GNU", "GNOME", "MIDI", "NAND", "DOS", "IKEA", "NOT", "NO", "YES", "ALL",
+    "AND", "THE", "FOR", "NEW", "NOW", "YOU", "ARE", "BUT", "CAN", "NEVER", "ALWAYS", "ONLY",
+    "VERY", "MUST", "STOP", "NOTE", "DO", "DONT", "FREE", "HELP", "ONE", "TWO", "TOP", "BIG",
+    "BEST", "WILL", "NEED", "NEXT", "LAST", "FIRST", "MORE", "LESS", "KEY", "HOT", "OFF", "ON",
+    "OR", "IF", "IS", "IT", "IN", "TO", "OF", "AT", "BY", "UP", "SO", "GO", "BE", "MY", "ME", "WE",
+    "HE", "SHE", "HIS", "HER", "OUR", "OUT", "DONE", "TRUE", "FALSE", "NULL", "NONE", "GOOD",
+    "BAD", "FAST", "SLOW", "START", "END", "OPEN", "CLOSE", "READ", "WRITE", "SAVE", "EXIT",
+    "QUIT", "HOME", "WAIT", "WARN", "INFO", "DEBUG", "ERROR", "TODO", "FIXME", "HELLO", "THANK",
+    "THANKS", "PLEASE", "WOW", "NEWS", "SALE", "YET", "AGAIN", "WHAT", "WHY", "HOW", "WHO", "WHEN",
+    "WHERE",
+];
+
+/// One word as it is said: a short form in words, an acronym spelled, else itself.
+fn say_word(word: &str, last: bool, next_is_digit: bool) -> String {
+    const OPENING: &[char] = &['(', '[', '{', '"', '\'', '\u{201C}', '\u{2018}'];
+    const CLOSING: &[char] = &[
+        ',', ';', ':', '!', '?', ')', ']', '}', '"', '\'', '\u{201D}', '\u{2019}', '.',
+    ];
+    let start = word.len() - word.trim_start_matches(OPENING).len();
+    let (lead, body) = word.split_at(start);
+    let lower = body.to_lowercase();
+    // "No." before a number is "number"
+    if next_is_digit && (lower == "no." || lower == "no") && body.starts_with('N') {
+        return format!("{lead}number");
+    }
+    for (short, said) in SHORT_FORMS {
+        let Some(rest) = lower.strip_prefix(short) else {
+            continue;
+        };
+        if !rest.chars().all(|c| CLOSING.contains(&c)) {
+            continue;
+        }
+        let rest = &body[body.len() - rest.len()..];
+        let mut said = said.to_string();
+        if body.starts_with(char::is_uppercase) {
+            said = capitalised(&said);
+        }
+        // the dot of a short form that ends the sentence ends it still
+        let stop = if last && short.ends_with('.') && rest.is_empty() {
+            "."
+        } else {
+            ""
+        };
+        return format!("{lead}{said}{rest}{stop}");
+    }
+    let core = body.trim_end_matches(CLOSING);
+    let tail = &body[core.len()..];
+    let (letters, plural) = if let Some(l) = core
+        .strip_suffix("'s")
+        .or_else(|| core.strip_suffix("\u{2019}s"))
+    {
+        (l, true)
+    } else if let Some(l) = core.strip_suffix('s') {
+        (l, true)
+    } else {
+        (core, false)
+    };
+    let acronym = (2..=6).contains(&letters.len())
+        && letters.chars().all(|c| c.is_ascii_uppercase())
+        && !SAID_AS_WORDS.contains(&letters)
+        && !(plural && SAID_AS_WORDS.contains(&core));
+    if !acronym {
+        return word.to_string();
+    }
+    // each letter by its name: "A" alone is read as the word "a", "eigh" as the letter
+    let mut spelled: Vec<String> = letters
+        .chars()
+        .map(|c| {
+            if c == 'A' {
+                "eigh".to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect();
+    if plural {
+        if let Some(last) = spelled.last_mut() {
+            last.push_str("'s");
+        }
+    }
+    format!("{lead}{}{tail}", spelled.join(" "))
+}
+
+fn capitalised(words: &str) -> String {
+    let mut chars = words.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
 }
 
 /// `text` without the symbols a voice reads by their names ("hash", "slash", "rightwards arrow", "grinning face"), each
@@ -287,25 +462,9 @@ pub struct SentenceFeed {
 }
 
 impl SentenceFeed {
-    /// Words of a line that was begun already: its inline marks left out, and its symbols unless they are read.
+    /// Words of a line that was begun already: its inline marks left out, its dashes made pauses.
     fn speakable(&self, text: &str) -> String {
-        let words = collapse(&dashes_as_pauses(&inline(text)));
-        if self.state.symbols {
-            words
-        } else {
-            without_symbols(&words)
-        }
-    }
-
-    /// A feed that reads the symbols too (`symbols`), or leaves them out.
-    pub fn new(symbols: bool) -> SentenceFeed {
-        SentenceFeed {
-            state: LineState {
-                symbols,
-                ..LineState::default()
-            },
-            ..SentenceFeed::default()
-        }
+        collapse(&dashes_as_pauses(&inline(text)))
     }
 
     pub fn push(&mut self, piece: &str) -> Vec<String> {
@@ -548,6 +707,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn short_forms_are_said_in_words_and_acronyms_spelled() {
+        assert_eq!(
+            voiced("Use APIs, e.g. GPUs and LLMs etc.", false),
+            "Use eigh P I's, for example G P U's and L L M's et cetera."
+        );
+        assert_eq!(
+            voiced("The API's key, i.e. the ID.", false),
+            "The eigh P I's key, that is the I D."
+        );
+        assert_eq!(
+            voiced("E.g. this vs. that w/o help", false),
+            "For example this versus that without help"
+        );
+        assert_eq!(
+            voiced("Read the JSON from NASA, NOT the CSV.", false),
+            "Read the JSON from NASA, NOT the C S V."
+        );
+        assert_eq!(
+            voiced("See No. 5 and (URLs).", false),
+            "See number 5 and (U R L's)."
+        );
+        assert_eq!(voiced("I am OK, an AI.", false), "I am O K, an eigh I.");
+        // a word with digits or lower case letters is left to the voice
+        assert_eq!(
+            voiced("GPT-4 on an H100 with Rust", false),
+            "GPT-4 on an H100 with Rust"
+        );
+        assert_eq!(
+            voiced("It is 1.1 GB, 1 GB at 3.2 GHz in 40 ms.", false),
+            "It is 1.1 gigabytes, 1 gigabyte at 3.2 gigahertz in 40 milliseconds."
+        );
+    }
+
+    #[test]
     fn a_dash_between_words_is_a_pause() {
         assert_eq!(
             for_speech("I'm active - no glitches"),
@@ -564,7 +757,7 @@ mod tests {
             "A well-known 1-2 step, x -1"
         );
         assert_eq!(for_speech_with("on - off", true), "on, off");
-        let mut feed = SentenceFeed::new(false);
+        let mut feed = SentenceFeed::default();
         let mut heard = feed.push("Ready - set. Go");
         heard.extend(feed.finish());
         assert_eq!(heard, ["Ready,", "set.", "Go"]);
@@ -584,10 +777,11 @@ mod tests {
         // the marks of other scripts are not symbols
         assert_eq!(for_speech("മലയാളം हिन्दी 中文。"), "മലയാളം हिन्दी 中文。");
         assert_eq!(for_speech_with("A → B #2", true), "A → B #2");
-        let mut feed = SentenceFeed::new(false);
+        let mut feed = SentenceFeed::default();
         let mut heard = feed.push("Arrows → go here. ");
         heard.extend(feed.finish());
-        assert_eq!(heard, ["Arrows go here."]);
+        assert_eq!(heard, ["Arrows → go here."]);
+        assert_eq!(voiced(&heard[0], false), "Arrows go here.");
     }
 
     #[test]
@@ -611,7 +805,7 @@ mod tests {
         );
         assert_eq!(
             for_speech("| Name | Size |\n|---|---:|\n| Bonsai | 1.1 GB |"),
-            "Name, Size. Bonsai, 1.1 GB."
+            "Name, Size. Bonsai, 1.1 gigabytes."
         );
     }
 

@@ -667,7 +667,7 @@ impl App {
         let Some(text) = self.chat.turns.get(turn).map(|t| t.text.clone()) else {
             return;
         };
-        let sentences = spoken::sentences_with(&text, self.talk.settings.read_symbols);
+        let sentences = spoken::sentences(&text);
         if sentences.is_empty() {
             return;
         }
@@ -694,8 +694,14 @@ impl App {
         self.talk.next += 1;
         let utterance = self.talk.next;
         let more = feed.is_some();
-        self.speaker(ctx)
-            .say(utterance, sentences.clone(), more, voice, speed);
+        // the voice is given each sentence as it is said (short forms in words, acronyms spelled, symbols left out); the
+        // reading keeps them as written, for the chat to light
+        let symbols = self.talk.settings.read_symbols;
+        let voiced = sentences
+            .iter()
+            .map(|s| spoken::voiced(s, symbols))
+            .collect();
+        self.speaker(ctx).say(utterance, voiced, more, voice, speed);
         self.talk.reading = Some(Reading {
             utterance,
             turn,
@@ -752,7 +758,7 @@ impl App {
                 self.begin_reading(
                     turn,
                     Vec::new(),
-                    Some((SentenceFeed::new(self.talk.settings.read_symbols), 0)),
+                    Some((SentenceFeed::default(), 0)),
                     hands_free,
                     ctx,
                 );
@@ -781,8 +787,12 @@ impl App {
         }
         let (utterance, ends) = (r.utterance, done);
         r.sentences.extend(fresh.iter().cloned());
+        let symbols = self.talk.settings.read_symbols;
         if let Some(s) = &self.talk.speaker {
-            s.more(utterance, fresh);
+            s.more(
+                utterance,
+                fresh.iter().map(|f| spoken::voiced(f, symbols)).collect(),
+            );
             if ends {
                 s.no_more(utterance);
             }
