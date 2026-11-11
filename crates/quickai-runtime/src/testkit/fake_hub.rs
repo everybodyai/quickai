@@ -3,7 +3,8 @@
 //! repositories of its own whose files it really serves, and keeps what it was asked.
 //!
 //! - `/api/models?...&search=words&pipeline_tag=p`: the recorded list of the most downloaded, narrowed
-//!   to the repositories whose id has every word and whose pipeline is `p`, in the order it has;
+//!   to the repositories whose id has every word and whose pipeline is `p`, in the order it has; with
+//!   `filter=base_model:quantized:<id>` (after `filter=gguf`), only those whose tags have that tag;
 //! - `/api/models/<owner>/<name>?blobs=true`: the recorded answer for the six repositories that were
 //!   recorded; for a repository only the list has, one file of a size of its own; for one the fake was
 //!   given (`add_repo`), what it was given;
@@ -177,6 +178,11 @@ impl FakeHub {
                     })
                     .unwrap_or_default();
                 let pipeline = query.get("pipeline_tag").cloned();
+                // the last `filter` is the one kept: a tag the repositories must have, besides `gguf`
+                let tag = query
+                    .get("filter")
+                    .filter(|f| f.starts_with("base_model:"))
+                    .cloned();
                 if pipeline
                     .as_ref()
                     .is_some_and(|p| data.broken_pipelines.contains(p))
@@ -205,6 +211,13 @@ impl FakeHub {
                         pipeline
                             .as_deref()
                             .is_none_or(|p| hit["pipeline_tag"].as_str() == Some(p))
+                    })
+                    .filter(|hit| {
+                        tag.as_deref().is_none_or(|t| {
+                            hit["tags"]
+                                .as_array()
+                                .is_some_and(|tags| tags.iter().any(|x| x.as_str() == Some(t)))
+                        })
                     })
                     .take(50)
                     .collect();

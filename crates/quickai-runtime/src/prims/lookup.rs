@@ -30,6 +30,9 @@ pub(super) const USER_AGENT: &str = concat!("quickai/", env!("CARGO_PKG_VERSION"
 /// each model, and `Done`.
 pub enum LookupEvent {
     Status(String),
+    /// Something about what was typed that the results do not say, shown above them until the next look-up: a
+    /// repository typed that QuickAI cannot run, and why. A later note takes the place of the earlier one.
+    Note(String),
     /// A model, made into what the window shows. A model with nothing to fetch is not reported.
     Found(Entry),
     /// The look-up could not be made: the status line before it says why, and an interface must
@@ -279,6 +282,7 @@ mod tests {
                 Ok(LookupEvent::Status(s)) => said.statuses.push(s),
                 Ok(LookupEvent::Found(m)) => said.models.push(m),
                 Ok(LookupEvent::Failed) => said.failed = true,
+                Ok(LookupEvent::Note(_)) => {}
                 Ok(LookupEvent::Done) => {
                     said.done = true;
                     break;

@@ -16,8 +16,8 @@ use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender};
 use quickai_core::lookup::huggingface::{
-    candidate, parse_repo, parse_search, repo_url, search_url, search_url_in, search_words,
-    similar_terms, Hit,
+    candidate, parse_repo, parse_search, quantized_of_url, repo_url, search_url, search_url_in,
+    search_words, similar_terms, typed_repo, Hit, Repo,
 };
 use quickai_core::lookup::present::{Entry, OwnedRules};
 
@@ -110,31 +110,116 @@ fn run(
         send(LookupEvent::Failed);
         send(LookupEvent::Done);
     };
-    send(LookupEvent::Status(if words.is_empty() {
-        format!("Searching {host} for GGUF models...")
-    } else {
-        format!("Searching {host} for \"{words}\"...")
+    // a repository typed (`owner/name`, or a link to its page) is looked up itself first, then the GGUF files others
+    // made of it, and then its name, without the owner, is what is searched
+    let typed = typed_repo(&words).map(str::to_string);
+    let phrase = typed
+        .as_deref()
+        .map_or(words.as_str(), |id| id.rsplit('/').next().unwrap_or(id))
+        .to_string();
+    send(LookupEvent::Status(match &typed {
+        Some(id) => format!("Looking up {id} on {host}..."),
+        None if words.is_empty() => format!("Searching {host} for GGUF models..."),
+        None => format!("Searching {host} for \"{words}\"..."),
     }));
 
-    let first = if words.is_empty() {
-        None
-    } else {
-        Some(words.as_str())
-    };
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut tally = Tally::default();
+    if let Some(id) = &typed {
+        let mut cannot: Option<Repo> = None;
+        match fetch(&repo_url(&spec.site, id), &request) {
+            Ok(body) => match parse_repo(&body) {
+                Ok(repo) if repo.gated => {
+                    seen.insert(id.clone());
+                    tally.gated += 1;
+                    send(LookupEvent::Note(format!(
+                        "{id} asks for a login on {host} before it can be downloaded, and QuickAI does not sign \
+                         in, so it is left out."
+                    )));
+                }
+                Ok(repo) => {
+                    seen.insert(id.clone());
+                    let hit = Hit {
+                        id: id.clone(),
+                        downloads: 0,
+                        likes: 0,
+                        pipeline: repo.pipeline.clone(),
+                        tags: repo.tags.clone(),
+                    };
+                    let entry: Entry = rules.present(&candidate(&spec.site, &hit, &repo));
+                    if entry.offers.is_empty() {
+                        send(LookupEvent::Note(cannot_run(id, &repo, None)));
+                        cannot = Some(repo);
+                    } else {
+                        tally.found += 1;
+                        send(LookupEvent::Found(entry));
+                    }
+                }
+                // an answer that cannot be read: its name is searched as any other words
+                Err(_) => {}
+            },
+            Err(FetchError::Status(401 | 404)) => send(LookupEvent::Note(format!(
+                "{id} is not on {host}, or it is private. These are models with similar names."
+            ))),
+            Err(FetchError::Limited) => tally.limited = true,
+            Err(e) => return fail(sentence(&e)),
+        }
+        if !tally.limited {
+            send(LookupEvent::Status(format!(
+                "Looking for GGUF versions of {id}..."
+            )));
+            let before = tally.found;
+            // a search that cannot be made loses the versions, not the look-up
+            let hits = fetch(&quantized_of_url(&spec.site, id), &request)
+                .ok()
+                .and_then(|body| parse_search(&body).ok())
+                .unwrap_or_default();
+            inspect(
+                spec,
+                &request,
+                hits,
+                spec.keyword,
+                &mut seen,
+                &mut tally,
+                rules,
+                &send,
+            );
+            if let Some(repo) = &cannot {
+                send(LookupEvent::Note(cannot_run(
+                    id,
+                    repo,
+                    Some(tally.found > before),
+                )));
+            }
+            send(LookupEvent::Status(format!(
+                "Searching {host} for \"{phrase}\"..."
+            )));
+        }
+    }
+
     // the plain list of an engine that runs one kind of model is a search for each of its pipelines and for
-    // each of its words; words typed are one search, which neither narrows
-    let searches: Vec<(Option<&str>, Option<&str>)> =
-        if words.is_empty() && !(spec.pipelines.is_empty() && spec.words.is_empty()) {
+    // each of its words; words typed are searched as they are, and once more as words apart when they are joined
+    // by dashes or underscores (`Llama-3.2-3B` also finds `3B-Llama-3.2`), which neither narrows
+    let spaced = phrase
+        .split(|c: char| !(c.is_alphanumeric() || c == '.'))
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let searches: Vec<(Option<&str>, Option<&str>)> = if words.is_empty() {
+        if spec.pipelines.is_empty() && spec.words.is_empty() {
+            vec![(None, None)]
+        } else {
             spec.pipelines
                 .iter()
                 .map(|p| (Some(p.as_str()), None))
                 .chain(spec.words.iter().map(|w| (None, Some(w.as_str()))))
                 .collect()
-        } else {
-            vec![(None, first)]
-        };
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut tally = Tally::default();
+        }
+    } else if spaced.contains(' ') && !spaced.eq_ignore_ascii_case(&phrase) {
+        vec![(None, Some(phrase.as_str())), (None, Some(spaced.as_str()))]
+    } else {
+        vec![(None, Some(phrase.as_str()))]
+    };
     let inspected = if words.is_empty() {
         spec.popular
     } else {
@@ -153,11 +238,14 @@ fn run(
                 "Searching {host} for \"{word}\"..."
             )));
         }
+        // the first request is the look-up's: its failure is said; a search after it that cannot be made loses its
+        // models and not the look-up
+        let later = n > 0 || typed.is_some();
         let url = search_url_in(&spec.site, *searched, *pipeline);
         let hits = match fetch(&url, &request) {
             Ok(body) => match parse_search(&body) {
                 Ok(hits) => hits,
-                Err(_) if n > 0 => continue,
+                Err(_) if later => continue,
                 Err(_) => {
                     return fail(format!(
                         "{host} answered, but its answer is not one this version of QuickAI can read (the \
@@ -166,9 +254,7 @@ fn run(
                     ));
                 }
             },
-            // the first search is the look-up's: its failure is said; a pipeline after it that cannot
-            // be searched loses the models of that pipeline and not the look-up
-            Err(_) if n > 0 => continue,
+            Err(_) if later => continue,
             Err(e) => return fail(sentence(&e)),
         };
         inspect(
@@ -177,9 +263,9 @@ fn run(
     }
 
     if !words.is_empty() && !tally.limited {
-        let terms: Vec<String> = similar_terms(&words)
+        let terms: Vec<String> = similar_terms(&phrase)
             .into_iter()
-            .filter(|t| !t.eq_ignore_ascii_case(&words))
+            .filter(|t| !t.eq_ignore_ascii_case(&phrase) && !t.eq_ignore_ascii_case(&spaced))
             .collect();
         if !terms.is_empty() {
             send(LookupEvent::Status(
@@ -310,6 +396,50 @@ fn final_sentence(host: &str, words: &str, tally: &Tally) -> String {
     sentence
 }
 
+/// What is said of a repository that was typed and has nothing QuickAI can fetch: that it has no GGUF file and what
+/// its weights are in, what kind of model the hub says it is (with where QuickAI's own speech models are, for one of
+/// speech), and, once they were looked for, whether GGUF versions of it made by others are in the results.
+fn cannot_run(id: &str, repo: &Repo, versions: Option<bool>) -> String {
+    let has_gguf = repo
+        .files
+        .iter()
+        .any(|f| f.path.to_ascii_lowercase().ends_with(".gguf"));
+    let mut said = if has_gguf {
+        format!("{id} has no model file QuickAI can run.")
+    } else {
+        let largest = repo
+            .files
+            .iter()
+            .filter(|f| f.size.is_some())
+            .max_by_key(|f| f.size)
+            .map(|f| f.path.rsplit('/').next().unwrap_or(&f.path).to_string());
+        match largest {
+            Some(name) => format!(
+                "{id} has no GGUF file, which is what QuickAI downloads from Hugging Face: its largest file is {name}."
+            ),
+            None => format!("{id} has no GGUF file, which is what QuickAI downloads from Hugging Face."),
+        }
+    };
+    match repo.pipeline.as_deref() {
+        Some("automatic-speech-recognition") => said.push_str(
+            " It is a speech-recognition model: the speech models QuickAI uses are in Settings › Voice.",
+        ),
+        Some("text-to-speech") => said.push_str(
+            " It is a text-to-speech model: the voices QuickAI reads aloud with are in Settings › Voice.",
+        ),
+        Some(pipeline) => said.push_str(&format!(" Hugging Face lists it as {pipeline}.")),
+        None => {}
+    }
+    match versions {
+        Some(true) => said.push_str(" GGUF versions of it made by others are listed first."),
+        Some(false) => {
+            said.push_str(" No GGUF version of it was found; these are models with similar names.")
+        }
+        None => {}
+    }
+    said
+}
+
 /// `text` with its first letter a capital.
 pub(crate) fn capitalize(text: &str) -> String {
     let mut chars = text.chars();
@@ -352,6 +482,7 @@ mod tests {
     #[derive(Debug, Default)]
     struct Said {
         statuses: Vec<String>,
+        notes: Vec<String>,
         entries: Vec<Entry>,
         failed: bool,
         done: bool,
@@ -365,6 +496,7 @@ mod tests {
                 Ok(LookupEvent::Status(s)) => said.statuses.push(s),
                 Ok(LookupEvent::Found(e)) => said.entries.push(e),
                 Ok(LookupEvent::Failed) => said.failed = true,
+                Ok(LookupEvent::Note(n)) => said.notes.push(n),
                 Ok(LookupEvent::Done) => {
                     said.done = true;
                     break;
@@ -542,6 +674,112 @@ mod tests {
             names.iter().any(|n| n.to_lowercase().contains("coder")),
             "{names:?}"
         );
+    }
+
+    /// A hub with an original whose weights are not GGUF, a version of it named otherwise (found only by what the hub
+    /// says it was made from), one named after it, and a speech model nobody made a GGUF version of.
+    fn hub_with_an_original() -> FakeHub {
+        let hub = FakeHub::start();
+        hub.only(&[]);
+        hub.add_repo(
+            "someone/Talk-3B",
+            Some("text-generation"),
+            &[],
+            &[("config.json", 900), ("model.safetensors", 6_000_000)],
+        );
+        hub.add_repo(
+            "packer/talky-q4-GGUF",
+            Some("text-generation"),
+            &["gguf", "base_model:quantized:someone/Talk-3B"],
+            &[("talky-Q4_K_M.gguf", 2_000_000)],
+        );
+        hub.add_repo(
+            "other/Talk-3B-GGUF",
+            Some("text-generation"),
+            &["gguf"],
+            &[("Talk-3B-Q4_K_M.gguf", 2_000_000)],
+        );
+        hub.add_repo(
+            "lab/ears-ml",
+            Some("automatic-speech-recognition"),
+            &[],
+            &[("README.md", 500), ("ears-ml.cact", 90_000_000)],
+        );
+        hub
+    }
+
+    #[test]
+    fn a_repository_typed_is_looked_up_itself_then_the_gguf_versions_of_it_then_its_name() {
+        let hub = hub_with_an_original();
+        let said = look(&hub.base(), "someone/Talk-3B");
+        assert!(said.done && !said.failed, "{said:?}");
+        let paths = hub.paths();
+        assert_eq!(paths[0], "/api/models/someone/Talk-3B?blobs=true");
+        assert_eq!(
+            paths[1],
+            "/api/models?filter=gguf&filter=base_model%3Aquantized%3Asomeone%2FTalk-3B&sort=downloads&direction=-1&limit=50"
+        );
+        // then its name without the owner, and its words apart
+        assert!(paths.contains(
+            &"/api/models?filter=gguf&sort=downloads&direction=-1&limit=50&search=Talk-3B"
+                .to_string()
+        ));
+        assert!(paths.contains(
+            &"/api/models?filter=gguf&sort=downloads&direction=-1&limit=50&search=Talk%203B"
+                .to_string()
+        ));
+        // the version named otherwise first, then the one named after it; the original is not a result
+        let names: Vec<&str> = said.entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["packer/talky-q4-GGUF", "other/Talk-3B-GGUF"]);
+        // said at once, and again once the versions were looked for
+        assert_eq!(said.notes.len(), 2, "{:?}", said.notes);
+        assert!(said.notes[0].starts_with(
+            "someone/Talk-3B has no GGUF file, which is what QuickAI downloads from Hugging Face: its largest file is model.safetensors."
+        ), "{}", said.notes[0]);
+        assert!(said.notes[1].ends_with("GGUF versions of it made by others are listed first."));
+        assert!(said.notes[1].contains("Hugging Face lists it as text-generation."));
+    }
+
+    #[test]
+    fn a_speech_model_typed_points_to_the_voice_settings_and_says_no_version_was_found() {
+        let hub = hub_with_an_original();
+        let said = look(&hub.base(), "lab/ears-ml");
+        assert!(said.done && !said.failed, "{said:?}");
+        assert!(said.entries.is_empty(), "{:?}", said.entries);
+        let note = said.notes.last().unwrap();
+        assert_eq!(
+            note,
+            "lab/ears-ml has no GGUF file, which is what QuickAI downloads from Hugging Face: its largest file is \
+             ears-ml.cact. It is a speech-recognition model: the speech models QuickAI uses are in Settings › Voice. \
+             No GGUF version of it was found; these are models with similar names."
+        );
+    }
+
+    #[test]
+    fn a_repository_typed_that_is_not_there_is_said_and_one_that_is_gguf_comes_first() {
+        let hub = hub_with_an_original();
+        let said = look(&hub.base(), "nobody/Talk-3B");
+        assert!(said.done && !said.failed, "{said:?}");
+        assert_eq!(
+            said.notes,
+            [format!(
+                "nobody/Talk-3B is not on {}, or it is private. These are models with similar names.",
+                host_of(&hub.base())
+            )]
+        );
+        assert!(said.entries.iter().any(|e| e.name == "other/Talk-3B-GGUF"));
+
+        let hub = hub_with_an_original();
+        let said = look(&hub.base(), "other/Talk-3B-GGUF");
+        assert!(said.notes.is_empty(), "{:?}", said.notes);
+        assert_eq!(said.entries[0].name, "other/Talk-3B-GGUF");
+        // looked into once, though its name is searched too
+        let looked = hub
+            .paths()
+            .into_iter()
+            .filter(|p| p == "/api/models/other/Talk-3B-GGUF?blobs=true")
+            .count();
+        assert_eq!(looked, 1);
     }
 
     #[test]

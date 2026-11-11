@@ -10,6 +10,7 @@
 
 use crossbeam_channel::Receiver;
 use eframe::egui;
+use quickai_core::lookup::huggingface::relevance;
 use quickai_core::lookup::present::{Download, Entry, Fetch, Offer};
 use quickai_core::lookup::view::{arrange, Section};
 use quickai_core::models::{bundles, lookup_rules, lookups};
@@ -37,6 +38,11 @@ pub struct LookupView {
     pub size: Option<String>,
     /// The words it looked up (none: the popular models), so that a box emptied of them goes back to its suggestions.
     pub words: String,
+    /// What the look-up said of the words that the results do not say (a repository typed that QuickAI cannot run).
+    pub note: Option<String>,
+    /// The results are put in order of how well their names answer the words (a search of the hub, whose answers
+    /// come one search after another), rather than in the order they came.
+    ranked: bool,
 }
 
 impl LookupView {
@@ -97,6 +103,7 @@ impl App {
         };
         let rules = lookup_rules(&self.registry, engine, lookup);
         let query = query.trim().to_string();
+        let ranked = matches!(lookup.kind, LookupKind::HuggingFace { .. }) && !query.is_empty();
         let words = query.clone();
         let wake = {
             let ctx = ctx.clone();
@@ -136,6 +143,8 @@ impl App {
             entries: Vec::new(),
             size: self.lookup.size.take(),
             words,
+            note: None,
+            ranked,
         };
         // an engine that keeps its files in folders of their own says which results it has already
         if self.runs_alone() {
@@ -153,6 +162,11 @@ impl App {
         while let Ok(event) = rx.try_recv() {
             match event {
                 LookupEvent::Status(sentence) => lookup.status = sentence,
+                LookupEvent::Note(note) => lookup.note = Some(note),
+                LookupEvent::Found(entry) if lookup.ranked => {
+                    let at = ranked_place(&lookup.entries, &lookup.words, &entry);
+                    lookup.entries.insert(at, entry);
+                }
                 LookupEvent::Found(entry) => lookup.entries.push(entry),
                 LookupEvent::Failed => lookup.failed = true,
                 LookupEvent::Done => done = true,
@@ -234,6 +248,9 @@ impl App {
                     ui.add(egui::Spinner::new().size(12.0));
                 }
             });
+        }
+        if let Some(note) = &self.lookup.note {
+            show_note(ui, note);
         }
         if self.lookup.entries.is_empty() {
             return;
@@ -328,6 +345,36 @@ impl App {
             self.fetch_offer(&fetch, ui.ctx());
         }
     }
+}
+
+/// Where an entry that was found goes among those found before it, which are best first: after every one whose name
+/// answers the words as well or better, so that equals keep the order the site gave them (the most downloaded first).
+pub(super) fn ranked_place(entries: &[Entry], words: &str, entry: &Entry) -> usize {
+    let rank = relevance(words, &entry.name);
+    entries
+        .iter()
+        .position(|e| relevance(words, &e.name) < rank)
+        .unwrap_or(entries.len())
+}
+
+/// What the look-up said of the words, in a quiet box above the results: a sentence, not an alarm.
+fn show_note(ui: &mut egui::Ui, note: &str) {
+    let p = super::theme::palette();
+    ui.add_space(4.0);
+    egui::Frame::new()
+        .fill(p.card)
+        .stroke(egui::Stroke::new(1.0, p.line))
+        .corner_radius(egui::CornerRadius::same(8))
+        .inner_margin(egui::Margin::symmetric(10, 8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal_top(|ui| {
+                let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                super::icons::paint(ui.painter(), r, super::icons::Icon::Info, p.muted);
+                ui.add(egui::Label::new(egui::RichText::new(note).small().color(p.body)).wrap());
+            });
+        });
+    ui.add_space(4.0);
 }
 
 /// What a window that knows more than a look-up does adds to an entry: which buttons fetch what is
@@ -862,6 +909,47 @@ mod tests {
             "Get with projector:"
         );
         assert_eq!(row_label(None, false, &offers, &words), "Get:");
+    }
+
+    #[test]
+    fn results_of_a_search_go_best_first_and_equals_keep_the_order_they_came_in() {
+        let found = |name: &str| Entry {
+            key: name.to_string(),
+            name: name.to_string(),
+            description: String::new(),
+            downloads: None,
+            likes: None,
+            tags: Vec::new(),
+            model_type: None,
+            offers: Vec::new(),
+            card: None,
+        };
+        let words = "mintujohnson/Llama-3.2-3B-Malayalam-Instruct";
+        // as a search of each word brings them: the most downloaded of a word first
+        let arrived = [
+            "mradermacher/qwen3-32b-malayalam-v1-GGUF",
+            "mradermacher/gemma3-malayalam-instruct-GGUF",
+            "mradermacher/Llama-3.2-3B-Malayalam-Instruct-GGUF",
+            "unsloth/Llama-3.2-3B-Instruct-GGUF",
+            "sivaharibyte/Llama-3.2-3B-Malayalam-Instruct-Q4_K_M-GGUF",
+        ];
+        let mut entries: Vec<Entry> = Vec::new();
+        for name in arrived {
+            let entry = found(name);
+            let at = ranked_place(&entries, words, &entry);
+            entries.insert(at, entry);
+        }
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "mradermacher/Llama-3.2-3B-Malayalam-Instruct-GGUF",
+                "sivaharibyte/Llama-3.2-3B-Malayalam-Instruct-Q4_K_M-GGUF",
+                "unsloth/Llama-3.2-3B-Instruct-GGUF",
+                "mradermacher/gemma3-malayalam-instruct-GGUF",
+                "mradermacher/qwen3-32b-malayalam-v1-GGUF",
+            ]
+        );
     }
 
     #[test]

@@ -28,7 +28,36 @@ const MAX_QUERY_CHARS: usize = 100;
 
 /// Skipped when deriving per-word "similar" search terms from a keyword: searching on these alone
 /// returns an unrelated flood rather than anything related to what was typed.
-const STOPWORDS: &[&str] = &["gguf", "model", "models", "the", "and", "for", "with"];
+/// `instruct`, `chat` and `base` are in almost every name: alone, they bring the most downloaded models of all.
+const STOPWORDS: &[&str] = &[
+    "gguf", "model", "models", "the", "and", "for", "with", "instruct", "chat", "base",
+];
+
+/// The words of a repository's name that say how it was packed rather than what it is (`GGUF`, `i1`, `Q4_K_M`),
+/// left out when a name is compared with what was typed.
+fn packing_word(word: &str) -> bool {
+    let quant = |w: &str| {
+        let mut chars = w.chars();
+        matches!((chars.next(), chars.next()), (Some('q'), Some(d)) if d.is_ascii_digit())
+            || (w.starts_with("iq") && w[2..].starts_with(|c: char| c.is_ascii_digit()))
+    };
+    matches!(
+        word,
+        "gguf"
+            | "i1"
+            | "imatrix"
+            | "k"
+            | "m"
+            | "s"
+            | "l"
+            | "xs"
+            | "xl"
+            | "f16"
+            | "bf16"
+            | "f32"
+            | "0"
+    ) || quant(word)
+}
 
 /// Why an answer gave nothing.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -182,6 +211,62 @@ pub fn similar_terms(keyword: &str) -> Vec<String> {
     terms.sort();
     terms.dedup();
     terms
+}
+
+/// The repository that was typed, when the words are one (`owner/name`, as a link to its page also becomes): it is
+/// looked up itself, and so are the GGUF files others made of it, before its words are searched.
+pub fn typed_repo(words: &str) -> Option<&str> {
+    let words = words.trim();
+    (words.matches('/').count() == 1
+        && !words.contains(char::is_whitespace)
+        && valid_repo_id(words))
+    .then_some(words)
+}
+
+/// `{site}/api/models?filter=gguf&filter=base_model:quantized:{id}&sort=downloads&direction=-1&limit=50`: the GGUF
+/// repositories the hub says were made from `id`, which a search of its name misses when they are named otherwise.
+pub fn quantized_of_url(site: &str, id: &str) -> String {
+    format!(
+        "{}/api/models?filter=gguf&filter={}&sort=downloads&direction=-1&limit={SEARCH_LIMIT}",
+        site.trim().trim_end_matches('/'),
+        percent_encode(&format!("base_model:quantized:{id}"))
+    )
+}
+
+/// The words of a name, in lower case, without those that say how it was packed.
+fn name_words(name: &str) -> Vec<String> {
+    name.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+        .filter(|w| !packing_word(w))
+        .collect()
+}
+
+/// How well the repository `id` answers what was typed: twice the number of the typed words its name has (a word
+/// of its name that begins with a typed word counts, `qwen` finds `qwen3`, but a number counts only whole), and one
+/// more when its name is the typed one with nothing but packing added (`Llama-3B` for `Llama-3B-GGUF`). The owner
+/// of a typed repository is not a word of its name. Results are shown best first, the hub's order (the most
+/// downloaded first) between equals.
+pub fn relevance(words: &str, id: &str) -> usize {
+    let typed = typed_repo(words).map_or(words, |id| id.rsplit('/').next().unwrap_or(id));
+    let wanted = name_words(typed);
+    let have = name_words(id.rsplit('/').next().unwrap_or(id));
+    // a number must be the whole word (`3` of `3.2` is not `32b`); another word may begin one (`qwen` of `qwen3`)
+    let matched = wanted
+        .iter()
+        .filter(|w| {
+            let number = w.chars().all(|c| c.is_ascii_digit());
+            have.iter().any(|h| {
+                if number {
+                    h == *w
+                } else {
+                    h.starts_with(w.as_str())
+                }
+            })
+        })
+        .count();
+    let same = !wanted.is_empty() && matched == wanted.len() && have.len() == wanted.len();
+    matched * 2 + usize::from(same)
 }
 
 /// Whether `id` is what a repository is called: `owner/name` (or a bare name), of letters, digits,
@@ -440,6 +525,55 @@ mod tests {
         assert_eq!(similar_terms("qwen"), ["qwen"]);
         assert_eq!(similar_terms("qwen qwen"), ["qwen"]);
         assert!(similar_terms("of an").is_empty());
+        // the words in every name bring the most downloaded of all, not what was typed
+        assert_eq!(
+            similar_terms("Llama-3.2-3B-Malayalam-Instruct"),
+            ["llama", "malayalam"]
+        );
+    }
+
+    #[test]
+    fn a_repository_typed_is_one_owner_and_one_name() {
+        assert_eq!(
+            typed_repo(" udgamlabs/shruti-malayalam "),
+            Some("udgamlabs/shruti-malayalam")
+        );
+        assert_eq!(typed_repo("qwen coder"), None);
+        assert_eq!(typed_repo("qwen"), None);
+        assert_eq!(typed_repo("a/b/c"), None);
+        assert_eq!(typed_repo("owner/ name"), None);
+        assert_eq!(typed_repo("../etc"), None);
+        assert_eq!(
+            quantized_of_url("https://huggingface.co/", "mintujohnson/Llama-3.2-3B-Malayalam-Instruct"),
+            "https://huggingface.co/api/models?filter=gguf&filter=base_model%3Aquantized%3Amintujohnson%2FLlama-3.2-3B-Malayalam-Instruct&sort=downloads&direction=-1&limit=50"
+        );
+    }
+
+    #[test]
+    fn a_name_that_has_more_of_the_words_typed_comes_first_and_the_name_itself_before_it() {
+        let typed = "mintujohnson/Llama-3.2-3B-Malayalam-Instruct";
+        let itself = relevance(typed, "mradermacher/Llama-3.2-3B-Malayalam-Instruct-GGUF");
+        let packed = relevance(
+            typed,
+            "sivaharibyte/Llama-3.2-3B-Malayalam-Instruct-Q4_K_M-GGUF",
+        );
+        let other_size = relevance(typed, "mradermacher/malayalam-Llama-3.2-1B-instruct-GGUF");
+        let one_word = relevance(typed, "mradermacher/qwen3-32b-malayalam-v1-GGUF");
+        let none = relevance(typed, "unsloth/Qwen3-4B-GGUF");
+        assert_eq!(itself, packed, "packing is not part of a name");
+        assert!(itself > other_size, "{itself} {other_size}");
+        assert!(other_size > one_word, "{other_size} {one_word}");
+        assert!(one_word > none, "{one_word} {none}");
+        assert_eq!(none, 0);
+        // the owner of a typed repository is not a word looked for; a typed word may begin a word of the name
+        assert_eq!(
+            relevance("udgamlabs/shruti-malayalam", "someone/udgamlabs-GGUF"),
+            0
+        );
+        assert_eq!(
+            relevance("qwen coder", "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF"),
+            4
+        );
     }
 
     #[test]
