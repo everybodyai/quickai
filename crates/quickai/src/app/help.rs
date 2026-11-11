@@ -80,10 +80,10 @@ impl Group {
     fn heading(self) -> &'static str {
         match self {
             Group::Start => "Start here",
-            Group::Using => "Using it",
-            Group::Further => "Going further",
-            Group::Wrong => "Something's wrong",
-            Group::Know => "Good to know",
+            Group::Using => "Using QuickAI",
+            Group::Further => "Advanced",
+            Group::Wrong => "Troubleshooting",
+            Group::Know => "Reference",
         }
     }
 }
@@ -171,7 +171,7 @@ impl Deed {
             Deed::Settings => "Open Settings",
             Deed::Configurations => "Open Configurations",
             Deed::Log => "Show the log",
-            Deed::ModelsFolder => "Open the folder",
+            Deed::ModelsFolder => "Open the models folder",
             Deed::Privacy => "Read the privacy policy",
             Deed::Tools => "Open MCP servers",
             Deed::Voice => "Open Voice settings",
@@ -253,7 +253,7 @@ const PAGES: &[Page] = &[
         group: Group::Start,
         icon: Icon::Check,
         title: "Getting started",
-        lead: "Three steps to a first answer from a model that runs on this computer.",
+        lead: "Three steps to your first response from a model running on this computer.",
         picture: Some(Picture {
             name: "main",
             marks: &[(1, 165.0, 124.0), (2, 188.0, 175.0), (3, 776.0, 28.0)],
@@ -261,132 +261,142 @@ const PAGES: &[Page] = &[
         }),
         steps: &[
             step(
-                "Choose an **engine** under **This computer**, at the top of the sidebar. llama.cpp is ready to use; \
-                 Ollama and ComfyUI install with one click.",
+                "Choose an **engine** under **This computer** at the top of the sidebar. llama.cpp is the default; \
+                 Ollama and ComfyUI can be installed with one click.",
             )
             .at(Spot::EngineMenu),
-            step("**Add a model** with the {plus} beside **MODELS**. The suggestions suit this computer.")
+            step("**Add a model** with the {plus} beside **MODELS**. The suggestions are matched to this computer.")
                 .at(Spot::AddModel)
                 .does(Deed::AddModel),
-            step("Press **Start** in the bar over the page, then type a message in the box at the bottom.")
+            step("Press **Start** in the toolbar above the page, then type a message in the box at the bottom.")
                 .at(Spot::Play),
         ],
         numbered: true,
-        tip: Some("New here? **Take the tour**: two minutes, one part of the window at a time."),
+        tip: Some("New to QuickAI? **Take the tour**: a two-minute introduction to each part of the window."),
     },
     Page {
         page: HelpPage::FindModel,
         group: Group::Using,
         icon: Icon::Search,
         title: "Find the right model",
-        lead: "Which model fits this computer, and how to get it.",
+        lead: "How to choose a model that suits this computer, and how to download it.",
         picture: Some(Picture {
             name: "add-model",
             marks: &[(2, 618.0, 177.0), (3, 284.0, 28.0), (4, 660.0, 28.0), (5, 394.0, 369.0)],
             ring: Some([681.0, 165.0, 24.0, 24.0]),
         }),
         steps: &[
-            step("Press {plus} beside **MODELS**, then **Add a model…**, or Ctrl+K.")
+            step("Press {plus} beside **MODELS**, then **Add a model…**, or press Ctrl+K.")
                 .at(Spot::AddModel)
                 .does(Deed::AddModel),
             step(
-                "With the box empty, it suggests models that fit this computer's memory. Press {download} beside one \
-                 to get it.",
+                "With the search box empty, QuickAI suggests models that fit this computer's memory. Press {download} \
+                 beside one to download it.",
             ),
             step(
-                "Type words to search online: Hugging Face for llama.cpp, ollama.com for Ollama. Enter in the empty \
-                 box shows the most popular.",
+                "Type keywords to search online: Hugging Face for llama.cpp, ollama.com for Ollama. Pressing Enter in \
+                 the empty box lists the most popular models.",
             ),
-            step("Paste a link to a .gguf file to download it, or press the folder {folder} to add a file you have."),
+            step("Paste a link to a .gguf file to download it, or press the folder {folder} to add a file you already have."),
             step(
-                "Or find one yourself: **Hugging Face** under the list opens its page of models in the browser. Paste \
-                 the link of the one you choose in the box.",
+                "To browse on your own, **Hugging Face** below the list opens its model directory in your browser. \
+                 Paste the link of the model you choose into the box.",
             ),
-            step("**Recommended** in the sidebar has the whole list QuickAI checked, by kind and size.")
+            step("**Recommended** in the sidebar lists every model QuickAI has verified, by type and size.")
                 .does(Deed::Recommended),
         ],
         numbered: true,
         tip: Some(
-            "Smaller files (Q4 in the name) are faster and need less memory. Bigger ones (Q8) answer a little better.",
+            "Smaller files (Q4 in the name) are faster and use less memory; larger ones (Q8) give slightly better answers.",
         ),
     },
     Page {
         page: HelpPage::Chat,
         group: Group::Using,
         icon: Icon::Chat,
-        title: "Chat, pictures and files",
-        lead: "Talk to the model that runs, and give it a picture or a document to read.",
+        title: "Chat, images and files",
+        lead: "Chat with the running model, and give it an image or a document to read.",
         picture: Some(Picture {
             name: "chat",
             marks: &[(2, 420.0, 629.0), (3, 34.0, 596.0), (4, 640.0, 240.0), (5, 673.0, 52.0)],
             ring: None,
         }),
         steps: &[
-            step("Start the model with **Start**, in the bar over the page.").at(Spot::Play),
-            step("Type in the box at the bottom. **Enter** sends; **Shift+Enter** starts a new line.").at(Spot::ChatBox),
-            step("The paper clip {clip} adds a picture, for a model that sees them, or a text file to read.")
+            step("Start the model with **Start** in the toolbar above the page.").at(Spot::Play),
+            step("Type in the box at the bottom. **Enter** sends the message; **Shift+Enter** starts a new line.")
+                .at(Spot::ChatBox),
+            step("The paper clip {clip} attaches an image, for models that support vision, or a text file to read.")
                 .at(Spot::Clip),
-            step("Under each answer: **Copy**, **Regenerate**, and how fast it came."),
+            step("Below each response: **Copy**, **Regenerate**, and the generation speed."),
             step(
-                "The {more} at the right end of the bar: keep chats on this computer, **Options…** for instructions and \
-                 how free the answers are (in a window of their own), or save a chat as a file. The {pencil} beside it \
-                 starts a new chat.",
+                "The {more} at the right end of the toolbar lets you keep chats on this computer, set instructions and \
+                 the response style in **Options…** (in a separate window), or export a chat to a file. The {pencil} \
+                 beside it starts a new chat.",
             )
             .at(Spot::ChatMenu),
         ],
         numbered: true,
-        tip: Some("What you type stays on this computer, unless the model runs on another one you added."),
+        tip: Some(
+            "QuickAI is designed to keep what you type on this computer, unless the model runs on another computer you \
+             have added.",
+        ),
     },
     Page {
         page: HelpPage::Talk,
         group: Group::Using,
         icon: Icon::Mic,
         title: "Talk to QuickAI (experimental)",
-        lead: "Say your message instead of typing it, hear the answers read aloud, or talk with nothing to press. All of \
-               it happens on this computer. It is new and still being improved, so it is off until you turn it on.",
+        lead: "Speak your message instead of typing it, have responses read aloud, or hold a hands-free conversation. \
+               All processing takes place on this computer. This feature is new and still being refined, so it is off \
+               until you enable it.",
         picture: None,
         steps: &[
             step(
-                "Turn on **Use voice** in **Settings › Voice**. Until then QuickAI shows no microphone and never opens it.",
+                "Enable **Use voice** in **Settings › Voice**. Until then, QuickAI shows no microphone and does not \
+                 access it.",
             )
             .does(Deed::Voice),
             step(
-                "Press the microphone {mic} in the chat's box and talk; press ■ when you are done. What you said goes in \
-                 the box, to change before you send it. Or hold **Ctrl+Space** while you talk.",
+                "Press the microphone {mic} in the chat box and speak; press ■ when you have finished. Your words \
+                 appear in the box, where you can edit them before sending. Alternatively, hold **Ctrl+Space** while \
+                 you speak.",
             )
             .at(Spot::Mic),
             step(
-                "The first time, QuickAI downloads its speech model (82 MB), unless your package came with it. A larger \
-                 one that hears accents and noise better is in **Settings › Voice**.",
+                "On first use, QuickAI downloads its speech recognition model (82 MB), unless your package already \
+                 includes it. A larger model that handles accents and background noise better is available in \
+                 **Settings › Voice**.",
             ),
             step(
-                "No voice comes with QuickAI: choose one in **Settings › Voice › Read with**. **Kokoro** is downloaded \
-                 when you ask; a voice from a folder, a speech server or a program of your own work too.",
+                "QuickAI does not include a voice: choose one in **Settings › Voice › Read with**. **Kokoro** is \
+                 downloaded on request; a voice from a folder, a speech server or a program of your own can also be \
+                 used.",
             ),
             step(
-                "**Read aloud** under an answer reads it, lighting the sentence being read. **Read answers aloud**, in \
-                 Settings › Voice, reads every answer as it comes; it is off until you turn it on.",
+                "**Read aloud** below a response reads it and highlights the sentence being read. **Read answers \
+                 aloud**, in Settings › Voice, reads every response as it arrives; it is off by default.",
             ),
             step(
-                "**Hands-free**, in the {more} at the right end of the bar or by right-clicking the microphone: it \
-                 listens, sends what you said when you pause, reads the answer and listens again. **Esc** ends it.",
+                "**Hands-free**, in the {more} at the right end of the toolbar or by right-clicking the microphone, \
+                 listens, sends what you said when you pause, reads the response and listens again. Press **Esc** to \
+                 end it.",
             )
             .at(Spot::ChatMenu),
             step(
-                "**Settings › Voice** also has the microphone, the language you speak, the speech model, sending when you \
-                 stop talking, and the reading's voice and speed.",
+                "**Settings › Voice** also covers the microphone, the language you speak, the speech recognition \
+                 model, the pause that sends your message, and the voice and speed used for reading.",
             ),
         ],
         numbered: true,
-        tip: Some("Nothing you say leaves this computer."),
+        tip: Some("Your speech is processed on this computer, and QuickAI is designed to keep it there."),
     },
     Page {
         page: HelpPage::ConnectApp,
         group: Group::Using,
         icon: Icon::Plug,
         title: "Connect an app",
-        lead: "Use your model from other programs: a code editor, a notes app or a script of your own. Anything that \
-               works with OpenAI's API can talk to it.",
+        lead: "Use your model from other applications, such as a code editor, a notes app or your own scripts. Any \
+               software that supports OpenAI's API can connect to it.",
         picture: Some(Picture {
             name: "connect",
             marks: &[(1, 233.0, 84.0), (2, 13.0, 126.0), (3, 13.0, 161.0), (4, 165.0, 287.0)],
@@ -394,107 +404,106 @@ const PAGES: &[Page] = &[
         }),
         steps: &[
             step(
-                "Start the model: the panel at the right of the page becomes **Connect an app**. The {hide} at its \
-                 top puts it away, and the {show} at the right end of the bar brings it back.",
+                "Start the model: the panel on the right of the page becomes **Connect an app**. The {hide} at its \
+                 top hides it, and the {show} at the right end of the toolbar restores it.",
             )
             .at(Spot::Plug),
             step(
-                "Copy the **Address**, the first line of the box, into the other app. It may call it the base URL or \
-                 the endpoint.",
+                "Copy the **Address**, the first line of the box, into the other application. It may be called the \
+                 base URL or the endpoint.",
             ),
-            step("Copy the **Model** name under it too. Any **API key** will do, or none."),
-            step("**Open Chat UI** {globe} under them opens a chat in your browser, when the engine has one."),
+            step("Copy the **Model** name below it as well. Any **API key** is accepted, or none."),
+            step("**Open Chat UI** {globe} below them opens a chat in your browser, when the engine provides one."),
         ],
         numbered: true,
         tip: Some(
-            "The address works on this computer only: other computers on your network cannot reach it. **Example** \
-             copies a request in curl, Python or JavaScript, and its arrow shows it.",
+            "The address is reachable from this computer only; other computers on your network cannot connect to it. \
+             **Example** copies a sample request in curl, Python or JavaScript, and its arrow displays it.",
         ),
     },
     Page {
         page: HelpPage::Pictures,
         group: Group::Using,
         icon: Icon::Image,
-        title: "Make pictures",
-        lead: "ComfyUI makes pictures and video from workflows you build in its own page.",
+        title: "Create pictures and video",
+        lead: "ComfyUI creates images and video from workflows you build in its own web page.",
         picture: Some(Picture {
             name: "engine-menu",
             marks: &[(1, 165.0, 68.0), (2, 140.0, 205.0)],
             ring: None,
         }),
         steps: &[
-            step("Open the engine menu under **This computer**, at the top of the sidebar.").at(Spot::EngineMenu),
+            step("Open the engine menu under **This computer** at the top of the sidebar.").at(Spot::EngineMenu),
             step(
-                "Choose **ComfyUI**. The first time, it installs with one click: about 17 GB, most of it the \
-                 library it computes with.",
+                "Choose **ComfyUI**. On first use, it installs with one click: about 17 GB, most of which is the \
+                 computation library it relies on.",
             ),
-            step("Get a model: **Recommended** lists the ones QuickAI checked, **Look up online** searches for more."),
-            step("Press **Start**, then **Open ComfyUI**: its page opens in your browser."),
-            step("The **Download** button of that page puts a model straight into QuickAI's models folder."),
+            step("Get a model: **Recommended** lists the models QuickAI has verified, and **Look up online** searches for more."),
+            step("Press **Start**, then **Open ComfyUI** to open its page in your browser."),
+            step("The **Download** button on that page saves a model directly to QuickAI's models folder."),
         ],
         numbered: true,
-        tip: Some("ComfyUI runs on this computer and, unless you change it, works offline."),
+        tip: Some("ComfyUI runs on this computer and, unless you change its settings, works offline."),
     },
     Page {
         page: HelpPage::Remote,
         group: Group::Further,
         icon: Icon::Computer,
-        title: "A more powerful computer",
-        lead: "Run big models on another computer of yours, and use them from here.",
+        title: "Use a more powerful computer",
+        lead: "Run large models on another computer of yours and use them from here.",
         picture: Some(Picture {
             name: "computer-menu",
             marks: &[(2, 180.0, 126.0), (3, 175.0, 63.0)],
             ring: None,
         }),
         steps: &[
-            step("Check that you can reach the other computer with ssh from here, with your own key."),
+            step("Make sure you can connect to the other computer over SSH from here, using your own key."),
             step(
-                "Click **This computer** at the top of the sidebar, then **Add a computer…**, and add it \
-                 by its SSH address (user@host, or a Host of your SSH config). QuickAI tests it and says what to do about \
-                 anything that fails.",
+                "Click **This computer** at the top of the sidebar, then **Add a computer…**, and enter its SSH \
+                 address (user@host, or a Host entry from your SSH configuration). QuickAI tests the connection and \
+                 explains how to resolve any problem it finds.",
             )
             .at(Spot::Computer),
             step(
-                "Choose it in the same menu. **Start** then runs the model there: QuickAI copies itself there and \
-                 installs what is missing, or uses an engine that already runs there.",
+                "Select it in the same menu. **Start** then runs the model there: QuickAI copies itself to that \
+                 computer and installs anything missing, or uses an engine that is already running there.",
             ),
         ],
         numbered: true,
-        tip: Some("Nothing is opened to the network: QuickAI uses your own ssh and keys."),
+        tip: Some("QuickAI opens nothing to the network: it connects through your own SSH client and keys."),
     },
     Page {
         page: HelpPage::Tools,
         group: Group::Further,
         icon: Icon::Plug,
         title: "Give your model tools",
-        lead: "MCP servers let a model read your files, fetch a web page and more. QuickAI runs them on this \
-               computer and offers their tools when you chat, with llama.cpp or Ollama, and with a model on another \
-               computer too.",
+        lead: "MCP servers let a model read your files, fetch web pages and more. QuickAI runs them on this computer \
+               and offers their tools in the chat, with llama.cpp or Ollama, including for models on another computer.",
         picture: None,
         steps: &[
             step(
-                "Press **MCP servers** in the sidebar. Give the server a name and the command or address from its \
+                "Press **MCP servers** in the sidebar. Enter a name for the server and the command or address from its \
                  instructions, then press **Add**.",
             )
             .does(Deed::Tools),
             step(
-                "Start a model and chat. The wrench in the chat's box has how many servers the model may use in its \
-                 corner; press it to switch each on or off. **Tools** in the panel at the right has a switch for each \
-                 too.",
+                "Start a model and chat. The wrench in the chat box shows, in its corner, how many servers the model \
+                 may use; press it to enable or disable each one. **Tools** in the panel on the right also has a \
+                 switch for each server.",
             ),
             step(
-                "When the model wants a tool, a card shows what it would be given: press **Allow once**, **Always \
-                 allow** or **Deny**. The model answers with what the tool gave back.",
+                "When the model requests a tool, a card shows what the tool would receive: press **Allow once**, \
+                 **Always allow** or **Deny**. The model then responds using what the tool returned.",
             ),
             step(
                 "Under **What they offer** on the same page, each tool can be set to **Ask**, **Always** or **Off**. \
-                 With llama.cpp, its own chat page (**Open Chat UI**) has the servers too.",
+                 With llama.cpp, its own chat page (**Open Chat UI**) can use the servers as well.",
             ),
         ],
         numbered: true,
         tip: Some(
-            "A server can do whatever its program does on this computer, so add only ones you trust. One that does not \
-             start says why on the page of the MCP servers.",
+            "A server can do anything its program can do on this computer, so add only servers you trust. If one fails \
+             to start, the MCP servers page shows the reason.",
         ),
     },
     Page {
@@ -502,18 +511,18 @@ const PAGES: &[Page] = &[
         group: Group::Further,
         icon: Icon::Sliders,
         title: "Switch engines",
-        lead: "The engine is the program that runs the models. Each is good at something.",
+        lead: "The engine is the program that runs your models. Each one has its own strengths.",
         picture: Some(Picture {
             name: "engine-menu",
             marks: &[(1, 165.0, 68.0)],
             ring: None,
         }),
         steps: &[
-            step("The engine is chosen under **This computer**, at the top of the sidebar.").at(Spot::EngineMenu),
-            step("**llama.cpp** runs .gguf files from a folder. It comes with QuickAI."),
-            step("**Ollama** gets models by name and keeps them itself."),
-            step("**ComfyUI** makes pictures and video."),
-            step("Each engine keeps its own models and settings. One that is not installed has an **Install** button."),
+            step("Choose the engine under **This computer** at the top of the sidebar.").at(Spot::EngineMenu),
+            step("**llama.cpp** runs .gguf files from a folder. It is QuickAI's default engine."),
+            step("**Ollama** downloads models by name and manages them itself."),
+            step("**ComfyUI** creates images and video."),
+            step("Each engine keeps its own models and settings. An engine that is not installed shows an **Install** button."),
         ],
         numbered: true,
         tip: None,
@@ -522,8 +531,9 @@ const PAGES: &[Page] = &[
         page: HelpPage::Configurations,
         group: Group::Further,
         icon: Icon::Save,
-        title: "Save and share a setup",
-        lead: "A configuration is a model and how it runs, kept under a name, to use again or to give to someone.",
+        title: "Save and share a configuration",
+        lead: "A configuration is a model together with its run settings, saved under a name so that you can reuse it \
+               or share it.",
         picture: Some(Picture {
             name: "change",
             marks: &[
@@ -536,48 +546,56 @@ const PAGES: &[Page] = &[
             ring: None,
         }),
         steps: &[
-            step("The panel at the right of the page says how the model runs. The {hide} at its top puts it away, and the {show} at the right end of the bar brings it back.")
-                .at(Spot::Change),
             step(
-                "**Context** is how much of the chat it remembers: choose a length, **4K** to **256K**, or **Other…** for \
-                 a number of your own and the longer ones, **512K** to **2M**. A dot on each says where it fits: green \
-                 on the graphics card, amber partly in the computer's memory (slower), red too big. The underlined one \
-                 suits this model here.",
+                "The panel on the right of the page shows how the model runs. The {hide} at its top hides it, and the \
+                 {show} at the right end of the toolbar restores it.",
+            )
+            .at(Spot::Change),
+            step(
+                "**Context** is how much of the conversation the model remembers: choose a length from **4K** to \
+                 **256K**, or **Other…** for a custom value and the longer sizes, **512K** to **2M**. A dot on each \
+                 shows where it fits: green on the graphics card, amber partly in system memory (slower), red too \
+                 large. The underlined length is the one best suited to this model on this computer.",
             )
             .at(Spot::Context),
             step(
-                "**Graphics** is where it runs: **Card**, **Card + processor** (part of the model on the card) or \
-                 **Processor**. QuickAI fits it to the card for each model until you choose. With several cards, tick \
-                 the ones to use. **This computer**, at the foot, shows what it takes of each card and of the memory. \
-                 Ollama places a model itself: Graphics then names the cards it found and says how much it put on them.",
+                "**Graphics** is where the model runs: **Card**, **Card + processor** (part of the model on the card) \
+                 or **Processor**. QuickAI fits each model to the card until you choose otherwise. With several cards, \
+                 select the ones to use. **This computer**, at the bottom, shows how much of each card and of system \
+                 memory the model uses. Ollama places models itself: Graphics then lists the cards it found and how \
+                 much of the model it placed on them.",
             )
             .at(Spot::Graphics),
             step(
-                "**Extras** opens what is added when it starts: a vision model's projector, with a switch, and your own \
-                 arguments and environment, a chip each to change or take out. **Tools** opens a switch for each MCP \
-                 server. The gear at the top of the panel has the rest of the settings for starting it, the port among \
-                 them.",
+                "**Extras** shows what is added at startup: a vision model's projector, with a switch, and your own \
+                 arguments and environment variables, each as a chip you can edit or remove. **Tools** shows a switch \
+                 for each MCP server. The gear at the top of the panel opens the remaining startup settings, including \
+                 the port.",
             )
             .at(Spot::Extras),
             step(
-                "**Configuration** at the top of the panel keeps how it runs under a name: **Save as a new \
-                 configuration…**. Choose one from the same list to use it again. Its box has an amber edge while the \
-                 panel holds something it does not say. Picking another model leaves it as it was saved: the panel then \
-                 holds an **Unnamed** one until you save it.",
+                "**Configuration** at the top of the panel saves the run settings under a name: **Save as a new \
+                 configuration…**. Choose a saved configuration from the same list to use it again. Its box is \
+                 outlined in amber when the panel contains unsaved changes. Choosing another model leaves the saved \
+                 configuration unchanged: the panel then holds an **Unnamed** configuration until you save it.",
             )
             .at(Spot::Configuration),
-            step("**Configurations…** in the **QuickAI** menu has them all: use, rename or delete one, or save it as a file to share.")
-                .does(Deed::Configurations),
+            step(
+                "**Configurations…** in the **QuickAI** menu lists them all: use, rename or delete a configuration, or \
+                 export it to a file to share.",
+            )
+            .does(Deed::Configurations),
         ],
         numbered: true,
-        tip: Some("A file you are given says what it would change before anything is used."),
+        tip: Some("A configuration file you receive shows exactly what it would change before anything is applied."),
     },
     Page {
         page: HelpPage::Settings,
         group: Group::Further,
         icon: Icon::Gear,
-        title: "What the settings do",
-        lead: "The settings are the engine's. **Settings…** in the **QuickAI** menu at the top left opens them, and so does Ctrl+,.",
+        title: "Settings overview",
+        lead: "Settings apply to the selected engine. Open them with **Settings…** in the **QuickAI** menu at the top \
+               left, or press Ctrl+,.",
         picture: Some(Picture {
             name: "settings",
             marks: &[
@@ -590,71 +608,80 @@ const PAGES: &[Page] = &[
             ring: None,
         }),
         steps: &[
-            step("**General**: where the models are kept, and the live traffic, which shows each request and answer.")
+            step("**General**: where models are stored, and Live traffic, which shows each request and response.")
                 .at(Spot::Settings)
                 .does(Deed::Settings),
-            step("**Program**: the builds of the engine's program. Use another, look up a newer one, or use your own."),
+            step("**Program**: the builds of the engine's program. Switch to another build, look for a newer one, or use your own."),
             step(
-                "**Starting it**: the port, what the program is given besides what QuickAI gives it, and the whole \
-                 command line Start runs. The gear at the top of the panel opens this page.",
+                "**Starting it**: the port, the additional arguments passed to the program, and the full command line \
+                 that Start runs. The gear at the top of the panel opens this page.",
             ),
-            step("**MCP servers**: the servers whose tools a model may use, as on **MCP servers** in the sidebar."),
-            step("**Other computers**: whether QuickAI may set up a computer you add, to run models there."),
+            step("**MCP servers**: the servers whose tools a model may use, as in **MCP servers** in the sidebar."),
+            step("**Other computers**: whether QuickAI may set up a computer you add, in order to run models there."),
         ],
         numbered: true,
-        tip: Some("With Ollama, **Open WebUI** has a page of its own: a chat page in your browser."),
+        tip: Some("With Ollama, **Open WebUI** has its own page: a chat interface in your browser."),
     },
     Page {
         page: HelpPage::WontStart,
         group: Group::Wrong,
         icon: Icon::Warn,
-        title: "It won't start",
-        lead: "What to look at when the model doesn't start, or stops by itself.",
+        title: "The model won't start",
+        lead: "What to check when the model does not start, or stops unexpectedly.",
         picture: Some(Picture {
             name: "port-taken",
             marks: &[(2, 312.0, 90.0)],
             ring: None,
         }),
         steps: &[
-            step("Open the log with **Log** at the foot of the page: the engine says there why it stopped.")
+            step("Open the log with **Log** at the bottom of the page: the engine states there why it stopped.")
                 .at(Spot::LogTab)
                 .does(Deed::Log),
             step(
-                "**Port is taken**: another program listens there. **Use port** picks the next free one, **Stop it** \
-                 stops the other program, **Override** stops it and starts QuickAI's.",
+                "**Port is taken**: another program is using the port. **Use port** selects the next free one, \
+                 **Stop it** stops the other program, and **Override** stops it and starts QuickAI's.",
             ),
-            step("**Not enough memory**: choose a shorter context in the panel at the right (one with a green dot), or a smaller model.").at(Spot::Change),
-            step("**The program is missing**: the **Program** page of the Settings lists the builds. Use one.")
+            step(
+                "**Not enough memory**: choose a shorter context in the panel on the right (one with a green dot), or \
+                 a smaller model.",
+            )
+            .at(Spot::Change),
+            step("**The program is missing**: the **Program** page of the Settings lists the available builds; select one.")
                 .does(Deed::Settings),
         ],
         numbered: true,
-        tip: Some("Still stuck? The log says what the engine said, word for word: it is what to ask about."),
+        tip: Some("Still having trouble? The log shows the engine's output verbatim; include it when you ask for help."),
     },
     Page {
         page: HelpPage::Slow,
         group: Group::Wrong,
         icon: Icon::Bolt,
-        title: "Slow, or out of memory",
-        lead: "A model is quick when it fits in the memory of the graphics card, or of the computer.",
+        title: "Slow or out of memory",
+        lead: "A model runs quickly when it fits in the memory of the graphics card, or of the computer.",
         picture: Some(Picture {
             name: "change",
             marks: &[(1, 24.0, 214.0)],
             ring: None,
         }),
         steps: &[
-            step("In the panel at the right, a shorter context (**4K**, **8K**) uses less memory. It remembers less of a long chat.").at(Spot::Change),
             step(
-                "A smaller model is faster: fewer billions of parameters (4B rather than 9B), or a smaller file of \
-                 the same one (Q4 rather than Q8).",
+                "In the panel on the right, a shorter context (**4K**, **8K**) uses less memory, although the model \
+                 then remembers less of a long conversation.",
+            )
+            .at(Spot::Change),
+            step(
+                "A smaller model is faster: fewer parameters (4B rather than 9B), or a more compact file of the same \
+                 model (Q4 rather than Q8).",
             ),
-            step("**Add a model** suggests what fits this computer's memory.").does(Deed::AddModel),
+            step("**Add a model** suggests models that fit this computer's memory.").does(Deed::AddModel),
             step(
-                "**Graphics** in the panel: when the whole model does not fit on the card, **Card + processor** puts as \
-                 many of its layers on it as fit. **This computer**, at the foot of the panel, shows what it takes. \
-                 With Ollama, which decides it, Graphics says how much of the model is on the card while it runs.",
+                "**Graphics** in the panel: when the whole model does not fit on the card, **Card + processor** places \
+                 as many of its layers on the card as will fit. **This computer**, at the bottom of the panel, shows \
+                 the memory used. With Ollama, which makes this decision itself, Graphics shows how much of the model \
+                 is on the card while it runs.",
             )
             .at(Spot::Graphics),
-            step("Other programs that use the graphics card (a game, another model) leave it less room."),
+            step("Other programs that use the graphics card, such as a game or another model, leave less room for it."),
         ],
         numbered: true,
         tip: None,
@@ -663,15 +690,18 @@ const PAGES: &[Page] = &[
         page: HelpPage::Files,
         group: Group::Know,
         icon: Icon::Folder,
-        title: "Where your files are kept",
-        lead: "Everything QuickAI keeps is in a folder of your home, .quickai, and in its settings.",
+        title: "Where your files are stored",
+        lead: "Everything QuickAI stores is kept in the .quickai folder in your home directory, and in its settings.",
         picture: None,
         steps: &[
-            step("**Models**: .quickai/models, for llama.cpp. The **General** page of the Settings can move it.")
+            step("**Models**: .quickai/models, for llama.cpp. The location can be changed on the **General** page of the Settings.")
                 .does(Deed::ModelsFolder),
-            step("**Ollama, ComfyUI and Open WebUI**: each in a folder of its own beside it, with its models and builds."),
-            step("**Chats**: in .quickai/chats, and only when **Keep chats** is on, under the {more} at the right end of the bar."),
-            step("**Settings and configurations**: in your system's folder of settings (.config/quickai on Linux)."),
+            step("**Ollama, ComfyUI and Open WebUI**: each in its own folder alongside it, with its models and builds."),
+            step(
+                "**Chats**: in .quickai/chats, and only when **Keep chats** is enabled, under the {more} at the right \
+                 end of the toolbar.",
+            ),
+            step("**Settings and configurations**: in your system's settings folder (.config/quickai on Linux)."),
         ],
         numbered: false,
         tip: None,
@@ -680,38 +710,47 @@ const PAGES: &[Page] = &[
         page: HelpPage::Privacy,
         group: Group::Know,
         icon: Icon::Lock,
-        title: "What leaves this computer",
-        lead: "Nothing, unless you ask for it.",
+        title: "Privacy and network use",
+        lead: "QuickAI is designed to send nothing from this computer unless you ask it to.",
         picture: None,
         steps: &[
-            step("What you type and the answers stay on this computer: the engine listens on this computer only."),
-            step("QuickAI uses the internet when you ask it to: to search for or download a model, or an engine."),
-            step("There is no account, no analytics and no update check. When something breaks, QuickAI shows a report you can post if you want; it sends nothing by itself."),
-            step("A model on another computer you added gets your messages through your own ssh.")
+            step(
+                "Your messages and the model's responses are kept on this computer: the engine accepts connections \
+                 from this computer only.",
+            ),
+            step("QuickAI uses the internet only at your request: to search for or download a model or an engine."),
+            step(
+                "There is no account, no analytics and no update check. When a problem occurs, QuickAI displays a \
+                 report that you may choose to submit; it sends nothing automatically.",
+            ),
+            step("A model on another computer you have added receives your messages through your own SSH connection.")
                 .does(Deed::Privacy),
         ],
         numbered: false,
-        tip: None,
+        tip: Some(
+            "We take great care to ensure this, but as no software is free of defects, it cannot be guaranteed. The \
+             privacy policy describes the details and its limitations.",
+        ),
     },
     Page {
         page: HelpPage::Shortcuts,
         group: Group::Know,
         icon: Icon::Keyboard,
         title: "Keyboard shortcuts",
-        lead: "Start, stop and chat without the mouse.",
+        lead: "Start, stop and chat without using the mouse.",
         picture: None,
         steps: &[
             step("Ctrl+Enter|Start or stop the model"),
             step("Ctrl+K|Add a model"),
-            step("Ctrl+L|Go to the chat's box"),
+            step("Ctrl+L|Move to the chat box"),
             step("Enter|Send a message"),
-            step("Ctrl+Space|Talk while it is held, once voice is on (what you say goes in the box)"),
-            step("Ctrl+Shift+Space|Start or end hands-free, once voice is on"),
-            step("Shift+Enter|A new line in a message"),
-            step("Ctrl+,|Settings"),
-            step("F1|Help"),
-            step("Ctrl+F|Search Help, in this window"),
-            step("Alt+Left|Back to the page before, in this window"),
+            step("Ctrl+Space|Hold to speak, when voice is enabled (your words appear in the chat box)"),
+            step("Ctrl+Shift+Space|Start or end hands-free mode, when voice is enabled"),
+            step("Shift+Enter|Insert a new line in a message"),
+            step("Ctrl+,|Open Settings"),
+            step("F1|Open Help"),
+            step("Ctrl+F|Search Help (in this window)"),
+            step("Alt+Left|Go back to the previous page (in this window)"),
             step("Escape|Close a window"),
         ],
         numbered: false,
@@ -739,87 +778,92 @@ const TOUR: &[(Spot, &str, &str)] = &[
     (
         Spot::Computer,
         "Where it runs",
-        "This computer, or a more powerful one you add. Everything below is about the computer chosen here.",
+        "This computer, or a more powerful one you add. Everything below applies to the computer selected here.",
     ),
     (
         Spot::EngineMenu,
         "The engine",
-        "The program that runs your models. llama.cpp is ready; Ollama and ComfyUI install from here.",
+        "The program that runs your models. llama.cpp is the default; Ollama and ComfyUI can be installed from here.",
     ),
     (
         Spot::Models,
         "Your models",
-        "Pick one to use it. The dot is green while it runs, and its ⋯ has its details and Delete.",
+        "Select a model to use it. Its dot turns green while it runs, and its ⋯ menu has its details and Delete.",
     ),
     (
         Spot::AddModel,
         "Add a model",
-        "Suggestions that fit this computer, a search online, or a file you already have. Ctrl+K too.",
+        "Suggestions that fit this computer, an online search, or a file you already have. Also Ctrl+K.",
     ),
     (
         Spot::Configuration,
         "Configuration",
-        "How it runs, kept under a name. An amber edge means it has changes you have not saved; picking another \
-         model makes an Unnamed one, and the saved one stays as it was.",
+        "The run settings, saved under a name. An amber outline indicates unsaved changes; choosing another model \
+         creates an Unnamed configuration and leaves the saved one unchanged.",
     ),
     (
         Spot::Context,
         "Context",
-        "How much of the chat it remembers. The dot says whether each length fits where it runs: green fits, amber \
-         is tight (with Card, partly in memory), red too big. Other… has 512K to 2M and a number of your own.",
+        "How much of the conversation the model remembers. The dot shows whether each length fits: green fits, amber \
+         is tight (with Card, partly in system memory), red is too large. Other… offers 512K to 2M and custom values.",
     ),
     (
         Spot::Graphics,
         "Graphics",
-        "Where it runs: on the card, part on the card and part on the processor, or the processor alone. With the \
-         card and the processor, as many layers go on the card as fit the length chosen. With Ollama, it says what \
+        "Where the model runs: on the graphics card, split between the card and the processor, or on the processor \
+         alone. When split, as many layers as fit the chosen context go on the card. With Ollama, it shows what \
          Ollama chose.",
     ),
     (
         Spot::Extras,
         "Extras",
-        "What is added when it starts: a vision model's projector, and your own arguments and environment, a chip each.",
+        "What is added at startup: a vision model's projector, and your own arguments and environment variables, each \
+         as a chip.",
     ),
     (
         Spot::Tools,
         "Tools",
-        "The MCP servers the model can use in the chat, a switch each. QuickAI asks before a tool runs.",
+        "The MCP servers the model can use in the chat, each with a switch. QuickAI asks before a tool runs.",
     ),
     (
         Spot::ThisComputer,
         "This computer",
-        "What the model and its context take of each card and of the memory, and how fast it should be.",
+        "How much of each card and of system memory the model and its context use, and the expected speed.",
     ),
     (
         Spot::Play,
         "Start",
-        "Starts the model chosen in the list. Ctrl+Enter does it too, and stops it.",
+        "Starts the model selected in the list. Ctrl+Enter also starts and stops it.",
     ),
     (
         Spot::Plug,
         "Connect an app",
-        "While it runs, the panel gives other apps its address, the model's name and an example to copy.",
+        "While the model runs, the panel provides its address, the model name and a sample request for other \
+         applications.",
     ),
     (
         Spot::ChatBox,
         "Chat",
-        "Type here once the model runs. The paper clip adds a picture or a file, and the wrench says which tools it has.",
+        "Type here once the model is running. The paper clip attaches an image or a file, and the wrench shows the \
+         available tools.",
     ),
     (
         Spot::Mic,
         "Talk",
-        "Press the microphone and say it instead of typing. Right-click it for hands-free: it listens, answers aloud and \
-         listens again.",
+        "Press the microphone to speak instead of typing. Right-click it for hands-free mode: it listens, responds \
+         aloud and listens again.",
     ),
     (
         Spot::LogTab,
         "Log and Live traffic",
-        "What the engine says, word for word, and the requests apps make to it. Here when something goes wrong.",
+        "The engine's output, verbatim, and the requests other applications send to it. Check here when something \
+         goes wrong.",
     ),
     (
         Spot::Help,
         "Help",
-        "At the foot of the sidebar, beside About and the theme: everything is explained, with pictures. F1 opens it too.",
+        "At the bottom of the sidebar, beside About and the theme switch: every feature explained, with illustrations. \
+         F1 also opens it.",
     ),
 ];
 
@@ -1447,7 +1491,8 @@ impl App {
                     ),
                     _ => (
                         Some(Tone::Warn),
-                        "Start a model first: press Start in the bar over the page.".to_string(),
+                        "Start a model first: press Start in the toolbar above the page."
+                            .to_string(),
                     ),
                 })
             }
@@ -1478,7 +1523,7 @@ impl App {
             )),
             HelpPage::WontStart if state == ServerState::Crashed => Some((
                 Some(Tone::Bad),
-                "The last start failed. The log says why.".to_string(),
+                "The last start failed; the log shows why.".to_string(),
             )),
             HelpPage::Slow if self.total_ram_bytes > 0 => Some((
                 None,

@@ -1,170 +1,191 @@
 # ComfyUI
 
-ComfyUI makes pictures and video from workflows that a person builds in its own web page. QuickAI manages it as a third
-engine, the way it manages Ollama: it installs it, starts and stops it, attaches to one that is running, keeps its
-models, says what its API is and what went wrong. The engine is a document ([`comfyui.toml`](examples/engines/comfyui.toml)),
-and what the document cannot say is a primitive (`install.python_app@1`, below). The facts it rests on are F1 to F36 of
-[engine-facts.md](engine-facts.md) (written without a leading zero, as the other engines' are); the decisions are C78 to C86 and C152 to C155
-of [implementation-plan.md](implementation-plan.md); the tests are groups F, P and Q of [phase3-test-plan.md](phase3-test-plan.md)
-(F01 to F99a, P01 to P21, Q01 to Q15).
+ComfyUI generates images and video from workflows that you build in its own web page. QuickAI manages it as a third
+engine, in the same way it manages Ollama: it installs it, starts and stops it, attaches to an instance that is already
+running, manages its models, documents its API and reports what went wrong. The engine is described by a document
+([`comfyui.toml`](examples/engines/comfyui.toml)), and whatever the document cannot express is a primitive
+(`install.python_app@1`, below). The facts it relies on are F1 to F36 of [engine-facts.md](engine-facts.md) (written
+without a leading zero, as for the other engines); the design decisions are C78 to C86 and C152 to C155 of
+[implementation-plan.md](implementation-plan.md); and the tests are groups F, P and Q of
+[phase3-test-plan.md](phase3-test-plan.md) (F01 to F99a, P01 to P21, Q01 to Q15).
 
-ComfyUI is GPL-3.0 and a program of its own. It is **not part of any package**: it is downloaded when the person asks.
+ComfyUI is licensed under GPL-3.0 and is a separate program. It is **not included in any package**: it is downloaded
+at your request.
 
 ## What is different from the other engines
 
 | | llama.cpp, Ollama | ComfyUI |
 |---|---|---|
-| What starts | a program that is given a model | a server that is given none (`needs_model = false`): a workflow that a client sends names the files it uses |
-| A build | an archive of a release, unpacked | the **source** of a release, with a Python environment of its own made beside it |
-| Models | one file, or a file and its projector | files of several kinds, each kept in the folder ComfyUI looks for that kind in (`diffusion_models/`, `text_encoders/`, `vae/`, `loras/`) |
-| The window | a picker and a model box | the list of what is installed, **Recommended**, **Look up online**, a box for a link or a file and the folder it goes in, Refresh, Open folder, and **Open ComfyUI** once it runs |
+| What starts | A program that is given a model | A server that is given none (`needs_model = false`): each workflow a client sends names the files it uses |
+| A build | A release archive, unpacked | The **source** of a release, with its own Python environment created beside it |
+| Models | One file, or a file and its projector | Files of several kinds, each stored in the folder where ComfyUI looks for that kind (`diffusion_models/`, `text_encoders/`, `vae/`, `loras/`) |
+| The window | A picker and a model field | The list of installed models, **Recommended**, **Look up online**, a field for a link or a file with its target folder, Refresh, Open folder, and **Open ComfyUI** once it is running |
 | API | `/v1`, Ollama's | `POST /prompt`, `GET /history/<id>`, `GET /view`, `/ws`, `GET /system_stats` (`comfyui.workflow`) |
-| Its page | none, or the server's own | a web page of its own, which QuickAI gives a **Download** that installs into the models folder ([below](#the-pages-download-button)) and, with ComfyUI-Manager, a **Manager** button ([below](#comfyui-manager)) |
-| Its files | below `~/.quickai/<engine>` (Ollama's in a home and a temporary folder of its own there too; llama.cpp writes nothing else) | below `~/.quickai/comfyui`, and **in a home and a temporary folder of its own there** (`home/`, `cache/tmp/`): the compiler cache of ROCm, PyTorch's and the driver's caches and the kernels it compiles would otherwise go to the person's `~/.cache` and the system's temporary folder (F28), and the Python variables of the person's shell are put away (C92: every engine is isolated, completely) |
+| Its page | None, or the server's own | A web page of its own, to which QuickAI adds a **Download** that installs into the models folder ([below](#the-pages-download-button)) and, with ComfyUI-Manager, a **Manager** button ([below](#comfyui-manager)) |
+| Its files | Under `~/.quickai/<engine>` (Ollama's also in its own home and temporary folders there; llama.cpp writes nothing else) | Under `~/.quickai/comfyui`, **including its own home and temporary folders there** (`home/`, `cache/tmp/`): otherwise the ROCm compiler cache, the PyTorch and driver caches and the kernels it compiles would go to your `~/.cache` and the system's temporary folder (F28). The Python variables of your shell are also cleared (C92: every engine is completely isolated) |
 
 ## Installing it
 
-**Settings → Advanced → Look up ComfyUI builds** lists the releases of `Comfy-Org/ComfyUI`: the tested one first
-(its source archive has a pinned sha256; any other is installed with the log saying that it was not checked). One click
-installs it. The install is one primitive, `install.python_app@1`, and everything it does is in the staging directory
-`~/.quickai/comfyui/<tag>.partial/`:
+**Settings → Advanced → Look up ComfyUI builds** lists the releases of `Comfy-Org/ComfyUI`, with the tested release
+first (its source archive has a pinned sha256; any other release is installed with a log entry stating that it was not
+verified). A single click installs it. The installation is a single primitive, `install.python_app@1`, and all of its
+work takes place in the staging directory `~/.quickai/comfyui/<tag>.partial/`:
 
-| Step | What | Test |
+| Step | What it does | Test |
 |---|---|---|
-| python | QuickAI's own (C181): CPython 3.12.15 of python-build-standalone (with pip, venv and the headers), downloaded once into `python/` of ComfyUI's root and checked against the SHA-256 the document pins; or the one named in the **Python** box (3.10 or newer). Nothing of the computer's Python is needed or changed | F20 |
-| source | the release's source archive, checked against its pin, unpacked as `app/` | F21, F22 |
-| nodes | the pack of GGUF nodes (`ComfyUI-GGUF`, one commit, pinned by the digest of its archive) unpacked into `app/custom_nodes/` | F21, F22 |
-| venv | `<python> -m venv venv/` | F21 |
-| pip | one PyTorch for this machine's graphics card (ROCm 7.2 for AMD on Linux, CUDA 13 for NVIDIA, the processor's otherwise), then what ComfyUI needs, then, **when its box is ticked, ComfyUI-Manager** (ComfyUI's own `manager_requirements.txt`: 13 packages, 27 MB), then what the pack needs; always `--only-binary=:all:`, so no package runs a build script on the machine, and the temporary files are inside the staging directory (a machine's `/tmp` can be memory: this one's is) | F05, F21, F33 |
-| launcher | `comfyui`, a script that runs `app/main.py` with `venv/`'s Python, **and with the Manager's word (`--enable-manager-legacy-ui`) when the build has the Manager** | F21, F34 |
-| check | the launcher with `--quick-test-for-ci --cpu`, which loads every node and exits | F21, F26 |
-| rename | `<tag>.partial` → `<tag>`, so a build is there whole or not at all | F21 |
+| python | Uses QuickAI's own interpreter (C181): CPython 3.12.15 from python-build-standalone (with pip, venv and the headers), downloaded once into `python/` under ComfyUI's root and verified against the SHA-256 pinned in the document; or the interpreter named in the **Python** field (3.10 or newer). The computer's own Python is neither required nor modified | F20 |
+| source | Verifies the release's source archive against its pin and unpacks it as `app/` | F21, F22 |
+| nodes | Unpacks the GGUF node pack (`ComfyUI-GGUF`, a single commit, pinned by the digest of its archive) into `app/custom_nodes/` | F21, F22 |
+| venv | Runs `<python> -m venv venv/` | F21 |
+| pip | Installs one PyTorch build for this machine's graphics card (ROCm 7.2 for AMD on Linux, CUDA 13 for NVIDIA, the CPU build otherwise), then ComfyUI's dependencies, then, **when its option is selected, ComfyUI-Manager** (ComfyUI's own `manager_requirements.txt`: 13 packages, 27 MB), then the node pack's dependencies; always with `--only-binary=:all:`, so that no package runs a build script on the machine, and with temporary files inside the staging directory (a machine's `/tmp` may be held in memory) | F05, F21, F33 |
+| launcher | Writes `comfyui`, a script that runs `app/main.py` with the Python from `venv/`, **adding the Manager's flag (`--enable-manager-legacy-ui`) when the build includes the Manager** | F21, F34 |
+| check | Runs the launcher with `--quick-test-for-ci --cpu`, which loads every node and exits | F21, F26 |
+| rename | Renames `<tag>.partial` → `<tag>`, so that a build is either complete or absent | F21 |
 
-It takes **about twenty minutes and 17 GB**: on the machine this was developed on, 19 min 51 s from the click to the
-rename, 17,364,523,756 bytes in 65,609 files, nearly all of it PyTorch (the wheel alone is 6.2 GB, fetched at about
-7 MB/s). The document asks for 30 GiB free before it starts, which holds the environment and the wheel while it is unpacked.
-The Manager adds seconds and 78 MB to that (F33).
+The installation takes **about twenty minutes and 17 GB**: on the development machine, 19 min 51 s from the click to
+the rename, 17,364,523,756 bytes in 65,609 files, almost all of it PyTorch (the wheel alone is 6.2 GB, downloaded at
+about 7 MB/s). The document requires 30 GiB of free space before it starts, enough for the environment and the wheel
+while it is unpacked. The Manager adds a few seconds and 78 MB (F33).
 
-The window says where it is while it works. Under the bar: `Step 4 of 8 · PyTorch for AMD GPUs (ROCm 7.2) · downloading
-torch-2.14.1+rocm7.2-cp314-cp314-manylinux_2_28_x86_64.whl: 117.5 MB of 5.8 GB, 7.0 MB/s, about 13 min 49 s left`; while
-pip unpacks, which takes minutes in which it prints nothing, how long it has been; and after 45 seconds of silence
-that pip is still running. The log holds pip's own words. **Cancel** stops pip, or the check, and everything
-they started within seconds and throws the work away.
+The window reports progress while the installation runs. Under the toolbar: `Step 4 of 8 · PyTorch for AMD GPUs (ROCm 7.2) · downloading
+torch-2.14.1+rocm7.2-cp314-cp314-manylinux_2_28_x86_64.whl: 117.5 MB of 5.8 GB, 7.0 MB/s, about 13 min 49 s left`;
+while pip unpacks, which takes several minutes without any output, the elapsed time; and after 45 seconds of silence,
+a note that pip is still running. The log contains pip's own output. **Cancel** stops pip, or the check, together with
+everything they started, within seconds, and discards the work.
 
 ## ComfyUI-Manager
 
-[ComfyUI-Manager](https://github.com/Comfy-Org/ComfyUI-Manager) is the add-on that installs custom nodes from inside ComfyUI's page,
-and whose **Model Manager** lists about 500 models (checkpoints, LoRAs, VAEs, upscalers, ControlNets) and puts the one you choose in the
-models folder. ComfyUI's own release names it (`manager_requirements.txt`, and a section of its README on how to turn it on), and the person who asked for this option called it highly recommended.
-QuickAI offers it **when a build is installed**, as a box ticked until you untick it (C152).
+[ComfyUI-Manager](https://github.com/Comfy-Org/ComfyUI-Manager) is the add-on that installs custom nodes from within
+ComfyUI's page, and whose **Model Manager** lists about 500 models (checkpoints, LoRAs, VAEs, upscalers, ControlNets)
+and places the one you choose in the models folder. ComfyUI's own release refers to it (`manager_requirements.txt`, and
+a section of its README explaining how to enable it), and the user who requested this option described it as highly
+recommended. QuickAI offers it **when a build is installed**, as an option that is selected unless you clear it (C152).
 
-- **The box.** Settings → Advanced → **ComfyUI**, under **Look up ComfyUI builds**: **Install ComfyUI-Manager** with *highly
-  recommended* beside it, and a hover that says what it is, what it contacts and that a custom node is another person's program. The
-  sentence under it says what the install is going to put on the machine, and says ComfyUI-Manager when it is ticked. What is ticked
-  when **Use** is clicked is what that install does (the box is of the install you are about to make: it is ticked again each time QuickAI is started);
-  it cannot be changed while an install runs. **Continue**, on an install
-  that stopped, goes on with the choice that install was begun with and not with the box (what was done is believed only if it was done
-  for the same plan: F98, F99a). It is the window's box: the headless runner (`quickai-run`) installs ComfyUI without it, as it did.
-- **What the install does.** One more step of pip after what ComfyUI needs (`pip install -r manager_requirements.txt` of the release,
-  wheels only, from the package index: the version that release was made with), and the build's launcher passes
-  `--enable-manager-legacy-ui` before the arguments it is given. A build is **started with what it was made with**: the one made without
-  the Manager is started without the flag, and a ComfyUI that is already running was not started by QuickAI and is not changed.
-- **Why the classic Manager (C153).** ComfyUI has two (F34). The new one has no Model Manager, and the list of its Nodes Manager is asked of
-  `api.comfy.org` **by the page**, which **The page's network** (`--offline`, the default) forbids, so it would show grey placeholders
-  for ever; the classic one has the Model Manager, and everything it does is done by ComfyUI itself, so the page's setting does not
-  touch it. Neither choice changes what the setting is for: the page contacts no other site.
-- **The button (C154).** The classic Manager puts its button in the page's old menu, which the page does not show by default, so QuickAI
-  writes one more small folder beside the bridge at every start (`~/.quickai/comfyui/extensions/quickai_manager`: no node, one script) that
-  puts a **Manager** button at the top of the page, beside **Run**, when ComfyUI answers that the Manager is there. It opens the Manager's
-  own menu: **Custom Nodes Manager**, **Install Missing Custom Nodes**, **Model Manager**, **Install via Git URL**, Snapshot Manager... With no
-  Manager the script adds nothing and says nothing.
-- **Models (the person's recommendation, 2026-10-24).** The Model Manager is the way to get a model for ComfyUI that **Recommended** and **Look up
-  online** do not know of: it fetches the file from where its list says it is (GitHub, Hugging Face, others) into the folder of its kind below the
-  models folder ComfyUI was given (`vae_approx/taef1_decoder.pth`, F36), which is the models folder of this window, so **Refresh** and
-  the loaders find it. QuickAI's own ways stay as they are.
-- **Where its files are.** Its settings, lists, snapshots and history are in `~/.quickai/comfyui/user/__manager` (ComfyUI is told `--user-directory`),
-  nothing beside the build, and the build can be deleted without losing them.
-- **What it contacts (C155).** At every start, with no one asking: `raw.githubusercontent.com` (its five lists) and `api.comfy.org` (the
-  Registry's pages of node packs); and, when you ask it for something, the site that thing is on (`github.com`, `huggingface.co`, `pypi.org` for a node's
-  packages...). The page's network setting does not change this: it is about the page, and these are ComfyUI's own requests. The hosts are declared
-  in the document (`egress`), held to a recording by X08, and named in [PRIVACY.md](../PRIVACY.md) (F35). **A custom node it installs is another person's
-  program, which runs on this computer**; QuickAI checks nothing of it.
-- **What it says that means nothing.** `[ERROR] [ComfyUI-Manager] PyTorch is not installed` at every start (it wants `torchaudio` too; installing it would
-  take PyTorch back to 2.11: F33) and a warning about `matrix-nio`; neither stops anything. It never installs `torch`, `torchvision`, `torchsde` or
-  `torchaudio` for a node. Its buttons **Update ComfyUI** and **Switch ComfyUI** have nothing to update in a build, which is the source of a release
-  and not a clone: another release is installed from this window.
-- **How it was held.** The document and its plan (F93, F94), the launcher (F95), the install (F96 to F98), the window's box and the choice of an install that
-  stopped (F99, F99a), the folder of the button (P20), and, by hand, the real page in Chromium with the real Manager: the button, the Model Manager putting a
-  model in the folder, the hosts contacted, with and without the Manager (P21, F33 to F36).
+- **The option.** Settings → Advanced → **ComfyUI**, under **Look up ComfyUI builds**: **Install ComfyUI-Manager**,
+  marked *highly recommended*, with a tooltip explaining what it is, what it contacts, and that a custom node is
+  another party's program. The sentence below it describes what the installation will put on the machine, including
+  ComfyUI-Manager when the option is selected. The state of the option when **Use** is clicked determines what that
+  installation does (the option applies to the installation you are about to start, and is selected again each time
+  QuickAI starts); it cannot be changed while an installation is running. **Continue**, on an interrupted installation,
+  resumes with the choice that installation began with, not with the current option (completed work is trusted only if
+  it was done for the same plan: F98, F99a). The option belongs to the window: the headless runner (`quickai-run`)
+  installs ComfyUI without it, as before.
+- **What the installation does.** It adds one pip step after ComfyUI's dependencies
+  (`pip install -r manager_requirements.txt` from the release, wheels only, from the package index: the version that
+  release was built with), and the build's launcher passes `--enable-manager-legacy-ui` before the arguments it receives. A build is
+  **started as it was built**: one built without the Manager is started without the flag, and a ComfyUI instance that
+  was already running was not started by QuickAI and is not modified.
+- **Why the classic Manager (C153).** ComfyUI offers two (F34). The new one has no Model Manager, and the list in its
+  Nodes Manager is requested from `api.comfy.org` **by the page**, which **The page's network** setting (`--offline`,
+  the default) blocks, so it would show grey placeholders indefinitely. The classic one has the Model Manager, and all
+  of its work is done by ComfyUI itself, so the page's setting does not affect it. Neither choice changes the purpose
+  of that setting: the page is designed to contact no other site.
+- **The button (C154).** The classic Manager places its button in the page's legacy menu, which the page hides by
+  default, so at every start QuickAI writes one more small folder beside the bridge
+  (`~/.quickai/comfyui/extensions/quickai_manager`: no node, one script) that adds a **Manager** button at the top of
+  the page, beside **Run**, when ComfyUI reports that the Manager is present. It opens the Manager's own menu:
+  **Custom Nodes Manager**, **Install Missing Custom Nodes**, **Model Manager**, **Install via Git URL**, Snapshot
+  Manager... Without the Manager, the script adds nothing and reports nothing.
+- **Models (the user's recommendation, 2026-10-24).** The Model Manager is the way to obtain a model for ComfyUI that
+  **Recommended** and **Look up online** do not know about: it downloads the file from the location its list gives
+  (GitHub, Hugging Face and others) into the folder for its kind under the models folder ComfyUI was given
+  (`vae_approx/taef1_decoder.pth`, F36), which is this window's models folder, so **Refresh** and the loaders find it.
+  QuickAI's own methods remain unchanged.
+- **Where its files are.** Its settings, lists, snapshots and history are stored in
+  `~/.quickai/comfyui/user/__manager` (ComfyUI is given `--user-directory`), not beside the build, so the build can be
+  deleted without losing them.
+- **What it contacts (C155).** At every start, without being asked: `raw.githubusercontent.com` (its five lists) and
+  `api.comfy.org` (the Registry's pages of node packs); and, when you request something, the site that hosts it
+  (`github.com`, `huggingface.co`, `pypi.org` for a node's packages...). The page's network setting does not change
+  this: that setting governs the page, and these are ComfyUI's own requests. The hosts are declared in the document
+  (`egress`), checked against a recording by X08, and listed in [PRIVACY.md](../PRIVACY.md) (F35). **A custom node it
+  installs is another party's program, which runs on this computer**; QuickAI does not verify it in any way.
+- **Messages that can be ignored.** `[ERROR] [ComfyUI-Manager] PyTorch is not installed` appears at every start (it
+  also expects `torchaudio`; installing it would downgrade PyTorch to 2.11: F33), as does a warning about `matrix-nio`;
+  neither stops anything. It never installs `torch`, `torchvision`, `torchsde` or `torchaudio` for a node. Its
+  **Update ComfyUI** and **Switch ComfyUI** buttons have nothing to update in a build, which is the source of a release
+  rather than a clone: another release is installed from this window instead.
+- **How it was verified.** The document and its plan (F93, F94), the launcher (F95), the installation (F96 to F98), the
+  window's option and the choice carried by an interrupted installation (F99, F99a), the button's folder (P20), and,
+  manually, the real page in Chromium with the real Manager: the button, the Model Manager placing a model in the
+  folder, and the hosts contacted, with and without the Manager (P21, F33 to F36).
 
-## What the computer has to have
+## System requirements
 
-The table above is what the install does; what the computer must have for it, and for the models that run through Triton, is the document's
-`[[prerequisite]]` entries, which a configuration asks for in `[[needs]] system = "..."` and `quickai-run` looks at before it fetches anything
-([headless.md](headless.md), section 12; facts F29 to F31):
+The table above describes what the installation does. What the computer must provide for it, and for models that run
+through Triton, is defined by the document's `[[prerequisite]]` entries, which a configuration requests with
+`[[needs]] system = "..."` and which `quickai-run` checks before it downloads anything ([headless.md](headless.md),
+section 12; facts F29 to F31):
 
-| Id | What | Looked at | Brought by (apt) |
+| Id | What | How it is checked | Provided by (apt) |
 |---|---|---|---|
-| `python_venv` | the `ensurepip` module of the Python the environment is made with: Debian and Ubuntu leave it out of the Python, and without it `python -m venv` fails | before the install, by asking the Python the install will use; not asked of an environment that is made | `python3.12-venv` |
-| `c_compiler` | `$CC`, else `gcc`, else `clang`: what Triton looks for to build the helper it needs at the first kernel | the `PATH` | `build-essential` |
-| `python_headers` | `Python.h` in the folder of Python's headers (the default scheme of `sysconfig`, Debian's `posix_local` read as `posix_prefix`) | by asking the Python of the environment | `python3.12-dev` |
-| `nvidia_driver` | a driver of the 580 series or newer, because the PyTorch for an NVIDIA card is built for CUDA 13 | `nvidia-smi`, else `/proc/driver/nvidia/version` | none: a driver is not installed here |
-| `triton` | a Triton kernel is built with the computer's compiler and run on the card, from an empty cache | after the install and before the models are fetched, by the environment's own Python | none: it passes when the others are right |
+| `python_venv` | The `ensurepip` module of the Python used to create the environment: Debian and Ubuntu omit it from their Python, and without it `python -m venv` fails | Before the installation, by querying the Python the installation will use; not checked for an environment that is created | `python3.12-venv` |
+| `c_compiler` | `$CC`, otherwise `gcc`, otherwise `clang`: what Triton looks for to build the helper it needs at the first kernel | The `PATH` | `build-essential` |
+| `python_headers` | `Python.h` in Python's header folder (the default `sysconfig` scheme, with Debian's `posix_local` read as `posix_prefix`) | By querying the environment's Python | `python3.12-dev` |
+| `nvidia_driver` | A driver from the 580 series or newer, because the PyTorch build for NVIDIA cards targets CUDA 13 | `nvidia-smi`, otherwise `/proc/driver/nvidia/version` | None: drivers are not installed this way |
+| `triton` | A Triton kernel is built with the computer's compiler and run on the card, starting from an empty cache | After the installation and before the models are downloaded, by the environment's own Python | None: it passes when the other prerequisites are met |
 
-The window does not look at any of them; the install it offers is unchanged.
+The window checks none of these; the installation it offers is unchanged.
 
 ## If an install is interrupted
 
-The window it was started from can be closed, be killed, or stop answering, the machine can be switched off, a step
-can fail. Twenty minutes of work must not be lost to any of those, and a person must not have to do anything to a
-directory by hand to go on (on 2026-10-08 one did: see *If the window stops answering*).
+The window that started the installation may be closed, killed or stop responding, the machine may be switched off, or
+a step may fail. Twenty minutes of work must not be lost to any of these, and you must not have to repair a directory by
+hand in order to continue (on 2026-10-08 a user had to: see *If the window stops answering*).
 
-- **A journal.** The staging directory keeps `.quickai-install.json`: the steps of the install, which are done, and a
-  fingerprint of what they were made for (the release, the source's address, the Python, every package and pack). A
-  step is written down when it ends, whole or not at all.
-- **What survives.** An install that **fails after its environment was made** (pip says no, the network goes, the check
-  does not pass) and one that is **killed** keep their directory. One that is **cancelled by the person**, or fails
-  before the environment (a checksum that does not match, no Python, no room), leaves nothing.
-- **Not a build.** A directory with a journal is not a build, whatever it is called: `Installed builds` does not list it
-  and the engine's own search for its program skips it. A person who renames `v0.39.0.partial` to `v0.39.0` because it
-  looks whole has made a directory that is still not one, and is told so: **Unfinished installs**.
-- **Continue.** When the application starts with ComfyUI chosen, the log says, once, that an install stopped (`ComfyUI: an
-  install of v0.39.0 stopped before it was whole (3 of 7 steps done, ...)`). Settings → Advanced lists them
-  (`v0.39.0 (3 of 7 steps done, 4.8 MB, stopped 12 min ago)`), each with **Continue** and a trash can. Continue, or the same
-  install asked for again, does the steps that are left and none that are done (the log says which were: `Already done by the install that stopped: ...`; `Going on with the install that
-  stopped (3 of 7 steps are done)`), and **always** the check, since it is the check that says the whole works. A step
-  whose files are gone is not done, and nor is any after it. If the plan is not the same (another Python, other
-  packages, a newer application, the Manager ticked or not) the work is not believed and the install begins again, saying so; the window's **Continue** asks for the choice the install was begun with (the record lists its steps, which say it). The directory is
-  taken up under any name; the room it asks for is what is still to be written.
-- **A record that cannot be written** (a full disk) is said, stops the install and costs nothing: what was done stays where it
-  was, and the next install goes on from it.
-- **What cannot be saved.** A wheel of 6 GB that was half fetched when the install stopped: pip cannot resume a
-  download, so that step begins again. A step that was finished is never fetched again.
-- **A lock.** While an install works in a directory it holds a lock on `.quickai-install.lock` (an advisory lock on
-  the file, which the system lets go when the process ends, however it ends). Another window of QuickAI neither clears
-  that directory, nor continues it, nor lists it as stopped; it is told that another window is installing it.
-- **Where the record ends.** After the rename the journal is removed from the build: a build that is whole has none, and
-  one that has is one that stopped between the rename and its removal, which Continue finishes at once.
+- **A journal.** The staging directory contains `.quickai-install.json`: the installation's steps, which of them are
+  done, and a fingerprint of what they were performed for (the release, the source address, the Python, every package
+  and node pack). A step is recorded when it ends, completely or not at all.
+- **What is kept.** An installation that **fails after its environment was created** (pip refuses, the network drops,
+  the check fails) and one that is **killed** keep their directory. One that **you cancel**, or that fails before the
+  environment is created (a checksum mismatch, no Python, insufficient space), leaves nothing behind.
+- **Not a build.** A directory with a journal is not a build, whatever its name: `Installed builds` does not list it,
+  and the engine's own search for its program skips it. If you rename `v0.39.0.partial` to `v0.39.0` because it appears
+  complete, the result is still not a build, and QuickAI says so under **Unfinished installs**.
+- **Continue.** When QuickAI starts with ComfyUI selected, the log notes, once, that an installation was interrupted
+  (`ComfyUI: an
+  install of v0.39.0 stopped before it was whole (3 of 7 steps done, ...)`). Settings → Advanced lists such
+  installations (`v0.39.0 (3 of 7 steps done, 4.8 MB, stopped 12 min ago)`), each with **Continue** and a delete
+  button. Continue, or requesting the same installation again, performs the remaining steps and none of the completed
+  ones (the log lists them: `Already done by the install that stopped: ...`; `Going on with the install that
+  stopped (3 of 7 steps are done)`), and **always** runs the check, since the check confirms that the whole works. A
+  step whose files are missing is not considered done, and neither is any step after it. If the plan differs (another
+  Python, other packages, a newer application, or the Manager option changed), the completed work is not trusted and
+  the installation starts over, saying so; the window's **Continue** requests the choice the installation began with
+  (the record lists its steps, which reflect it). The directory is resumed under any name, and the space required is
+  only what remains to be written.
+- **A record that cannot be written** (a full disk) is reported, stops the installation and loses nothing: completed
+  work stays in place, and the next installation resumes from it.
+- **What cannot be saved.** A 6 GB wheel that was partly downloaded when the installation stopped: pip cannot resume a
+  download, so that step starts over. A completed step is never downloaded again.
+- **A lock.** While an installation works in a directory, it holds a lock on `.quickai-install.lock` (an advisory file
+  lock, which the system releases when the process ends, however it ends). Another QuickAI window will neither clear
+  that directory, continue it, nor list it as interrupted; it reports that another window is installing it.
+- **When the record is removed.** After the rename, the journal is removed from the build: a complete build has none,
+  and a build that still has one was interrupted between the rename and the removal, which Continue completes
+  immediately.
 
 ## If the window stops answering
 
-A window that is drawn by one thread stops answering when that thread waits for something that does not come. What the
-application does so that it need not:
+A window drawn by a single thread stops responding when that thread waits for something that never arrives. To avoid
+this, the application ensures that:
 
-- the **disk is never read in a frame**: the list of builds and of installs that stopped (a build of ComfyUI is 65,000
-  files, and adding up their sizes took 140 ms in every frame the section was drawn in, before this) is read by a thread of its
-  own, one scan at a time, and again only when an install or a delete ends or the section was away;
-- a **delete runs on a thread of its own** (seventy thousand files), and locks the engine meanwhile;
-- what an install or a download says many times a second asks for a repaint **soon**, not at once;
-- the install and every wait are on threads that the window only reads the events of.
+- the **disk is never read during a frame**: the list of builds and interrupted installations (a ComfyUI build has
+  65,000 files, and summing their sizes previously took 140 ms in every frame in which the section was drawn) is read by
+  a dedicated thread, one scan at a time, and again only when an installation or deletion ends or the section is
+  reopened;
+- a **deletion runs on its own thread** (seventy thousand files) and locks the engine meanwhile;
+- events that an installation or download emits many times per second request a repaint **soon**, not immediately;
+- the installation and every wait run on threads whose events the window only reads.
 
-When it happens anyway, a thread that looks at the window once a second **while something is running** (an install, a
-download, a delete, a look-up) writes `~/.quickai/ui-stalls.log` if no frame has been drawn for five seconds: when, for
-how long, what the window's thread was waiting in (its state, the kernel function it sleeps in, the system call),
-how the memory and the swap were, how much of the last ten seconds anything waited for memory or for the disk. When the window
-answers again the file says when, and the log pane says that it did not answer. Nothing leaves the machine. A window
-with nothing running draws nothing and is not looked at, and nor is one that is covered or minimized: the toolkit
-does not paint a window nobody can see, which is no stall.
+If it happens nonetheless, a thread that checks the window once per second **while something is running** (an
+installation, a download, a deletion or a search) writes to `~/.quickai/ui-stalls.log` if no frame has been drawn for
+five seconds: when it happened, for how long, what the window's thread was waiting in (its state, the kernel function it
+is sleeping in, the system call), the state of memory and swap, and how much of the last ten seconds any process spent
+waiting for memory or for the disk. When the window responds again, the file records when, and the log pane notes that
+the window had stopped responding. The record is designed to stay on this computer. A window with nothing running draws
+nothing and is not monitored, and neither is a window that is covered or minimized: the toolkit does not paint a window
+that nobody can see, which is not a stall.
 
 A record has this form (the numbers are an example, not a measurement):
 
@@ -176,34 +197,34 @@ A record has this form (the numbers are an example, not a measurement):
 2026-10-08 01:06:40 UTC · the window answers again after 33 s
 ```
 
-**What happened on 2026-10-08.** A person installed ComfyUI from the window; it stopped answering, and they killed it after
-looking at the files and renaming a directory; ComfyUI was there when they started the window again. What the files say
-about the install: the staging directory was created at 01:04:07, the launcher written at 01:23:48.07, the check ran until
-01:23:58, the temporary directory was removed at 01:23:58.601, and the directory's change time is that same instant.
-Renaming a directory changes its change time (checked), so **the application itself made the rename into place, twenty
-minutes after the install began, and nothing in the files shows a rename by hand** (one made before would have broken
-the steps that came after it, which wrote under the old name, and one made later would have a later change time). The
-settings file has no record of the install ending, which the window writes the moment it hears of it, so the window never
-took the news: its thread was blocked, not slow, and by the person's account from early on. What blocked it was **not
-established**: the journal of the system holds no out-of-memory kill; a frame of the settings window drawn in a test
-costs under a millisecond; the one thing in a frame that scaled with the size of a build (adding up the files of every
-installed build, 140 ms for this one) cannot take twenty minutes, and did not run for the staging directory (a name that
-ends in `.partial` was skipped). The machine had 20 GB in a memory-backed `/tmp`, a full swap and 17 GB being written, which
-can starve a window; the display server or the graphics driver not answering are others (a window that is covered is not
-painted at all, so that is not it). The recorder
-is there to say which, the next time. Nothing in the install depended on the window answering, and nothing is lost to a
-kill.
+**What happened on 2026-10-08.** A user installed ComfyUI from the window; the window stopped responding, and the user
+killed it after inspecting the files and renaming a directory; ComfyUI was present when the window was started again.
+The files show the following about the installation: the staging directory was created at 01:04:07, the launcher was
+written at 01:23:48.07, the check ran until 01:23:58, the temporary directory was removed at 01:23:58.601, and the
+directory's change time is that same instant. Renaming a directory updates its change time (verified), so **the
+application itself performed the final rename, twenty minutes after the installation began, and nothing in the files
+indicates a manual rename** (an earlier rename would have broken the subsequent steps, which wrote under the old name,
+and a later one would have a later change time). The settings file has no record of the installation finishing, which
+the window writes as soon as it is notified, so the window never received the notification: its thread was blocked, not
+slow, and by the user's account from early on. The cause of the block was **not established**: the system journal
+records no out-of-memory kill; a frame of the settings window drawn in a test takes under a millisecond; and the only
+per-frame work that scaled with the size of a build (summing the files of every installed build, 140 ms for this one)
+cannot take twenty minutes, and did not run for the staging directory (names ending in `.partial` were skipped). The
+machine had 20 GB in a memory-backed `/tmp`, a full swap and 17 GB being written, which can starve a window;
+an unresponsive display server or graphics driver are other possibilities (a covered window is not painted at all, so
+that is not the cause). The recorder exists to identify the cause next time. Nothing in the installation depended on
+the window responding, and nothing is lost when it is killed.
 
 ## Models
 
-The files of a model are kept in the folders of the models folder (`~/.quickai/comfyui/models/` unless the person chose
-another) that ComfyUI looks for each kind in; `[components.<kind>] place` says which, and the record beside the weights
-(`<weights>.bundle.json`) says where the others are, so that deleting the model deletes them all and keeps what another
-model uses. A file other than the weights is kept as `<owner>--<repo>--<name>`, as a projector is (C63): a workflow
-names the file **as it is on disk**.
+A model's files are stored in the folders of the models folder (`~/.quickai/comfyui/models/` unless you chose another)
+in which ComfyUI looks for each kind; `[components.<kind>] place` specifies which, and the record beside the weights
+(`<weights>.bundle.json`) lists where the other files are, so that deleting the model deletes all of them while keeping
+any file another model uses. A file other than the weights is stored as `<owner>--<repo>--<name>`, as a projector is
+(C63): a workflow refers to the file **by its name on disk**.
 
-**Recommended → LTX-Video 2B distilled** (Lightricks, 2B, free below $10M a year in revenue) offers the weights alone or
-with their text encoder and VAE, each checked against its pinned hash while it arrives:
+**Recommended → LTX-Video 2B distilled** (Lightricks, 2B, free below $10M a year in revenue) offers the weights alone
+or together with their text encoder and VAE, each verified against its pinned hash as it downloads:
 
 | Kind | File on disk | Folder | Bytes |
 |---|---|---|---|
@@ -211,32 +232,40 @@ with their text encoder and VAE, each checked against its pinned hash while it a
 | text encoder | `biali--ltxv-gguf--t5xxl_fp16-q4_0.gguf` | `text_encoders/` | 2,896,123,072 |
 | VAE | `biali--ltxv-gguf--ltxv_0.9.5_vae_fp16.safetensors` | `vae/` | 2,493,868,876 |
 
-The VAE is **not** `ltxv_vae_fp32-f16.gguf`, which a guide for this model names: that one is not the VAE of this model, and
-the 0.9.8 model decodes with the 0.9.5 VAE (fact F12). [`examples/workflows/ltx-video-2b-t2v.json`](examples/workflows/ltx-video-2b-t2v.json)
-is a workflow for it in the API's format (send it to `POST /prompt`), naming the files of the default offer; with Q8_0
-chosen, pick it in the first box. A test holds its names to what the button stores (F64).
+The VAE is **not** `ltxv_vae_fp32-f16.gguf`, which one guide for this model names: that file is not this model's VAE,
+and the 0.9.8 model decodes with the 0.9.5 VAE (fact F12).
+[`examples/workflows/ltx-video-2b-t2v.json`](examples/workflows/ltx-video-2b-t2v.json) is a workflow for it in the
+API format (send it to `POST /prompt`), naming the files of the default offer; if you chose Q8_0, select it in the first
+field. A test checks its file names against what the button stores (F64).
 
-A 4-second clip at 512×288 took 64 to 92 s on a 12 GB RX 6700 XT, with the **tiled** VAE decode that the example uses,
-in tiles small enough for the Q8_0 weights too (fact F13: at 256 they ran out of memory in the decode). On an AMD card that PyTorch has no kernels for, **Present the GPU as** (`HSA_OVERRIDE_GFX_VERSION`) is worked
-out from what the driver says (`gfx1031` as `10.3.0`) and can be set by hand (fact F9, test F09).
+A 4-second clip at 512×288 took 64 to 92 s on a 12 GB RX 6700 XT, using the **tiled** VAE decode that the example uses,
+with tiles small enough for the Q8_0 weights as well (fact F13: at 256 they ran out of memory during decoding). On an
+AMD card for which PyTorch has no kernels, **Present the GPU as** (`HSA_OVERRIDE_GFX_VERSION`) is derived from what
+the driver reports (`gfx1031` as `10.3.0`) and can be set manually (fact F9, test F09).
 
-A different model, **Wan 2.2 5B Turbo** (`hum-ma/Wan2.2-TI2V-5B-Turbo-GGUF`, Apache-2.0: a 5B video model, distilled to 4 steps), is fetched with **Look up online** in three
-buttons, because its text encoder and its VAE are other people's repositories: the model (`Wan2_2-TI2V-5B-Turbo-Q8_0.gguf`, 5.4 GB, into `diffusion_models/`),
-the text encoder (`umt5-xxl-encoder-Q8_0.gguf`, 6.0 GB, `city96/umt5-xxl-encoder-gguf`, into `text_encoders/`) and the VAE (`Wan2.2_VAE.safetensors`, 1.4 GB, in the folder `VAE` of
-`QuantStack/Wan2.2-TI2V-5B-GGUF`, into `vae/`). [`examples/workflows/wan22-ti2v-5b-turbo-t2v.json`](examples/workflows/wan22-ti2v-5b-turbo-t2v.json) is a workflow for it in the
-API's format (send it to `POST /prompt`, as the LTX one): the model card's own settings (4 steps, a guidance of 1, Euler, the simple scheduler), 640×352 and 33 frames; with the
-**tiled** VAE decode in tiles of 192 and 16 frames it made a clip on the 12 GB RX 6700 XT in 183 s (90 s on a fresh ComfyUI with the files cached), and at 256 and 32 the decode ran out of memory
-twice and the run took 453 s (fact F27). The model's preferred size is 1280×704: that was not run, and a card of 12 GB may need a smaller one. A test holds the workflow's names to what the buttons store
-(Q01d). It is not in **Recommended** because the list holds a model's files from one repository, and these are three.
+A different model, **Wan 2.2 5B Turbo** (`hum-ma/Wan2.2-TI2V-5B-Turbo-GGUF`, Apache-2.0: a 5B video model distilled
+to 4 steps), is obtained with **Look up online** using three buttons, because its text encoder and VAE are in other
+parties' repositories: the model (`Wan2_2-TI2V-5B-Turbo-Q8_0.gguf`, 5.4 GB, into `diffusion_models/`), the text
+encoder (`umt5-xxl-encoder-Q8_0.gguf`, 6.0 GB, `city96/umt5-xxl-encoder-gguf`, into `text_encoders/`) and the VAE
+(`Wan2.2_VAE.safetensors`, 1.4 GB, in the `VAE` folder of `QuantStack/Wan2.2-TI2V-5B-GGUF`, into `vae/`).
+[`examples/workflows/wan22-ti2v-5b-turbo-t2v.json`](examples/workflows/wan22-ti2v-5b-turbo-t2v.json) is a workflow for
+it in the API format (send it to `POST /prompt`, as with the LTX workflow), using the model card's own settings (4
+steps, a guidance of 1, Euler, the simple scheduler), 640×352 and 33 frames. With the **tiled** VAE decode in tiles of
+192 and 16 frames, it produced a clip on the 12 GB RX 6700 XT in 183 s (90 s on a fresh ComfyUI with the files cached);
+with tiles of 256 and 32, decoding ran out of memory twice and the run took 453 s (fact F27). The model's preferred size
+is 1280×704: that size was not tested, and a 12 GB card may require a smaller one. A test checks the workflow's file
+names against what the buttons store (Q01d). The model is not in **Recommended** because the list holds a model's files
+from a single repository, and these come from three.
 
 ## Getting models
 
-There are three ways to get a model from the window, as there are in llama.cpp's, a fourth from the page ([below](#the-pages-download-button)) and, in a build made with ComfyUI-Manager, a fifth: its **Model Manager** ([above](#comfyui-manager)).
-They differ in what they know: **Recommended** knows a model and every file it needs; **Look up online** finds files on
-the hub and puts each where it belongs; the box takes a file the person already has an address for. Whichever it was, a
-file is kept in the folder of the models folder that ComfyUI looks for that kind in, and a workflow names it by its file
-name. QuickAI changes nothing in ComfyUI for them: it puts a file in a folder, and **Refresh** in the window (or the `r` key in the page) makes ComfyUI read the
-folders again.
+As in llama.cpp's window, there are three ways to obtain a model from the window, a fourth from the page
+([below](#the-pages-download-button)) and, in a build that includes ComfyUI-Manager, a fifth: its **Model Manager**
+([above](#comfyui-manager)). They differ in what they know: **Recommended** knows a model and every file it needs;
+**Look up online** finds files on the hub and places each one where it belongs; and the field accepts a file you
+already have an address for. In every case, a file is stored in the folder of the models folder where ComfyUI looks for
+that kind, and a workflow refers to it by its file name. QuickAI does not modify ComfyUI for this: it places a file in a
+folder, and **Refresh** in the window (or the `r` key in the page) makes ComfyUI rescan the folders.
 
 ```
 Models: 3 installed   [Recommended] [Look up online] [Refresh] [Open folder]
@@ -251,130 +280,158 @@ v Text encoders (1)
     Get text encoder only:   [Q4_K_M · 3.4 GB] [Q5_K_M · 3.9 GB] [Q6_K · 4.3 GB] [Q8_0 · 5.6 GB]
 ```
 
-- **Look up online.** With nothing typed it makes the plain list: the most downloaded GGUF repositories of each pipeline the
-  document names (`text-to-video`, `image-to-video`, `text-to-image`, `image-to-image`) and of the word `encoder`, because a
-  text encoder carries no pipeline tag (F24): five searches and a request for each of the thirty repositories they find, which is
-  what llama.cpp's makes (L14 of [engine-facts.md](engine-facts.md): 500 requests in five minutes are allowed). Words typed in the box are one search, as in
-  llama.cpp's window: the phrase, then each of its words alone. The most downloaded GGUF repositories of any kind are language
-  models, which ComfyUI does not run, and are not what it lists; one that a search finds anyway is under **Other**, folded.
-- **What a result offers.** The quantizations of a repository's weights as buttons, the four the preferences like (closest to
-  the original first: `Q8_0`, `Q6_K`, `Q5_K_M`, `Q4_K_M`), smallest first, the preferred in bold, each with its size. Beside
-  them, **a file of a kind that goes by itself gets a row of its own**: *Get VAE only* for a VAE, *Get text encoder only* for a
-  text encoder, each file the repository holds of that kind (the document says how a kind is found: the parts of its
-  `[[models.bundle]]`, and which kinds are offered by themselves: `alone`). A repository that holds only text encoders
-  (`city96/umt5-xxl-encoder-gguf`) has no model row and is a section of its own, **Text encoders**. A repository that holds
-  the model, a text encoder and a VAE (the one the recommended list has) also has the row that fetches the three as one
-  download. Which repository holds what is the repository's: three people's repositories are three results.
-- **What is there already.** A result whose files are all in their folders, at the size the hub says, is marked **Installed** and
-  its button does nothing (a file that is there is never fetched again anyway). The folders are read when a look-up starts, when a
-  download ends and on **Refresh**, so a file put there by hand or fetched by the page counts. llama.cpp's results are not marked.
-- **Where a file goes.** The weights, in `diffusion_models/` (a picture model as well as a video model: the node that reads
-  GGUF reads it from there, F26); a text encoder in `text_encoders/`; a VAE in `vae/`. A file that a button fetches **by
-  itself keeps the name it has** (`Wan2.2_VAE.safetensors`, `umt5-xxl-encoder-Q8_0.gguf`), because a workflow that someone
-  shared names it so; the files of a bundle keep the names they have always had (`<owner>--<repo>--<name>`, C63), so two
-  repositories' `vae.safetensors` do not meet. Every button says where in its hover (*It is kept in the vae folder*), and the
-  window says it again when the file is in (*Fetched umt5-xxl-encoder-Q8_0.gguf (in text_encoders). ComfyUI finds it after
+- **Look up online.** With nothing entered, it builds the default list: the most downloaded GGUF repositories for each
+  pipeline the document names (`text-to-video`, `image-to-video`, `text-to-image`, `image-to-image`) and for the word
+  `encoder`, because a text encoder carries no pipeline tag (F24). This takes five searches and one request for each of
+  the thirty repositories they return, the same as llama.cpp's search (L14 of [engine-facts.md](engine-facts.md): 500
+  requests in five minutes are allowed). Words entered in the field form a single search, as in llama.cpp's window: the
+  phrase, then each of its words on its own. The most downloaded GGUF repositories overall are language models, which
+  ComfyUI does not run, and they are not listed; any that a search returns anyway appear under **Other**, collapsed.
+- **What a result offers.** The quantizations of a repository's weights appear as buttons: the four the preferences
+  favor (closest to the original first: `Q8_0`, `Q6_K`, `Q5_K_M`, `Q4_K_M`), ordered smallest first, with the preferred
+  one in bold and each showing its size. Beside them, **a file of a kind that can be used on its own gets a row of its
+  own**: *Get VAE only* for a VAE and *Get text encoder only* for a text encoder, listing each file of that kind in the
+  repository (the document defines how a kind is identified, through the parts of its `[[models.bundle]]`, and which
+  kinds are offered on their own, through `alone`). A repository that holds only text encoders
+  (`city96/umt5-xxl-encoder-gguf`) has no model row and forms a section of its own, **Text encoders**. A repository that
+  holds the model, a text encoder and a VAE (the one in the recommended list) also has a row that downloads all three
+  together. What each repository holds is determined by the repository itself: three parties' repositories are three
+  results.
+- **What is already installed.** A result whose files are all present in their folders, at the size the hub reports, is
+  marked **Installed** and its button does nothing (a file that is present is never downloaded again in any case). The
+  folders are read when a search starts, when a download ends and on **Refresh**, so files placed there manually or
+  downloaded by the page are counted. llama.cpp's results are not marked.
+- **Where a file goes.** The weights go to `diffusion_models/` (for an image model as well as a video model: the node
+  that reads GGUF reads it from there, F26), a text encoder to `text_encoders/`, and a VAE to `vae/`. A file that a
+  button downloads **on its own keeps its original name** (`Wan2.2_VAE.safetensors`, `umt5-xxl-encoder-Q8_0.gguf`),
+  because shared workflows refer to it by that name; the files of a bundle keep the names they have always had
+  (`<owner>--<repo>--<name>`, C63), so that two repositories' `vae.safetensors` files do not collide. Every button
+  shows the destination in its tooltip (*It is kept in the vae folder*), and the window repeats it when the file has
+  arrived (*Fetched umt5-xxl-encoder-Q8_0.gguf (in text_encoders). ComfyUI finds it after
   Refresh*).
-- **Checked.** The hub states a SHA-256 for every large file (`lfs.sha256` of the repository's answer; it is the `x-linked-etag`
-  of the file's own, F25), the look-up carries it, and the download hashes the bytes as they arrive: a file that is not what
-  the hub says it is (a wrong size or hash) is deleted and not kept, not even as a part, and the window says so in red. A file
-  that is already there at its size is not fetched again. This holds for llama.cpp's window too.
-- **The box.** One box, three things it can mean: the address of **one `.gguf` or `.safetensors` file** (the page of the file on
-  Hugging Face is turned into the file's address; any other `https` address must end in one of those) is downloaded; a **file of
-  this computer** is linked into the folder (a symbolic link, so no second copy; a copy where links cannot be made); anything
-  else is words to search for, and the *page of a repository* (`huggingface.co/city96/umt5-xxl-encoder-gguf`) is the name of
-  that repository, searched. **Into** chooses the folder (`diffusion_models`, `text_encoders`, `vae`, `loras`, `checkpoints`,
-  `controlnet`, `clip_vision`, `upscale_models`, `embeddings`: the weights', the kinds' and the others the document names,
-  `places`); *auto* chooses from the file's name the way a result does (a VAE or a text encoder by what the document's parts
-  say, else with the weights), and the window says which before the button is pressed. A link to a file that may hold a
-  program (`.ckpt`, `.pt`, `.pth`, `.bin`) or to anything that is not a model is refused with a sentence, and nothing is asked
-  of anyone: those are the person's to put in the folder (**Open folder**). The folder the person chose is believed over
-  the guess; it does not move what a result's button does, which is already the folder it belongs in.
-- **What it does not do.** Search the hub for anything but GGUF repositories (the models of `Comfy-Org` and the like are
-  safetensors: they are what a workflow's own *Download* is for, below, or a link in the box); recognize a LoRA by its name
-  (choose **Into** → `loras`); resume a download that stopped (the file starts again; the page's Download does go on from its
-  part); tell whether a model fits the graphics card (the recommended window greys what is more than the memory; a look-up
-  shows the sizes). A model fetched this way has **not been run by QuickAI** unless this page says so (Wan 2.2 5B Turbo, above, was): the
-  recommended list holds what a clip was made from on a real card, and nothing here claims that of a repository the hub lists.
-- **What it contacts.** `huggingface.co` for a look-up (about thirty-five requests for the plain list) and, for a file, `huggingface.co`
-  and the download server it sends the file to (`*.cdn.hf.co`), only when a button is pressed ([PRIVACY.md](../PRIVACY.md)). The
-  window itself makes these requests, not ComfyUI, so they are not in the engine's `egress`.
-- **How it was held.** The pure half on the answers that the hub gave for a video model, its text encoder and its VAE as three
-  people published them (`tests/fixtures/huggingface/comfyui/`, recorded 2026-10-08; Q01-Q07), the window against a fake hub
-  that really serves the files (a look-up, each button, a wrong checksum, the box with a link, a path and words; Q08-Q11), the
-  searches of the primitive (Q12) and a download of one file (Q13), and by hand against the real hub (Q14: the three
-  files of a person's list are offered with the sizes and checksums the recordings say). The files were fetched for that
-  person by a script that makes the same checks (size and SHA-256 against the hub's; the window was not built yet) and the
-  headers were read by the build's own Python: the Turbo model is architecture `wan`, 30 blocks, 825 tensors, which the pinned pack
-  of GGUF nodes lists as one it reads (F26). The real window was run on a virtual display with a throw-away home against the real
-  hub: **Look up online** listed 28 models, a name typed in the box and Enter listed 43, and a button put a 219 MB text encoder in
+- **Verification.** The hub publishes a SHA-256 for every large file (`lfs.sha256` in the repository's response; it
+  matches the `x-linked-etag` of the file itself, F25). The search carries it, and the download hashes the bytes as they
+  arrive: a file that does not match what the hub reports (wrong size or hash) is deleted, not even kept as a partial
+  file, and the window reports it in red. A file that is already present at its expected size is not downloaded again.
+  The same applies to llama.cpp's window.
+- **The field.** A single field accepts three kinds of input: the address of **one `.gguf` or `.safetensors` file** (a
+  file's page on Hugging Face is converted to the file's address; any other `https` address must end in one of those
+  extensions) is downloaded; a **file on this computer** is linked into the folder (a symbolic link, so no second copy
+  is made; a copy where links are not supported); anything else is treated as search terms, and the *page of a
+  repository* (`huggingface.co/city96/umt5-xxl-encoder-gguf`) is treated as that repository's name and searched.
+  **Into** selects the folder (`diffusion_models`, `text_encoders`, `vae`, `loras`, `checkpoints`, `controlnet`,
+  `clip_vision`, `upscale_models`, `embeddings`: the weights' folder, the kinds' folders and the others the document
+  names in `places`); *auto* chooses from the file name in the same way a result does (a VAE or text encoder according
+  to the document's parts, otherwise the weights' folder), and the window shows which before the button is pressed. A
+  link to a file that may contain a program (`.ckpt`, `.pt`, `.pth`, `.bin`), or to anything that is not a model, is
+  refused with an explanation, and nothing is requested from anyone: such files are yours to place in the folder
+  (**Open folder**). The folder you choose takes precedence over the guess; it does not change what a result's button
+  does, since that button already targets the correct folder.
+- **What it does not do.** It does not search the hub for anything but GGUF repositories (models from `Comfy-Org` and
+  similar publishers are safetensors: a workflow's own *Download*, below, or a link in the field is the way to get
+  them); recognize a LoRA by its name (choose **Into** → `loras`); resume an interrupted download (the file starts over;
+  the page's Download does resume from its partial file); or determine whether a model fits the graphics card (the
+  recommended window greys out models larger than the available memory; a search shows the sizes). A model downloaded
+  this way has **not been run by QuickAI** unless this page says so (Wan 2.2 5B Turbo, above, has been): the
+  recommended list contains models from which a clip was produced on a real card, and nothing here makes that claim
+  for a repository the hub lists.
+- **What it contacts.** `huggingface.co` for a search (about thirty-five requests for the default list) and, for a
+  file, `huggingface.co` and the download server it redirects to (`*.cdn.hf.co`), only when a button is pressed
+  ([PRIVACY.md](../PRIVACY.md)). These requests are made by the window itself, not by ComfyUI, so they are not part of
+  the engine's `egress`.
+- **How it was verified.** The pure logic was tested on the hub's responses for a video model, its text encoder and its
+  VAE as published by three parties (`tests/fixtures/huggingface/comfyui/`, recorded 2026-10-08; Q01-Q07); the window
+  against a fake hub that actually serves the files (a search, each button, a wrong checksum, and the field with a link,
+  a path and words; Q08-Q11); the primitive's searches (Q12) and a single-file download (Q13); and, manually, against the
+  real hub (Q14: the three files of a user's list are offered with the sizes and checksums the recordings show). The
+  files were downloaded for that user by a script performing the same checks (size and SHA-256 against the hub's; the
+  window had not yet been built), and their headers were read by the build's own Python: the Turbo model has
+  architecture `wan`, 30 blocks and 825 tensors, which the pinned GGUF node pack lists as supported (F26). The real
+  window was run on a virtual display with a temporary home folder against the real hub: **Look up online** listed 28
+  models, a name entered in the field followed by Enter listed 43, and a button placed a 219 MB text encoder in
   `text_encoders/` with the hub's SHA-256 (the implementation plan's log has the details).
 
 ## The page's Download button
 
-A workflow names the models it needs. When the machine lacks one, ComfyUI's page lists it, in the **Issues** of the
-workflow's panel under **Missing Models**, with a **Download** button. In a browser that button is a link that the browser
-saves in **its own folder**: on 2026-10-08 a person who pressed it on the Z-Image-Turbo template found `ae.safetensors`
-(335 MB) in `~/Downloads` and not where ComfyUI looks for it, and asked whether a setting or an environment variable
-makes it install. None does (fact F17): the page has three ways to answer the button, and the one for a browser is the
-link; what it has beside it is a place for a host program, which ComfyUI Desktop fills (F18). QuickAI is that host (C85).
+A workflow names the models it needs. When the machine lacks one, ComfyUI's page lists it in the workflow panel's
+**Issues**, under **Missing Models**, with a **Download** button. In a browser, that button is a link that the browser
+saves in **its own downloads folder**: on 2026-10-08, a user who pressed it on the Z-Image-Turbo template found
+`ae.safetensors` (335 MB) in `~/Downloads` rather than where ComfyUI looks for it, and asked whether a setting or an
+environment variable would make it install instead. None does (fact F17): the page has three ways to handle the button,
+and the one for a browser is the link; alongside it there is a slot for a host program, which ComfyUI Desktop fills
+(F18). QuickAI acts as that host (C85).
 
-- **What QuickAI puts there.** At every start of ComfyUI, before it starts, QuickAI writes two things beside the models folder,
-  not in the build (a build can still be deleted or replaced and nothing is lost, and one made before this was has it as a new
-  one does): `~/.quickai/comfyui/extensions/quickai_bridge/`, a folder of custom nodes that has no node, and
-  `extra_model_paths.yaml`, which ComfyUI is told to read (`--extra-model-paths-config`) and which makes `extensions/` a
-  place it loads custom nodes from (F19). What is the same is left alone, what differs is written again (the log says
-  `Put … (1 of 3 files written)`), and what the person put there is not touched. This is `[[launch.spawn.write]]` of the document, which
-  names files of the application's own (`crates/quickai-runtime/assets/comfyui/`, compiled in; architecture §11.7).
-- **What the bridge is.** Python and a script, with nothing but the standard library and what ComfyUI loads. Three routes that
-  only a program on this machine may use (`POST /quickai/downloads {url, name, directory}`, `GET /quickai/downloads`,
-  `DELETE /quickai/downloads/<id>`) and a script of the page that gives it `window.__comfyDesktop2.downloadModel`. The page's
-  own cross-site protection answers first (a request from another site is refused by ComfyUI itself).
-- **What a press does.** ComfyUI itself fetches the file, one at a time, into the folder of the kind (`vae/`, `text_encoders/`,
-  `diffusion_models/`; the folder with the kind's own name, F21), under the name the workflow gives it, as `<name>.part`,
-  which is renamed when the file is whole and, when the hub says what its checksum is (F20), when it hashes to that. A file
-  that is not what the hub describes is not kept. A fetch that was stopped (the connection, a kill, a power cut) is gone on from
-  at the next press, from where its `.part` ends, after the part has been read again for the checksum; a hub that sends the
-  whole file again is met, and so is a part that is not the beginning of the file (it begins again once, and says so). A fetch
-  that is stopped from the panel leaves nothing. A file that is there is never fetched over (the panel says it is there), and
-  there has to be room for it and half a gigabyte more.
-- **What it will not fetch.** An address that is not `huggingface.co`'s, over https; a file that is not `.safetensors` (or `.sft`) or
-  `.gguf` (the formats that hold numbers and cannot hold a program; a pickled `.ckpt`, `.pt` or `.pth` is the person's to bring in); a name that is
-  not a plain file name (a folder that climbs, a hidden file); a folder that is not one of the models folder's; a request
-  from another computer. **What it will not fetch is left to the browser**, as it always was, and the panel says so in a
-  sentence; a file that wants a login at the hub is one the browser, which has the login, may be able to save.
-- **What the person sees.** A panel at the bottom left of the page, *Models, fetched by ComfyUI*, shows each file with how much
-  of it is in, how fast and how long it will take, with × to stop it. The fetch belongs to ComfyUI and not to the tab, so a page
-  that is opened or reloaded in the middle of one shows it. When a file is in place the page reads its lists again, as its `r` key
-  does, so the model appears in the nodes and goes from the list of what is missing. In QuickAI's window **Refresh** finds
-  a weights file that arrived this way, and **Open folder** shows the folders.
-- **The setting.** Settings → Advanced → **The page's Download button**: `install` (the default) or `browser`. With `browser` the
-  bridge has no route and no script, the page has no host, and ComfyUI contacts no site: the button is the browser's, as in
-  a ComfyUI started by hand. It is read at the start. A ComfyUI that was already running when QuickAI attached to it has no bridge
-  (QuickAI changes nothing about one it did not start).
-- **What it contacts.** Nothing by itself, and when a file is asked for, `huggingface.co` and the download server the hub sends the file to
-  (`us.aws.cdn.hf.co` here, `*.cdn.hf.co` in the document): measured through a logging proxy, F22; the document declares them (`egress`), a test
-  holds the declaration to the recording (X08), and [PRIVACY.md](../PRIVACY.md) says it. The page itself still may contact no
-  other site (`--offline`): which is also why its list of missing models shows no sizes, since the page's look at the size of a
-  file at the hub is refused by its own policy.
-- **How it was held.** The downloads (P01 to P11) against a server that behaves like the hub, the glue (P12) with stand-ins for
-  ComfyUI, the plan and the files (P13 to P18), and, by hand (P19, `crates/quickai-runtime/tests/comfy_bridge/real_page.py`), the real
-  thing: the page of this build in Chromium, the Z-Image-Turbo template, **Download** on the VAE, ComfyUI killed in the middle
-  and started again, and the same press going on and ending with the hub's size and sha256 (F23). Through the application
-  itself too, once: started in a virtual display with a throw-away home, **Start** pressed, the files written by the supervisor, the
-  same download ended in the models folder it manages.
+- **What QuickAI adds.** At every start of ComfyUI, before it launches, QuickAI writes two items beside the models
+  folder, not inside the build (so a build can still be deleted or replaced without losing anything, and a build made
+  before this feature existed receives it just as a new one does): `~/.quickai/comfyui/extensions/quickai_bridge/`, a
+  custom-node folder that contains no node, and `extra_model_paths.yaml`, which ComfyUI is told to read
+  (`--extra-model-paths-config`) and which makes `extensions/` a location it loads custom nodes from (F19). Files that
+  are unchanged are left alone, files that differ are rewritten (the log reports `Put … (1 of 3 files written)`), and
+  anything you placed there yourself is not touched. This is the document's `[[launch.spawn.write]]`, which names files
+  belonging to the application (`crates/quickai-runtime/assets/comfyui/`, compiled in; architecture §11.7).
+- **What the bridge is.** Python code and a script, using only the standard library and what ComfyUI already loads.
+  It provides three routes that only a program on this machine may use (`POST /quickai/downloads {url, name, directory}`,
+  `GET /quickai/downloads`, `DELETE /quickai/downloads/<id>`) and a page script that provides
+  `window.__comfyDesktop2.downloadModel`. The page's own cross-site protection applies first (ComfyUI itself refuses a
+  request from another site).
+- **What pressing the button does.** ComfyUI itself downloads the file, one at a time, into the folder for its kind
+  (`vae/`, `text_encoders/`, `diffusion_models/`; the folder named after the kind, F21), under the name the workflow
+  gives it, as `<name>.part`, which is renamed once the file is complete and, when the hub publishes its checksum (F20),
+  once it matches that checksum. A file that does not match the hub's description is not kept. An interrupted download
+  (a dropped connection, a kill, a power failure) resumes at the next press from the end of its `.part` file, after the
+  partial file has been re-read for the checksum; a hub that resends the whole file is handled, as is a partial file
+  that does not match the beginning of the file (the download restarts once and says so). A download stopped from the
+  panel leaves nothing behind. A file that is already present is never overwritten (the panel says it is present), and
+  there must be enough space for it plus half a gigabyte.
+- **What it will not download.** An address other than `huggingface.co` over https; a file that is not `.safetensors`
+  (or `.sft`) or `.gguf` (formats that hold numbers and cannot contain a program; a pickled `.ckpt`, `.pt` or `.pth` is
+  yours to bring in yourself); a name that is not a plain file name (a path that climbs out of the folder, or a hidden
+  file); a folder that is not one of the models folder's; or a request from another computer. **Anything it will not
+  download is left to the browser**, as before, and the panel says so in a sentence; a file that requires a login at
+  the hub may be saved by the browser, which holds the login.
+- **What you see.** A panel at the bottom left of the page, *Models, fetched by ComfyUI*, shows each file with its
+  progress, speed and estimated time remaining, and an × to stop it. The download belongs to ComfyUI rather than to
+  the tab, so a page that is opened or reloaded midway shows it. When a file is in place, the page reloads its lists,
+  as its `r` key does, so the model appears in the nodes and disappears from the list of missing models. In QuickAI's
+  window, **Refresh** finds a weights file that arrived this way, and **Open folder** shows the folders.
+- **The setting.** Settings → Advanced → **The page's Download button**: `install` (the default) or `browser`. With
+  `browser`, the bridge has no routes and no script, the page has no host, and ComfyUI contacts no site: the button
+  belongs to the browser, as in a ComfyUI started manually. The setting is read at startup. A ComfyUI instance that was
+  already running when QuickAI attached to it has no bridge (QuickAI does not modify an instance it did not start).
+- **What it contacts.** Nothing on its own; when a file is requested, `huggingface.co` and the download server the hub
+  redirects to (`us.aws.cdn.hf.co` in the measurement, `*.cdn.hf.co` in the document): measured through a logging
+  proxy, F22. The document declares them (`egress`), a test checks the declaration against the recording (X08), and
+  [PRIVACY.md](../PRIVACY.md) lists them. The page itself is still not permitted to contact any other site
+  (`--offline`), which is also why its list of missing models shows no sizes: the page's request for a file's size at
+  the hub is refused by its own policy.
+- **How it was verified.** The downloads (P01 to P11) were tested against a server that behaves like the hub, the glue
+  code (P12) with stand-ins for ComfyUI, the plan and the files (P13 to P18), and, manually (P19,
+  `crates/quickai-runtime/tests/comfy_bridge/real_page.py`), the real system: this build's page in Chromium, the
+  Z-Image-Turbo template, **Download** on the VAE, ComfyUI killed midway and restarted, and the same press resuming and
+  finishing with the hub's size and sha256 (F23). It was also verified once through the application itself: started on
+  a virtual display with a temporary home folder, **Start** pressed, the files written by the supervisor, and the same
+  download completed in the models folder it manages.
 
-## Not done
+## Not implemented
 
-- **ComfyUI-Manager is not added to a build that is installed already.** The box is of the install: a build made without it stays without it (and is started without the flag) until another release is installed with it ticked. Adding it to a build in place (one pip step in its environment and a new launcher) is possible and was not asked for.
-- The Manager's **new** interface is not offered: it has no Model Manager and, with the page offline, no list of nodes (F34). A person who has set the page online and wants it can start ComfyUI with `--enable-manager` by hand.
-- A pickled file (`.ckpt`, `.pt`, `.pth`) and one from another site (Civitai) is left to the browser: the bridge fetches only what
-  it can check. A token for a hub that wants a login is not used.
-- The window of the application shows nothing of a fetch the page asked for (the page does): a list that shows it, from the `.part` files, is possible.
-- A download the window starts (a result, the box) does not go on from where it stopped; the page's Download does.
-- **A real ComfyUI in the GUI tests.** The GUI test suite, which the maintainers keep outside this repository, drives the window against fakes (a stand-in `main.py` that refuses what the real one refuses and hosts the bridge, a stand-in Python, a GitHub, a Hugging Face, the same over TLS); a real ComfyUI is installed by hand, as the lines above say.
-- The installer was run on Linux only, with the AMD (ROCm) PyTorch; the CUDA, CPU and macOS steps follow from the same
-  document and are tested by their conditions (F05), not by a machine.
-- A model that needs more than ComfyUI's default nodes and the pack of GGUF nodes is not in the list, and its nodes are not
-  installed (the pack is the only one). Wan 2.2 5B Turbo (a model, a text encoder and a VAE of three repositories) is fetched with **Look up
-  online** and made a clip (F27), but is not in **Recommended**: the list's schema holds a model's companions from the model's own repository.
+- **ComfyUI-Manager is not added to an already installed build.** The option applies to the installation: a build made
+  without it stays without it (and is started without the flag) until another release is installed with the option
+  selected. Adding it to an existing build (one pip step in its environment and a new launcher) is possible but was not
+  requested.
+- The Manager's **new** interface is not offered: it has no Model Manager and, with the page offline, no list of nodes
+  (F34). If you have set the page online and want it, you can start ComfyUI with `--enable-manager` manually.
+- A pickled file (`.ckpt`, `.pt`, `.pth`), or one from another site (Civitai), is left to the browser: the bridge
+  downloads only what it can verify. A token for a hub that requires a login is not used.
+- The application's window does not show downloads requested by the page (the page does): a list based on the `.part`
+  files would be possible.
+- A download started by the window (from a result or the field) does not resume from where it stopped; the page's
+  Download does.
+- **A real ComfyUI in the GUI tests.** The GUI test suite, which the maintainers keep outside this repository, drives the
+  window against fakes (a stand-in `main.py` that refuses what the real one refuses and hosts the bridge, a stand-in
+  Python, a GitHub, a Hugging Face, and the same over TLS); a real ComfyUI is installed manually, as described above.
+- The installer was run on Linux only, with the AMD (ROCm) PyTorch build; the CUDA, CPU and macOS steps follow from the
+  same document and are tested through their conditions (F05), not on real machines.
+- A model that needs more than ComfyUI's default nodes and the GGUF node pack is not in the list, and its nodes are not
+  installed (the GGUF pack is the only one). Wan 2.2 5B Turbo (a model, a text encoder and a VAE from three
+  repositories) is obtained with **Look up online** and produced a clip (F27), but is not in **Recommended**: the list's
+  schema holds a model's companion files only from the model's own repository.

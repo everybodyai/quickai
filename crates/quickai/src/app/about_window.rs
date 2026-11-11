@@ -1,4 +1,4 @@
-//! The ℹ About window: usage, disclaimer and licences, and on a tab of its own the companies EverybodyAI works with.
+//! The ℹ About window: usage, privacy, disclaimer and licences, and on a tab of its own the companies EverybodyAI works with.
 
 use std::cell::Cell;
 
@@ -47,6 +47,128 @@ fn tab_row(ui: &mut egui::Ui, tab: &Cell<AboutTab>) {
             }
         }
     });
+}
+
+/// What QuickAI is, whichever package it came in.
+const INTRO: &str = "QuickAI is a desktop application for running AI models locally. It recommends models suited \
+     to your hardware, downloads and runs them, and lets you chat with them in its own window or connect other \
+     applications through a local API. Models run on llama.cpp, Ollama or ComfyUI (for images and video), and \
+     QuickAI can also use models hosted on your other computers or on a server you specify. Optional voice \
+     features let you speak to the model and have its answers read aloud.";
+
+/// The packages whose names end in `-with-llamacpp-bonsai2-4b`.
+const BUNDLED: &str =
+    "This edition includes llama.cpp, the Bonsai 2 4B model and a speech recognition model, \
+     so you can start your first chat without downloading anything.";
+
+/// The app alone.
+const ALONE: &str =
+    "This edition contains the application only. llama.cpp, models and other components are \
+     downloaded when you request them.";
+
+const USAGE: &str = "Select a model from the list on the left, or choose one under Recommended. Press Start in \
+     the toolbar above the page, wait until the status shows Running, and then chat on the page. The panel on the \
+     right shows how the model runs; further options are available in Settings. While a model is running, the \
+     panel also explains how to connect external applications, and Open Chat UI opens a chat interface in your \
+     browser. One model runs at a time.";
+
+/// What QuickAI is designed to keep on this computer, and when it connects.
+const PRIVACY: &str = "QuickAI is designed to keep your prompts, the model's responses, your voice and your files \
+     on this computer. It connects to the internet only at your request: to download an engine, a model or a \
+     voice; to search for models online (on Hugging Face, or at an address you provide); or to use a model on \
+     another computer or server that you have specified, which then receives the data you send to it. QuickAI \
+     does not send reports automatically: when a problem occurs, it displays a report that you may choose to \
+     submit.";
+
+/// That the above is a design, not a guarantee.
+const NO_GUARANTEE: &str = "While we have taken care to ensure that no other data leaves this computer, we cannot \
+     guarantee it. Software may contain defects, and an error or malfunction in QuickAI, or in an engine, model, \
+     tool (MCP server) or web page it runs, could cause data to be transmitted or retained unexpectedly.";
+
+const NO_WARRANTY: &str = "AI models can produce inaccurate, biased or incomplete output. Treat their responses \
+     as drafts rather than established facts, and do not rely on them for medical, legal, financial or other \
+     safety-critical decisions. QuickAI is provided \"as is\", without warranty of any kind, express or implied, \
+     and its authors accept no liability for any damages arising from its use, as set out in the license below.";
+
+/// What the bundled packages carry, the others download on request too.
+const ON_REQUEST: &str = "Other components are downloaded only at your request, each under its own license: \
+     Ollama (MIT), ComfyUI (GPL-3.0), Open WebUI (Open WebUI License, which requires that its name and logo be \
+     retained), the voice program quickai-voice (GPL-3.0) and its voices, and each model, under the license set \
+     by its publisher.";
+
+const ON_REQUEST_ALONE: &str = "Other components are downloaded only at your request, each under its own \
+     license: llama.cpp (MIT), the speech recognition model (MIT), Ollama (MIT), ComfyUI (GPL-3.0), Open WebUI \
+     (Open WebUI License, which requires that its name and logo be retained), the voice program quickai-voice \
+     (GPL-3.0) and its voices, and each model, under the license set by its publisher.";
+
+/// What this package carries besides QuickAI, seen beside its program: llama-server, the model and the speech model
+/// of the packages whose names end in `-with-llamacpp-bonsai2-4b`, and quickai-whisper, which every package has.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Carried {
+    llama_server: bool,
+    bonsai: bool,
+    speech_model: bool,
+    whisper: bool,
+}
+
+impl Carried {
+    fn here() -> Self {
+        let beside = |name: &str| {
+            crate::paths::exe_dir().is_some_and(|dir| {
+                dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
+                    .is_file()
+            })
+        };
+        let speech = crate::paths::bundled_speech_dir();
+        Carried {
+            llama_server: beside("llama-server"),
+            bonsai: crate::paths::bundled_models_dir()
+                .join("Ternary-Bonsai-2-4B-Q2_0.gguf")
+                .is_file(),
+            speech_model: std::fs::read_dir(&speech).is_ok_and(|entries| {
+                entries
+                    .flatten()
+                    .any(|e| e.path().extension().is_some_and(|x| x == "bin"))
+            }),
+            whisper: beside("quickai-whisper"),
+        }
+    }
+
+    /// The package with llama.cpp and a model in it.
+    fn bundled(self) -> bool {
+        self.llama_server && self.bonsai
+    }
+
+    /// The programs and models this package carries, with their licenses.
+    fn list(self) -> String {
+        let mut lines = Vec::new();
+        if self.llama_server {
+            lines.push("• llama-server, from llama.cpp — MIT License, © the ggml authors.");
+        }
+        if self.bonsai {
+            lines.push(
+                "• Bonsai 2 4B model weights, created using Bonsai by Prism ML from Qwen3.5-4B \
+                 (© Alibaba Cloud) — Apache License 2.0.",
+            );
+        }
+        if self.speech_model {
+            lines.push(
+                "• Whisper base speech recognition model, by OpenAI, in whisper.cpp format — MIT License.",
+            );
+        }
+        if self.whisper {
+            lines.push(
+                "• quickai-whisper, QuickAI's speech-to-text program, built on whisper.cpp — MIT License.",
+            );
+        }
+        if lines.is_empty() {
+            return "This package includes no third-party programs or models.".into();
+        }
+        format!(
+            "This package also includes the following components, each under its own license:\n{}",
+            lines.join("\n")
+        )
+    }
 }
 
 impl App {
@@ -109,40 +231,28 @@ impl App {
         let mut close = false;
         let tab = Cell::new(self.about_tab);
         // the program that goes with the engine, if one does (Open WebUI beside Ollama): downloaded on request too
-        let companion = self.companion_doc().map(|c| {
-            (
-                c.doc.engine.name.clone(),
-                c.doc.engine.license.clone().unwrap_or_default(),
-            )
-        });
-        // an engine that is downloaded on request, not shipped, says so (its own license too); the
-        // text of a window for llama.cpp, which ships, is what it has always been
+        let companion = self.companion_doc().map(|c| c.doc.engine.name.clone());
+        // an engine that is downloaded on request, not shipped, says what it contacts
         let downloaded = self
             .engine_doc()
             .filter(|e| !e.doc.engine.bundled)
             .map(|e| {
                 let name = e.doc.engine.name.clone();
-                let license = e.doc.engine.license.clone().unwrap_or_default();
                 let hosts = e.doc.engine.egress.join(", ");
                 let contacts = if hosts.is_empty() {
                     String::new()
                 } else {
                     format!(
-                        " When you pull a model it is {name} that contacts {hosts}, and only \
-                         when you ask."
+                        " When you download a model, {name} itself contacts {hosts}, only at \
+                         your request."
                     )
                 };
-                (
-                    format!(
-                        "With {name} chosen, Settings' \"Look up {name} builds\" contacts \
-                         GitHub to list and download its releases, only when you click it.{contacts}"
-                    ),
-                    format!(
-                        "• {name} is not part of this package: it is downloaded on request, \
-                         under its own license ({license}), and is not bundled."
-                    ),
+                format!(
+                    "When {name} is selected, \"Look up {name} builds\" in Settings contacts \
+                     GitHub to list and download its releases, only when you click it.{contacts}"
                 )
             });
+        let carried = Carried::here();
         let id = about_viewport();
         if std::mem::take(&mut self.raise_about) {
             ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);
@@ -172,82 +282,54 @@ impl App {
                             });
                         });
                         ui.add_space(4.0);
-                        ui.label(
-                        "A simple GUI for starting and stopping local GGUF language models via \
-                         llama-server (llama.cpp), with GPU acceleration through Vulkan.",
-                    );
+                        ui.label(INTRO);
+                        ui.add_space(4.0);
+                        ui.label(if carried.bundled() { BUNDLED } else { ALONE });
                         ui.add_space(6.0);
 
                         ui.label(egui::RichText::new("Usage").strong());
-                        ui.label(
-                            "Pick a model in the list on the left. The panel at the right says how it \
-                         runs (Settings has more, including advanced llama.cpp options). Press Start in \
-                         the bar over the page and wait for it to say Running, then chat in the page. \
-                         While it runs, the panel shows how to connect an external app, and Open Chat \
-                         UI opens a chat in the browser. Only one model runs at a time.",
-                        );
+                        ui.label(USAGE);
                         ui.add_space(6.0);
 
-                        ui.label(egui::RichText::new("Disclaimer").strong());
-                        ui.label(
-                            "Everything runs locally on this machine — your prompts and any files \
-                         you feed the model never leave it, except when you explicitly use the \
-                         \"Get\" box or \"Look up online\" (which contact the URL you gave or \
-                         Hugging Face to fetch/search for a file) or Settings' \"Look up \
-                         llama.cpp builds\" (which contacts GitHub to list/download \
-                         llama-server releases). QuickAI sends no reports by itself: when \
-                         something breaks it shows one, and you choose whether to post it. Model output can be inaccurate, \
-                         biased, or simply wrong; treat it as a draft, not a fact, and don't \
-                         rely on it for medical, legal, financial, or other safety-critical \
-                         decisions. This software is provided \"as is\", without warranty of \
-                         any kind — see the license below.",
-                        );
-                        if let Some((contacts, _)) = &downloaded {
+                        ui.label(egui::RichText::new("Privacy").strong());
+                        ui.label(PRIVACY);
+                        if let Some(contacts) = &downloaded {
                             ui.add_space(4.0);
                             ui.label(contacts);
                         }
-                        if let Some((name, _)) = &companion {
+                        if let Some(name) = &companion {
                             ui.add_space(4.0);
                             ui.label(format!(
-                                "{name}, the chat page Settings can add, contacts nothing by itself and is \
-                                 started offline. Settings' \"Look up {name} builds\" contacts the Python \
-                                 Package Index (pypi.org), and installing it fetches Python packages from \
-                                 there and PyTorch from download.pytorch.org, only when you click."
+                                "{name}, the chat interface available in Settings, makes no connections of \
+                                 its own and is started in offline mode. \"Look up {name} builds\" in \
+                                 Settings contacts the Python Package Index (pypi.org); installing it \
+                                 downloads Python packages from there and PyTorch from \
+                                 download.pytorch.org, only when you click."
                             ));
                         }
+                        ui.add_space(6.0);
+
+                        ui.label(egui::RichText::new("Disclaimer").strong());
+                        ui.label(NO_GUARANTEE);
+                        ui.add_space(4.0);
+                        ui.label(NO_WARRANTY);
                         ui.add_space(6.0);
 
                         ui.label(egui::RichText::new("License").strong());
                         ui.label(
-                            "QuickAI's own source code is licensed under the MIT License: free to \
-                         use for any purpose, at home or at work, and free to change and share.",
+                            "QuickAI's source code is licensed under the MIT License. You may use it \
+                             for any purpose, personal or commercial, and modify and redistribute it.",
                         );
                         ui.add_space(4.0);
-                        ui.label(
-                            "This package also bundles, unmodified and under their own licenses:",
-                        );
-                        ui.label(
-                            "• llama-server, from llama.cpp — MIT License, © the ggml authors.\n\
-                         • Bonsai 2 4B model weights, created using Bonsai by Prism ML from \
-                         Qwen3.5-4B (© Alibaba Cloud) — Apache License 2.0.",
-                        );
-                        if let Some((_, license)) = &downloaded {
-                            ui.add_space(4.0);
-                            ui.label(license);
-                        }
-                        if let Some((name, license)) = &companion {
-                            ui.add_space(4.0);
-                            ui.label(format!(
-                                "• {name} is not part of this package either: it is downloaded on request \
-                                 from the Python Package Index, under its own license ({license}, which \
-                                 asks that its name and logo be left as they are), and is not bundled."
-                            ));
-                        }
+                        ui.label(carried.list());
+                        ui.add_space(4.0);
+                        ui.label(if carried.bundled() { ON_REQUEST } else { ON_REQUEST_ALONE });
                         ui.add_space(4.0);
                         ui.label(
                             egui::RichText::new(
-                                "Full license texts for these, and for the Rust libraries this app is \
-                             built from, are in LICENSE and THIRD_PARTY_LICENSES.md next to this app.",
+                                "The full license texts for these components, and for the Rust libraries \
+                                 QuickAI is built with, are provided in LICENSE and THIRD_PARTY_LICENSES.md \
+                                 alongside the application.",
                             )
                             .small()
                             .color(theme::palette().muted),
@@ -292,5 +374,29 @@ impl App {
         if close {
             self.show_about = false;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Carried;
+
+    #[test]
+    fn about_says_what_this_package_carries() {
+        let alone = Carried {
+            whisper: true,
+            ..Carried::default()
+        };
+        assert!(!alone.bundled());
+        assert!(alone.list().contains("quickai-whisper") && !alone.list().contains("llama-server"));
+        let bundled = Carried {
+            llama_server: true,
+            bonsai: true,
+            speech_model: true,
+            whisper: true,
+        };
+        assert!(bundled.bundled());
+        assert_eq!(bundled.list().lines().count(), 5);
+        assert!(Carried::default().list().contains("no third-party"));
     }
 }

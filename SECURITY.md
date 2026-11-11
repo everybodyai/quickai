@@ -2,42 +2,45 @@
 
 ## Reporting a vulnerability
 
-Please report security problems **privately**. Do not open a public issue.
+Please report security issues **privately** rather than in a public issue.
 
-- Preferred: on GitHub, open the repository's **Security** tab and choose
+- Preferred: open the repository's **Security** tab on GitHub and select
   [**Report a vulnerability**](https://github.com/everybodyai/quickai/security/advisories/new).
-- Or email **hello@everybodyai.dev** with "SECURITY" in the subject.
+- Alternatively, email **hello@everybodyai.dev** with "SECURITY" in the subject line.
 
-Say what you found, how to reproduce it, and which version or commit you used. You will get a reply as soon as
-possible, normally within a few days. The fix and the advisory will credit you unless you would rather not be
-named.
+Please describe the issue, the steps to reproduce it, and the version or commit you used. We aim to respond as soon
+as possible, normally within a few days. The fix and the security advisory will credit you, unless you prefer not to
+be named.
 
 ## Supported versions
 
-Security fixes go into the latest release.
+Security fixes are made to the latest release.
 
-## What QuickAI promises, and what counts as a vulnerability
+## Security principles and scope
 
-QuickAI's design rests on a few promises. Breaking any of them is a vulnerability:
+QuickAI is designed to uphold the following principles. Any behavior that breaks one of them is considered a
+vulnerability:
 
-- **The servers it starts are reachable from this computer only.** llama-server, Ollama, ComfyUI and Open WebUI
-  are started on `127.0.0.1`. Making one reachable from the network without the person choosing it is a bug.
-- **Checksums are enforced.** Builds and recommended models are checked against a pinned or published
-  checksum before they are used. A way to make QuickAI keep or run a file that fails its check is a bug.
-  (A file you fetch from an address you typed has no checksum to check; it is yours to trust.)
-- **A program QuickAI did not install is not started without asking.** An engine document that would start
-  one asks the person first.
-- **An imported configuration cannot act on its own.** Before anything is taken, the person sees in full the
-  text that would reach a command line or an environment; lines that make a program load other code
-  (`LD_PRELOAD`, `PATH`) are refused. A configuration that runs code, or changes a setting, without consent is
-  a bug.
-- **No unexpected network traffic.** QuickAI contacts the hosts listed in [PRIVACY.md](PRIVACY.md), and only when
-  the person asks. QuickAI sends nothing by itself: a problem report reaches anyone only when the person posts it from
-  their browser. Any other connection is a bug.
-- **A problem report carries no content and names no one.** It never holds a prompt, a reply, a file or folder name, a
-  typed search or address, a secret, or anything that tells one computer from another (an id, a name, an address).
-  One that does is a bug.
-- **Files stay where they belong.** Engines keep their files under `~/.quickai`. Writing elsewhere is a bug.
+- **Local servers are reachable from this computer only.** llama-server, Ollama, ComfyUI and Open WebUI are started
+  on `127.0.0.1`. Exposing any of them to the network without the user's explicit choice is a defect.
+- **Checksums are enforced.** Engine builds and recommended models are verified against a pinned or published checksum
+  before they are used. Any way to make QuickAI keep or run a file that fails verification is a defect. (A file
+  downloaded from an address you enter yourself has no checksum to verify; trusting it is your decision.)
+- **Programs QuickAI did not install are not started without consent.** An engine document that would start such a
+  program asks the user first.
+- **An imported configuration cannot act on its own.** Before anything is applied, the user is shown in full any text
+  that would reach a command line or an environment variable, and lines that make a program load other code
+  (`LD_PRELOAD`, `PATH`) are rejected. A configuration that runs code or changes a setting without consent is a defect.
+- **No unexpected network traffic.** QuickAI contacts only the hosts listed in [PRIVACY.md](PRIVACY.md), and only at
+  the user's request. It sends nothing automatically: a problem report reaches anyone only when the user submits it
+  from their browser. Any other connection is a defect.
+- **Problem reports contain no content and identify no one.** A report never includes a prompt, a response, a file or
+  folder name, a search or address the user typed, a secret, or anything that distinguishes one computer from another
+  (an identifier, a name or an address). A report that does is a defect.
+- **Files stay where they belong.** Engines keep their files under `~/.quickai`. Writing elsewhere is a defect.
 
-Known and by design: the local servers have no password while they run, so any program or user **on the same
-computer** can send them requests. [PRIVACY.md](PRIVACY.md) says this too.
+Known limitation, by design: the local servers have no password while they run, so any program or user **on the same
+computer** can send them requests. [PRIVACY.md](PRIVACY.md) states this as well.
+
+These principles describe QuickAI's intended behavior and the defects we undertake to fix; they do not constitute a
+guarantee. QuickAI is provided "as is", without warranty of any kind, as set out in its [MIT License](LICENSE).
