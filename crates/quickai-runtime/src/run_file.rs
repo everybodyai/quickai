@@ -1,7 +1,7 @@
 //! The run that goes on a computer (WP4.33.2, docs/remote-runs.md section 3.1): one at a time for a person, found by
 //! the lock it holds on a file of its data folder, said in a file beside it (what runs, since when, where it listens),
-//! and stopped by a file another program writes there. It is the same on Linux, macOS and Windows: `quickai-run up`
-//! holds it, `quickai-run status` and `down` read and write it, and the window asks for them over SSH.
+//! and stopped by a file another program writes there. It is the same on Linux, macOS and Windows: `quickai-headless up`
+//! holds it, `quickai-headless status` and `down` read and write it, and the window asks for them over SSH.
 //!
 //! The folder is `run` in the data folder (`~/.quickai/run`):
 //!
@@ -28,7 +28,7 @@ pub struct RunFile {
     pub pid: u32,
     /// The configuration, as it was named to `up` (an id or a path).
     pub configuration: String,
-    /// The version of `quickai-run` that runs it.
+    /// The version of `quickai-headless` that runs it.
     pub version: String,
     /// When it started, in seconds since 1970.
     pub started: u64,
@@ -98,11 +98,11 @@ pub struct Ended {
     /// The outcome's word (`stopped`, `failed`, ...), as the `finished` event says it.
     pub outcome: String,
     pub message: Option<String>,
-    /// The exit code of `quickai-run`.
+    /// The exit code of `quickai-headless`.
     pub code: i32,
 }
 
-/// What `quickai-run status --json` prints: what runs, or how the last run ended, and the last events of a run in the
+/// What `quickai-headless status --json` prints: what runs, or how the last run ended, and the last events of a run in the
 /// background.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Status {

@@ -85,7 +85,7 @@ Not asked, but needed for it to work or to be lawful:
 2. **Access and deletion without accounts**, by the install id, from the app (§12).
 3. **Switches on the server.** They stop collecting a level, or stop an old version from sending, without a release
    (§9).
-4. **Off for good** for packagers (AUR, Snap, Homebrew), organizations, and `quickai-run`
+4. **Off for good** for packagers (AUR, Snap, Homebrew), organizations, and `quickai-headless`
    on servers (§5.4).
 5. **Symbols.** Release builds strip symbols today (`strip = "symbols"`), so a backtrace is only addresses. They should
    keep function names (§7.5).
@@ -123,7 +123,7 @@ Not asked, but needed for it to work or to be lawful:
 
 ```
  QuickAI (window)  ─┐   HTTPS, JSON
- quickai-run       ─┴─────────────────►  api.everybodyai.dev       the app's API, /v1/...
+ quickai-headless       ─┴─────────────────►  api.everybodyai.dev       the app's API, /v1/...
  browser ──────────────────────────────►  quickai.everybodyai.dev   QuickAI's site, and the community configurations
                                                                     under /configurations: GitHub sign-in, ratings, sharing
 ```
@@ -186,8 +186,8 @@ In order of strength:
    greys the setting out with "Set by whoever installed QuickAI" (VS Code's enterprise policy for the telemetry level).
 3. **The environment.** `QUICKAI_TELEMETRY=off|crash|error|all` caps the level, and `DO_NOT_TRACK=1` means off.
 
-**`quickai-run`** never asks and sends nothing unless its configuration or `--telemetry <level>` says so. It writes
-crash files locally, and `quickai-run telemetry list|show|send|delete` handles them.
+**`quickai-headless`** never asks and sends nothing unless its configuration or `--telemetry <level>` says so. It writes
+crash files locally, and `quickai-headless telemetry list|show|send|delete` handles them.
 
 ## 6. What is sent
 
@@ -797,7 +797,7 @@ get two optional keys for it: `identity` on `[[field]]`, and `aliases` of flags.
 
 The cargo feature `telemetry` is on by default.
 
-**`quickai-run`**: `--telemetry <level>`, the configuration key, and `telemetry list|show|send|delete`.
+**`quickai-headless`**: `--telemetry <level>`, the configuration key, and `telemetry list|show|send|delete`.
 
 **Build identity.** The build scripts set `QUICKAI_CHANNEL=official` and `QUICKAI_COMMIT`, read with `option_env!`.
 A build from source says `source`.
@@ -868,7 +868,7 @@ One feature in the plan's numbering, WP4.42, in parts like WP4.17. Each part lan
 | 4.42.1 | **Build identity**: channel and commit in the build, function lists per release, strip after S-R2 | packages, app | S | S-R2 | a release candidate's events say `official` |
 | 4.42.2 | **The core**: the schema with levels and annotations, cleaning, hardware class, `--telemetry`, the reference page | app | M | | RP core tests |
 | 4.42.3 | **The API**: `/v1` events, crash, me, status; the telemetry database; checks, rate limits, blocks; the nightly jobs | server | M | 4.42.2 | server tests |
-| 4.42.4 | **Sending from the app**: ids, queue, sender, levels, the notice, Settings → Privacy, the telemetry log, the ways off, `quickai-run` | app | L | 4.42.2 | RP runtime tests, GUI cases, network audit |
+| 4.42.4 | **Sending from the app**: ids, queue, sender, levels, the notice, Settings → Privacy, the telemetry log, the ways off, `quickai-headless` | app | L | 4.42.2 | RP runtime tests, GUI cases, network audit |
 | 4.42.5 | **Crashes and errors**: the hook, the marker, engine exits and the other error events, the crash window at Off, Report a problem | app | M | 4.42.4 | RP tests, GUI cases |
 | 4.42.6 | **The admin**: sign-in, overview, systems, engines and models, features, errors, crashes, versions, installs and blocks, switches, site, audit | server | L | 4.42.3 | server tests, Playwright |
 | 4.42.7 | **The words**: PRIVACY.md, the site's policy, SECURITY.md, About, Help, README, store listings; a lawyer's review | app, site, packages | S | before the release of 4.42.4 | the About window's GUI cases, a read-through |
@@ -945,7 +945,7 @@ implementation plan, decisions C195 to C197. What differs from the sections abov
 - **`QUICKAI_TELEMETRY_URL`** replaces `https://api.everybodyai.dev`, for a test or a server of one's own.
 - **The app does not read `GET /v1/status` yet**: a version the server no longer takes answers 410 to a batch, and the
   app stops.
-- **`quickai-run` sends nothing** and has no `--telemetry` yet.
+- **`quickai-headless` sends nothing** and has no `--telemetry` yet.
 - **The build's identity**: `QUICKAI_CHANNEL=official` and `QUICKAI_COMMIT` at build time, read by
   `quickai-runtime/build.rs`, which also passes the target. The release builds set them.
 - **The queue is written one line at a time**, and whole only when it has to drop its oldest events.
@@ -1095,7 +1095,7 @@ A new section, after *What the app does with your data*:
 > was lawful before it.
 >
 > **Off for good.** Builds without telemetry exist, and packagers can make them. An organization can turn it off in the
-> package's configuration; `QUICKAI_TELEMETRY=off` or `DO_NOT_TRACK=1` in the environment turns it off too. `quickai-run`
+> package's configuration; `QUICKAI_TELEMETRY=off` or `DO_NOT_TRACK=1` in the environment turns it off too. `quickai-headless`
 > sends nothing unless its configuration or `--telemetry` says so.
 >
 > **What it is not for.** Telemetry is never sold or shared, never used for advertising, and never used to check a

@@ -4,7 +4,7 @@
 //! where to get a file from when it is not where the configuration says.
 //!
 //! A configuration is given away, so it carries none of it (docs/configurations.md, rule 2). Whoever runs
-//! it says it: in an *environment file* (`quickai-run init` writes the file to fill in), on the command
+//! it says it: in an *environment file* (`quickai-headless init` writes the file to fill in), on the command
 //! line, or, for the logins, in the variables every tool of the kind reads (`HF_TOKEN`). This module is
 //! the pure half: the shape of that file, what its words mean, how layers of it are put together, how a
 //! value is shown without its secrets, what a configuration still needs from it, and the template of the
@@ -888,7 +888,7 @@ pub fn template(
     out.push_str("#\n");
     comment_lines(
         &mut out,
-        "Use it with `quickai-run check` and `quickai-run up`, as `--environment <this file>`. What is on the \
+        "Use it with `quickai-headless check` and `quickai-headless up`, as `--environment <this file>`. What is on the \
          command line wins over this file, and this file over the configuration. A line that starts with # \
          is not set, and a value left empty is not set either.",
     );

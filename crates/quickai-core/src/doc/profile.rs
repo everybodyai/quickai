@@ -97,7 +97,7 @@ pub struct ModelDoc {
     pub sha256: Option<String>,
     /// Where it can be got from, as a kind of place and a name (`huggingface:owner/repo`), for a file that
     /// is no entry of the recommended list. The window says it and never fetches from it by itself (the
-    /// person asks, and looks it up); `quickai-run` fetches from it, once the person has read it.
+    /// person asks, and looks it up); `quickai-headless` fetches from it, once the person has read it.
     pub from: Option<String>,
     /// Where in the repository `from` names the file is (`split_files/vae/wan2.2_vae.safetensors`);
     /// left out, the file is at the top and is called `file`.

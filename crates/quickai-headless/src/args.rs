@@ -1,4 +1,4 @@
-//! What was typed: `quickai-run up <configuration> [options]` and the other words (docs/headless.md, section 5).
+//! What was typed: `quickai-headless up <configuration> [options]` and the other words (docs/headless.md, section 5).
 //!
 //! Kept apart from everything that does anything so that what a mistake says can be tested without a
 //! computer: a word it does not know is named, a value it needs is asked for, and nothing is guessed.
@@ -9,50 +9,50 @@ use quickai_runtime::gpu::vendors_named;
 use quickai_runtime::provision::{FetchWord, Options, Secret};
 
 pub const USAGE: &str = "\
-quickai-run: run a QuickAI configuration with no window
+quickai-headless: run a QuickAI configuration with no window
 
-  quickai-run up <configuration> [options]
+  quickai-headless up <configuration> [options]
       Get everything the configuration needs on this computer (the programs, the models), start it, say
       where it is, and stay until it is stopped (Ctrl-C, or SIGTERM from a service manager). The plan is
       printed first: what will be installed and fetched, from where, to where, and how big it is.
 
-  quickai-run up <configuration> --detach [options]
+  quickai-headless up <configuration> --detach [options]
       The same, in the background: it goes on when the terminal or the SSH connection that started it
-      closes, until `quickai-run down` stops it. The command returns once the run has started.
+      closes, until `quickai-headless down` stops it. The command returns once the run has started.
 
-  quickai-run status [--json]
+  quickai-headless status [--json]
       What runs on this computer (the configuration, since when, where it listens), or how the last run
       ended; `--json` adds the last things a run in the background said.
 
-  quickai-run models [--json] [--models-dir DIR]...
+  quickai-headless models [--json] [--models-dir DIR]...
       The model files this computer keeps for runs: in QuickAI's models folder, copied here for a run
       (from the window of another computer), and in each DIR given (a folder of another disk).
 
-  quickai-run down [--no-wait]
+  quickai-headless down [--no-wait]
       Stop what runs on this computer, in the background or in another terminal, and wait until it has.
 
-  quickai-run free PORT... [--json]
+  quickai-headless free PORT... [--json]
       Stop the programs that listen on these ports, so that a run can have them: a program of yours is
       ended; a service (an Ollama installed as one) is stopped by its service manager through sudo when
       that asks no password, else the command that stops it is said. Exit code 8 when a port stays taken.
 
-  quickai-run prepare <configuration> [options]
+  quickai-headless prepare <configuration> [options]
       The same up to starting: install and fetch what is missing, and start nothing.
 
-  quickai-run check <configuration> [options]
+  quickai-headless check <configuration> [options]
       Say what would be done and change nothing (the same as `up --dry-run`).
 
-  quickai-run init <configuration> [-o FILE] [--force]
+  quickai-headless init <configuration> [-o FILE] [--force]
       Write the environment file to fill in for a configuration: what it needs from you, what belongs to
       a computer (folders, a Python, logins, the variables of a program's environment) and the files it
       fetches, each with where from. It is made readable by you only. `-o -` prints it. Then give it back
       with `--environment FILE`.
 
-  quickai-run plan | config | configuration ...
+  quickai-headless plan | config | configuration ...
       QuickAI's other headless commands, unchanged (see `quickai --help`): for example
-      `quickai-run configuration import vision.toml`, and `quickai-run configuration list`.
+      `quickai-headless configuration import vision.toml`, and `quickai-headless configuration list`.
 
-<configuration> is the id of one you keep (`quickai-run configuration list`) or the path of a file.
+<configuration> is the id of one you keep (`quickai-headless configuration list`) or the path of a file.
 
 Options:
   --accept-review      take what a file from outside asks about (free text, wider access, a place it

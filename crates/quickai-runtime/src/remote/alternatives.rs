@@ -1,5 +1,5 @@
 //! What a configuration lacks on another computer, and the other way for each, to be accepted or rejected before
-//! anything is installed there (WP4.33.6, docs/remote-runs.md section 6). `quickai-run check` says what the run would
+//! anything is installed there (WP4.33.6, docs/remote-runs.md section 6). `quickai-headless check` says what the run would
 //! do there and what stops it; what it says is turned into the questions the window asks:
 //!
 //! - packages the computer lacks (a compiler, the headers of Python): installed with its own package manager
@@ -47,7 +47,7 @@ pub struct Issue {
 /// How an accepted other way is done.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Remedy {
-    /// Words added to `quickai-run up`.
+    /// Words added to `quickai-headless up`.
     Flags(Vec<String>),
     /// The model file `file` of this computer, at `local`, copied there and named with `--model-source`.
     CopyModel { local: PathBuf, file: String },

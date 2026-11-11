@@ -1,5 +1,5 @@
 //! A person's "stop": Ctrl-C, the SIGTERM a service manager sends, the terminal hanging up (not for a run in the
-//! background, which has none), and `quickai-run down`, which writes the stop file of the run's folder
+//! background, which has none), and `quickai-headless down`, which writes the stop file of the run's folder
 //! (`run_file`). Each only sets a flag, which is all that is safe in a handler; the run watches the flag and stops
 //! what it started, with the grace each program's document gives it. A second signal does not wait: it ends this
 //! program at once.

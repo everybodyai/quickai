@@ -1,5 +1,5 @@
 //! Group O of docs/phase3-test-plan.md, the program itself (work package 4.18, docs/headless.md): the real
-//! `quickai-run` binary, run as a person or a service manager runs it, in a home of its own, against the
+//! `quickai-headless` binary, run as a person or a service manager runs it, in a home of its own, against the
 //! world of the runtime's tests (a fake GitHub, a file server, a stand-in `llama-server`). What the library
 //! proves of the steps, this proves of the command line around them: the words, the files, the signals and
 //! the codes it exits with.
@@ -14,10 +14,10 @@ use quickai_runtime::testkit::http::try_get;
 use quickai_runtime::testkit::wait_until;
 
 /// The program, with a home of its own and the documents of the world, and nothing of this machine's.
-fn quickai_run(world: &World, args: &[&str]) -> Command {
+fn quickai_headless(world: &World, args: &[&str]) -> Command {
     let home = world.scratch.join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_quickai-run"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_quickai-headless"));
     command
         .args(args)
         .env_clear()
@@ -55,7 +55,7 @@ fn finish(mut command: Command) -> Finished {
 #[test]
 fn p3_o34_it_says_what_it_does_and_refuses_what_it_does_not_know() {
     let world = World::new("o34");
-    let help = finish(quickai_run(&world, &["--help"]));
+    let help = finish(quickai_headless(&world, &["--help"]));
     assert_eq!(help.code, 0);
     for word in [
         "up <configuration>",
@@ -68,9 +68,13 @@ fn p3_o34_it_says_what_it_does_and_refuses_what_it_does_not_know() {
     ] {
         assert!(help.out.contains(word), "{word} in {}", help.out);
     }
-    let version = finish(quickai_run(&world, &["--version"]));
+    let version = finish(quickai_headless(&world, &["--version"]));
     assert_eq!(version.code, 0);
-    assert!(version.out.starts_with("quickai-run 0."), "{}", version.out);
+    assert!(
+        version.out.starts_with("quickai-headless 0."),
+        "{}",
+        version.out
+    );
 
     for (args, why) in [
         (vec![], "say what to do"),
@@ -79,17 +83,17 @@ fn p3_o34_it_says_what_it_does_and_refuses_what_it_does_not_know() {
         (vec!["up", "x", "--port", "nope"], "1 to 65535"),
         (vec!["up", "x", "--gpu", "voodoo"], "voodoo"),
     ] {
-        let run = finish(quickai_run(&world, &args));
+        let run = finish(quickai_headless(&world, &args));
         assert_eq!(run.code, 2, "{args:?}: {}", run.err);
         assert!(run.err.contains(why), "{args:?}: {}", run.err);
         assert!(
-            run.err.contains("quickai-run up <configuration>"),
+            run.err.contains("quickai-headless up <configuration>"),
             "the usage follows"
         );
         assert!(run.out.is_empty());
     }
     // the words QuickAI's other headless commands have are theirs
-    let check = finish(quickai_run(
+    let check = finish(quickai_headless(
         &world,
         &["config", "check", "--strict", "--embedded"],
     ));
@@ -98,10 +102,10 @@ fn p3_o34_it_says_what_it_does_and_refuses_what_it_does_not_know() {
         check.out,
         "config: 0 errors, 0 warnings; engines: llamacpp, ollama, comfyui; companions: openwebui\n"
     );
-    let list = finish(quickai_run(&world, &["configuration", "list"]));
+    let list = finish(quickai_headless(&world, &["configuration", "list"]));
     assert_eq!(list.code, 0, "{}", list.err);
     assert!(list.out.contains("default"), "{}", list.out);
-    let plan = finish(quickai_run(
+    let plan = finish(quickai_headless(
         &world,
         &["plan", "--engine", "comfyui", "--explain"],
     ));
@@ -120,7 +124,7 @@ fn p3_o35_check_says_what_would_be_done_and_leaves_the_home_as_it_was() {
     let world = World::new("o35");
     let file = world.usual();
     let file = file.to_str().unwrap();
-    let run = finish(quickai_run(&world, &["check", file, "--gpu", "none"]));
+    let run = finish(quickai_headless(&world, &["check", file, "--gpu", "none"]));
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
     assert!(run.out.contains("This computer:"), "{}", run.out);
     assert!(
@@ -144,7 +148,7 @@ fn p3_o35_check_says_what_would_be_done_and_leaves_the_home_as_it_was() {
     );
 
     // the same as lines a script can read
-    let json = finish(quickai_run(
+    let json = finish(quickai_headless(
         &world,
         &["check", file, "--gpu", "none", "--json"],
     ));
@@ -166,7 +170,10 @@ fn p3_o35_check_says_what_would_be_done_and_leaves_the_home_as_it_was() {
     assert_eq!(plan["steps"].as_array().unwrap().len(), 3);
 
     // --quiet says the plan and the end
-    let quiet = finish(quickai_run(&world, &["check", file, "--gpu", "none", "-q"]));
+    let quiet = finish(quickai_headless(
+        &world,
+        &["check", file, "--gpu", "none", "-q"],
+    ));
     assert!(
         quiet.out.contains("To do:") && !quiet.out.contains("This computer:"),
         "{}",
@@ -183,7 +190,7 @@ fn p3_o36_up_runs_until_it_is_told_to_stop_and_leaves_nothing() {
     let ready_file = world.scratch.join("ready.json");
     let log = world.scratch.join("out.txt");
     let file = world.usual();
-    let mut child: Child = quickai_run(
+    let mut child: Child = quickai_headless(
         &world,
         &[
             "up",
@@ -254,10 +261,10 @@ fn p3_o36_up_runs_until_it_is_told_to_stop_and_leaves_nothing() {
 fn p3_o37_what_went_wrong_is_a_sentence_and_a_code() {
     let world = World::new("o37");
     // a file that is not there
-    let missing = finish(quickai_run(&world, &["up", "/no/such/file.toml"]));
+    let missing = finish(quickai_headless(&world, &["up", "/no/such/file.toml"]));
     assert_eq!(missing.code, 1);
     assert!(
-        missing.err.contains("quickai-run: ") && missing.err.contains("no such file"),
+        missing.err.contains("quickai-headless: ") && missing.err.contains("no such file"),
         "{}",
         missing.err
     );
@@ -269,13 +276,13 @@ fn p3_o37_what_went_wrong_is_a_sentence_and_a_code() {
             "[[model]]\ncatalog = \"alpha-4b\"\nfile = \"{FILE}\"\n\n[values.llamacpp]\nextra_args = \"--flash-attn\"\n"
         ),
     );
-    let run = finish(quickai_run(
+    let run = finish(quickai_headless(
         &world,
         &["check", asking.to_str().unwrap(), "--gpu", "none"],
     ));
     assert_eq!(run.code, 3, "{}{}", run.out, run.err);
     assert!(run.err.contains("--accept-review"), "{}", run.err);
-    let accepted = finish(quickai_run(
+    let accepted = finish(quickai_headless(
         &world,
         &[
             "check",
@@ -297,7 +304,7 @@ fn p3_o37_what_went_wrong_is_a_sentence_and_a_code() {
 #[test]
 fn p3_o38_the_binary_links_no_toolkit() {
     let output = Command::new("ldd")
-        .arg(env!("CARGO_BIN_EXE_quickai-run"))
+        .arg(env!("CARGO_BIN_EXE_quickai-headless"))
         .output();
     let Ok(output) = output else {
         eprintln!("no ldd on this machine: not checked");
@@ -316,7 +323,7 @@ fn p3_o38_the_binary_links_no_toolkit() {
     ] {
         assert!(!linked.contains(toolkit), "{toolkit} is linked:\n{linked}");
     }
-    assert!(Path::new(env!("CARGO_BIN_EXE_quickai-run")).is_file());
+    assert!(Path::new(env!("CARGO_BIN_EXE_quickai-headless")).is_file());
 }
 
 // ---------------------------------------------------------------------------------------------------- Y63-Y66
@@ -343,7 +350,7 @@ fn p3_y63_init_writes_the_file_to_fill_in_and_keeps_it_private() {
     let world = World::new("y63");
     let file = needy(&world);
     let written = file.with_file_name("needy.environment.toml");
-    let first = finish(quickai_run(&world, &["init", file.to_str().unwrap()]));
+    let first = finish(quickai_headless(&world, &["init", file.to_str().unwrap()]));
     assert_eq!(first.code, 0, "{}{}", first.out, first.err);
     assert!(
         first.out.contains(&format!("Wrote {}", written.display())),
@@ -352,7 +359,7 @@ fn p3_y63_init_writes_the_file_to_fill_in_and_keeps_it_private() {
     );
     assert!(
         first.out.contains(&format!(
-            "quickai-run check {} --environment {}",
+            "quickai-headless check {} --environment {}",
             file.display(),
             written.display()
         )),
@@ -377,13 +384,13 @@ fn p3_y63_init_writes_the_file_to_fill_in_and_keeps_it_private() {
     );
     // it is not written over
     std::fs::write(&written, "# mine\n").unwrap();
-    let again = finish(quickai_run(&world, &["init", file.to_str().unwrap()]));
+    let again = finish(quickai_headless(&world, &["init", file.to_str().unwrap()]));
     assert_eq!(again.code, 2);
     assert!(again.err.contains("--force"), "{}", again.err);
     assert_eq!(std::fs::read_to_string(&written).unwrap(), "# mine\n");
     // (the file that was there is open to everyone, as one written by hand is)
     std::fs::set_permissions(&written, std::fs::Permissions::from_mode(0o644)).unwrap();
-    let forced = finish(quickai_run(
+    let forced = finish(quickai_headless(
         &world,
         &["init", file.to_str().unwrap(), "--force"],
     ));
@@ -398,7 +405,7 @@ fn p3_y63_init_writes_the_file_to_fill_in_and_keeps_it_private() {
     );
     // a file somewhere else, and the standard output
     let elsewhere = world.scratch.join("elsewhere.toml");
-    let to_file = finish(quickai_run(
+    let to_file = finish(quickai_headless(
         &world,
         &[
             "init",
@@ -410,7 +417,7 @@ fn p3_y63_init_writes_the_file_to_fill_in_and_keeps_it_private() {
     assert_eq!(to_file.code, 0, "{}", to_file.err);
     assert!(elsewhere.is_file());
     std::fs::remove_file(&elsewhere).unwrap();
-    let printed = finish(quickai_run(
+    let printed = finish(quickai_headless(
         &world,
         &["init", file.to_str().unwrap(), "-o", "-"],
     ));
@@ -418,9 +425,13 @@ fn p3_y63_init_writes_the_file_to_fill_in_and_keeps_it_private() {
     assert!(printed.out.contains("[fetch]") && !printed.out.contains("Wrote"));
     assert!(!elsewhere.exists());
     // a configuration of the person's, by id, writes in the folder it is run in
-    let missing = finish(quickai_run(&world, &["init", "no-such-configuration"]));
+    let missing = finish(quickai_headless(&world, &["init", "no-such-configuration"]));
     assert_eq!(missing.code, 1);
-    assert!(missing.err.starts_with("quickai-run: "), "{}", missing.err);
+    assert!(
+        missing.err.starts_with("quickai-headless: "),
+        "{}",
+        missing.err
+    );
     // and nothing was fetched or installed
     assert_eq!(world.files.requests(), 0);
     assert!(std::fs::read_dir(home(&world)).unwrap().next().is_none());
@@ -433,7 +444,7 @@ fn p3_y63_init_writes_the_file_to_fill_in_and_keeps_it_private() {
 fn p3_y64_what_the_configuration_needs_is_a_code_of_its_own_and_the_file_to_fill_in_answers_it() {
     let world = World::new("y64");
     let file = needy(&world);
-    let run = finish(quickai_run(
+    let run = finish(quickai_headless(
         &world,
         &["check", file.to_str().unwrap(), "--gpu", "none"],
     ));
@@ -445,7 +456,7 @@ fn p3_y64_what_the_configuration_needs_is_a_code_of_its_own_and_the_file_to_fill
         "--hf-token, the variable HF_TOKEN",
         "llamacpp.models_dir",
         "--set llamacpp.models_dir=VALUE",
-        "quickai-run init",
+        "quickai-headless init",
     ] {
         assert!(run.err.contains(part), "{part} in\n{}", run.err);
     }
@@ -458,7 +469,7 @@ fn p3_y64_what_the_configuration_needs_is_a_code_of_its_own_and_the_file_to_fill
 
     // the file to fill in
     let env_file = world.scratch.join("env.toml");
-    let made = finish(quickai_run(
+    let made = finish(quickai_headless(
         &world,
         &[
             "init",
@@ -468,7 +479,7 @@ fn p3_y64_what_the_configuration_needs_is_a_code_of_its_own_and_the_file_to_fill
         ],
     ));
     assert_eq!(made.code, 0, "{}", made.err);
-    let blank = finish(quickai_run(
+    let blank = finish(quickai_headless(
         &world,
         &[
             "check",
@@ -498,7 +509,7 @@ fn p3_y64_what_the_configuration_needs_is_a_code_of_its_own_and_the_file_to_fill
             ),
         );
     std::fs::write(&env_file, filled).unwrap();
-    let ok = finish(quickai_run(
+    let ok = finish(quickai_headless(
         &world,
         &[
             "check",
@@ -533,7 +544,7 @@ fn p3_y64_what_the_configuration_needs_is_a_code_of_its_own_and_the_file_to_fill
         ok.out
     );
     // the same, said on the command line
-    let flags = finish(quickai_run(
+    let flags = finish(quickai_headless(
         &world,
         &[
             "check",
@@ -554,7 +565,7 @@ fn p3_y64_what_the_configuration_needs_is_a_code_of_its_own_and_the_file_to_fill
     assert!(!flags.out.contains("hf_flag"));
 
     // a word that makes no sense
-    let wrong = finish(quickai_run(
+    let wrong = finish(quickai_headless(
         &world,
         &[
             "check",
@@ -598,7 +609,7 @@ fn p3_y65_the_usual_variables_are_read_and_a_login_is_in_nothing_that_is_said() 
         ),
     );
     let stage = |args: &[&str], variable: Option<&str>| {
-        let mut command = quickai_run(&world, args);
+        let mut command = quickai_headless(&world, args);
         if let Some(token) = variable {
             command.env("HF_TOKEN", token);
         }
@@ -713,7 +724,7 @@ fn p3_y66_offline_the_program_lists_what_to_bring_and_uses_what_is_brought() {
     let bin = format!("llamacpp.bin_override={}", program.display());
     let mut args: Vec<&str> = common.to_vec();
     args.push(&bin);
-    let run = finish(quickai_run(&world, &args));
+    let run = finish(quickai_headless(&world, &args));
     assert_eq!(run.code, 1, "{}{}", run.out, run.err);
     let models = home(&world).join(".quickai/models/Hinted.gguf");
     for part in [
@@ -744,7 +755,7 @@ fn p3_y66_offline_the_program_lists_what_to_bring_and_uses_what_is_brought() {
     let mut args: Vec<&str> = common.to_vec();
     args.push(&bin);
     args.extend(["--models-from", from]);
-    let run = finish(quickai_run(&world, &args));
+    let run = finish(quickai_headless(&world, &args));
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
     assert!(
         run.out.contains("use Hinted.gguf") && run.out.contains("that you have"),
@@ -757,7 +768,7 @@ fn p3_y66_offline_the_program_lists_what_to_bring_and_uses_what_is_brought() {
     let mut args: Vec<&str> = common.to_vec();
     args.push(&bin);
     args.extend(["--model-source", "Typo.gguf=/x"]);
-    let run = finish(quickai_run(&world, &args));
+    let run = finish(quickai_headless(&world, &args));
     assert_eq!(run.code, 2, "{}{}", run.out, run.err);
     assert!(
         run.err.contains("`Typo.gguf`") && run.err.contains("Hinted.gguf"),
@@ -773,7 +784,7 @@ fn p3_y67_what_the_run_starts_does_not_inherit_the_logins_it_was_given() {
     let world = World::new("y67");
     let file = world.usual();
     let ready_file = world.scratch.join("ready.json");
-    let mut command = quickai_run(
+    let mut command = quickai_headless(
         &world,
         &[
             "up",
@@ -921,7 +932,7 @@ fn p3_y97_check_exits_with_6_and_says_what_the_computer_lacks_and_the_command() 
     let file = file.to_str().unwrap();
     let (bin, log) = computer_without_a_compiler(&world);
     let sudo = who_types_sudo();
-    let mut command = quickai_run(&world, &["check", file, "--gpu", "none"]);
+    let mut command = quickai_headless(&world, &["check", file, "--gpu", "none"]);
     command.env("PATH", &bin);
     let run = finish(command);
     assert_eq!(run.code, 6, "{}{}", run.out, run.err);
@@ -943,7 +954,7 @@ fn p3_y97_check_exits_with_6_and_says_what_the_computer_lacks_and_the_command() 
     );
     assert!(
         run.err
-            .contains("quickai-run: this computer lacks something the configuration needs:"),
+            .contains("quickai-headless: this computer lacks something the configuration needs:"),
         "{}",
         run.err
     );
@@ -955,7 +966,7 @@ fn p3_y97_check_exits_with_6_and_says_what_the_computer_lacks_and_the_command() 
     );
 
     // the same as lines a script can read: the look comes before the plan, the end is the failure
-    let mut command = quickai_run(&world, &["check", file, "--gpu", "none", "--json"]);
+    let mut command = quickai_headless(&world, &["check", file, "--gpu", "none", "--json"]);
     command.env("PATH", &bin);
     let json = finish(command);
     assert_eq!(json.code, 6, "{}{}", json.out, json.err);
@@ -986,7 +997,7 @@ fn p3_y97_check_exits_with_6_and_says_what_the_computer_lacks_and_the_command() 
     assert_eq!(end["outcome"], "failed");
 
     // a quiet run says what is wrong and the plan
-    let mut command = quickai_run(&world, &["check", file, "--gpu", "none", "-q"]);
+    let mut command = quickai_headless(&world, &["check", file, "--gpu", "none", "-q"]);
     command.env("PATH", &bin);
     let quiet = finish(command);
     assert_eq!(quiet.code, 6);
@@ -995,7 +1006,7 @@ fn p3_y97_check_exits_with_6_and_says_what_the_computer_lacks_and_the_command() 
     // and the variable the tool reads decides: a compiler it names that is there is a compiler
     let own = world.scratch.join("computer/my-cc");
     stand_in(own.parent().unwrap(), "my-cc", "exit 0");
-    let mut command = quickai_run(&world, &["check", file, "--gpu", "none"]);
+    let mut command = quickai_headless(&world, &["check", file, "--gpu", "none"]);
     command.env("PATH", &bin).env("CC", &own);
     let run = finish(command);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
@@ -1019,13 +1030,14 @@ fn p3_y98_prepare_installs_the_packages_when_told_to_and_only_then() {
     stand_in(&bin, "sudo", "shift\nexec \"$@\"");
 
     // without the flag: told, and nothing installed
-    let mut command = quickai_run(&world, &["prepare", file, "--gpu", "none"]);
+    let mut command = quickai_headless(&world, &["prepare", file, "--gpu", "none"]);
     command.env("PATH", &bin);
     let run = finish(command);
     assert_eq!(run.code, 6, "{}{}", run.out, run.err);
     assert!(
-        run.err
-            .contains("quickai-run can install the packages itself with --install-system-packages"),
+        run.err.contains(
+            "quickai-headless can install the packages itself with --install-system-packages"
+        ),
         "{}",
         run.err
     );
@@ -1033,7 +1045,7 @@ fn p3_y98_prepare_installs_the_packages_when_told_to_and_only_then() {
     assert_eq!(world.files.requests(), 0, "nothing was fetched either");
 
     // with it: installed, looked at again, and then what was asked
-    let mut command = quickai_run(
+    let mut command = quickai_headless(
         &world,
         &[
             "prepare",
@@ -1076,7 +1088,7 @@ fn p3_y98_prepare_installs_the_packages_when_told_to_and_only_then() {
 
     // a second run finds the compiler, and installs nothing
     std::fs::remove_file(&log).unwrap();
-    let mut command = quickai_run(
+    let mut command = quickai_headless(
         &world,
         &[
             "prepare",
@@ -1098,7 +1110,7 @@ fn p3_y98_prepare_installs_the_packages_when_told_to_and_only_then() {
 
     // told not to look: the look is left out, and so is the install
     std::fs::remove_file(bin.join("gcc")).unwrap();
-    let mut command = quickai_run(
+    let mut command = quickai_headless(
         &world,
         &["prepare", file, "--gpu", "none", "--skip-prerequisites"],
     );

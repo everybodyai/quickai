@@ -1433,7 +1433,7 @@ port = {}
         "--set envprog.scratch=VALUE",
         "API_SECRET (for envprog)",
         "--env envprog:API_SECRET=VALUE",
-        "quickai-run init",
+        "quickai-headless init",
     ] {
         assert!(
             failure.message.contains(text),

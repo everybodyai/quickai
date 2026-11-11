@@ -1724,7 +1724,7 @@ fn start_engine_help(ui: &mut egui::Ui, id: &str, name: &str, computer: &str) {
         ui.label(
             egui::RichText::new(format!(
                 "On {computer}, start it with QuickAI's headless program and a configuration of {name}: \
-                 quickai-run up <configuration>"
+                 quickai-headless up <configuration>"
             ))
             .small(),
         );

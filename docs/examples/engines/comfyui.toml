@@ -444,7 +444,7 @@ help = "Override the launcher QuickAI finds: a program that runs ComfyUI's main.
 ui = { section = "advanced", widget = "runtime_manager", order = 2, hint = "Local launcher path..." }
 
 # ---- what the computer has to have ---------------------------------------------------------------------------
-# A configuration says which of these it needs (`[[needs]] system = "c_compiler"`), and quickai-run looks at the computer
+# A configuration says which of these it needs (`[[needs]] system = "c_compiler"`), and quickai-headless looks at the computer
 # before it fetches anything, says what is missing with the exact command that brings it, and installs the packages only
 # when it is told to (--install-system-packages); docs/headless.md, section 12. The packages are named here and not in the
 # configuration, because a package that is installed as the administrator must not come from a file that was given away.

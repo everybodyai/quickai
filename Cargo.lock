@@ -2936,7 +2936,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "quickai-run"
+name = "quickai-headless"
 version = "0.2.6"
 dependencies = [
  "crossbeam-channel",

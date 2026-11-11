@@ -46,7 +46,7 @@ pub enum Update {
     /// The configuration lacks these there, each with another way, and nothing was started: the window asks the
     /// person to accept or reject each (section 6), and starts again with the answers.
     Alternatives(Vec<Issue>),
-    /// The words of `quickai-run up` the person's accepted answers came to, for the window to keep for that computer.
+    /// The words of `quickai-headless up` the person's accepted answers came to, for the window to keep for that computer.
     Remember(Vec<String>),
     /// It runs there, and each thing it started is reached here at `endpoints`, through `tunnel`.
     Running {
@@ -88,7 +88,7 @@ pub struct Traffic {
 }
 
 /// What a start runs: the configuration's name and text (the window's export of what it holds), flags of
-/// `quickai-run up` (what was accepted for that computer before), whether what runs there now is to be stopped first
+/// `quickai-headless up` (what was accepted for that computer before), whether what runs there now is to be stopped first
 /// (the person said Override), the person's answers to the other ways proposed (by the issue's id: accepted or not),
 /// and the model files this computer has (by name, with their path and size), which can be copied there.
 #[derive(Clone, Default)]
@@ -363,7 +363,7 @@ fn reach(job: &Job, say: &dyn Fn(Update)) -> Result<Computer, String> {
             computer.describe()
         )));
         deploy::ensure_program(&job.ssh, &job.scp, &job.spec, &computer, &job.version)?;
-        computer.headless = Some(format!("quickai-run {}", job.version));
+        computer.headless = Some(format!("quickai-headless {}", job.version));
     }
     Ok(computer)
 }

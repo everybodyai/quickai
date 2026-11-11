@@ -5,7 +5,7 @@
 //! person chose, starts the program and watches it, keeps the person's settings and configurations,
 //! and puts the live-traffic proxy in front of an engine when asked. `quickai-core` is the pure part
 //! below it (documents, expressions, the planner); the window (`quickai`) and the headless program
-//! (`quickai-run`) are the clients above it, and neither knows how the other works.
+//! (`quickai-headless`) are the clients above it, and neither knows how the other works.
 //!
 //! Nothing in this crate draws anything or names a toolkit: a test holds it to that
 //! (`tests/purity.rs`), as the core is held to having no effects. What a client is told arrives as

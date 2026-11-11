@@ -1,14 +1,14 @@
 # A configuration for a server: ComfyUI with the files of Wan 2.2 TI2V 5B in its Turbo build, as a video studio uses them
 # (docs/headless.md). It carries no model. Each file says where it can be had from: a repository of the hub (and the
-# revision of it that was checked), the file in it, how big it is and what its SHA-256 is. `quickai-run up` installs ComfyUI,
+# revision of it that was checked), the file in it, how big it is and what its SHA-256 is. `quickai-headless up` installs ComfyUI,
 # fetches the three files into the folders ComfyUI looks for each in, and starts it on 127.0.0.1:8188.
 #
-#     quickai-run check wan22-ti2v-turbo.toml --accept-review     # what would be done, from where, to where, how big
-#     quickai-run up    wan22-ti2v-turbo.toml --accept-review     # do it, and stay
+#     quickai-headless check wan22-ti2v-turbo.toml --accept-review     # what would be done, from where, to where, how big
+#     quickai-headless up    wan22-ti2v-turbo.toml --accept-review     # do it, and stay
 #
 # `--accept-review` is the person's yes to the places this file names (they are read first: they are not the recommended
 # list's). Where the computer keeps the models, a Python, a login for a hub or a mirror of it are the computer's, not this
-# file's: `quickai-run init wan22-ti2v-turbo.toml` writes the file to fill in. The three files are on the hub under
+# file's: `quickai-headless init wan22-ti2v-turbo.toml` writes the file to fill in. The three files are on the hub under
 # the names below, and the sizes and checksums were read from it on 2026-10-12.
 schema = 1
 kind = "profile"

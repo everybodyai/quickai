@@ -4,7 +4,7 @@
 //! shipped documents patched, the way a person patches them, to meet all of it and to look for the program
 //! nowhere but where it was installed (so that what a developer has built on this machine is never run).
 //!
-//! The runtime's own tests (`p3/headless.rs`) and the tests of the program (`quickai-run/tests`) use the
+//! The runtime's own tests (`p3/headless.rs`) and the tests of the program (`quickai-headless/tests`) use the
 //! same world, so that what one proves of the library the other proves of the binary.
 
 use std::path::{Path, PathBuf};

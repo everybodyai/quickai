@@ -406,7 +406,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// O43: a person can say what the machine has when it cannot be told (`quickai-run --gpu`), and the
+    /// O43: a person can say what the machine has when it cannot be told (`quickai-headless --gpu`), and the
     /// words they use are the vendors' own keys.
     #[test]
     fn p3_o43_a_person_can_name_the_cards_and_none_is_a_word_too() {

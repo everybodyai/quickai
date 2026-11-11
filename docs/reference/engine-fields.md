@@ -537,7 +537,7 @@ Both keys may be given; then both must hold. One at least is needed.
 
 ## `[[prerequisite]]`
 
-Something the computer has to have for a configuration of the engine to work, how to tell whether it has it, and how to put it right. A configuration says which of them it needs (`[[needs]] system = "<id>"`); the packages are named here and nowhere else, because a package that is installed as the administrator must not come from a file that was given away. `quickai-run` looks at the computer before it fetches anything, says what is missing and the exact command that brings it, and installs the packages only when it is told to (`--install-system-packages`).
+Something the computer has to have for a configuration of the engine to work, how to tell whether it has it, and how to put it right. A configuration says which of them it needs (`[[needs]] system = "<id>"`); the packages are named here and nowhere else, because a package that is installed as the administrator must not come from a file that was given away. `quickai-headless` looks at the computer before it fetches anything, says what is missing and the exact command that brings it, and installs the packages only when it is told to (`--install-system-packages`).
 
 | Key | Value | Meaning |
 |---|---|---|

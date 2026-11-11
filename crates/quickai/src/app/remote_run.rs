@@ -42,7 +42,7 @@ pub struct SetupRun {
     pub alternatives: Option<Vec<Issue>>,
     /// The person's answers to them, by the issue's id: accepted or rejected.
     pub answers: BTreeMap<String, bool>,
-    /// The words of `quickai-run up` the accepted answers came to, for the window to keep for the computer.
+    /// The words of `quickai-headless up` the accepted answers came to, for the window to keep for the computer.
     remember: Vec<String>,
     /// It runs there, and each thing it started is reached here at these addresses.
     pub endpoints: Vec<EndpointInfo>,

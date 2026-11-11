@@ -1,4 +1,4 @@
-//! `quickai-run`: QuickAI with no window (docs/headless.md).
+//! `quickai-headless`: QuickAI with no window (docs/headless.md).
 //!
 //! It reads a configuration, gets what it needs on this computer, starts it and stays until it is told to
 //! stop, in a terminal or in the background (`background`). Everything that is done is the runtime's
@@ -87,7 +87,7 @@ fn run_init(init: InitInvocation) -> i32 {
     let text = match provision::init(&request) {
         Ok(text) => text,
         Err(failure) => {
-            eprintln!("quickai-run: {}", failure.message);
+            eprintln!("quickai-headless: {}", failure.message);
             return provision::Outcome::Failed(failure).exit_code();
         }
     };
@@ -115,7 +115,7 @@ fn run_init(init: InitInvocation) -> i32 {
     match options.open(&path) {
         Ok(mut file) => {
             if let Err(e) = file.write_all(text.as_bytes()) {
-                eprintln!("quickai-run: could not write {}: {e}", path.display());
+                eprintln!("quickai-headless: could not write {}: {e}", path.display());
                 return 1;
             }
             #[cfg(unix)]
@@ -127,7 +127,7 @@ fn run_init(init: InitInvocation) -> i32 {
             println!("Wrote {}", path.display());
             println!("Fill in what applies, then:");
             println!(
-                "  quickai-run check {} --environment {}",
+                "  quickai-headless check {} --environment {}",
                 init.target,
                 path.display()
             );
@@ -135,13 +135,13 @@ fn run_init(init: InitInvocation) -> i32 {
         }
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             eprintln!(
-                "quickai-run: {} is there already; say --force to write over it, or -o to write another file",
+                "quickai-headless: {} is there already; say --force to write over it, or -o to write another file",
                 path.display()
             );
             2
         }
         Err(e) => {
-            eprintln!("quickai-run: could not write {}: {e}", path.display());
+            eprintln!("quickai-headless: could not write {}: {e}", path.display());
             1
         }
     }
@@ -168,7 +168,7 @@ fn list_models(extra: &[std::path::PathBuf], json: bool) -> i32 {
                 0
             }
             Err(e) => {
-                eprintln!("quickai-run: {e}");
+                eprintln!("quickai-headless: {e}");
                 1
             }
         };
@@ -204,7 +204,7 @@ fn main() {
             return;
         }
         Ok(Parsed::Version) => {
-            println!("quickai-run {}", env!("CARGO_PKG_VERSION"));
+            println!("quickai-headless {}", env!("CARGO_PKG_VERSION"));
             return;
         }
         Ok(Parsed::Init(init)) => std::process::exit(run_init(init)),
@@ -228,7 +228,7 @@ fn main() {
             invocation
         }
         Err(message) => {
-            eprintln!("quickai-run: {message}\n\n{USAGE}");
+            eprintln!("quickai-headless: {message}\n\n{USAGE}");
             std::process::exit(2);
         }
     };
@@ -246,11 +246,14 @@ fn main() {
         match run_file::hold(&dir, &invocation.target, invocation.background) {
             Ok(held) => Some(held),
             Err(NotHeld::Busy(run)) => {
-                eprintln!("quickai-run: {}", background::busy(run.as_deref()));
+                eprintln!("quickai-headless: {}", background::busy(run.as_deref()));
                 std::process::exit(7);
             }
             Err(NotHeld::Io(e)) => {
-                eprintln!("quickai-run: could not write in {}: {e}", dir.display());
+                eprintln!(
+                    "quickai-headless: could not write in {}: {e}",
+                    dir.display()
+                );
                 std::process::exit(1);
             }
         }

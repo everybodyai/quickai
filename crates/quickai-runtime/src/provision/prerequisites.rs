@@ -433,7 +433,7 @@ pub(super) fn settle(
         why_not = Some(if packages.is_empty() {
             "--skip-prerequisites leaves this look out.".to_string()
         } else {
-            "quickai-run can install the packages itself with --install-system-packages (it has to be the administrator, or sudo has to need no password); --skip-prerequisites leaves this look out."
+            "quickai-headless can install the packages itself with --install-system-packages (it has to be the administrator, or sudo has to need no password); --skip-prerequisites leaves this look out."
                 .to_string()
         });
     } else if options.offline {
@@ -459,7 +459,7 @@ pub(super) fn settle(
         if elevation == host::Elevation::Unavailable {
             return Err(failure(
                 looked,
-                Some("quickai-run is not the administrator and sudo asks for a password, so it cannot install them: run the command yourself, or run quickai-run as the administrator."),
+                Some("quickai-headless is not the administrator and sudo asks for a password, so it cannot install them: run the command yourself, or run quickai-headless as the administrator."),
             )
             .into());
         }

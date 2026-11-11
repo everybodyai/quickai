@@ -1,4 +1,4 @@
-//! Group O of docs/phase3-test-plan.md, the pure half: what the headless program (`quickai-run`, WP4.18,
+//! Group O of docs/phase3-test-plan.md, the pure half: what the headless program (`quickai-headless`, WP4.18,
 //! docs/headless.md) asks of the core. The window and that program both fetch what a configuration names,
 //! and they must not be able to fetch two different things for the same words, so the choice is the core's.
 //! The models are made up (`acme/...`), as in group J, so that no test depends on what the list holds.

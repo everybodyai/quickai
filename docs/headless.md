@@ -1,18 +1,20 @@
-# Headless: `quickai-run`
+# Headless: `quickai-headless`
 
-`quickai-run` runs a QuickAI configuration on a computer without a display, such as a rented GPU server. It installs what the configuration requires, downloads its models, starts it, and keeps running until it is stopped. This page describes what it does, how it does it, and what has been tested in practice.
+`quickai-headless` runs a QuickAI configuration on a computer without a display, such as a rented GPU server. It installs what the configuration requires, downloads its models, starts it, and keeps running until it is stopped. This page describes what it does, how it does it, and what has been tested in practice.
+
+Before version 0.2.6, this program was named `quickai-run`; its commands, options and files are otherwise unchanged.
 
 ## 1. Overview
 
-`quickai-run` is QuickAI without a window, for computers that have no display. It takes a **configuration** (the file the window exports and
+`quickai-headless` is QuickAI without a window, for computers that have no display. It takes a **configuration** (the file the window exports and
 imports; see [configurations.md](configurations.md)), determines what that configuration requires on this computer, installs anything that is
 missing, downloads the models, starts everything, reports where it is listening, and keeps running until it is told to stop.
 
 ```sh
-quickai-run init  wan.toml        # the file to fill in: what the configuration needs from you, and what is the computer's
-quickai-run check wan.toml        # what would be done, from where, to where, how big it is; changes nothing
-quickai-run up    wan.toml        # do it, start it, stay (Ctrl-C or SIGTERM stops it)
-quickai-run prepare wan.toml      # install and fetch, start nothing
+quickai-headless init  wan.toml        # the file to fill in: what the configuration needs from you, and what is the computer's
+quickai-headless check wan.toml        # what would be done, from where, to where, how big it is; changes nothing
+quickai-headless up    wan.toml        # do it, start it, stay (Ctrl-C or SIGTERM stops it)
+quickai-headless prepare wan.toml      # install and fetch, start nothing
 ```
 
 Four conditions had to be met, and the first accounted for most of the work:
@@ -36,7 +38,7 @@ quickai-core      pure: documents, expressions, the planner. No processes, netwo
 quickai-runtime   every effect, no toolkit: find, install, fetch, start, watch, stop; settings and configurations on disk;
                   the documents and assets the application ships.                                       (new)
 quickai           the window. It draws; what it does to the computer it asks the runtime for.            (what is left of it)
-quickai-run       the headless program: arguments, text or JSON lines, signals.                          (new)
+quickai-headless       the headless program: arguments, text or JSON lines, signals.                          (new)
 ```
 
 The window consisted of 47,000 lines in a single crate. The code that acts on the computer contains no `egui` (it communicates through
@@ -67,7 +69,7 @@ unified:
 
 ## 3. What it does, step by step
 
-`quickai-run up <configuration>`, where `<configuration>` is the ID of a saved configuration or the path to a file:
+`quickai-headless up <configuration>`, where `<configuration>` is the ID of a saved configuration or the path to a file:
 
 1. **Reads and reviews** the configuration for this computer, as the window does when a file is imported (`profile::check`). A file that
    cannot be used here stops the run (exit 1 or 3). Anything a file from outside *asks* for (free text that reaches a command line,
@@ -124,14 +126,14 @@ for the window.
 ### Commands, exit codes and output
 
 ```
-quickai-run up|prepare|check <configuration> [--accept-review] [--build [PROGRAM=]LABEL] [--port N] [--models-dir DIR] [--python PATH]
+quickai-headless up|prepare|check <configuration> [--accept-review] [--build [PROGRAM=]LABEL] [--port N] [--models-dir DIR] [--python PATH]
                              [--gpu nvidia|amd|intel|apple|none] [--allow-program HASH] [--dry-run] [--json] [--quiet] [--ready-file PATH]
                              [--environment FILE]... [--set ENGINE.FIELD=VALUE]... [--env [PROGRAM:]NAME=VALUE]...
                              [--model-source FILE=WHERE]... [--models-from DIR]... [--offline]
                              [--hf-token TOKEN] [--hf-endpoint URL] [--github-token TOKEN]
                              [--install-system-packages] [--skip-prerequisites]
-quickai-run init <configuration> [-o FILE | -o -] [--force]
-quickai-run plan | config | configuration ...         QuickAI's other headless commands, the same code as `quickai`'s
+quickai-headless init <configuration> [-o FILE | -o -] [--force]
+quickai-headless plan | config | configuration ...         QuickAI's other headless commands, the same code as `quickai`'s
 ```
 
 | Code | Meaning |
@@ -154,20 +156,20 @@ when known), so that another program can read the plan and perform the downloads
 
 | # | Decision | Rationale |
 |---|---|---|
-| C117 | **The application consists of four crates**: `quickai-core` (pure), `quickai-runtime` (every effect, no toolkit), `quickai` (the window) and `quickai-run` (the headless program). The window keeps its module paths (`crate::config`, ...) by naming the runtime's modules at its root. | The user: "make things modular in the current QuickAI". A second program that duplicated the installation logic would drift from the first; a crate boundary enforced by the compiler does not. |
-| C118 | **Running the headless program is the equivalent of the click.** A configuration still only selects (C103); `quickai-run` is the action: it installs and downloads what the file requires, after printing what that is and how large. The window's rule (nothing is downloaded until a button is pressed) is unchanged. | The user asked for a program that "has to get all the info from the config, download/configure itself and start". Ground rule 8 (no unexpected network traffic) is met by the plan printed first, by `check`, and by `--accept-review` for what a file from outside asks for. |
+| C117 | **The application consists of four crates**: `quickai-core` (pure), `quickai-runtime` (every effect, no toolkit), `quickai` (the window) and `quickai-headless` (the headless program). The window keeps its module paths (`crate::config`, ...) by naming the runtime's modules at its root. | The user: "make things modular in the current QuickAI". A second program that duplicated the installation logic would drift from the first; a crate boundary enforced by the compiler does not. |
+| C118 | **Running the headless program is the equivalent of the click.** A configuration still only selects (C103); `quickai-headless` is the action: it installs and downloads what the file requires, after printing what that is and how large. The window's rule (nothing is downloaded until a button is pressed) is unchanged. | The user asked for a program that "has to get all the info from the config, download/configure itself and start". Ground rule 8 (no unexpected network traffic) is met by the plan printed first, by `check`, and by `--accept-review` for what a file from outside asks for. |
 | C119 | **When no build is named, the document's declarations choose it** (`pick_build`, section 3). | A program with no list for a user to read must still neither install a CUDA build on a machine whose cards it could not identify, nor guess. The rule is generic and tested against the shipped llama.cpp and Ollama documents. |
 | C120 | **Graphics cards are detected without `lspci`**: when `lspci` cannot be run, the kernel's device list (`/sys/bus/pci/devices`, display class) and the NVIDIA driver's files are read instead. An `lspci` that responded is trusted even when it lists nothing (the GUI tests place a stand-in first on the path to control what the application is told, and found that consulting a second source would make the result depend on the computer the tests run on). `--gpu` overrides all of it. | A rented server's minimal image has no pciutils, and a machine whose card is not detected is given PyTorch for the processor (ComfyUI's installation chooses by `has(gpu.vendors, ...)`). |
 | C121 | **It listens on the loopback interface only**; access from elsewhere is through an SSH tunnel. There is no `--listen`. | Serving beyond the loopback is a non-goal of the architecture, and ComfyUI has no login. |
 | C122 | **A user document that starts a program QuickAI did not install asks once, by hash** (`--allow-program`), as the window's prompt does. A file from outside that asks for something is not used without `--accept-review`: free text that reaches a command line, settings that widen access, and a model source it names that is not the recommended list's. | The guard (C33) and the review (C104) are the same for both programs; the window never downloads from such a hint on its own either (its search is a button). |
-| C123 | **`quickai-run` writes nothing outside the data directory** (`~/.quickai`, or below `HOME`): not `settings.json` and not the configuration directory (`configuration import` is the one command that does, and it is the same code as `quickai`'s; `init` writes only the one file the operator asked for, where they asked). | A server has no window to own those files, and someone who runs both programs on one computer must not have them changed by a command. |
-| C124 | **Linux and macOS first.** On Windows, `quickai-run` initially reported that it was not yet available; since WP4.33.1 (section 13) it runs there too. It is built and type-checked here, but has not yet been run on Windows. | A run relies on signals and process groups; the Windows branch could not be built or run here, and a program that has never been run is not offered. |
-| C125 | **A configuration states where a model can be obtained, and never contains the model.** A file model has `from` (a type of source and a name within it), `path` (the file within that repository), `revision` (a branch, tag or commit), `into` (the subfolder of the models folder) or `url` (an `https://` address with no login in it), plus `size` and `sha256`. No key accepts a path on a computer, and a file larger than 256 KiB is not read. `quickai-run` downloads from these sources (C109 remains in force for the window: it shows the source and downloads on a click). | The user: "it should just carry the information about where to fetch it from and the runtime will autofetch". The Wan 2.2 set the user runs comes from three repositories, with one of the files in a subfolder of its repository: that is what `path` is for. The recommended list's `catalog` remains the way to reference a model the list vouches for. |
+| C123 | **`quickai-headless` writes nothing outside the data directory** (`~/.quickai`, or below `HOME`): not `settings.json` and not the configuration directory (`configuration import` is the one command that does, and it is the same code as `quickai`'s; `init` writes only the one file the operator asked for, where they asked). | A server has no window to own those files, and someone who runs both programs on one computer must not have them changed by a command. |
+| C124 | **Linux and macOS first.** On Windows, `quickai-headless` initially reported that it was not yet available; since WP4.33.1 (section 13) it runs there too. It is built and type-checked here, but has not yet been run on Windows. | A run relies on signals and process groups; the Windows branch could not be built or run here, and a program that has never been run is not offered. |
+| C125 | **A configuration states where a model can be obtained, and never contains the model.** A file model has `from` (a type of source and a name within it), `path` (the file within that repository), `revision` (a branch, tag or commit), `into` (the subfolder of the models folder) or `url` (an `https://` address with no login in it), plus `size` and `sha256`. No key accepts a path on a computer, and a file larger than 256 KiB is not read. `quickai-headless` downloads from these sources (C109 remains in force for the window: it shows the source and downloads on a click). | The user: "it should just carry the information about where to fetch it from and the runtime will autofetch". The Wan 2.2 set the user runs comes from three repositories, with one of the files in a subfolder of its repository: that is what `path` is for. The recommended list's `catalog` remains the way to reference a model the list vouches for. |
 | C126 | **What the operator specifies about a file's location takes precedence over the configuration, and is verified.** `--model-source FILE=WHERE` (a path to the file or to a folder containing it, an address, or `huggingface:owner/repo`), `[models]` in an environment file, `--models-from DIR` (searched before anything is downloaded: by name, in the folder for its type, and by its path within its repository), and `--models-dir`. A file used in place is **linked, not copied**, after its size and, when known, its SHA-256 are verified; a file of a different size or content is rejected with an explanation, and nothing is put in its place. A name that is not a file of the configuration is an error that lists the names it has. A source named by a file from outside is queried only when the program is about to download from it, not when the operator has stated where the file is. | The user: "the user should have the ability to specify the location". A copy already on a server (a mounted disk, or a file copied with `scp`) must be usable without downloading 13 GB again, and without being trusted unverified. The first version suppressed the question when a folder contained a file of the right name, so a file of the wrong size stood in for the operator's consent (found while documenting the rule, Y33). |
 | C127 | **"Alternate means" are: bring the files by any means, or point to a mirror; the program verifies them.** `--offline` downloads nothing and reports what is missing, one file at a time, with its destination and the address it would have come from; `check --json` provides the same for scripts. There is no hook that runs a command to download. | The user: "or provide alternate means to get it". A download command would be a command the program runs on the word of a file or a flag; the means an operator has (`aria2c`, `rsync`, `scp`, a mounted disk, a mirror) all end with a file in a folder, which is verified. |
 | C128 | **A login is sent only to the host it was given for.** `--hf-token` / `HF_TOKEN` / `[fetch] huggingface_token` is sent as a bearer token to the hub (or to the mirror that replaces it), and is forwarded only through a redirect within that host; the signed address to which a hub redirects a file (the real hub redirects every large file of the Wan 2.2 set to `us.aws.cdn.hf.co`: L26) receives none, and neither does an address the operator names on another host. `--github-token` / `GITHUB_TOKEN` authenticates the requests for the list of builds (60 per hour without it) and nothing else. The four variables that can hold a login (`HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN`) are removed from the environment of every program it starts. A 401 or 403 response explains what to do. `--hf-endpoint` / `HF_ENDPOINT` replaces the hub's address in every download. | A server shares an IP address with other people's servers, and its 60 requests per hour run out; a gated repository requires a login. A token that followed a file to the next host would be handed to a host nobody chose. |
 | C129 | **What belongs to the computer is specified by the operator running the configuration**, not by the configuration: an **environment file** (`--environment FILE`, TOML: `[fetch]`, `[values.<engine>]`, `[env.<program>]`, `[models]`; an empty value is not applied; `init` generates it), `--set <engine>.<field>=VALUE` (a setting of the engine or of its companion program, including those a configuration cannot carry: a folder, a Python, a launcher), `--env [program:]NAME=VALUE` (a line in that program's environment, after the configuration's own lines), and the usual variables for the logins. A flag takes precedence over a variable, a variable over a file, a later file over an earlier one, and all of them over the configuration. `share` does not apply to the operator's own input (it is theirs); the names an engine's document reserves for itself (`OLLAMA_HOST`, `DATA_DIR`, `HOME`...) still cannot be set from here. The file must be named explicitly: nothing is read merely because it sits next to the configuration. | The user: "the environment specific variables if any are to be specified by the user - either through a configuration file (which you ask the user to fill) or via commandline etc." The engine documents already state which settings belong to a computer (`share = "never"`) and which program accepts environment lines (the field that binds them), so the file to fill in is generated from them and the program names no engine. |
-| C130 | **A configuration can state what it requires from whoever runs it** (`[[needs]]`: a login, a setting, or a variable in a program's environment, each with a reason). `quickai-run` stops with a dedicated code, 5, before it downloads or installs anything, names each item with its reason and how to supply it, and points out that `init` generates the file to fill in. `init` builds that file from the configuration and the documents: each required item as a line to complete, the settings that belong to a computer, the environment lines, and the files the configuration downloads, each with its source and size. It is written readable by its owner only and is not overwritten unless requested. A value left empty is not supplied. | "which you ask the user to fill": the program asks, and explains how. Stopping before the first byte means an operator who forgot a login does not wait through a 17 GB installation to find out. |
+| C130 | **A configuration can state what it requires from whoever runs it** (`[[needs]]`: a login, a setting, or a variable in a program's environment, each with a reason). `quickai-headless` stops with a dedicated code, 5, before it downloads or installs anything, names each item with its reason and how to supply it, and points out that `init` generates the file to fill in. `init` builds that file from the configuration and the documents: each required item as a line to complete, the settings that belong to a computer, the environment lines, and the files the configuration downloads, each with its source and size. It is written readable by its owner only and is not overwritten unless requested. A value left empty is not supplied. | "which you ask the user to fill": the program asks, and explains how. Stopping before the first byte means an operator who forgot a login does not wait through a 17 GB installation to find out. |
 | C131 | **Secrets are kept out of everything the program outputs.** A login is a type that prints as hidden regardless of how it is printed (`Debug`, `Display`). Messages, events, JSON, the ready file and standard error state where a value was supplied and show the value unless its name marks it as a secret (KEY, TOKEN, SECRET, PASSWORD) or it is a login, in which case they show `(hidden)` and `null`. A block of environment lines is counted, not shown. The file `init` writes has mode 600, and a warning is given for an environment file that holds a secret and is readable by others. Paths are shown in full. | The first version of the `Debug` output of an environment line printed its value (caught by the test that now covers it, Y23), and the first version of the message about a folder truncated it at 60 characters (caught by the GUI tests). |
 | C132 | **A companion program is part of the configuration, and its build can be pinned.** `[values.openwebui] enabled = true` (with its port and internet access) is how a configuration includes it; `[runtime.openwebui] build = "0.11.4"` specifies which build is installed, and `--build openwebui=LABEL` takes precedence over it. It is installed, configured (told where the engine is, with its data under its own folder and the environment variables supplied by the operator) and started after the engine, and stopped before it. The window's Save preserves what the window cannot represent: the pins, the needs, and the models beyond the one it shows, with each one's source (it writes the model it shows, and the others are kept as long as that model remains first). | The user: "the configuration should specify that as well and must be able to download and configure that too". A server must be able to receive the same Open WebUI twice, which a version that follows the document's tested release cannot guarantee. |
 | C133 | **What a configuration may not do.** It names no program and cannot add code to an engine: the ComfyUI custom nodes that its document installs belong to the document, and anyone who wants others writes a document of their own (which asks, by hash, before it starts anything). `into` must be one of the folders the engine's document says it keeps files in, so a file cannot be placed where the engine does not look. A file name consists of the letters, digits, `.`, `-` and `_` that the models folder allows. | The architecture's rule that a data-tier document names no program; a shared file must not be able to make a server run someone else's Python. |
@@ -185,15 +187,15 @@ when known), so that another program can read the plan and perform the downloads
 # on your computer, once: the configuration you made in the window, or one you wrote (docs/examples/profiles/wan22-ti2v-turbo.toml)
 quickai configuration export vision-chat -o vision-chat.toml
 scp vision-chat.toml you@server:
-scp quickai-run-0.1.0-linux-x86_64.tar.gz you@server:        # the package of quickai-run; unpack it there
+scp quickai-headless-0.1.0-linux-x86_64.tar.gz you@server:        # the package of quickai-headless; unpack it there
 
 # on the server
-./quickai-run check vision-chat.toml          # read it: the plan, the sizes, from where, to where, what asks
-./quickai-run up    vision-chat.toml          # do it
+./quickai-headless check vision-chat.toml          # read it: the plan, the sizes, from where, to where, what asks
+./quickai-headless up    vision-chat.toml          # do it
 ```
 
-- **As a service.** `quickai-run up` is a foreground program that exits with 0 on SIGTERM, so a unit file needs only four lines
-  (`ExecStart=/home/you/quickai-run up /home/you/vision-chat.toml --environment /home/you/vision-chat.environment.toml`, `Restart=on-failure`, `User=you`,
+- **As a service.** `quickai-headless up` is a foreground program that exits with 0 on SIGTERM, so a unit file needs only four lines
+  (`ExecStart=/home/you/quickai-headless up /home/you/vision-chat.toml --environment /home/you/vision-chat.environment.toml`, `Restart=on-failure`, `User=you`,
   `KillSignal=SIGTERM`); the logins can be set in the unit's `Environment=` or `EnvironmentFile=` (`HF_TOKEN=...`) instead of the environment file.
   Add `RestartPreventExitStatus=2 3 5 6`: exit 2 is an error in the command or the file, 3 is a file that asks for something nobody approved, 5 is a
   configuration that requires something nobody supplied, and 6 is a computer that lacks something the configuration requires; restarting gives the
@@ -219,7 +221,7 @@ scp quickai-run-0.1.0-linux-x86_64.tar.gz you@server:        # the package of qu
 - **A compiler (and a driver).** A ComfyUI configuration that runs the int8 and 4-bit video models declares that the computer needs a C compiler and
   the headers of the Python the environment is created with, because Triton builds a helper in C the first time a kernel of the model is launched
   (section 12). QuickAI's own Python includes its headers; a Python named with `--python` may not (the package `python3.12-dev`). A minimal Ubuntu
-  server has no compiler (it is in `build-essential`); `quickai-run` checks before downloading anything, reports what is missing with the exact
+  server has no compiler (it is in `build-essential`); `quickai-headless` checks before downloading anything, reports what is missing with the exact
   command, and installs the packages itself with `--install-system-packages` (as the administrator, or through `sudo` when that requires no
   password).
 - **System libraries.** llama.cpp's own build needs a few libraries that a minimal image lacks: `libgomp1` and OpenSSL 3 (`libssl3`), as well as
@@ -253,7 +255,7 @@ A model file has one of three sources: a name the engine pulls (`ollama = "qwen3
 `file`), or a file (`file`, with the source it can be obtained from). The source keys apply to a file, not to the other two.
 [docs/examples/profiles/wan22-ti2v-turbo.toml](examples/profiles/wan22-ti2v-turbo.toml) is the user's own Wan 2.2 TI2V 5B Turbo set (three files
 from three repositories, one of them in a subfolder), with the commits, sizes and checksums read from the hub on 2026-10-12 and verified against the
-files on the user's computer: `quickai-run check` on it reports, against the live documents, what it would download, from where, and into which
+files on the user's computer: `quickai-headless check` on it reports, against the live documents, what it would download, from where, and into which
 folder (the weights into `diffusion_models`, the encoder into `text_encoders`, the VAE into `vae`). The folder is the one the engine's document
 assigns to a file of that name, or `into`, which can only be a folder the document says the engine keeps files in (`models::folders`: ComfyUI's are
 those in its document; llama.cpp keeps all its files in one).
@@ -283,10 +285,10 @@ match the configuration; nothing partial is left behind.
 | "my hub is a mirror" | `--hf-endpoint https://mirror.example` or `HF_ENDPOINT` |
 | "the repository requires a login" | `--hf-token`, `HF_TOKEN`, or `[fetch] huggingface_token` of an environment file |
 | "do not use the network" | `--offline`: the plan is reported, then what is missing, with where to put it and where it would come from |
-| "I will download them myself" | `quickai-run check wan.toml --json` provides each file's address and destination; download them (`aria2c`, `rsync`...), then use `--offline --models-from DIR` |
+| "I will download them myself" | `quickai-headless check wan.toml --json` provides each file's address and destination; download them (`aria2c`, `rsync`...), then use `--offline --models-from DIR` |
 | "keep the models on the large disk" | `--models-dir DIR`, or `[values.<engine>] models_dir` of an environment file |
 
-A file from outside that names a source is reviewed before anything is downloaded from it: `quickai-run` stops with code 3, shows the full source
+A file from outside that names a source is reviewed before anything is downloaded from it: `quickai-headless` stops with code 3, shows the full source
 (the repository, the file within it and the revision, or the address) and how to approve it (`--accept-review`), and nothing is downloaded or
 written. This question is not asked when the operator has stated where the file is, and a configuration they keep (imported, and run by its ID)
 does not count as being from outside.
@@ -297,7 +299,7 @@ A configuration is meant to be shared, so it carries nothing specific to a compu
 supplies those details:
 
 ```toml
-# vision-chat.environment.toml -- `quickai-run init vision-chat.toml` writes it, for the configuration it was made for
+# vision-chat.environment.toml -- `quickai-headless init vision-chat.toml` writes it, for the configuration it was made for
 schema = 1
 
 [fetch]
@@ -359,7 +361,7 @@ why = "Signs the logins; keep it the same between runs."
 ```
 
 Until each item is supplied, `check`, `prepare` and `up` stop with code 5 and one sentence per item (`a Hugging Face token`, `comfyui.models_dir`,
-`WEBUI_SECRET_KEY (for openwebui)`), stating why it is required and how to supply it (`--hf-token, the variable HF_TOKEN, or `huggingface_token` under [fetch] of an environment file`); nothing is downloaded or installed in the meantime, and the message ends with `quickai-run init <configuration>`.
+`WEBUI_SECRET_KEY (for openwebui)`), stating why it is required and how to supply it (`--hf-token, the variable HF_TOKEN, or `huggingface_token` under [fetch] of an environment file`); nothing is downloaded or installed in the meantime, and the message ends with `quickai-headless init <configuration>`.
 A setting the configuration itself provides counts as supplied. The window never reads `[[needs]]`, but preserves them when it saves the
 configuration.
 
@@ -379,7 +381,7 @@ enabled = true
 port = 3000
 ```
 
-`quickai-run` installs both (Ollama from its release, and Open WebUI from the package index into a Python environment of its own under
+`quickai-headless` installs both (Ollama from its release, and Open WebUI from the package index into a Python environment of its own under
 `~/.quickai/openwebui`), pulls the model, and starts Open WebUI after Ollama, telling it where Ollama is (`OLLAMA_BASE_URL`), with its data and home
 directory in its own folder, internet access as the configuration specifies (offline unless it says `online`, which a file from outside must be
 approved to say), and the environment variables the operator supplied (`--env openwebui:WEBUI_NAME=Studio`, `[env.openwebui]`). The variables that
@@ -426,7 +428,7 @@ other checks besides the one that was broken, and the mode a file is first creat
   (about 5 minutes and 7 GB; section 11).
 - **A gated repository.** The fake hub responds with 401 and 403 as the real one does; no real gated repository was used (no login was available).
 - **Multiple models in the window.** The window shows one model; it keeps the others (with each one's source) as long as that model remains first,
-  and drops them when another model is chosen. A configuration with several files is intended for `quickai-run`.
+  and drops them when another model is chosen. A configuration with several files is intended for `quickai-headless`.
 - **Overlays**, the live-traffic proxy (which serves the window's Live tab), and a second program per engine other than the one the
   document names.
 - **Authentication.** There is none to configure: it listens on the loopback interface.
@@ -445,7 +447,7 @@ On Linux with an AMD card, in a separate home directory, on 2026-10-12:
   The first of these runs revealed a defect (it installed an OpenVINO build; section 3, rule 5), which is why rule 5 exists.
 - **The packaged binary on a bare Debian 12** (no `lspci`, no Python, no OpenSSL or OpenMP): it identified the computer's AMD card from the
   kernel's device list, chose the Vulkan build, and, where the build needed a library the image lacks, stopped with the loader's own message
-  naming it. With `libgomp1` and `libssl3` installed, and `quickai-run` running as PID 1, the plain build of the newest release was installed,
+  naming it. With `libgomp1` and `libssl3` installed, and `quickai-headless` running as PID 1, the plain build of the newest release was installed,
   the model loaded, a question answered, and a stop ended it in 0.2 s with exit 0.
 - **The complete GUI test suite** on the split application: everything passed except the two long-standing skips. Its first full run found that
   the first version of card detection bypassed a stand-in `lspci` that the suite places first on the path (section 3 and C120).
@@ -456,14 +458,14 @@ WP4.19, the same day:
   `{hub}/{repo}/resolve/{commit}/{path}`, with a subfolder in the path, responds with `302` to a signed address on another host, with the size and
   SHA-256 of the file (L26). The sizes and the three checksums are in the worked example, and the checksums **matched those of the three files
   downloaded earlier** (`sha256sum` of 13 GB: 74 s).
-- **`quickai-run check docs/examples/profiles/wan22-ti2v-turbo.toml --gpu amd --accept-review`** in a separate home directory, against the live
+- **`quickai-headless check docs/examples/profiles/wan22-ti2v-turbo.toml --gpu amd --accept-review`** in a separate home directory, against the live
   documents: install ComfyUI v0.39.0 (PyTorch for AMD GPUs), and for each of the three files, the address on the real hub and the destination
   folder, which matched the folders ComfyUI keeps them in.
-- **`quickai-run prepare` of the same file with `--models-from ~/.quickai/comfyui/models --set comfyui.bin_override=<a stub>`** in a separate home
+- **`quickai-headless prepare` of the same file with `--models-from ~/.quickai/comfyui/models --set comfyui.bin_override=<a stub>`** in a separate home
   directory: the three files were verified against their SHA-256 (13 GB, with progress in tenths; slow in a debug build, which hashes without
   hardware acceleration), linked rather than copied into the folders of the separate home directory, and the program reported
   `Everything it needs is in place; nothing was started`. ComfyUI (v0.39.0) lists a linked file and opens it (L27).
-- **`quickai-run up` of a configuration that carries no model, against the real hub**: a 1.1 MB public story model (`ggml-org/models-moved`,
+- **`quickai-headless up` of a configuration that carries no model, against the real hub**: a 1.1 MB public story model (`ggml-org/models-moved`,
   `tinyllamas/stories260K.gguf`, pinned to a commit, with its `size` and `sha256` in the configuration) and an environment file that sets
   `models_dir` and `extra_args = "--threads 2"`. The plan named the file's exact address on the hub and its destination, and indicated that those
   two settings came from the environment file; the file was downloaded and its SHA-256 matched the declared one; the real `llama-server` started
@@ -488,7 +490,7 @@ WP4.19, the same day:
   names). Second, on a computer whose Python 3.12 is available only behind a `pyenv` shim, the first run stopped, reporting that no Python 3.12
   or 3.11 was found and what to install, and `--python` named the interpreter for the second run.
 
-- **The `quickai-run` package (4.5 MB) on a bare Debian 12**, including this work: `init` printed the template for the Wan 2.2 set; `check`
+- **The `quickai-headless` package (4.5 MB) on a bare Debian 12**, including this work: `init` printed the template for the Wan 2.2 set; `check`
   against the live feeds named the three hub addresses and the folders under `/root/.quickai`; `up --offline` with nothing installed ended with
   code 1 and said to install first; and `prepare --models-from` the user's own models folder (mounted read-only) with
   `--set comfyui.bin_override=/bin/true` verified the three files (13 GB) against their SHA-256, linked rather than copied them, and reported
@@ -497,7 +499,7 @@ WP4.19, the same day:
 
 WP4.19, 2026-10-13, the MiniMax H3 example:
 
-- **`quickai-run check docs/examples/profiles/minimax-h3.toml --gpu nvidia --accept-review --set comfyui.models_dir=/mnt/big/models`** (the
+- **`quickai-headless check docs/examples/profiles/minimax-h3.toml --gpu nvidia --accept-review --set comfyui.models_dir=/mnt/big/models`** (the
   packaged binary, a separate home directory, the live documents): `install ComfyUI v0.39.0 ... PyTorch for NVIDIA GPUs (CUDA 13) ... it needs 30GiB free`,
   the seven downloads with the address, folder and size of each, and `start ComfyUI on 127.0.0.1:8188`; without the folder, it stopped with code 5
   and explained why. The lean `minimax-h3-fl2va.toml` gave the same result with five files.
@@ -505,9 +507,9 @@ WP4.19, 2026-10-13, the MiniMax H3 example:
   SHA-256 in the file, `x-linked-size` equal to its size, and `x-repo-commit` equal to the commit. The same holds for the four optional files
   offered in the header's comment; with all four added to the seven, the file is rejected (more than 8 models), and with three or one substituted
   for others, it is read.
-- **`quickai-run prepare` of a configuration with one of the files (the audio VAE, 577 MB) and a stand-in for ComfyUI**: downloaded through the
+- **`quickai-headless prepare` of a configuration with one of the files (the audio VAE, 577 MB) and a stand-in for ComfyUI**: downloaded through the
   hub's redirect in 1 minute 30 seconds, with the size matching and the file's `sha256sum` equal to the one in the configuration.
-- **`quickai-run prepare` and `up --offline` of `minimax-h3.toml` on an NVIDIA computer** (Ubuntu 24.04 and an NVIDIA L40S with driver
+- **`quickai-headless prepare` and `up --offline` of `minimax-h3.toml` on an NVIDIA computer** (Ubuntu 24.04 and an NVIDIA L40S with driver
   595.58.03, which is CUDA 13.2; the package's binary unmodified, `HOME` set to a folder of its own, `--gpu nvidia --accept-review`, and the models
   and output folders set beneath that folder): **the first run of this program on an NVIDIA computer.** After `apt install python3.12-venv`
   (Ubuntu's Python cannot create an environment without it, as the README notes), ComfyUI v0.39.0 was installed with PyTorch 2.14.1 for CUDA 13
@@ -524,7 +526,7 @@ WP4.19, 2026-10-13, the MiniMax H3 example:
 WP4.20, 2026-10-13, system prerequisites, on a computer with an AMD card (a separate home directory each time, with `--gpu nvidia` to name the card
 the documents refer to):
 
-- **`quickai-run check` of the five video-model configurations** (`minimax-h3.toml`, `minimax-h3-fl2va.toml`, `fasth3-v2.toml`,
+- **`quickai-headless check` of the five video-model configurations** (`minimax-h3.toml`, `minimax-h3-fl2va.toml`, `fasth3-v2.toml`,
   `wan22-14b-i2v-lightning.toml`, and `ltx-2.5-distilled.toml` with a stand-in login): exit 6 for each, because that computer has no NVIDIA
   driver, with the check printed before the plan (the driver `MISSING`, the compiler `ok: gcc at /usr/bin/gcc`, the headers `ok` in
   `/usr/include/python3.14/Python.h`, the test `later`; the Wan 2.2 set requires only the driver), the plan after it, and the separate home
@@ -537,7 +539,7 @@ the documents refer to):
   `hip_utils.c:5:10: fatal error: Python.h: No such file or directory` and Triton end with
   `CalledProcessError: Command '[...]' returned non-zero exit status 1`, which was the only line in the first job's error message; the script
   exits with status 1, and both are the last lines it writes.
-- **`quickai-run prepare` through the real binary with that Python**, with a stand-in `nvidia-smi` reporting 595.58.03 and a stand-in build folder
+- **`quickai-headless prepare` through the real binary with that Python**, with a stand-in `nvidia-smi` reporting 595.58.03 and a stand-in build folder
   (a launcher that does nothing, with the Python beside it): with the headers required, it stopped with 6 and
   `Python.h is not in .../py-noheaders/include/python3.13, where Python 3.13 keeps its headers`, offering no package (that Python is not the
   system's); with only the test required, it ran the test in 2.7 seconds, ended with 6 and printed
@@ -562,17 +564,17 @@ the documents refer to):
   the package manager and `sudo` in the tests: Y77, Y87 to Y90, Y98); an NVIDIA card; and the test against an NVIDIA driver and `libcuda`. These
   were run later the same day on the NVIDIA computer, as described below.
 
-WP4.20, 2026-10-13, later the same day, on the NVIDIA computer from the WP4.19 run above (the L40S with driver 595.58.03; the `quickai-run` package
+WP4.20, 2026-10-13, later the same day, on the NVIDIA computer from the WP4.19 run above (the L40S with driver 595.58.03; the `quickai-headless` package
 from this work, a separate `HOME`, `--gpu nvidia --accept-review`, and the models and output folders set beneath it). The earlier installation
 (ComfyUI with its environment, 6.8 GiB, and the models, 60.5 GiB) was removed first, so that the program encountered the computer in the state the
 first job had found it: with the compiler and Python's venv module, and without Python's headers:
 
-- **`quickai-run check` of `minimax-h3.toml`**: exit 6, with the check printed before the plan: the venv module `ok`
+- **`quickai-headless check` of `minimax-h3.toml`**: exit 6, with the check printed before the plan: the venv module `ok`
   (`Python 3.12 imports ensurepip`), the driver `ok` (`driver 595.58.03`), the compiler `ok` (`gcc at /usr/bin/gcc`), and **only the Python headers
   `MISSING`** (`Python.h is not in /usr/include/python3.12, where Python 3.12 keeps its headers`), with the document's hint and the command
   `apt-get update && apt-get install -y python3.12-dev`; the test `later`. That is the failure that prompted this work, reported before any file
   was downloaded.
-- **`quickai-run prepare --install-system-packages`**, run as the administrator: it ran that command itself (four new packages, `python3.12-dev`,
+- **`quickai-headless prepare --install-system-packages`**, run as the administrator: it ran that command itself (four new packages, `python3.12-dev`,
   `libpython3.12-dev`, `libexpat1-dev` and `zlib1g-dev`; none upgraded or removed), checked again (all four `ok`,
   `/usr/include/python3.12/Python.h`), installed ComfyUI v0.39.0 with PyTorch 2.14.1 for CUDA 13, **ran the environment test on the card after
   the installation and before the first of the seven files was downloaded** (`ok the environment passed`), downloaded the files and ended with
@@ -618,7 +620,7 @@ and knew nothing about it. The user's analysis of who is responsible (in their o
 
 > QuickAI - should ensure that the environment is setup correctly: [...] The server's environment belongs to QuickAI, because it provisions the server and
 > the H3 profile's int8 weights are what create the need for Triton. The H3 profile should declare its system prerequisites: a C compiler, the Python
-> headers (here python3.12-dev) and an NVIDIA driver of the 580 series or newer. quickai-run up should check them, then install them or stop with the exact
+> headers (here python3.12-dev) and an NVIDIA driver of the 580 series or newer. quickai-headless up should check them, then install them or stop with the exact
 > command. It should also run a small self-test before saying "ready", for example compiling Triton's helper. Alternatively, it could build ComfyUI's
 > environment on a self-contained Python that ships its own headers.
 
@@ -758,9 +760,9 @@ subcommand), each observed to fail a test, and the first was also tested in the 
 For a run that another computer requests over SSH ([remote-runs.md](remote-runs.md), section 3.1), and equally useful on a server by hand:
 
 ```sh
-quickai-run up wan.toml --detach   # start it in the background; it goes on when the terminal or the connection closes
-quickai-run status [--json]        # what runs (the configuration, since when, where it listens), or how the last run ended
-quickai-run down [--no-wait]       # stop it, in the background or in another terminal, and wait until it has
+quickai-headless up wan.toml --detach   # start it in the background; it goes on when the terminal or the connection closes
+quickai-headless status [--json]        # what runs (the configuration, since when, where it listens), or how the last run ended
+quickai-headless down [--no-wait]       # stop it, in the background or in another terminal, and wait until it has
 ```
 
 - **One run at a time** per computer and user: `up` and `prepare` hold the run folder (`~/.quickai/run`, the data folder's `run`) with a lock that

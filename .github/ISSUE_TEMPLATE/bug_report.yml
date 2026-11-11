@@ -28,7 +28,7 @@ body:
     id: engine
     attributes:
       label: Engine
-      options: [llama.cpp, Ollama, ComfyUI, Open WebUI, quickai-run (headless), Not engine-related]
+      options: [llama.cpp, Ollama, ComfyUI, Open WebUI, quickai-headless (headless), Not engine-related]
   - type: input
     id: system
     attributes:

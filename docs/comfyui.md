@@ -68,7 +68,7 @@ recommended. QuickAI offers it **when a build is installed**, as an option that 
   installation does (the option applies to the installation you are about to start, and is selected again each time
   QuickAI starts); it cannot be changed while an installation is running. **Continue**, on an interrupted installation,
   resumes with the choice that installation began with, not with the current option (completed work is trusted only if
-  it was done for the same plan: F98, F99a). The option belongs to the window: the headless runner (`quickai-run`)
+  it was done for the same plan: F98, F99a). The option belongs to the window: the headless runner (`quickai-headless`)
   installs ComfyUI without it, as before.
 - **What the installation does.** It adds one pip step after ComfyUI's dependencies
   (`pip install -r manager_requirements.txt` from the release, wheels only, from the package index: the version that
@@ -114,7 +114,7 @@ recommended. QuickAI offers it **when a build is installed**, as an option that 
 
 The table above describes what the installation does. What the computer must provide for it, and for models that run
 through Triton, is defined by the document's `[[prerequisite]]` entries, which a configuration requests with
-`[[needs]] system = "..."` and which `quickai-run` checks before it downloads anything ([headless.md](headless.md),
+`[[needs]] system = "..."` and which `quickai-headless` checks before it downloads anything ([headless.md](headless.md),
 section 12; facts F29 to F31):
 
 | Id | What | How it is checked | Provided by (apt) |

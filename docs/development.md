@@ -12,7 +12,7 @@ the [README](../README.md); for how it is designed, see the design records liste
   assets the application ships (`manifests/`, `assets/`). It uses no GUI toolkit, and a test enforces this.
 - `crates/quickai/`: the desktop application (`main.rs`, `app/`), binary `quickai`. It handles the user interface;
   everything it does to the computer is done through the runtime.
-- `crates/quickai-run/`: the headless program ([headless.md](headless.md)), binary `quickai-run`. It uses the same
+- `crates/quickai-headless/`: the headless program ([headless.md](headless.md)), binary `quickai-headless`. It uses the same
   runtime, without a window.
 - `assets/`: the icon embedded in the binary (`icon.png` for the window, and `icon.ico` for the Windows executable,
   through `build.rs`).
@@ -60,7 +60,7 @@ To update llama.cpp later, run `git pull` in `llama.cpp/` and run the two `cmake
 
 ```bash
 cargo run --release -p quickai        # the window
-cargo run --release -p quickai-run -- --help
+cargo run --release -p quickai-headless -- --help
 ```
 
 In development, the application falls back to this checkout's `llama.cpp/` and `models/`

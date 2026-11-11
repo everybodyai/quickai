@@ -171,14 +171,14 @@ policy creates any warranty or obligation beyond those terms.
     `~/.quickai/model-sources.json`: the name and size of each file and the repository it was downloaded from
     (`huggingface:owner/repo`), for models you download from a search or from the recommended list. It holds no
     address and no account, and it is never sent anywhere.
-- **The headless program.** `quickai-run` is the same application without a window, intended for servers. It contacts
+- **The headless program.** `quickai-headless` is the same application without a window, intended for servers. It contacts
   the same hosts for the same purposes, but as a single command rather than one button at a time.
-  - `quickai-run up` (or `prepare`) reads a configuration you name, installs the programs and downloads the models it
+  - `quickai-headless up` (or `prepare`) reads a configuration you name, installs the programs and downloads the models it
     requires from the hosts listed below (GitHub for builds, Hugging Face for model files, and the Python Package Index
     and PyTorch's package index for the components of ComfyUI and Open WebUI). It shows what it is going to do, and the
-    download size, before doing it; `quickai-run check` shows the same information and does nothing.
+    download size, before doing it; `quickai-headless check` shows the same information and does nothing.
   - It contacts nothing else and listens on the loopback interface only. It writes only below `~/.quickai`, plus your
-    configurations when you run `quickai-run configuration import`, and, when you run `quickai-run init`, the single
+    configurations when you run `quickai-headless configuration import`, and, when you run `quickai-headless init`, the single
     file you requested, readable only by you.
   - A file from an outside source that requests free text or wider access, or that would download from a repository
     or address not on the recommended list, is not used unless you pass `--accept-review`.
@@ -188,7 +188,7 @@ policy creates any warranty or obligation beyond those terms.
   - **Credentials you provide** (`--hf-token`, `HF_TOKEN` or an environment file for Hugging Face; `--github-token`,
     `GITHUB_TOKEN` for GitHub's list of builds) are sent only to that site: not to a host to which the hub redirects a
     file, not to an address you name on another host, and not to any program it starts. They are not printed, and do
-    not appear in the JSON output or the ready file; the environment file written by `quickai-run init` is readable
+    not appear in the JSON output or the ready file; the environment file written by `quickai-headless init` is readable
     only by you. Other variables you pass to a program (`--env`, `--set`) are passed to that program and are not
     printed when their names suggest they are secrets.
 - **Models and builds you download or import.** Models are saved under `~/.quickai/models` (or the folder you choose in

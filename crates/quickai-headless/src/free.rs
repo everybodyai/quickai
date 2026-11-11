@@ -1,4 +1,4 @@
-//! `quickai-run free PORT...`: stops the programs that listen on these ports of this computer, so that a run can have
+//! `quickai-headless free PORT...`: stops the programs that listen on these ports of this computer, so that a run can have
 //! them (docs/remote-runs.md section 3.2: Override, and Stop it, for a program QuickAI did not start). A program of
 //! the person who runs this is asked to end, then ended. A system service (an Ollama installed as one) is stopped by
 //! its service manager through `sudo -n` when that needs no password; otherwise what stops it is said, for the person
@@ -14,7 +14,7 @@ pub fn run(ports: &[u16], json: bool) -> i32 {
         match serde_json::to_string(&freed) {
             Ok(text) => println!("{text}"),
             Err(e) => {
-                eprintln!("quickai-run: {e}");
+                eprintln!("quickai-headless: {e}");
                 return 1;
             }
         }

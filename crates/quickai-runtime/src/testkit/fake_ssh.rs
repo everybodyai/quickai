@@ -160,7 +160,7 @@ pub fn remote_home(ssh: &Path) -> PathBuf {
 }
 
 /// The variables the commands run on the other computer are given, besides its `HOME` (where the fakes are, for a
-/// `quickai-run` there).
+/// `quickai-headless` there).
 pub fn set_remote_env(ssh: &Path, vars: &[(&str, &str)]) {
     let text: String = vars.iter().map(|(k, v)| format!("{k}={v}\n")).collect();
     std::fs::write(ssh.with_file_name("remote.env"), text).expect("write remote.env");

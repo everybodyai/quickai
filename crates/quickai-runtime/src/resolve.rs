@@ -3,7 +3,7 @@
 //! The window decides what to run from the controls it holds; a command line decides it from a
 //! configuration and a few words. Both end in the same question: which engine, with which model and
 //! which values, started from which program on this computer, and what does the planner make of that?
-//! It is answered here, once, so that `quickai plan` prints the plan that `quickai-run` runs and neither
+//! It is answered here, once, so that `quickai plan` prints the plan that `quickai-headless` runs and neither
 //! can drift from the other.
 //!
 //! Nothing here starts a program or fetches a file. A model that the models folders do not hold is an

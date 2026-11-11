@@ -66,7 +66,7 @@ version = "0.40.0"                        # what the program said it was; for th
 role = "main"
 ollama = "qwen3-vl:8b"                    # one source: a name the engine takes (the key is one of its `accepts.refs`), a `catalog` id (+ `file`), or a `file`. Never a path
 size = 6140000000                         # to recognise it by, and to say what getting it costs
-# from = "huggingface:owner/repo"         # for a file that is no entry of the list: where it can be had; the window says it and fetches on a click, `quickai-run` fetches from it (headless.md, section 6)
+# from = "huggingface:owner/repo"         # for a file that is no entry of the list: where it can be had; the window says it and fetches on a click, `quickai-headless` fetches from it (headless.md, section 6)
 # path = "VAE/x.safetensors"              # ... the file in that repository (left out: at the top, called `file`); `revision`, `into` and `url` are there too
 
 [values.ollama]                           # field values by field id; only those that differ from the document's default
@@ -89,9 +89,9 @@ Every key is documented on the generated page [reference/profile-fields.md](refe
 | `name` | any text up to 60 characters (control and direction characters are removed). The file's id is derived from it (lower case, letters, digits and `-`; a number is appended if the id is taken); the name is never used as a path |
 | `[meta]` | `note` (typed by the user who exports), `made_with`, `made_on`. No user name, host name or folder is ever written |
 | `engine` | an engine the user can choose; a companion is not one |
-| `[runtime]` | `build`, `version`. If absent: the program this computer uses by default (for llama.cpp, the one the package ships). `[runtime.<program>]` pins the build of a program that accompanies the engine (`[runtime.openwebui]`); only `quickai-run` installs from it |
+| `[runtime]` | `build`, `version`. If absent: the program this computer uses by default (for llama.cpp, the one the package ships). `[runtime.<program>]` pins the build of a program that accompanies the engine (`[runtime.openwebui]`); only `quickai-headless` installs from it |
 | `[[model]]` | `role`, one source (§5), `size`, `sha256`, `name` for display, and, for a file, where it can be obtained: `from`, `path`, `revision`, `into`, or `url`. Several are allowed; the first is the one the engine loads |
-| `[[needs]]` | what the person running the file must provide in addition: a login (`token`), a computer setting (`setting`), a variable of a program's environment (`env`, and `for`), each with `why` (headless.md, section 7); and what the computer must have (`system`: the id of a prerequisite in the engine's document, such as `c_compiler`, for which the document says how to detect it and what provides it: headless.md, section 12). Only `quickai-run` asks for them; the window preserves them when it saves |
+| `[[needs]]` | what the person running the file must provide in addition: a login (`token`), a computer setting (`setting`), a variable of a program's environment (`env`, and `for`), each with `why` (headless.md, section 7); and what the computer must have (`system`: the id of a prerequisite in the engine's document, such as `c_compiler`, for which the document says how to detect it and what provides it: headless.md, section 12). Only `quickai-headless` asks for them; the window preserves them when it saves |
 | `[values.<engine>]` | field values by field id, for the engine and for its companions |
 | `[app]` | `traffic_proxy` |
 | unknown keys | preserved when the file is rewritten (at the top level and in `[meta]`) and reported as a warning, as in every document |
@@ -166,7 +166,7 @@ able to get it: `from` (a kind of source and a name within it: `huggingface:owne
 top level), `revision` (a branch, a tag or a commit; a commit always identifies the same file), `into` (the subfolder of the models folder, for an engine
 that organizes its files by folder; it must be one that the engine's document names) or, instead of `from`, `url` (`https://`, with no login and no
 fragment; `http` only for this computer's own addresses). None of them accepts a path on a computer. The window **displays** this information (the note
-shows the repository and the file within it) and fetches on a click, as it always has; `quickai-run` fetches from it once a file from outside has been
+shows the repository and the file within it) and fetches on a click, as it always has; `quickai-headless` fetches from it once a file from outside has been
 reviewed ([headless.md](headless.md), section 6). The recommended list keeps its own mechanism, `catalog`.
 
 An export finds a `catalog` entry automatically: the file's name and size are looked up in the loaded catalogs, which pin them. **A fetched file records
@@ -289,7 +289,7 @@ than relying on a prompt.
 
 * **It is data.** The `profile` kind belongs to the data tier: it can select things the registry already knows and cannot name a program or a host to
   run. A model is a name, a catalog id or a file name, and may state where the file can be obtained (`from` with its `path` and `revision`, or an `https`
-  address without a login), which the window displays and `quickai-run` fetches from only after the user has reviewed it (a file from outside; C122,
+  address without a login), which the window displays and `quickai-headless` fetches from only after the user has reviewed it (a file from outside; C122,
   C125); a build is the label of an installed build. The model itself is never in the file, and no key accepts a path on a computer.
 * **Free text is reviewed.** Everything that becomes a command-line argument or an environment entry is shown in full and applied only if ticked; if
   unticked, it is not stored. Lines the engine protects (`OLLAMA_HOST`, the isolation of C92) cannot be set by a file, just as they cannot be set by the
@@ -543,14 +543,14 @@ which models its pages use); the theme; a run on Windows or macOS (the paths are
 
 ## 11. Running a configuration without a window
 
-`quickai-run up <configuration>` (WP4.18, [headless.md](headless.md)) takes the same file and performs what the note buttons do, one after another: it
+`quickai-headless up <configuration>` (WP4.18, [headless.md](headless.md)) takes the same file and performs what the note buttons do, one after another: it
 installs the build the file names, or the one its engine's document chooses, fetches the models, starts the engine and the program that accompanies it,
 and keeps running until it is told to stop. What distinguishes this from rule 1 above (a configuration *selects*, and the window installs only when a
 button is pressed) is that the user explicitly runs the command: the program prints what it is going to do, and how large it is, before doing it
-(`quickai-run check` stops at that point), and a file from outside that asks about free text or wider access is not used unless `--accept-review` is
+(`quickai-headless check` stops at that point), and a file from outside that asks about free text or wider access is not used unless `--accept-review` is
 given. It never writes the working state (`settings.json`) or the user's configurations. For an engine that runs on its own (ComfyUI), the models are the
 file's `[[model]]` entries, placed in the folders the engine reads from; the window writes one model when it exports (with the source, the path in the
 repository and the revision it was fetched at), so a set of files (the three of a video model) is written by hand, or kept by the window as long as its
 first model stays first. Anything that belongs to the computer running it (a folder, a login, a mirror, the variables of a program's environment, a copy
-of a file that is already present) is provided by the person who runs it, in a file that `quickai-run init` writes, and a configuration can state what it
+of a file that is already present) is provided by the person who runs it, in a file that `quickai-headless init` writes, and a configuration can state what it
 needs from them (`[[needs]]`): [headless.md](headless.md), sections 6 to 8.

@@ -320,7 +320,7 @@ fn needs_message(unmet: &[&Need], target: &str) -> String {
     }
     let file = default_environment_path(target);
     lines.push(format!(
-        "`quickai-run init {target}` writes the file to fill in ({}); give it back with `--environment {}`.",
+        "`quickai-headless init {target}` writes the file to fill in ({}); give it back with `--environment {}`.",
         file.display(),
         file.display()
     ));

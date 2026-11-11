@@ -14,7 +14,7 @@ copy of [../profiles/minimax-h3.toml](../profiles/minimax-h3.toml): keep the two
 ## What is here
 
 ```
-profiles/     QuickAI configurations (quickai-run): where each model file comes from, with size, SHA-256 and commit
+profiles/     QuickAI configurations (quickai-headless): where each model file comes from, with size, SHA-256 and commit
 workflows/    ComfyUI workflows in the API format, one folder for each option, and slots.json (where a caller puts its values)
 tools/        what made these files and what runs them (below)
 ```
@@ -37,12 +37,12 @@ without more disk.
 ### Fetch the models on the server (QuickAI)
 
 ```sh
-quickai-run init  profiles/fasth3-v2.toml                       # writes the file to fill in; its lines are shown below
-quickai-run check profiles/fasth3-v2.toml --environment fasth3.environment.toml --accept-review      # the plan, nothing changed
-quickai-run up    profiles/fasth3-v2.toml --environment fasth3.environment.toml --accept-review      # do it, and stay
+quickai-headless init  profiles/fasth3-v2.toml                       # writes the file to fill in; its lines are shown below
+quickai-headless check profiles/fasth3-v2.toml --environment fasth3.environment.toml --accept-review      # the plan, nothing changed
+quickai-headless up    profiles/fasth3-v2.toml --environment fasth3.environment.toml --accept-review      # do it, and stay
 ```
 
-The environment file (`fasth3.environment.toml` above) holds what belongs to this computer and not to a configuration. `quickai-run init` writes one
+The environment file (`fasth3.environment.toml` above) holds what belongs to this computer and not to a configuration. `quickai-headless init` writes one
 for a configuration, with the lines it needs, readable by its owner only (`chmod 600`); the lines this package's configurations may need are:
 
 ```toml
@@ -60,7 +60,7 @@ the venv module of its Python (`python3.12-venv`). ComfyUI compiles small Triton
 sparse-attention kernels of the others very likely do); without the headers the job stops at once with a message that says only that gcc "returned
 non-zero exit status 1" (the cause, `Python.h: No such file`, is in the server's log).
 
-**`quickai-run` checks all of that now** (WP4.20, [docs/headless.md](../../headless.md) section 12): each configuration here lists what the computer has to have
+**`quickai-headless` checks all of that now** (WP4.20, [docs/headless.md](../../headless.md) section 12): each configuration here lists what the computer has to have
 (`[[needs]] system = ...`: the venv module, the driver of the 580 series, and, for H3, FastH3 and LTX-2.5, a compiler, the headers of Python and a test that a
 Triton kernel builds and runs). `check` says what is missing, with the exact command, before the plan and before anything is fetched; the same command
 with `--install-system-packages` installs the packages (as the administrator, or through `sudo` without a password) and goes on; after ComfyUI is installed
@@ -145,7 +145,7 @@ Checked, without a GPU (`tools/check_package.py`, 2026-10-13):
 * ComfyUI 0.39.0 (on a CPU, with empty stand-in model files, in a throw-away folder)
   accepts all 22 workflows: node classes, inputs, types, ranges, links. A converter bug found on the way (a subgraph input typed `IMAGE,MASK` shifted
   every value after it) was why the loaders were first wired to the wrong files; the audit against the template's own file list is what shows it;
-* `quickai-run check` (the current build, without a network) reads the four configurations and prints the plan; a fresh run of the two builders
+* `quickai-headless check` (the current build, without a network) reads the four configurations and prints the plan; a fresh run of the two builders
   writes byte-identical files; `run_workflow.py` uploaded a picture, sent a graph and reported the loader error of the empty files cleanly.
 
 **Not checked:** a clip, its quality, its time, its memory; how the voice references, the first/last frame of FastH3, LTX-2.5's two stages at the sizes
@@ -155,7 +155,7 @@ the headers of its Python).
 
 ## Known gaps
 
-* **LTX-2.5's spatial upscaler cannot be fetched by `quickai-run` yet.** QuickAI's ComfyUI document lists the folders a configuration may fill
+* **LTX-2.5's spatial upscaler cannot be fetched by `quickai-headless` yet.** QuickAI's ComfyUI document lists the folders a configuration may fill
   (`places` under `[models.acquire]` in `crates/quickai-runtime/manifests/engines/comfyui.toml`) and `latent_upscale_models` is not among them;
   adding the word (and the same for `model_patches` and `audio_encoders`, which other templates use) is a change in QuickAI. Until then the file is put
   in by hand (the header of `profiles/ltx-2.5-distilled.toml` has the command). The text-to-video and image-to-video LTX workflows need it; first/last

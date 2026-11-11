@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""build_configs: writes the QuickAI configurations (quickai-run) of the video options from the hub's own listing of their files.
+"""build_configs: writes the QuickAI configurations (quickai-headless) of the video options from the hub's own listing of their files.
 
     build_configs.py --meta hubmeta_out.json --out DIR [--date 2026-10-13]
 
 --meta is what hubmeta.py printed (repository, commit, path, size, SHA-256 of each file). A SHA-256 the hub hides (the files of a gated
-repository, for someone who is not signed in) is left out of the file and said so in its header: quickai-run then checks the size only.
+repository, for someone who is not signed in) is left out of the file and said so in its header: quickai-headless then checks the size only.
 Only the standard library of Python 3.11 or later is used.
 """
 from __future__ import annotations
@@ -81,11 +81,11 @@ why = "Somewhere with {free} GB free: {files} GB of model files, and room for th
 '''
 
 
-# What the computer has to have, which `quickai-run` looks at before it fetches anything (WP4.20; docs/headless.md, section 12): the venv module of
+# What the computer has to have, which `quickai-headless` looks at before it fetches anything (WP4.20; docs/headless.md, section 12): the venv module of
 # the Python ComfyUI's environment is made with, the driver of the PyTorch for CUDA 13, and for the models that run through Triton a compiler, the headers
 # of Python and a test that a kernel builds and runs. Wan 2.2's fp8 files are run by PyTorch itself: the first two only.
 SYSTEM_ALL = '''
-[[needs]]                               # what the computer has to have: nobody gives these, `quickai-run` looks (the document of ComfyUI says how)
+[[needs]]                               # what the computer has to have: nobody gives these, `quickai-headless` looks (the document of ComfyUI says how)
 system = "python_venv"
 why = "ComfyUI is installed into a Python environment of its own, and Debian and Ubuntu make none without the venv package of the Python (on Ubuntu python3.12-venv)."
 
@@ -107,7 +107,7 @@ why = "After the install and before the files are fetched, one kernel is built a
 '''
 
 SYSTEM_DRIVER = '''
-[[needs]]                               # what the computer has to have: nobody gives it, `quickai-run` looks (the document of ComfyUI says how)
+[[needs]]                               # what the computer has to have: nobody gives it, `quickai-headless` looks (the document of ComfyUI says how)
 system = "python_venv"
 why = "ComfyUI is installed into a Python environment of its own, and Debian and Ubuntu make none without the venv package of the Python (on Ubuntu python3.12-venv)."
 
@@ -140,12 +140,12 @@ def main() -> int:
     header = f"""# A configuration for a server: ComfyUI with the files of FastH3 V2, FastVideo's 8-step distillation of MiniMax H3 (a clip with its sound in
 # 8 steps and with block-sparse attention, about three times quicker than the base model on the one card it was timed on). It carries no model.
 # Each file says where it can be had from: a repository of the hub, the commit of it that was checked, the file in it, how big it is and what
-# its SHA-256 is. `quickai-run up` installs ComfyUI, fetches the four files into the folders ComfyUI looks for each in, and starts it on
+# its SHA-256 is. `quickai-headless up` installs ComfyUI, fetches the four files into the folders ComfyUI looks for each in, and starts it on
 # 127.0.0.1:8188.
 #
-#     quickai-run init  fasth3-v2.toml                                   # the file to fill in: where the models are kept
-#     quickai-run check fasth3-v2.toml --environment fasth3-v2.environment.toml --accept-review
-#     quickai-run up    fasth3-v2.toml --environment fasth3-v2.environment.toml --accept-review
+#     quickai-headless init  fasth3-v2.toml                                   # the file to fill in: where the models are kept
+#     quickai-headless check fasth3-v2.toml --environment fasth3-v2.environment.toml --accept-review
+#     quickai-headless up    fasth3-v2.toml --environment fasth3-v2.environment.toml --accept-review
 #
 # What the four files are: the distilled transformer ({gb(models[0][1])}, FastVideo/FastVideo-FastH3-Comfy), and the text encoder (Qwen3-VL 32B in
 # 4 bits, which does not need a Blackwell card) and the two VAEs of MiniMax H3 itself (Comfy-Org/MiniMax-H3), which the distillation shares
@@ -167,13 +167,13 @@ def main() -> int:
 # model (V.3). MiniMax says organisations in the excluded regions can apply for a licence: https://platform.minimax.io/h3-license
 # Read it: https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE
 #
-# What the computer must have: an NVIDIA card with 48 GB and 64 GB of memory, which nothing checks; and what `quickai-run` looks at before it
+# What the computer must have: an NVIDIA card with 48 GB and 64 GB of memory, which nothing checks; and what `quickai-headless` looks at before it
 # fetches anything (the `system` needs at the end of this file; the document of ComfyUI says how each is checked): a driver of the 580 series
 # or newer (ComfyUI is installed with PyTorch for CUDA 13), and a C compiler and the headers of Python, for the Triton helpers named above.
 # After the install, and before the files are fetched, it builds and runs a Triton kernel once. Before ComfyUI is installed it also looks for
 # the venv module of the Python its environment is made with (on Ubuntu the package python3.12-venv). Where something is missing it says
 # what, with the command that brings it (on Ubuntu: apt-get install -y python3.12-venv build-essential python3.12-dev), and
-# `--install-system-packages` lets it run that command. Sizes and checksums were read from the hub's listing on {date}; `quickai-run check` read the file as written. It has not
+# `--install-system-packages` lets it run that command. Sizes and checksums were read from the hub's listing on {date}; `quickai-headless check` read the file as written. It has not
 # been fetched or run.
 """
     write(out, "fasth3-v2.toml", header, "fasth3-v2", "FastH3 V2 (MiniMax H3, 8 steps) on ComfyUI",
@@ -194,11 +194,11 @@ def main() -> int:
     header = f"""# A configuration for a server: ComfyUI with the files of LTX-2.5 (Lightricks, August 2026), the open video model that makes a clip with its
 # sound in one pass: the 22B transformer in its distilled build (8 steps at half the size, then 3 at the full size), in int8 for ComfyUI.
 # It carries no model. Each file says where it can be had from: a repository of the hub, the commit of it that was checked, the file in it,
-# and how big it is. `quickai-run up` installs ComfyUI, fetches the four files below into the folders ComfyUI looks for each in, and starts it.
+# and how big it is. `quickai-headless up` installs ComfyUI, fetches the four files below into the folders ComfyUI looks for each in, and starts it.
 #
-#     quickai-run init  ltx-2.5-distilled.toml                           # the file to fill in: where the models are kept, a login for the hub
-#     quickai-run check ltx-2.5-distilled.toml --environment ltx.environment.toml --accept-review
-#     quickai-run up    ltx-2.5-distilled.toml --environment ltx.environment.toml --accept-review
+#     quickai-headless init  ltx-2.5-distilled.toml                           # the file to fill in: where the models are kept, a login for the hub
+#     quickai-headless check ltx-2.5-distilled.toml --environment ltx.environment.toml --accept-review
+#     quickai-headless up    ltx-2.5-distilled.toml --environment ltx.environment.toml --accept-review
 #
 # The repository is GATED: before the first fetch, sign in to Hugging Face, open https://huggingface.co/Lightricks/LTX-2.5 and accept its terms
 # with the account whose token you give (`--hf-token`, the variable HF_TOKEN, or `huggingface_token` under [fetch] of the environment file).
@@ -235,13 +235,13 @@ def main() -> int:
 # the whole entity; above it a paid agreement; no territory is excluded. Read it before you use the files.
 #
 # What the computer must have: an NVIDIA card of 24 GB at least (32 GB is what a hardware guide advises for the int8 files with the text
-# encoder; 48 GB is easy) and 32 GB of memory, which nothing checks; and what `quickai-run` looks at before it fetches anything (the `system`
+# encoder; 48 GB is easy) and 32 GB of memory, which nothing checks; and what `quickai-headless` looks at before it fetches anything (the `system`
 # needs at the end of this file; the document of ComfyUI says how each is checked): a driver of the 580 series or newer (PyTorch for CUDA 13),
 # and a C compiler and the headers of Python, because the int8 files run through Triton, which builds a small helper in C the first time a
 # kernel is launched. After the install, and before the files are fetched, it builds and runs a Triton kernel once. Before ComfyUI is
 # installed it also looks for the venv module of the Python its environment is made with (on Ubuntu the package python3.12-venv). Where
 # something is missing it says what, with the command that brings it (on Ubuntu: apt-get install -y python3.12-venv build-essential
-# python3.12-dev), and `--install-system-packages` lets it run that command. Sizes were read from the hub's listing on {date}; `quickai-run check` read the
+# python3.12-dev), and `--install-system-packages` lets it run that command. Sizes were read from the hub's listing on {date}; `quickai-headless check` read the
 # file as written. It has not been fetched or run.
 """
     needs = '''[[needs]]
@@ -269,11 +269,11 @@ why = "Lightricks/LTX-2.5 is a gated repository: accept its terms on huggingface
 # the two experts (the one that draws the first half of the denoising, the one that finishes it) in fp8, UMT5-XXL as the text encoder, the Wan
 # 2.1 VAE, and the 4-step LightX2V LoRA for each expert, which the templates switch on to make a clip in 4 steps instead of 20. It carries no
 # model. Each file says where it can be had from: a repository of the hub, the commit of it that was checked, the file in it, how big it is
-# and what its SHA-256 is. `quickai-run up` installs ComfyUI, fetches the six files into the folders ComfyUI looks for each in, and starts it.
+# and what its SHA-256 is. `quickai-headless up` installs ComfyUI, fetches the six files into the folders ComfyUI looks for each in, and starts it.
 #
-#     quickai-run init  wan22-14b-i2v-lightning.toml                     # the file to fill in: where the models are kept
-#     quickai-run check wan22-14b-i2v-lightning.toml --environment wan.environment.toml --accept-review
-#     quickai-run up    wan22-14b-i2v-lightning.toml --environment wan.environment.toml --accept-review
+#     quickai-headless init  wan22-14b-i2v-lightning.toml                     # the file to fill in: where the models are kept
+#     quickai-headless check wan22-14b-i2v-lightning.toml --environment wan.environment.toml --accept-review
+#     quickai-headless up    wan22-14b-i2v-lightning.toml --environment wan.environment.toml --accept-review
 #
 # {gb(total)} of files ({total / GIB:.1f} GiB, which is how the program counts). The same six files serve image to video and first-and-last-frame
 # to video; text to video needs the other pair of experts (wan2.2_t2v_*), which this file leaves out (a configuration holds at most 8 models).
@@ -287,12 +287,12 @@ why = "Lightricks/LTX-2.5 is a gated repository: accept its terms on huggingface
 # The licence is Apache-2.0 (the model, the repackaging and the LoRAs): no territory, no revenue limit.
 #
 # What the computer must have: an NVIDIA card with 24 GB (fp8; 48 GB is comfortable at 720p) and 64 GB of memory is comfortable, which nothing
-# checks; and what `quickai-run` looks at before it fetches anything (the `system` needs at the end of this file): the venv module of the
+# checks; and what `quickai-headless` looks at before it fetches anything (the `system` needs at the end of this file): the venv module of the
 # Python its environment is made with (on Ubuntu the package python3.12-venv) and a driver of the 580 series or newer (ComfyUI is installed
 # with PyTorch for CUDA 13). It does not ask for a compiler or the headers of Python, because nothing in
 # these workflows is known to launch a kernel of Triton's (the fp8 files are run by PyTorch; this was not measured on a card). The other
 # configurations of this folder ask for them (`c_compiler`, `python_headers`, `triton`), and so would this one if it used a custom node that
-# does. Sizes and checksums were read from the hub's listing on {date}; `quickai-run check` read the file as written. It has not been
+# does. Sizes and checksums were read from the hub's listing on {date}; `quickai-headless check` read the file as written. It has not been
 # fetched or run.
 """
     write(out, "wan22-14b-i2v-lightning.toml", header, "wan22-14b-i2v", "Wan 2.2 14B image to video on ComfyUI",

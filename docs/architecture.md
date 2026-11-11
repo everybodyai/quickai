@@ -100,7 +100,7 @@ no `run.ollama` is not offered under Ollama), **D8** (a document can be removed;
   (embedded defaults). `QUICKAI_SAFE=1` ignores the user layer.
 - Reloading is manual ("Reload configuration" in Settings) and automatic when idle; never mid-session.
 - A headless tool in the same binary for development and CI: `quickai config check`,
-  `quickai plan <profile> --explain`. Not a product feature there; the product's headless program is `quickai-run`
+  `quickai plan <profile> --explain`. Not a product feature there; the product's headless program is `quickai-headless`
   (WP4.18, docs/headless.md), a binary of its own over the same runtime crate.
 - Strings are keyed from day one; no translations yet.
 - sha256 is verified wherever a hash is known; a download with no hash (a user URL) is shown as unverified.
@@ -854,7 +854,7 @@ crates/
     src/ prims/ runtime/ config settings configurations launch models downloader ...
   quickai/                 the window: draws, and asks the runtime for everything it does to the computer
     src/ app/ main.rs
-  quickai-run/             the headless program: the runtime with no window, for a server
+  quickai-headless/             the headless program: the runtime with no window, for a server
     src/ main.rs
 ```
 

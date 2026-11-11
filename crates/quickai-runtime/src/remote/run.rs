@@ -1,6 +1,6 @@
 //! A configuration run on another computer by QuickAI's own headless program (`remote.run` and `remote.tunnel`,
 //! WP4.33.7, docs/remote-runs.md sections 3 and 3.1): the configuration and its environment file copied there, the
-//! run started in the background (`quickai-run up --detach`), asked after (`status --json`) and stopped (`down`); and
+//! run started in the background (`quickai-headless up --detach`), asked after (`status --json`) and stopped (`down`); and
 //! once it is ready, each port it listens on brought here, to the same port unless the person gave another or it is
 //! taken here. That is all the window does with it: what runs is the configuration's.
 
@@ -24,11 +24,11 @@ const START_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long `down` may take: it waits for the run to stop, two minutes at most, after the login.
 const STOP_TIMEOUT: Duration = Duration::from_secs(180);
 
-/// The exit code of `quickai-run` when another run goes on.
+/// The exit code of `quickai-headless` when another run goes on.
 const BUSY: i32 = 7;
 
 /// What a run is started with: the configuration (a file here, as the window exports it), the name it is kept
-/// under there, its environment file if there is one, and flags of `quickai-run up` (`--accept-review`,
+/// under there, its environment file if there is one, and flags of `quickai-headless up` (`--accept-review`,
 /// `--install-system-packages`).
 pub struct Launch<'a> {
     pub configuration: &'a Path,
@@ -66,7 +66,7 @@ pub fn status(
     })
 }
 
-/// The model files `spec` keeps (`quickai-run models --json`), with the folders of another disk the person accepted
+/// The model files `spec` keeps (`quickai-headless models --json`), with the folders of another disk the person accepted
 /// to keep them in for one configuration or another (`--models-dir`).
 pub fn models(
     ssh: &Path,
@@ -155,7 +155,7 @@ pub fn send(
     })
 }
 
-/// Starts the run of what was `sent` to `spec` in the background, with `flags` of `quickai-run up`.
+/// Starts the run of what was `sent` to `spec` in the background, with `flags` of `quickai-headless up`.
 pub fn start_sent(
     ssh: &Path,
     spec: &RemoteSpec,
@@ -193,7 +193,7 @@ pub fn start_sent(
 }
 
 /// Stops the programs that listen on `ports` of `spec` (ones QuickAI did not start), with its headless program of
-/// `version` (`quickai-run free`); what could not be stopped there is said, with the command for the person.
+/// `version` (`quickai-headless free`); what could not be stopped there is said, with the command for the person.
 pub fn free(
     ssh: &Path,
     spec: &RemoteSpec,
@@ -313,7 +313,7 @@ fn failed(spec: &RemoteSpec, what: &str, said: &ssh::Said) -> String {
     };
     let line = text
         .lines()
-        .map(|l| l.trim_start_matches("quickai-run: ").trim())
+        .map(|l| l.trim_start_matches("quickai-headless: ").trim())
         .find(|l| !l.is_empty())
         .unwrap_or("it said nothing");
     format!("QuickAI on {} could not {what}: {line}", spec.host.trim())

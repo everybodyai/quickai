@@ -57,7 +57,7 @@ account, uses no cloud service and collects no telemetry, and it is designed to 
   responses in real time.
 - **Shareable configurations.** Save a complete setup (engine, model and settings) as a single small file and share
   it with others. Local paths and secrets are never exported.
-- **Headless operation.** `quickai-run` starts a configuration on a server without a display.
+- **Headless operation.** `quickai-headless` starts a configuration on a server without a display.
 
 ## Install
 
@@ -172,7 +172,7 @@ QuickAI connects using your own `ssh` client (your keys, agent and `~/.ssh/confi
 network port on either side: the engine on the remote computer listens on its own loopback interface, and an SSH
 tunnel forwards its port to this computer, on the same port number unless you specify another (**Port here**, under
 the computer's **More options**). On the remote computer, run Ollama (or ComfyUI) as you normally would, or
-`quickai-run up` with a configuration.
+`quickai-headless up` with a configuration.
 
 ## Use it from other apps
 
@@ -201,13 +201,13 @@ reporting disabled. Ollama, for example, runs with `OLLAMA_NO_CLOUD=1`.
 
 ## On a server
 
-`quickai-run` is QuickAI without the window, intended for rented GPU servers. It takes a configuration exported from
+`quickai-headless` is QuickAI without the window, intended for rented GPU servers. It takes a configuration exported from
 the application, installs what it requires, downloads the models, and starts it:
 
 ```bash
-quickai-run init  vision-chat.toml   # write the file of what this configuration needs from you
-quickai-run check vision-chat.toml   # show what would be done, from where, and how big; change nothing
-quickai-run up    vision-chat.toml   # do it, start it, stay until Ctrl-C
+quickai-headless init  vision-chat.toml   # write the file of what this configuration needs from you
+quickai-headless check vision-chat.toml   # show what would be done, from where, and how big; change nothing
+quickai-headless up    vision-chat.toml   # do it, start it, stay until Ctrl-C
 ```
 
 It listens on the loopback interface only; connect to it through an SSH tunnel. See

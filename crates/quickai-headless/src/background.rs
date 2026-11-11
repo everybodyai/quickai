@@ -20,12 +20,13 @@ const STOP_WAIT: Duration = Duration::from_secs(120);
 pub fn busy(run: Option<&RunFile>) -> String {
     match run {
         Some(run) if !run.configuration.is_empty() => format!(
-            "\"{}\" runs on this computer ({}, {}); stop it first with `quickai-run down`",
+            "\"{}\" runs on this computer ({}, {}); stop it first with `quickai-headless down`",
             run.name(),
             run.state,
             for_how_long(run.started)
         ),
-        _ => "another run goes on on this computer; stop it first with `quickai-run down`".into(),
+        _ => "another run goes on on this computer; stop it first with `quickai-headless down`"
+            .into(),
     }
 }
 
@@ -33,7 +34,7 @@ pub fn busy(run: Option<&RunFile>) -> String {
 /// `dir`. Returns once the run has made its plan and gone on, or has ended (with its code), or after a minute.
 pub fn start(args: &[String], dir: &Path) -> i32 {
     if let Some(run) = run_file::running(dir) {
-        eprintln!("quickai-run: {}", busy(Some(&run)));
+        eprintln!("quickai-headless: {}", busy(Some(&run)));
         return 7;
     }
     let files = std::fs::create_dir_all(dir).and_then(|()| {
@@ -45,14 +46,17 @@ pub fn start(args: &[String], dir: &Path) -> i32 {
     let (events, errors) = match files {
         Ok(files) => files,
         Err(e) => {
-            eprintln!("quickai-run: could not write in {}: {e}", dir.display());
+            eprintln!(
+                "quickai-headless: could not write in {}: {e}",
+                dir.display()
+            );
             return 1;
         }
     };
     let program = match std::env::current_exe() {
         Ok(program) => program,
         Err(e) => {
-            eprintln!("quickai-run: could not find this program to start it again: {e}");
+            eprintln!("quickai-headless: could not find this program to start it again: {e}");
             return 1;
         }
     };
@@ -67,7 +71,7 @@ pub fn start(args: &[String], dir: &Path) -> i32 {
     let mut child = match spawn_detached(command) {
         Ok(child) => child,
         Err(e) => {
-            eprintln!("quickai-run: could not start the run in the background: {e}");
+            eprintln!("quickai-headless: could not start the run in the background: {e}");
             return 1;
         }
     };
@@ -86,14 +90,14 @@ pub fn start(args: &[String], dir: &Path) -> i32 {
                         dir.join("stderr.log").display()
                     )
                 });
-            eprintln!("quickai-run: {why}");
+            eprintln!("quickai-headless: {why}");
             return last.map_or_else(|| status.code().unwrap_or(1), |l| l.code);
         }
         let run = run_file::read(dir).filter(|r| r.pid == child.id());
         if let Some(run) = run.filter(|r| r.state != "starting") {
             println!(
-                "\"{}\" runs in the background (process {}), until `quickai-run down` stops it. \
-                 `quickai-run status` says how it goes; what it says is in {}.",
+                "\"{}\" runs in the background (process {}), until `quickai-headless down` stops it. \
+                 `quickai-headless status` says how it goes; what it says is in {}.",
                 run.name(),
                 run.pid,
                 run_file::events_path(dir).display()
@@ -103,7 +107,7 @@ pub fn start(args: &[String], dir: &Path) -> i32 {
         if asked.elapsed() > START_WAIT {
             println!(
                 "The run was started in the background (process {}) and is still making its plan. \
-                 `quickai-run status` says how it goes.",
+                 `quickai-headless status` says how it goes.",
                 child.id()
             );
             return 0;
@@ -155,7 +159,7 @@ pub fn status(dir: &Path, json: bool) -> i32 {
         match serde_json::to_string(&said) {
             Ok(text) => println!("{text}"),
             Err(e) => {
-                eprintln!("quickai-run: {e}");
+                eprintln!("quickai-headless: {e}");
                 return 1;
             }
         }
@@ -211,7 +215,7 @@ pub fn down(dir: &Path, wait: bool) -> i32 {
         return 0;
     };
     if let Err(e) = run_file::ask_stop(dir) {
-        eprintln!("quickai-run: could not ask the run to stop: {e}");
+        eprintln!("quickai-headless: could not ask the run to stop: {e}");
         return 1;
     }
     if !wait {
@@ -222,7 +226,7 @@ pub fn down(dir: &Path, wait: bool) -> i32 {
     while run_file::running(dir).is_some() {
         if asked.elapsed() > STOP_WAIT {
             eprintln!(
-                "quickai-run: \"{}\" has not stopped in {} seconds; it goes on stopping.",
+                "quickai-headless: \"{}\" has not stopped in {} seconds; it goes on stopping.",
                 run.name(),
                 STOP_WAIT.as_secs()
             );

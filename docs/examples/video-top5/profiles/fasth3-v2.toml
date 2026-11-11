@@ -1,12 +1,12 @@
 # A configuration for a server: ComfyUI with the files of FastH3 V2, FastVideo's 8-step distillation of MiniMax H3 (a clip with its sound in
 # 8 steps and with block-sparse attention, about three times quicker than the base model on the one card it was timed on). It carries no model.
 # Each file says where it can be had from: a repository of the hub, the commit of it that was checked, the file in it, how big it is and what
-# its SHA-256 is. `quickai-run up` installs ComfyUI, fetches the four files into the folders ComfyUI looks for each in, and starts it on
+# its SHA-256 is. `quickai-headless up` installs ComfyUI, fetches the four files into the folders ComfyUI looks for each in, and starts it on
 # 127.0.0.1:8188.
 #
-#     quickai-run init  fasth3-v2.toml                                   # the file to fill in: where the models are kept
-#     quickai-run check fasth3-v2.toml --environment fasth3-v2.environment.toml --accept-review
-#     quickai-run up    fasth3-v2.toml --environment fasth3-v2.environment.toml --accept-review
+#     quickai-headless init  fasth3-v2.toml                                   # the file to fill in: where the models are kept
+#     quickai-headless check fasth3-v2.toml --environment fasth3-v2.environment.toml --accept-review
+#     quickai-headless up    fasth3-v2.toml --environment fasth3-v2.environment.toml --accept-review
 #
 # What the four files are: the distilled transformer (22.1 GB, FastVideo/FastVideo-FastH3-Comfy), and the text encoder (Qwen3-VL 32B in
 # 4 bits, which does not need a Blackwell card) and the two VAEs of MiniMax H3 itself (Comfy-Org/MiniMax-H3), which the distillation shares
@@ -28,13 +28,13 @@
 # model (V.3). MiniMax says organisations in the excluded regions can apply for a licence: https://platform.minimax.io/h3-license
 # Read it: https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE
 #
-# What the computer must have: an NVIDIA card with 48 GB and 64 GB of memory, which nothing checks; and what `quickai-run` looks at before it
+# What the computer must have: an NVIDIA card with 48 GB and 64 GB of memory, which nothing checks; and what `quickai-headless` looks at before it
 # fetches anything (the `system` needs at the end of this file; the document of ComfyUI says how each is checked): a driver of the 580 series
 # or newer (ComfyUI is installed with PyTorch for CUDA 13), and a C compiler and the headers of Python, for the Triton helpers named above.
 # After the install, and before the files are fetched, it builds and runs a Triton kernel once. Before ComfyUI is installed it also looks for
 # the venv module of the Python its environment is made with (on Ubuntu the package python3.12-venv). Where something is missing it says
 # what, with the command that brings it (on Ubuntu: apt-get install -y python3.12-venv build-essential python3.12-dev), and
-# `--install-system-packages` lets it run that command. Sizes and checksums were read from the hub's listing on 2026-10-13; `quickai-run check` read the file as written. It has not
+# `--install-system-packages` lets it run that command. Sizes and checksums were read from the hub's listing on 2026-10-13; `quickai-headless check` read the file as written. It has not
 # been fetched or run.
 schema = 1
 kind = "profile"
@@ -97,7 +97,7 @@ port = 8188
 setting = "comfyui.models_dir"
 why = "Somewhere with 66 GB free: 42 GB of model files, and room for the clips it makes."
 
-[[needs]]                               # what the computer has to have: nobody gives these, `quickai-run` looks (the document of ComfyUI says how)
+[[needs]]                               # what the computer has to have: nobody gives these, `quickai-headless` looks (the document of ComfyUI says how)
 system = "python_venv"
 why = "ComfyUI is installed into a Python environment of its own, and Debian and Ubuntu make none without the venv package of the Python (on Ubuntu python3.12-venv)."
 

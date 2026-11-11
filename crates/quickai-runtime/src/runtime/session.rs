@@ -168,7 +168,7 @@ impl Session {
             commands: receiver,
         };
         match std::thread::Builder::new()
-            .name("quickai-run".into())
+            .name("quickai-headless".into())
             .spawn(move || supervisor::run(run))
         {
             Ok(thread) => self.run = Some(RunHandle { commands, thread }),

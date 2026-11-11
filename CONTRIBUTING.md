@@ -65,7 +65,7 @@ why, and what to do when eframe moves to a newer winit. The generator stops if t
 ## How the code is organized
 
 - **Four crates, each with a single responsibility.** `quickai-core` is pure logic (no processes, network or files),
-  `quickai-runtime` performs the work on the computer, `quickai` is the desktop application, and `quickai-run` is the
+  `quickai-runtime` performs the work on the computer, `quickai` is the desktop application, and `quickai-headless` is the
   headless program. Tests enforce these boundaries, so a change that crosses one will fail them.
 - **Much of QuickAI is data.** Engines, the recommended models and the vocabularies are TOML documents under
   `crates/quickai-runtime/manifests/`, documented key by key in [docs/reference/](docs/reference/). Adding a model

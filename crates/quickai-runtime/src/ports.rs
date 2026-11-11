@@ -3,7 +3,7 @@
 //! program of the person is asked to end, then ended. A system service (an Ollama installed as one) is stopped by its
 //! service manager through `sudo -n` when that needs no password; otherwise what stops it is said, for the person to
 //! run. Only the program that is the service counts: one that merely lives inside a service is ended on its own.
-//! `quickai-run free` does it on a computer the window set up; the window does it here.
+//! `quickai-headless free` does it on a computer the window set up; the window does it here.
 
 use std::process::Command;
 use std::time::{Duration, Instant};

@@ -570,7 +570,7 @@ pub const GROUPS: &[Group] = &[
     },
     Group {
         heading: "`[[prerequisite]]`",
-        intro: "Something the computer has to have for a configuration of the engine to work, how to tell whether it has it, and how to put it right. A configuration says which of them it needs (`[[needs]] system = \"<id>\"`); the packages are named here and nowhere else, because a package that is installed as the administrator must not come from a file that was given away. `quickai-run` looks at the computer before it fetches anything, says what is missing and the exact command that brings it, and installs the packages only when it is told to (`--install-system-packages`).",
+        intro: "Something the computer has to have for a configuration of the engine to work, how to tell whether it has it, and how to put it right. A configuration says which of them it needs (`[[needs]] system = \"<id>\"`); the packages are named here and nowhere else, because a package that is installed as the administrator must not come from a file that was given away. `quickai-headless` looks at the computer before it fetches anything, says what is missing and the exact command that brings it, and installs the packages only when it is told to (`--install-system-packages`).",
         source: Some("Prerequisite"),
         attributes: &[
             a("id", "text", "What a configuration calls it. Letters, digits and `_`. Required."),
@@ -1278,7 +1278,7 @@ pub const PROFILE_GROUPS: &[Group] = &[
     },
     Group {
         heading: "`[runtime.<program>]`",
-        intro: "A program that goes with the engine (`[runtime.openwebui]` for Open WebUI beside Ollama), with the same two keys. `quickai-run` installs that build of it, and the window leaves the file's pin as it is when it saves. A key that is none of these is one this version does not know.",
+        intro: "A program that goes with the engine (`[runtime.openwebui]` for Open WebUI beside Ollama), with the same two keys. `quickai-headless` installs that build of it, and the window leaves the file's pin as it is when it saves. A key that is none of these is one this version does not know.",
         source: None,
         attributes: &[
             a("build", "text", "The label of the build of that program to install and run."),
@@ -1287,7 +1287,7 @@ pub const PROFILE_GROUPS: &[Group] = &[
     },
     Group {
         heading: "`[[model]]`",
-        intro: "One model, by exactly one source: a name the engine takes (the key is one of the engine's `accepts.refs`: `ollama = \"qwen3:8b\"`), an entry of the recommended list (`catalog`, and `file` for one of its files), or a file (`file`) with, if it is to be fetched, where it can be had from (`from`, and `path` and `revision` in it, or `url`). A path of a computer is never a source, and the model is never in the file. Choosing a configuration in the window selects a model that is here and fetches nothing: one that is not here is told, with its size and where it can be had. `quickai-run` fetches it from where the file says, once whoever runs it has read where that is.",
+        intro: "One model, by exactly one source: a name the engine takes (the key is one of the engine's `accepts.refs`: `ollama = \"qwen3:8b\"`), an entry of the recommended list (`catalog`, and `file` for one of its files), or a file (`file`) with, if it is to be fetched, where it can be had from (`from`, and `path` and `revision` in it, or `url`). A path of a computer is never a source, and the model is never in the file. Choosing a configuration in the window selects a model that is here and fetches nothing: one that is not here is told, with its size and where it can be had. `quickai-headless` fetches it from where the file says, once whoever runs it has read where that is.",
         source: Some("ModelDoc"),
         attributes: &[
             a("role", "text", "What it is for (`chat`, `embedding`); letters, digits, `_` and `-`. Default `main`."),
@@ -1296,7 +1296,7 @@ pub const PROFILE_GROUPS: &[Group] = &[
             a("file", "text", "A file name, with no folder in it: the file of a `catalog` entry, or a file of the models folder."),
             a("size", "whole number", "Its size in bytes, to recognise it by and to say what getting it costs."),
             a("sha256", "text", "Its SHA-256, 64 hexadecimal digits."),
-            a("from", "text", "Where it can be got from, as a kind of place and a name in it (`huggingface:owner/repo`), for a file that is no entry of the recommended list. The window says it and never fetches from it by itself (the person asks, and looks it up); `quickai-run` fetches from it."),
+            a("from", "text", "Where it can be got from, as a kind of place and a name in it (`huggingface:owner/repo`), for a file that is no entry of the recommended list. The window says it and never fetches from it by itself (the person asks, and looks it up); `quickai-headless` fetches from it."),
             a("path", "text", "Where in the repository `from` names the file is (`split_files/vae/wan2.2_vae.safetensors`): names joined by `/`, none of them `..`, at most eight. Left out, the file is at the top and is called `file`. Needs `from`."),
             a("revision", "text", "The branch, tag or commit of the repository: letters, digits, `.`, `_` and `-`. Left out, `main`. A commit is the same file for ever. Needs `from`."),
             a("url", "text", "An address the file can be fetched from instead of `from`: `https://host/path`, with no sign-in in it (`http://` only for this computer's own). Not with `from`."),
@@ -1305,7 +1305,7 @@ pub const PROFILE_GROUPS: &[Group] = &[
     },
     Group {
         heading: "`[[needs]]`",
-        intro: "One thing that whoever runs the configuration has to give, because the file cannot carry it, or that the computer has to have: exactly one of `token`, `setting`, `env` and `system`. `quickai-run` stops before it fetches anything, says which are missing and how to give them, and `quickai-run init` writes the file to fill in; it is given in an environment file, on the command line, or, for a login, in the usual variable. What the computer has to have is looked at on the computer, and the engine's document says how.",
+        intro: "One thing that whoever runs the configuration has to give, because the file cannot carry it, or that the computer has to have: exactly one of `token`, `setting`, `env` and `system`. `quickai-headless` stops before it fetches anything, says which are missing and how to give them, and `quickai-headless init` writes the file to fill in; it is given in an environment file, on the command line, or, for a login, in the usual variable. What the computer has to have is looked at on the computer, and the engine's document says how.",
         source: Some("NeedDoc"),
         attributes: &[
             a("token", "text", "A login the fetching needs: `huggingface` or `github`."),

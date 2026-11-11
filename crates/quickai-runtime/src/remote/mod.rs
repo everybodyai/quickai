@@ -86,7 +86,7 @@ pub struct RemoteSpec {
     #[serde(default)]
     pub way: Way,
     /// The other ways the person accepted for this computer (section 6), by the configuration they were accepted
-    /// for (its name as a slug), as words of `quickai-run up` (`--models-dir /data/quickai-models`): given to each
+    /// for (its name as a slug), as words of `quickai-headless up` (`--models-dir /data/quickai-models`): given to each
     /// run of it there, so that it does not ask again. By configuration, as some are of its model alone
     /// (`--model-source`, `--model-file`), which another configuration's run would not take.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -679,7 +679,7 @@ pub fn name_from_address(host: &str) -> String {
 pub fn not_answering(spec: &RemoteSpec, engine: &str, port: u16) -> String {
     format!(
         "Connected to {}, but no {engine} answers on its port {port}. Start it there (its own service, or \
-         `quickai-run up` with a configuration of {engine}), or set the port it uses.",
+         `quickai-headless up` with a configuration of {engine}), or set the port it uses.",
         spec.host
     )
 }

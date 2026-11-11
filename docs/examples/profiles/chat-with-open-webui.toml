@@ -2,11 +2,11 @@
 # configuration says that Open WebUI is part of it (`enabled`, its port, which build of it) and that whoever runs it has
 # to give the key that signs its logins; the key is the computer's, and so is whether anyone may sign up (ENABLE_SIGNUP,
 # which is false once your own account is made): they are lines of Open WebUI's environment, given in the file
-# `quickai-run init` writes, or with `--env openwebui:NAME=VALUE`. `quickai-run up` installs Ollama and Open WebUI (each below its own folder of ~/.quickai),
+# `quickai-headless init` writes, or with `--env openwebui:NAME=VALUE`. `quickai-headless up` installs Ollama and Open WebUI (each below its own folder of ~/.quickai),
 # pulls the model, starts Open WebUI told where Ollama is, and says both addresses.
 #
-#     quickai-run init chat-with-open-webui.toml          # the file to fill in
-#     quickai-run up chat-with-open-webui.toml --environment chat-with-open-webui.environment.toml
+#     quickai-headless init chat-with-open-webui.toml          # the file to fill in
+#     quickai-headless up chat-with-open-webui.toml --environment chat-with-open-webui.environment.toml
 schema = 1
 kind = "profile"
 id = "chat-with-open-webui"

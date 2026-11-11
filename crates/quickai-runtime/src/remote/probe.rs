@@ -28,7 +28,7 @@ pub struct Computer {
     pub arch: String,
     /// The person's home there, as its shell says it.
     pub home: String,
-    /// What the headless program of this release there says of itself (`quickai-run 0.2.0`), when it is there.
+    /// What the headless program of this release there says of itself (`quickai-headless 0.2.0`), when it is there.
     pub headless: Option<String>,
 }
 
@@ -37,8 +37,8 @@ impl Computer {
     /// has a name of its own: a program that runs is not written over, which Windows does not allow).
     pub fn program_path(&self, version: &str) -> String {
         match self.system {
-            System::Windows => format!(".quickai/bin/quickai-run-{version}.exe"),
-            _ => format!(".quickai/bin/quickai-run-{version}"),
+            System::Windows => format!(".quickai/bin/quickai-headless-{version}.exe"),
+            _ => format!(".quickai/bin/quickai-headless-{version}"),
         }
     }
 
@@ -58,9 +58,9 @@ impl Computer {
     /// The file of a package's `remote/` folder that is the headless program for this computer, when there is one.
     pub fn package_file(&self) -> Option<&'static str> {
         match (self.system, self.arch.as_str()) {
-            (System::Linux, "x86_64") => Some("quickai-run-linux-x86_64"),
-            (System::Macos, _) => Some("quickai-run-macos-universal"),
-            (System::Windows, "x86_64") => Some("quickai-run-windows-x86_64.exe"),
+            (System::Linux, "x86_64") => Some("quickai-headless-linux-x86_64"),
+            (System::Macos, _) => Some("quickai-headless-macos-universal"),
+            (System::Windows, "x86_64") => Some("quickai-headless-windows-x86_64.exe"),
             _ => None,
         }
     }
@@ -133,7 +133,7 @@ pub fn check_setup(program: &Path, spec: &RemoteSpec, version: &str) -> Checked 
 
 /// The question for a POSIX shell: the system and the processor, the home, and the headless program of `version`.
 fn posix_question(version: &str) -> String {
-    let program = format!("\"$HOME\"/.quickai/bin/quickai-run-{version}");
+    let program = format!("\"$HOME\"/.quickai/bin/quickai-headless-{version}");
     format!(
         "uname -sm; printf '%s\\n' \"$HOME\"; if [ -x {program} ]; then {program} --version; else echo none; fi"
     )
@@ -141,13 +141,13 @@ fn posix_question(version: &str) -> String {
 
 /// The same for Windows' `cmd` (what PowerShell is given passes it to `cmd` as it is).
 fn windows_question(version: &str) -> String {
-    let program = format!(r"%USERPROFILE%\.quickai\bin\quickai-run-{version}.exe");
+    let program = format!(r"%USERPROFILE%\.quickai\bin\quickai-headless-{version}.exe");
     format!(
         r#"cmd /c "ver & echo %PROCESSOR_ARCHITECTURE% & echo %USERPROFILE% & if exist {program} ({program} --version) else (echo none)""#
     )
 }
 
-/// `Linux x86_64`, the home, and `quickai-run 0.2.0` or `none`.
+/// `Linux x86_64`, the home, and `quickai-headless 0.2.0` or `none`.
 fn read_posix(lines: &[&str]) -> Option<Computer> {
     let mut words = lines.first()?.split_whitespace();
     let system = match words.next()? {
@@ -192,7 +192,7 @@ fn arch_word(word: &str) -> String {
 
 fn headless_line(line: Option<&str>) -> Option<String> {
     line.map(str::trim)
-        .filter(|l| l.starts_with("quickai-run "))
+        .filter(|l| l.starts_with("quickai-headless "))
         .map(str::to_string)
 }
 
@@ -202,21 +202,21 @@ mod tests {
 
     #[test]
     fn what_a_posix_shell_says_is_read() {
-        let linux = read_posix(&["Linux x86_64", "/home/me", "quickai-run 0.2.0"]).unwrap();
+        let linux = read_posix(&["Linux x86_64", "/home/me", "quickai-headless 0.2.0"]).unwrap();
         assert_eq!(linux.system, System::Linux);
         assert_eq!(linux.arch, "x86_64");
         assert_eq!(linux.home, "/home/me");
-        assert_eq!(linux.headless.as_deref(), Some("quickai-run 0.2.0"));
-        assert_eq!(linux.package_file(), Some("quickai-run-linux-x86_64"));
+        assert_eq!(linux.headless.as_deref(), Some("quickai-headless 0.2.0"));
+        assert_eq!(linux.package_file(), Some("quickai-headless-linux-x86_64"));
         assert_eq!(
             linux.program_path("0.2.0"),
-            ".quickai/bin/quickai-run-0.2.0"
+            ".quickai/bin/quickai-headless-0.2.0"
         );
 
         let mac = read_posix(&["Darwin arm64", "/Users/me", "none"]).unwrap();
         assert_eq!((mac.system, mac.arch.as_str()), (System::Macos, "aarch64"));
         assert_eq!(mac.headless, None);
-        assert_eq!(mac.package_file(), Some("quickai-run-macos-universal"));
+        assert_eq!(mac.package_file(), Some("quickai-headless-macos-universal"));
 
         let arm = read_posix(&["Linux aarch64", "/home/pi", "none"]).unwrap();
         assert_eq!(arm.package_file(), None, "no build for Linux on ARM yet");
@@ -235,10 +235,13 @@ mod tests {
         .unwrap();
         assert_eq!((win.system, win.arch.as_str()), (System::Windows, "x86_64"));
         assert_eq!(win.home, r"C:\Users\me");
-        assert_eq!(win.package_file(), Some("quickai-run-windows-x86_64.exe"));
+        assert_eq!(
+            win.package_file(),
+            Some("quickai-headless-windows-x86_64.exe")
+        );
         assert_eq!(
             win.program_command("0.2.0"),
-            r#""%USERPROFILE%\.quickai\bin\quickai-run-0.2.0.exe""#
+            r#""%USERPROFILE%\.quickai\bin\quickai-headless-0.2.0.exe""#
         );
         assert_eq!(read_windows(&["Linux x86_64"]), None);
     }

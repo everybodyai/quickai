@@ -186,7 +186,7 @@ pub fn discover_models(models_dir: &Path, hide: &[String]) -> Vec<ModelEntry> {
     discover_models_of(models_dir, &[".gguf".to_string()], hide)
 }
 
-/// A model file a computer keeps, as `quickai-run models --json` says it: the window lists them under that computer.
+/// A model file a computer keeps, as `quickai-headless models --json` says it: the window lists them under that computer.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct KeptModel {
     /// The file's name, which a configuration names.

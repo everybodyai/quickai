@@ -1,12 +1,12 @@
 [package]
-name = "quickai-run"
+name = "quickai-headless"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "QuickAI with no window: it gets everything a configuration needs on this computer (programs, models), starts it, and stays until it is stopped. For a server. docs/headless.md."
 
 [[bin]]
-name = "quickai-run"
+name = "quickai-headless"
 path = "src/main.rs"
 
 [dependencies]

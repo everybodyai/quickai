@@ -34,14 +34,14 @@ and, of what comes after:
 
 A run is **a configuration and a computer**. For a computer that is not this one, QuickAI:
 
-1. **identifies it** over SSH: its system and processor, its home folder, its free space, and whether the `quickai-run`
+1. **identifies it** over SSH: its system and processor, its home folder, its free space, and whether the `quickai-headless`
    of this release is already there;
-2. **copies over** the `quickai-run` for that system, which every release carries (section 4), and the configuration;
+2. **copies over** the `quickai-headless` for that system, which every release carries (section 4), and the configuration;
 3. **resolves the environment** there: what the configuration needs (the engine's program, packages, the models) and
    what that computer lacks;
 4. **offers alternatives** where something cannot be had for that computer (another build, another engine, a smaller
    file), each **accepted or rejected** by the person before anything is installed;
-5. **installs** what is missing and **runs** the configuration there, through `quickai-run`;
+5. **installs** what is missing and **runs** the configuration there, through `quickai-headless`;
 6. **tunnels its ports** to this computer, and that is all: what the configuration serves there (the engine's API, a
    web page, a companion such as Open WebUI) is used here as if it ran here, by any app, the browser, or the window's
    own chat as one more client. The window does not manage the engine there (no listing, pulling or loading through
@@ -51,7 +51,7 @@ Steps 3 to 5 are the same for this computer: "run this configuration" resolves, 
 runs. The other computer only adds the transport (1, 2 and 6). Nothing is opened to the network on either side, as
 today (C171).
 
-What is already there: `quickai-run` (`init`, `check`, `prepare`, `up`, with `--json` events and `--ready-file`;
+What is already there: `quickai-headless` (`init`, `check`, `prepare`, `up`, with `--json` events and `--ready-file`;
 [headless.md](headless.md)), the configurations it reads ([configurations.md](configurations.md)), what a configuration
 needs from a computer, looked at before anything is fetched (WP4.20), the choice of a llama.cpp build for the graphics
 card (`provision::pick_build`), and the tunnel and the step-by-step test (`remote.rs`, WP4.27, WP4.32).
@@ -60,31 +60,31 @@ card (`provision::pick_build`), and the tunnel and the step-by-step test (`remot
 
 **Identify.** One SSH command, with no question asked (BatchMode, as the tunnel): `uname -sm` and the home folder on
 Linux and macOS; where that fails, the same asked of Windows' OpenSSH server, whose shell is `cmd` (or PowerShell): its
-version and `%PROCESSOR_ARCHITECTURE%`. Then the free space of the folder `quickai-run` keeps its data in, and
-`quickai-run --version` of the copy there, if any. The graphics
-cards are found by `quickai-run` itself, once it is there (`check --json` says them in its `computer` event).
+version and `%PROCESSOR_ARCHITECTURE%`. Then the free space of the folder `quickai-headless` keeps its data in, and
+`quickai-headless --version` of the copy there, if any. The graphics
+cards are found by `quickai-headless` itself, once it is there (`check --json` says them in its `computer` event).
 
-**Copy.** The `quickai-run` of this package for that system and processor, into the data folder there (C123: it writes
+**Copy.** The `quickai-headless` of this package for that system and processor, into the data folder there (C123: it writes
 nothing outside it), by the person's own `scp` (Windows' OpenSSH server has it too), and checked by its SHA-256 once
 copied. A copy of another version is replaced: the window and the program it drives are always of one release. The
 configuration is **the one selected in the window**, as Export writes it (what belongs to this computer left out), and
 with it the environment file (`init` writes one: what belongs to that computer, such as a folder or a login), filled
 from the person's answers.
 
-**Resolve.** `quickai-run check <configuration> --json` there: what would be installed and fetched, from where, and how
+**Resolve.** `quickai-headless check <configuration> --json` there: what would be installed and fetched, from where, and how
 big it is. The window shows it before anything changes on that computer.
 
 **Alternatives** (section 6). Where the configuration cannot be run as it is, the resolver proposes another way. The
 person accepts or rejects each; a rejected one leaves the run stopped with what it needs said in a sentence.
 
-**Install.** `quickai-run prepare`: the engine's program (a llama.cpp build for its card, Ollama, ComfyUI and its
+**Install.** `quickai-headless prepare`: the engine's program (a llama.cpp build for its card, Ollama, ComfyUI and its
 Python), the packages, the models. System packages only when the person said so (`--install-system-packages`, C138),
 and since nothing over SSH can answer a password, through `sudo -n` when that needs none; otherwise the window shows the
 command for the person to run there.
 
-**Run.** `quickai-run up <configuration> --detach` over the SSH connection: it starts on that computer as a program of
+**Run.** `quickai-headless up <configuration> --detach` over the SSH connection: it starts on that computer as a program of
 its own, which does not end with the connection (section 3.1), and the command returns. The window follows the run
-with `quickai-run status --json` and the run's log there: its progress (installing, fetching with how far along,
+with `quickai-headless status --json` and the run's log there: its progress (installing, fetching with how far along,
 starting), and once it is ready, where each thing it started listens.
 
 **Tunnel.** Each of those ports is forwarded to this computer (`ssh -L`, one connection for all of them), to the same
@@ -92,14 +92,14 @@ port here unless the person gives another (as *Port here* does today), or a free
 window says the addresses here (Connect an app, the page in the browser) and whether the run is up. That is the whole of
 what it does with the run.
 
-**Stop.** A run lives until it is stopped: from the window (Stop runs `quickai-run down` there), or by the person on that
-computer (`quickai-run down`, or stopping the program). The window closing, the laptop sleeping or the connection
+**Stop.** A run lives until it is stopped: from the window (Stop runs `quickai-headless down` there), or by the person on that
+computer (`quickai-headless down`, or stopping the program). The window closing, the laptop sleeping or the connection
 dropping only closes the tunnel; the run goes on, and the window finds it again (section 3.1).
 
 ### 3.1 A run that lives until it is stopped
 
 The user: "forever - unless it is stopped from the UI - or unless the user manually stops it from the remote". What
-`quickai-run` needs for it, on Linux, macOS and Windows alike:
+`quickai-headless` needs for it, on Linux, macOS and Windows alike:
 
 - **`up --detach`** starts the run as a program of its own and returns once it has started. On Linux and macOS it leaves
   the connection's session (a new session, its input and output to a log file in its data folder, a hang-up ignored).
@@ -126,17 +126,17 @@ and the person chooses; nothing is stopped or started without it:
 - **Stop it**: stop what runs there, and run nothing;
 - **Cancel**: leave it as it is.
 
-A run of QuickAI's is stopped with `quickai-run down`, and another program of the same person by its process. A system
+A run of QuickAI's is stopped with `quickai-headless down`, and another program of the same person by its process. A system
 service (an Ollama installed as one) is stopped by QuickAI only through `sudo -n` when that needs no password; otherwise
 the window says the command that stops it (`sudo systemctl stop ollama`) and waits for its port to be free. Only the
 service's main process counts as the service: a program that merely lives inside one (started by a remote desktop, a
 notebook server or a CI runner) is stopped by its process, so that the rest of that service goes on.
 
-What is built: a run of QuickAI's there is found by `quickai-run status`; another program by `check`, which says the
+What is built: a run of QuickAI's there is found by `quickai-headless status`; another program by `check`, which says the
 ports the run would listen on and whether another program has one now (and what answers there, when it answers as the
-engine does: `Ollama 0.12.3`). Override stops it (`quickai-run down`, or `quickai-run free PORT...` for another
+engine does: `Ollama 0.12.3`). Override stops it (`quickai-headless down`, or `quickai-headless free PORT...` for another
 program), then checks again and runs ours; Stop it stops it and runs nothing. For a run on this computer the same
-is asked before Start (`app/port_taken.rs`; the stopping is the runtime's `ports`, which `quickai-run free` uses too):
+is asked before Start (`app/port_taken.rs`; the stopping is the runtime's `ports`, which `quickai-headless free` uses too):
 an engine that already runs there, which QuickAI did not start, is **Use it** (what the window did by itself before:
 the run attaches to it; *Always use the one that runs* sets the engine's mode to attach, and it is not asked again),
 **Override**, **Stop it** or **Cancel**; another program on the port is **Override**, **Use port N** (the next free
@@ -163,7 +163,7 @@ connected (running cfg) etc".
 - **The chat attaches to the run that is shown**: its API here, through the tunnel, and the model it runs. Connect an
   app gives the same address. The status bar says what the run there does, and the menu marks a computer whose run
   goes on with a green dot.
-- **The list is that computer's** (C199): the model files it keeps (`quickai-run models --json`), the one picked is what
+- **The list is that computer's** (C199): the model files it keeps (`quickai-headless models --json`), the one picked is what
   its next run starts with, and the one that runs has its green dot. This computer's models are under them, folded: one
   picked there is copied over when the run starts.
 - **When the window starts**, each computer QuickAI sets up is asked what runs there, and a run that goes on is found
@@ -172,14 +172,14 @@ connected (running cfg) etc".
 ## 4. Every release carries the headless program for every system
 
 Each package of the window (the Windows zip, the macOS disk image, the AppImage and the Linux tar.gz) carries a
-`remote/` folder: `quickai-run` for Linux x86_64, for macOS (universal) and for Windows x86_64, with their SHA-256. They
+`remote/` folder: `quickai-headless` for Linux x86_64, for macOS (universal) and for Windows x86_64, with their SHA-256. They
 are small beside the model (today 4.6 MB and 8.4 MB as tarballs, against about 1 GB), and they mean a server needs no
 access to GitHub to get QuickAI, and always gets the version of the window that drives it.
 
 Windows, macOS and Linux are all built for, from the start (the user: "implement for all win/mac/linux"). What this
 asks of the packages:
 
-- **A Windows build of `quickai-run`**, which does not exist yet, built as the window's is. The runtime already runs
+- **A Windows build of `quickai-headless`**, which does not exist yet, built as the window's is. The runtime already runs
   on Windows under the window; the headless program's own parts (the stop, the console, `--detach`) are new there.
 - **The macOS program is built on a Mac**, apart from the others. The packaging takes it from where that build puts
   it, and a package made without it stops with a sentence that says where to put it; a flag builds one without it,
@@ -195,17 +195,17 @@ deploy, run, job, alternatives}`) and in the window (it gates `app/remote_run.rs
 the runtime's on). A window built without it (`cargo build -p quickai --no-default-features`) has the computers it
 attaches to only: the form does not offer "QuickAI sets it up", `setup_in_use` is never a computer, and
 `app/remote_run_off.rs` stands in for the two modules with the same names doing nothing. Removing the feature is
-deleting those files and its lines. The transport (`remote::ssh`), the tunnel and `run_file` (which `quickai-run`
+deleting those files and its lines. The transport (`remote::ssh`), the tunnel and `run_file` (which `quickai-headless`
 uses for `status` and `down`) are always there. Not built: a switch in the settings.
 
 | Module | Where | What it does |
 |---|---|---|
 | `remote.ssh` | `quickai-runtime` | the transport: run a command, copy a file, open a tunnel (the tunnel is today's `remote.rs`) |
-| `remote.probe` | `quickai-runtime` | identify a computer: system, processor, home, free space, the `quickai-run` there |
+| `remote.probe` | `quickai-runtime` | identify a computer: system, processor, home, free space, the `quickai-headless` there |
 | `remote.deploy` | `quickai-runtime` | copy the headless program and the configuration, check them, replace another version |
 | `resolve` | `quickai-runtime` (provision) | what a configuration needs and a computer lacks, and the alternatives; used for this computer too |
-| `run.detach` | `quickai-run` | `up --detach`, the run file, `status`, `down`, the stop file, one run at a time |
-| `remote.run` | `quickai-runtime`, the window | drive `quickai-run` over SSH: start detached, follow `status`, find a run again, stop |
+| `run.detach` | `quickai-headless` | `up --detach`, the run file, `status`, `down`, the stop file, one run at a time |
+| `remote.run` | `quickai-runtime`, the window | drive `quickai-headless` over SSH: start detached, follow `status`, find a run again, stop |
 | `remote.tunnel` | `quickai-runtime`, the window | forward the ports the run reports to this computer, and say their addresses here |
 | `remote.attach` | `quickai-runtime`, the window | today's way: attach to an engine the person runs there (Ollama, ComfyUI) |
 | `llamacpp.router` | parked | llama.cpp's router mode (architecture §10.4), parked at the user's word |
@@ -222,10 +222,10 @@ Examples of what is offered:
 - not enough free space: another folder there, or fewer models.
 
 Each is accepted or rejected in the window. What was accepted is kept with that computer and that configuration
-(`RemoteSpec::accepted`, by the configuration's name, as words of `quickai-run up`), so the next run of it does not ask
+(`RemoteSpec::accepted`, by the configuration's name, as words of `quickai-headless up`), so the next run of it does not ask
 again; by configuration, as some words are of its model alone, which another configuration's run would not take.
 
-What is built (WP4.33.6, `remote::alternatives`): the configuration is copied there and `quickai-run check` run on it;
+What is built (WP4.33.6, `remote::alternatives`): the configuration is copied there and `quickai-headless check` run on it;
 what stops it is read from its JSON, where a failure that has another way says what it lacks (`provision::Lack`:
 `model`, `room`, `build`), and missing packages come with the command that brings them. The other ways:
 
@@ -268,12 +268,12 @@ when the user asks for them). 4.33.1 to 4.33.9 are written; the GUI tests are no
 
 | WP | Work | Verified by |
 |---|---|---|
-| 4.33.1 | `quickai-run` on Windows: it builds, stops (the stop file) and runs a configuration there | a build for Windows here; a run on Windows (as A8) |
+| 4.33.1 | `quickai-headless` on Windows: it builds, stops (the stop file) and runs a configuration there | a build for Windows here; a run on Windows (as A8) |
 | 4.33.2 | `run.detach`: `up --detach`, the run file, `status --json`, `down`, one run at a time, on all three systems | tests that start, find and stop a detached run here; a Windows run |
-| 4.33.3 | Every package carries `quickai-run` for Linux, macOS and Windows, the macOS one taken from where its build on a Mac puts it | the packaged-bundle check finds the three, with their SHA-256 |
+| 4.33.3 | Every package carries `quickai-headless` for Linux, macOS and Windows, the macOS one taken from where its build on a Mac puts it | the packaged-bundle check finds the three, with their SHA-256 |
 | 4.33.4 | `remote.ssh` and `remote.probe`: run a command and copy a file over the person's `ssh` and `scp`; identify a computer, Windows' shell too | the stand-in for ssh (`testkit::fake_ssh`) runs them on this machine |
 | 4.33.5 | `remote.deploy`: copy, check, replace another version; the selected configuration and its environment file | the stand-in, and a computer with an older copy |
-| 4.33.6 | `resolve` with alternatives, for this computer first, then in `quickai-run check --json` | planner tests with documents that lack a build, a program, or room |
+| 4.33.6 | `resolve` with alternatives, for this computer first, then in `quickai-headless check --json` | planner tests with documents that lack a build, a program, or room |
 | 4.33.7 | `remote.run` and `remote.tunnel`: start detached, follow `status`, tunnel every port it reports, find a run again, stop; an engine already running there said, with override (stop it and run ours), stop it, or cancel (section 3.2) | the stand-in end to end, then a rented server for real |
 | 4.33.8 | The window: a computer's way, the run's progress, the alternatives to accept or reject, the addresses here, a run that goes on when the window closes | the GUI tests, when the user asks for them |
 | 4.33.9 | The modules as features, and their switches in the settings | a build with each feature off compiles and hides its part |

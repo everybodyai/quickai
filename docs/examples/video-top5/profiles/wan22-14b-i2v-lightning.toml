@@ -2,11 +2,11 @@
 # the two experts (the one that draws the first half of the denoising, the one that finishes it) in fp8, UMT5-XXL as the text encoder, the Wan
 # 2.1 VAE, and the 4-step LightX2V LoRA for each expert, which the templates switch on to make a clip in 4 steps instead of 20. It carries no
 # model. Each file says where it can be had from: a repository of the hub, the commit of it that was checked, the file in it, how big it is
-# and what its SHA-256 is. `quickai-run up` installs ComfyUI, fetches the six files into the folders ComfyUI looks for each in, and starts it.
+# and what its SHA-256 is. `quickai-headless up` installs ComfyUI, fetches the six files into the folders ComfyUI looks for each in, and starts it.
 #
-#     quickai-run init  wan22-14b-i2v-lightning.toml                     # the file to fill in: where the models are kept
-#     quickai-run check wan22-14b-i2v-lightning.toml --environment wan.environment.toml --accept-review
-#     quickai-run up    wan22-14b-i2v-lightning.toml --environment wan.environment.toml --accept-review
+#     quickai-headless init  wan22-14b-i2v-lightning.toml                     # the file to fill in: where the models are kept
+#     quickai-headless check wan22-14b-i2v-lightning.toml --environment wan.environment.toml --accept-review
+#     quickai-headless up    wan22-14b-i2v-lightning.toml --environment wan.environment.toml --accept-review
 #
 # 38.0 GB of files (35.4 GiB, which is how the program counts). The same six files serve image to video and first-and-last-frame
 # to video; text to video needs the other pair of experts (wan2.2_t2v_*), which this file leaves out (a configuration holds at most 8 models).
@@ -20,12 +20,12 @@
 # The licence is Apache-2.0 (the model, the repackaging and the LoRAs): no territory, no revenue limit.
 #
 # What the computer must have: an NVIDIA card with 24 GB (fp8; 48 GB is comfortable at 720p) and 64 GB of memory is comfortable, which nothing
-# checks; and what `quickai-run` looks at before it fetches anything (the `system` needs at the end of this file): the venv module of the
+# checks; and what `quickai-headless` looks at before it fetches anything (the `system` needs at the end of this file): the venv module of the
 # Python its environment is made with (on Ubuntu the package python3.12-venv) and a driver of the 580 series or newer (ComfyUI is installed
 # with PyTorch for CUDA 13). It does not ask for a compiler or the headers of Python, because nothing in
 # these workflows is known to launch a kernel of Triton's (the fp8 files are run by PyTorch; this was not measured on a card). The other
 # configurations of this folder ask for them (`c_compiler`, `python_headers`, `triton`), and so would this one if it used a custom node that
-# does. Sizes and checksums were read from the hub's listing on 2026-10-13; `quickai-run check` read the file as written. It has not been
+# does. Sizes and checksums were read from the hub's listing on 2026-10-13; `quickai-headless check` read the file as written. It has not been
 # fetched or run.
 schema = 1
 kind = "profile"
@@ -110,7 +110,7 @@ port = 8188
 setting = "comfyui.models_dir"
 why = "Somewhere with 63 GB free: 39 GB of model files, and room for the clips it makes."
 
-[[needs]]                               # what the computer has to have: nobody gives it, `quickai-run` looks (the document of ComfyUI says how)
+[[needs]]                               # what the computer has to have: nobody gives it, `quickai-headless` looks (the document of ComfyUI says how)
 system = "python_venv"
 why = "ComfyUI is installed into a Python environment of its own, and Debian and Ubuntu make none without the venv package of the Python (on Ubuntu python3.12-venv)."
 

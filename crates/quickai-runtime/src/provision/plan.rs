@@ -230,7 +230,7 @@ fn program(
     if ctx.options.offline {
         let which = wanted.map_or(String::new(), |label| format!(" {label}"));
         return Err(needs(format!(
-            "{name}{which} is not on this computer, and --offline says nothing is fetched. Install it first (`quickai-run prepare` does, with the network), or point to one that is installed with --build or the `bin_override` setting"
+            "{name}{which} is not on this computer, and --offline says nothing is fetched. Install it first (`quickai-headless prepare` does, with the network), or point to one that is installed with --build or the `bin_override` setting"
         )));
     }
     let Some(spec) = spec else {

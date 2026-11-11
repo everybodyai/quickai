@@ -3,7 +3,7 @@
 ## Guides
 
 - [mcp-servers.md](mcp-servers.md): giving your model tools with MCP servers: adding, using and troubleshooting them
-- [headless.md](headless.md): `quickai-run`, for running QuickAI on a server without a display
+- [headless.md](headless.md): `quickai-headless`, for running QuickAI on a server without a display
 - [configurations.md](configurations.md): saving a complete setup as a file, sharing it, and importing one safely
 - [catalog.md](catalog.md): the list of recommended models, and how to add or hide a model with a document of your own
 - [lookup-and-bundles.md](lookup-and-bundles.md): how **Look up online** ranks results, and bundles such as a vision model with its projector

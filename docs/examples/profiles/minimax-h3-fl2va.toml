@@ -1,12 +1,12 @@
 # A configuration for a server: ComfyUI with the files of MiniMax H3 in its first-and-last-frame build, the open-weight video model
 # that makes 4 to 15 seconds at 24 frames a second with its sound, from words, from a first picture, from a last one or from both
 # (docs/headless.md). It carries no model. Each file says where it can be had from: a repository of the hub (and the revision of it
-# that was checked), the file in it, how big it is and what its SHA-256 is. `quickai-run up` installs ComfyUI, fetches the five files
+# that was checked), the file in it, how big it is and what its SHA-256 is. `quickai-headless up` installs ComfyUI, fetches the five files
 # into the folders ComfyUI looks for each in, and starts it on 127.0.0.1:8188 (from your computer: ssh -N -L 8189:127.0.0.1:8188).
 #
-#     quickai-run init  minimax-h3-fl2va.toml                    # the file to fill in: where the models are kept, a login if you have one
-#     quickai-run check minimax-h3-fl2va.toml --environment minimax-h3-fl2va.environment.toml --accept-review
-#     quickai-run up    minimax-h3-fl2va.toml --environment minimax-h3-fl2va.environment.toml --accept-review
+#     quickai-headless init  minimax-h3-fl2va.toml                    # the file to fill in: where the models are kept, a login if you have one
+#     quickai-headless check minimax-h3-fl2va.toml --environment minimax-h3-fl2va.environment.toml --accept-review
+#     quickai-headless up    minimax-h3-fl2va.toml --environment minimax-h3-fl2va.environment.toml --accept-review
 #
 # The files are the ones ComfyUI's own template of the model loads (video_minimax_h3_i2v, ComfyUI 0.39.0, the build this program installs):
 # the pruned weights in int8, Qwen3-VL-32B as the text encoder in 4 bits (it does not need a Blackwell card), the video VAE in int8, the
@@ -15,7 +15,7 @@
 # is about 7 GB more (with PyTorch for CUDA 13, as measured on an L40S).
 #
 # What the computer must have: an NVIDIA card of 48 GB (an L40S does; the model took 38.9 GB of its memory and 46.7 GB of the computer's in
-# the one measurement of it I found, for 10 seconds at 960x544) and 64 GB of memory, which nothing checks; and what `quickai-run` looks at
+# the one measurement of it I found, for 10 seconds at 960x544) and 64 GB of memory, which nothing checks; and what `quickai-headless` looks at
 # before it fetches anything (the `system` needs at the end of this file; the document of ComfyUI says how each is checked): a driver of the
 # 580 series or newer, because ComfyUI is installed with PyTorch for CUDA 13 (`nvidia-smi` says the driver), and a C compiler and the headers
 # of Python, because Triton (which PyTorch brings) builds a small helper in C the first time a kernel of the model is launched: without
@@ -102,7 +102,7 @@ port = 8188
 setting = "comfyui.models_dir"
 why = "Somewhere with 60 GB free: 42 GB of model files, and what ComfyUI makes."
 
-[[needs]]                               # what the computer has to have: nobody gives these, `quickai-run` looks (the document of ComfyUI says how)
+[[needs]]                               # what the computer has to have: nobody gives these, `quickai-headless` looks (the document of ComfyUI says how)
 system = "python_venv"
 why = "ComfyUI is installed into a Python environment of its own, and Debian and Ubuntu make none without the venv package of the Python (on Ubuntu python3.12-venv)."
 
@@ -123,7 +123,7 @@ system = "triton"
 why = "After the install and before the files are fetched, one kernel is built and run: the first clip is not the one that finds out."
 
 # More from the same repository and commit, if you want them, as [[model]] above (a configuration holds at most 8 models: these five and three more).
-# Each was held against the hub's answer for the file at that commit, and `quickai-run check` read them as written here:
+# Each was held against the hub's answer for the file at that commit, and `quickai-headless check` read them as written here:
 #
 #   * the 4-step Lightning LoRA for 768p, a faster and rougher clip:
 #       file = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"   path = "loras/<file>"   into = "loras"   role = "lora"

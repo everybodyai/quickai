@@ -1,5 +1,5 @@
 //! The headless program, and what it runs, copied to another computer (`remote.deploy`, WP4.33.5, docs/remote-runs.md
-//! section 3): the `quickai-run` of this release for that computer's system, from the package's `remote/` folder
+//! section 3): the `quickai-headless` of this release for that computer's system, from the package's `remote/` folder
 //! (section 4), into the person's `~/.quickai/bin` there, checked by its SHA-256 before it takes its name; and a file
 //! the run reads (the configuration selected in the window, its environment file) into `~/.quickai/remote`. Nothing
 //! is written outside `~/.quickai` there (C123).
@@ -70,7 +70,7 @@ pub fn ensure_program(
     version: &str,
 ) -> Result<String, String> {
     let command = computer.program_command(version);
-    if computer.headless.as_deref() == Some(format!("quickai-run {version}").as_str()) {
+    if computer.headless.as_deref() == Some(format!("quickai-headless {version}").as_str()) {
         return Ok(command);
     }
     let local = local_program(computer)?;
@@ -103,7 +103,7 @@ pub fn ensure_program(
     run(ssh, spec, &finish)?;
     let said = run(ssh, spec, &format!("{command} --version"))?;
     let line = said.lines().first().map(|l| l.trim().to_string());
-    if line.as_deref() != Some(format!("quickai-run {version}").as_str()) {
+    if line.as_deref() != Some(format!("quickai-headless {version}").as_str()) {
         return Err(format!(
             "The headless program was copied to {} but does not run there: {}",
             spec.host.trim(),

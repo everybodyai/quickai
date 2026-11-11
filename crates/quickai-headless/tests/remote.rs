@@ -1,6 +1,6 @@
 //! WP4.33, a configuration run on another computer by QuickAI itself (docs/remote-runs.md), end to end on this
 //! machine: the other computer is a folder of it, reached through the stand-in for `ssh` and `scp`
-//! (`testkit::fake_ssh`), and what runs there is this build of `quickai-run`, copied there as the window copies it,
+//! (`testkit::fake_ssh`), and what runs there is this build of `quickai-headless`, copied there as the window copies it,
 //! against the world of the runtime's tests (a fake GitHub, a file server, a stand-in `llama-server`). What a real
 //! computer adds (a login, another system) is left to the tests run with one. On Linux only: the other computer is this
 //! machine, and what these tests hand it is the program for Linux.
@@ -21,7 +21,7 @@ use quickai_runtime::testkit::wait_until;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// The package's `remote/` folder for these tests: this build of `quickai-run` as the program for Linux, named in
+/// The package's `remote/` folder for these tests: this build of `quickai-headless` as the program for Linux, named in
 /// `QUICKAI_REMOTE_PROGRAMS` once for the whole run (every test names the same).
 fn programs() {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -30,8 +30,8 @@ fn programs() {
             std::env::temp_dir().join(format!("quickai-remote-programs-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::copy(
-            env!("CARGO_BIN_EXE_quickai-run"),
-            dir.join("quickai-run-linux-x86_64"),
+            env!("CARGO_BIN_EXE_quickai-headless"),
+            dir.join("quickai-headless-linux-x86_64"),
         )
         .unwrap();
         dir
@@ -40,7 +40,7 @@ fn programs() {
 }
 
 /// The other computer of `world`: the stand-ins in a folder of its own, a home beside them, and the variables that
-/// send its `quickai-run` to the world's fakes. `None` when there is no python3 to run the stand-ins.
+/// send its `quickai-headless` to the world's fakes. `None` when there is no python3 to run the stand-ins.
 struct Computer {
     ssh: PathBuf,
     home: PathBuf,
@@ -252,12 +252,12 @@ fn a_configuration_runs_on_the_other_computer_its_ports_come_here_it_is_found_ag
     };
     assert!(computer
         .home
-        .join(format!(".quickai/bin/quickai-run-{VERSION}"))
+        .join(format!(".quickai/bin/quickai-headless-{VERSION}"))
         .is_file());
     assert!(computer.home.join(".quickai/remote/usual.toml").is_file());
     assert_eq!(
         computer.probe().headless.as_deref(),
-        Some(format!("quickai-run {VERSION}").as_str())
+        Some(format!("quickai-headless {VERSION}").as_str())
     );
     assert_eq!(run.state, "ready");
     assert!(run.detached);
