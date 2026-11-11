@@ -271,7 +271,7 @@ pub const VOICE_PACKS: [VoicePack; 18] = [
     VoicePack {
         id: "assamese-mms",
         name: "Assamese · MMS",
-        about: "Meta's MMS voice for Assamese; for non-commercial use",
+        about: "Meta's MMS voice for Assamese",
         source: PackSource::HuggingFace {
             repo: MMS_REPO,
             commit: MMS_COMMIT,
@@ -301,7 +301,7 @@ pub const VOICE_PACKS: [VoicePack; 18] = [
     VoicePack {
         id: "bengali-mms",
         name: "Bengali · MMS",
-        about: "Meta's MMS voice for Bengali; for non-commercial use",
+        about: "Meta's MMS voice for Bengali",
         source: PackSource::HuggingFace {
             repo: MMS_REPO,
             commit: MMS_COMMIT,
@@ -331,7 +331,7 @@ pub const VOICE_PACKS: [VoicePack; 18] = [
     VoicePack {
         id: "gujarati-mms",
         name: "Gujarati · MMS",
-        about: "Meta's MMS voice for Gujarati; for non-commercial use",
+        about: "Meta's MMS voice for Gujarati",
         source: PackSource::HuggingFace {
             repo: MMS_REPO,
             commit: MMS_COMMIT,
@@ -361,7 +361,7 @@ pub const VOICE_PACKS: [VoicePack; 18] = [
     VoicePack {
         id: "kannada-mms",
         name: "Kannada · MMS",
-        about: "Meta's MMS voice for Kannada; for non-commercial use",
+        about: "Meta's MMS voice for Kannada",
         source: PackSource::HuggingFace {
             repo: MMS_REPO,
             commit: MMS_COMMIT,
@@ -425,7 +425,7 @@ pub const VOICE_PACKS: [VoicePack; 18] = [
     VoicePack {
         id: "marathi-mms",
         name: "Marathi · MMS",
-        about: "Meta's MMS voice for Marathi; for non-commercial use",
+        about: "Meta's MMS voice for Marathi",
         source: PackSource::HuggingFace {
             repo: MMS_REPO,
             commit: MMS_COMMIT,
@@ -472,7 +472,7 @@ pub const VOICE_PACKS: [VoicePack; 18] = [
     VoicePack {
         id: "odia-mms",
         name: "Odia · MMS",
-        about: "Meta's MMS voice for Odia; for non-commercial use",
+        about: "Meta's MMS voice for Odia",
         source: PackSource::HuggingFace {
             repo: MMS_REPO,
             commit: MMS_COMMIT,
@@ -502,7 +502,7 @@ pub const VOICE_PACKS: [VoicePack; 18] = [
     VoicePack {
         id: "punjabi-mms",
         name: "Punjabi · MMS",
-        about: "Meta's MMS voice for Punjabi; for non-commercial use",
+        about: "Meta's MMS voice for Punjabi",
         source: PackSource::HuggingFace {
             repo: MMS_REPO,
             commit: MMS_COMMIT,
@@ -532,7 +532,7 @@ pub const VOICE_PACKS: [VoicePack; 18] = [
     VoicePack {
         id: "tamil-mms",
         name: "Tamil · MMS",
-        about: "Meta's MMS voice for Tamil; for non-commercial use",
+        about: "Meta's MMS voice for Tamil",
         source: PackSource::HuggingFace {
             repo: MMS_REPO,
             commit: MMS_COMMIT,
@@ -620,6 +620,45 @@ pub const VOICE_PACKS: [VoicePack; 18] = [
         piper: true,
     },
 ];
+
+/// The terms of a voice's licence that limits commercial use: what Settings › Voice shows under its warning mark.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Terms {
+    pub title: &'static str,
+    pub summary: &'static str,
+    /// The licence itself.
+    pub url: &'static str,
+}
+
+const NON_COMMERCIAL: Terms = Terms {
+    title: "Non-commercial use only",
+    summary: "This voice is licensed under the Creative Commons Attribution-NonCommercial 4.0 International \
+              License (CC BY-NC 4.0). You may use it, and the audio it produces, for personal, educational, research \
+              and other non-commercial purposes, with credit to its authors (Meta's MMS project). Commercial use is \
+              not permitted.",
+    url: "https://creativecommons.org/licenses/by-nc/4.0/",
+};
+
+const INDIC_TTS: Terms = Terms {
+    title: "Commercial use requires an agreement",
+    summary: "This voice was trained on the Indic TTS database of IIT Madras and is subject to its license. IIT \
+              Madras makes the database available free of charge for research, and asks businesses to sign an \
+              agreement with it before commercial use. Read the license before using this voice, or the audio it \
+              produces, for any commercial purpose.",
+    url: "https://www.iitm.ac.in/donlab/indictts/downloads/license.pdf",
+};
+
+impl VoicePack {
+    /// The terms of its licence, when that licence limits commercial use; `None` when anyone may use it for anything
+    /// (with credit, where it asks for it).
+    pub fn terms(&self) -> Option<Terms> {
+        match self.license {
+            "CC-BY-NC-4.0" => Some(NON_COMMERCIAL),
+            "IndicTTS (IIT Madras)" => Some(INDIC_TTS),
+            _ => None,
+        }
+    }
+}
 
 /// The sentence Settings › Voice reads to let a voice be heard: in English, unless the voice is of another language
 /// (a pack's own, or a Hindi voice of Kokoro's).
@@ -1195,6 +1234,23 @@ mod tests {
                     .iter()
                     .any(|d| d.1 == format!("{}.json", pack.model)));
             }
+        }
+        // a licence that limits commercial use has its terms; the others none
+        assert_eq!(
+            voice_pack("tamil-mms").unwrap().terms().map(|t| t.title),
+            Some("Non-commercial use only")
+        );
+        assert!(voice_pack("malayalam-meera").unwrap().terms().is_some());
+        assert!(voice_pack("telugu-maya").unwrap().terms().is_some());
+        for free in [
+            "kokoro",
+            "arabic-nabra",
+            "persian-amir",
+            "urdu-fasih",
+            "telugu-venkatesh",
+            "nepali-chitwan",
+        ] {
+            assert_eq!(voice_pack(free).unwrap().terms(), None, "{free}");
         }
         // files of Hugging Face are kept in a folder the downloader takes
         for pack in &VOICE_PACKS {

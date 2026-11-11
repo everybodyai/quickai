@@ -166,6 +166,8 @@ pub(super) struct Talk {
     voice_download: Option<(Job<String>, VoiceFetch)>,
     voice_unpacking: Option<Receiver<Result<(), String>>>,
     voice_note: Option<String>,
+    /// The terms of the chosen voice's licence are shown (its warning mark was clicked).
+    terms_open: bool,
     /// Settings › Voice's try of speech to text.
     trial: Trial,
     /// What is typed in the search box at the top of the lists of languages and of voices.
@@ -2384,6 +2386,22 @@ impl App {
                 Some("No voice comes with QuickAI: download one, or use one of your own."),
                 None,
                 |ui| {
+                    // a voice whose licence limits commercial use: a warning mark beside it, which shows the terms
+                    let terms = match &reader {
+                        Reader::Pack(id) => voices::voice_pack(id).and_then(|p| p.terms()),
+                        _ => None,
+                    };
+                    if let Some(terms) = terms {
+                        if warning_mark(ui, self.talk.terms_open)
+                            .on_hover_text(format!(
+                                "{}: click for the terms of its license",
+                                terms.title
+                            ))
+                            .clicked()
+                        {
+                            self.talk.terms_open = !self.talk.terms_open;
+                        }
+                    }
                     egui::ComboBox::from_id_salt("voice_reader")
                         .selected_text(reader_label(&reader))
                         .width(220.0)
@@ -2394,11 +2412,23 @@ impl App {
                             }
                             for pack in &VOICE_PACKS {
                                 let on = reader == Reader::Pack(pack.id.into());
-                                if ui
-                                    .selectable_label(on, format!("{} · {}", pack.name, megabytes(pack.bytes())))
-                                    .on_hover_text(format!("{}. {} licence.", pack.about, pack.license))
-                                    .clicked()
-                                {
+                                let hover = match pack.terms() {
+                                    Some(t) => format!("{}. {} licence: {}.", pack.about, pack.license, t.title.to_lowercase()),
+                                    None => format!("{}. {} licence.", pack.about, pack.license),
+                                };
+                                let clicked = ui
+                                    .horizontal(|ui| {
+                                        let label = ui
+                                            .selectable_label(on, format!("{} · {}", pack.name, megabytes(pack.bytes())))
+                                            .on_hover_text(&hover);
+                                        if pack.terms().is_some() {
+                                            let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                                            icons::paint(ui.painter(), r, Icon::Warn, theme::palette().warn);
+                                        }
+                                        label.clicked()
+                                    })
+                                    .inner;
+                                if clicked {
                                     chosen = Some(Reader::Pack(pack.id.into()));
                                 }
                             }
@@ -2433,10 +2463,19 @@ impl App {
                 }
                 if next != reader {
                     self.talk.settings.reader = next;
+                    self.talk.terms_open = false;
                     changed = true;
                 }
             }
             let reader = self.talk.settings.reader.clone();
+            // the terms of the chosen voice's licence, under its warning mark
+            if let Reader::Pack(id) = &reader {
+                if let Some(terms) = voices::voice_pack(id).and_then(|p| p.terms()) {
+                    if self.talk.terms_open && show_terms(ui, &terms) {
+                        self.talk.terms_open = false;
+                    }
+                }
+            }
             match &reader {
                 Reader::None => {}
                 Reader::Pack(id) => {
@@ -2723,6 +2762,64 @@ fn reader_label(reader: &Reader) -> String {
         Reader::Server { .. } => "A speech server".into(),
         Reader::Program(_) => "A program of my own".into(),
     }
+}
+
+/// The warning mark of a voice whose licence limits commercial use: a button, pressed while its terms are shown.
+fn warning_mark(ui: &mut egui::Ui, open: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let p = theme::palette();
+        let fill = if open || response.is_pointer_button_down_on() {
+            p.raised_active
+        } else if response.hovered() {
+            p.raised_hover
+        } else {
+            egui::Color32::TRANSPARENT
+        };
+        ui.painter().rect_filled(rect, 5.0, fill);
+        let square = egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0));
+        icons::paint(ui.painter(), square, Icon::Warn, p.warn);
+    }
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// The terms of a voice's licence, in a box: what it allows, a link to the licence itself, and that QuickAI does not
+/// include the voice. True when the box was closed.
+fn show_terms(ui: &mut egui::Ui, terms: &voices::Terms) -> bool {
+    let p = theme::palette();
+    let mut close = false;
+    egui::Frame::new()
+        .fill(p.raised)
+        .stroke(egui::Stroke::new(1.0, p.warn))
+        .corner_radius(egui::CornerRadius::same(8))
+        .inner_margin(egui::Margin::same(12))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                icons::paint(ui.painter(), r, Icon::Warn, p.warn);
+                ui.label(egui::RichText::new(terms.title).family(theme::semibold(ui)).color(p.text));
+            });
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(terms.summary).small().color(p.body));
+            ui.add_space(4.0);
+            ui.label(
+                theme::muted(
+                    "QuickAI does not include this voice: it downloads it at your request, and you are responsible \
+                     for using it within its license.",
+                )
+                .small(),
+            );
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.hyperlink_to("Read the full license", terms.url);
+                ui.add_space(12.0);
+                if theme::button_sized(ui, Role::Quiet, true, "Close", egui::vec2(0.0, 24.0)).clicked() {
+                    close = true;
+                }
+            });
+        });
+    close
 }
 
 fn megabytes(bytes: u64) -> String {
