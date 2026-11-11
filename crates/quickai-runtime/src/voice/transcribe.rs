@@ -1,11 +1,13 @@
 //! What was said, written down by quickai-whisper (everybodyai/quickai-whisper: whisper.cpp in a program of its own,
-//! which the packages carry next to the app, as they carry llama-server). It is started with the speech model the first
-//! time something is to be written down and kept running, so the model is loaded once; a recording goes to it on its
-//! input and its words come back as a line of JSON (the protocol is its README's). A thread of its own talks to it, so
-//! the window never waits.
+//! which the packages carry next to the app, as they carry llama-server), or, with the Omnilingual model, by
+//! quickai-voice `--hear` (everybodyai/quickai-voice, downloaded with the model). The program is started with the speech
+//! model the first time something is to be written down and kept running, so the model is loaded once; a recording goes
+//! to it on its input and its words come back as a line of JSON (the protocol is quickai-whisper's README's; quickai-voice
+//! talks the same). A thread of its own talks to it, so the window never waits.
 //!
-//! The program runs on the processor alone. `quickai-whisper-avx2` is taken where the processor has AVX2, FMA, F16C and
-//! BMI2 (two to five times as fast), else `quickai-whisper`; `QUICKAI_WHISPER_BIN` names one (tests, development).
+//! Both run on the processor alone. `quickai-whisper-avx2` is taken where the processor has AVX2, FMA, F16C and BMI2 (two
+//! to five times as fast), else `quickai-whisper`; `QUICKAI_WHISPER_BIN` names one (tests, development), as
+//! `QUICKAI_VOICE_BIN` names quickai-voice.
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -15,11 +17,13 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use super::settings::SpeechEngine;
 use super::RATE;
 
 /// What to write down.
 struct Job {
     id: u64,
+    engine: SpeechEngine,
     model: PathBuf,
     samples: Vec<f32>,
     language: Option<String>,
@@ -77,10 +81,19 @@ impl Transcriber {
         Transcriber { jobs, written }
     }
 
-    /// Asks for `samples` (16 kHz mono) to be written down with `model`; the answer comes with `id`.
-    pub fn write(&self, id: u64, model: &Path, samples: Vec<f32>, language: Option<String>) {
+    /// Asks for `samples` (16 kHz mono) to be written down with `model` (the path of its model file), which `engine`
+    /// runs; the answer comes with `id`.
+    pub fn write(
+        &self,
+        id: u64,
+        engine: SpeechEngine,
+        model: &Path,
+        samples: Vec<f32>,
+        language: Option<String>,
+    ) {
         let _ = self.jobs.send(Job {
             id,
+            engine,
             model: model.to_path_buf(),
             samples,
             language,
@@ -93,8 +106,17 @@ impl Transcriber {
     }
 }
 
-/// The program QuickAI runs, where it is: `QUICKAI_WHISPER_BIN`, else the faster build the processor can run, in the
-/// first of `paths::speech_program_dirs` that has one.
+/// The program that runs `engine`'s models, where it is: quickai-whisper (`program`), or quickai-voice
+/// (`voices::program`).
+pub fn program_for(engine: SpeechEngine) -> Option<PathBuf> {
+    match engine {
+        SpeechEngine::Whisper => program(),
+        SpeechEngine::Omnilingual => super::voices::program(),
+    }
+}
+
+/// quickai-whisper, where it is: `QUICKAI_WHISPER_BIN`, else the faster build the processor can run, in the first of
+/// `paths::speech_program_dirs` that has one.
 pub fn program() -> Option<PathBuf> {
     if let Some(named) = std::env::var_os("QUICKAI_WHISPER_BIN") {
         return Some(PathBuf::from(named)).filter(|p| p.is_file());
@@ -141,8 +163,15 @@ struct Running {
 }
 
 impl Running {
-    fn start(program: &Path, model: &Path) -> Result<Running, String> {
+    fn start(program: &Path, engine: SpeechEngine, model: &Path) -> Result<Running, String> {
         let mut command = Command::new(program);
+        if engine == SpeechEngine::Omnilingual {
+            // its tokens are beside the model
+            command
+                .arg("--hear")
+                .arg("--tokens")
+                .arg(model.with_file_name("tokens.txt"));
+        }
         command
             .arg("--model")
             .arg(model)
@@ -166,9 +195,21 @@ impl Running {
         };
         let (tx, lines) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            for line in BufReader::new(output).lines() {
-                let Ok(line) = line else { break };
-                if tx.send(line).is_err() {
+            let mut output = BufReader::new(output);
+            let mut bytes = Vec::new();
+            loop {
+                bytes.clear();
+                match output.read_until(b'\n', &mut bytes) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+                // whisper can cut a character in two (a word it made up, or its last token): what it wrote is still
+                // read, with the broken character replaced, and the program is still listened to
+                let line = String::from_utf8_lossy(&bytes);
+                if tx
+                    .send(line.trim_end_matches(['\n', '\r']).to_string())
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -275,7 +316,7 @@ fn write_down(running: &mut Option<Running>, job: Job) -> Result<Written, String
             language: None,
         });
     }
-    let program = program().ok_or_else(missing)?;
+    let program = program_for(job.engine).ok_or_else(|| missing_for(job.engine))?;
     // started, or started again for another model, another program, or after it stopped
     let current = running.as_mut().is_some_and(|r| {
         r.model == job.model && r.program == program && matches!(r.child.try_wait(), Ok(None))
@@ -284,7 +325,7 @@ fn write_down(running: &mut Option<Running>, job: Job) -> Result<Written, String
         if let Some(mut old) = running.take() {
             old.end();
         }
-        *running = Some(Running::start(&program, &job.model)?);
+        *running = Some(Running::start(&program, job.engine, &job.model)?);
     }
     let Some(r) = running.as_mut() else {
         return Err("the speech program is not running".into());
@@ -333,6 +374,16 @@ fn write_down(running: &mut Option<Running>, job: Job) -> Result<Written, String
         text: clean(text),
         language,
     })
+}
+
+/// Why speech to text with `engine`'s models cannot work here: its program is not there.
+pub fn missing_for(engine: SpeechEngine) -> String {
+    match engine {
+        SpeechEngine::Whisper => missing(),
+        SpeechEngine::Omnilingual => "QuickAI's voice program (quickai-voice), which the Omnilingual model needs, is \
+                                      not on this computer: download the model again in Settings › Voice"
+            .into(),
+    }
 }
 
 /// Why speech to text cannot work here: the program is not next to the app.
@@ -396,6 +447,40 @@ mod tests {
         assert_eq!(clean("  What can I   cook?  "), "What can I cook?");
     }
 
+    /// A line with a character cut in two (whisper's made-up words do that) is read with the character replaced, and
+    /// the program is still listened to.
+    #[cfg(unix)]
+    #[test]
+    fn a_character_cut_in_two_is_read_and_the_program_still_listened_to() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("quickai-cut-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let program = dir.join("fake-whisper");
+        // ready, then each request answered with words whose last character lacks its last byte (of U+0D02)
+        std::fs::write(
+            &program,
+            "#!/bin/sh\necho '{\"ready\":true}'\nwhile read -r line; do printf \
+             '{\"id\":1,\"text\":\"ok \\340\\264\",\"language\":\"ml\",\"ms\":1}\\n'; done\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut r = Running::start(
+            &program,
+            SpeechEngine::Whisper,
+            Path::new("/nowhere/model.bin"),
+        )
+        .unwrap();
+        for _ in 0..2 {
+            r.input.write_all(b"transcribe 1 0 ml\n").unwrap();
+            r.input.flush().unwrap();
+            let line = r.line(Duration::from_secs(10)).unwrap();
+            let said: serde_json::Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(said["text"], "ok \u{FFFD}", "{line}");
+        }
+        r.end();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A program that is not there is said, and nothing is started for a click of the button.
     #[test]
     fn a_missing_program_is_said_and_a_click_needs_none() {
@@ -403,7 +488,13 @@ mod tests {
         let t = Transcriber::new(move || {
             let _ = tx.send(());
         });
-        t.write(1, Path::new("/nowhere/model.bin"), vec![0.0; 100], None);
+        t.write(
+            1,
+            SpeechEngine::Whisper,
+            Path::new("/nowhere/model.bin"),
+            vec![0.0; 100],
+            None,
+        );
         rx.recv_timeout(Duration::from_secs(10)).unwrap();
         assert_eq!(
             t.take(),
@@ -416,6 +507,7 @@ mod tests {
         let mut gone: Option<Running> = None;
         let job = Job {
             id: 2,
+            engine: SpeechEngine::Whisper,
             model: PathBuf::from("/nowhere/model.bin"),
             samples: vec![0.0; 16_000],
             language: None,
@@ -425,6 +517,57 @@ mod tests {
             assert!(write_down(&mut gone, job)
                 .unwrap_err()
                 .contains("quickai-whisper"));
+        }
+    }
+
+    /// With quickai-voice (where `voices::program` finds it, as `QUICKAI_VOICE_BIN`), the Omnilingual model
+    /// (`QUICKAI_TEST_OMNILINGUAL_MODEL`, its model.int8.onnx with tokens.txt beside it) and a recording of a sentence
+    /// (`QUICKAI_TEST_OMNILINGUAL_WAV`, 16 kHz mono: the model's own `test_wavs/en.wav` made so), what it says is
+    /// written down, without capitals or punctuation, and the language asked for is said back. Left out when they are
+    /// not there. (Not whisper.cpp's sample: the old recording comes out empty from this model past its first words.)
+    #[test]
+    fn a_recording_is_written_down_by_omnilingual() {
+        let (Some(model), Some(wav)) = (
+            std::env::var_os("QUICKAI_TEST_OMNILINGUAL_MODEL"),
+            std::env::var_os("QUICKAI_TEST_OMNILINGUAL_WAV"),
+        ) else {
+            return;
+        };
+        if program_for(SpeechEngine::Omnilingual).is_none() {
+            return;
+        }
+        let bytes = std::fs::read(wav).unwrap();
+        let samples: Vec<f32> = bytes[44..]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| i16::from_le_bytes(*c) as f32 / 32768.0)
+            .collect();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let t = Transcriber::new(move || {
+            let _ = tx.send(());
+        });
+        t.write(
+            1,
+            SpeechEngine::Omnilingual,
+            Path::new(&model),
+            samples,
+            Some("en".into()),
+        );
+        rx.recv_timeout(Duration::from_secs(120)).unwrap();
+        match &t.take()[..] {
+            [Written::Words {
+                id: 1,
+                text,
+                language,
+            }] => {
+                assert!(
+                    text.contains("ask not what your country can do for you"),
+                    "{text}"
+                );
+                assert_eq!(language.as_deref(), Some("en"));
+            }
+            other => panic!("{other:?}"),
         }
     }
 
@@ -453,9 +596,16 @@ mod tests {
         let t = Transcriber::new(move || {
             let _ = tx.send(());
         });
-        t.write(1, Path::new(&model), samples.clone(), None);
+        t.write(
+            1,
+            SpeechEngine::Whisper,
+            Path::new(&model),
+            samples.clone(),
+            None,
+        );
         t.write(
             2,
+            SpeechEngine::Whisper,
             Path::new(&model),
             samples[..16_000 * 3].to_vec(),
             Some("en".into()),

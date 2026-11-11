@@ -93,13 +93,14 @@ const NO_WARRANTY: &str = "AI models can produce inaccurate, biased or incomplet
 /// What the bundled packages carry, the others download on request too.
 const ON_REQUEST: &str = "Other components are downloaded only at your request, each under its own license: \
      Ollama (MIT), ComfyUI (GPL-3.0), Open WebUI (Open WebUI License, which requires that its name and logo be \
-     retained), the voice program quickai-voice (GPL-3.0) and its voices, and each model, under the license set \
-     by its publisher.";
+     retained), the voice program quickai-voice (GPL-3.0), its voices and the Omnilingual speech recognition model \
+     (Apache-2.0), and each model, under the license set by its publisher.";
 
 const ON_REQUEST_ALONE: &str = "Other components are downloaded only at your request, each under its own \
-     license: llama.cpp (MIT), the speech recognition model (MIT), Ollama (MIT), ComfyUI (GPL-3.0), Open WebUI \
-     (Open WebUI License, which requires that its name and logo be retained), the voice program quickai-voice \
-     (GPL-3.0) and its voices, and each model, under the license set by its publisher.";
+     license: llama.cpp (MIT), the Whisper speech recognition models (MIT), Ollama (MIT), ComfyUI (GPL-3.0), Open \
+     WebUI (Open WebUI License, which requires that its name and logo be retained), the voice program \
+     quickai-voice (GPL-3.0), its voices and the Omnilingual speech recognition model (Apache-2.0), and each model, \
+     under the license set by its publisher.";
 
 /// What this package carries besides QuickAI, seen beside its program: llama-server, the model and the speech model
 /// of the packages whose names end in `-with-llamacpp-bonsai2-4b`, and quickai-whisper, which every package has.

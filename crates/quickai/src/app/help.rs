@@ -364,8 +364,9 @@ const PAGES: &[Page] = &[
             .at(Spot::Mic),
             step(
                 "On first use, QuickAI downloads its speech recognition model (82 MB), unless your package already \
-                 includes it. A larger model that handles accents and background noise better is available in \
-                 **Settings › Voice**.",
+                 includes it. In **Settings › Voice** you can choose a larger Whisper model, which handles accents \
+                 and background noise better, or **Omnilingual**, which writes languages such as Malayalam, Bengali \
+                 and Marathi in their own script.",
             ),
             step(
                 "QuickAI does not include a voice: choose one in **Settings › Voice › Read with**. **Kokoro** is \

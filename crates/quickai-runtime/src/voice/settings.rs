@@ -1,5 +1,5 @@
-//! What the person chose for talking to QuickAI (`app.voice` in the settings), the speech models whisper.cpp can use,
-//! and the languages it hears.
+//! What the person chose for talking to QuickAI (`app.voice` in the settings), the speech models (whisper.cpp's, and
+//! Omnilingual ASR), and the languages whisper hears.
 
 use std::path::{Path, PathBuf};
 
@@ -205,46 +205,108 @@ impl VoiceSettings {
     }
 }
 
-/// A speech model of whisper.cpp, pinned: a file of `ggerganov/whisper.cpp` at one commit, its size and its hash.
+/// What writes down with a speech model: quickai-whisper (whisper.cpp), or quickai-voice `--hear` (sherpa-onnx).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpeechEngine {
+    Whisper,
+    /// Meta's Omnilingual ASR: 1600 languages, the ones whisper writes poorly among them; it tells the language itself,
+    /// and writes without capitals or punctuation.
+    Omnilingual,
+}
+
+/// A file of a speech model, pinned: its name in the repository (and on this computer), its size and its hash.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpeechFile {
+    pub name: &'static str,
+    pub bytes: u64,
+    pub sha256: &'static str,
+}
+
+/// A speech model, pinned: files of a Hugging Face repository at one commit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SpeechModel {
     pub id: &'static str,
     pub name: &'static str,
-    pub file: &'static str,
-    pub bytes: u64,
-    pub sha256: &'static str,
+    pub engine: SpeechEngine,
+    /// The Hugging Face repository its files are in, and the commit they are taken from.
+    pub repo: &'static str,
+    pub commit: &'static str,
+    /// The folder of the speech models folder its files are kept in; empty for the folder itself.
+    pub folder: &'static str,
+    /// Its files, the model first.
+    pub files: &'static [SpeechFile],
     /// What it is good for, in a few words.
     pub about: &'static str,
 }
 
-/// The commit of `ggerganov/whisper.cpp` on Hugging Face the files are taken from (2024-10-29).
-const REPO_COMMIT: &str = "5359861c739e955e79d9a303bcbc70fb988958b1";
+/// The commit of `ggerganov/whisper.cpp` on Hugging Face whisper's files are taken from (2024-10-29).
+const WHISPER_COMMIT: &str = "5359861c739e955e79d9a303bcbc70fb988958b1";
 
-/// The models, smallest first: the first is the default, and the one the bundled packages carry.
-pub const SPEECH_MODELS: [SpeechModel; 3] = [
+/// The models, whisper's smallest first, then Omnilingual: the first is the default, and the one the bundled packages
+/// carry.
+pub const SPEECH_MODELS: [SpeechModel; 4] = [
     SpeechModel {
         id: "base",
         name: "Whisper base",
-        file: "ggml-base-q8_0.bin",
-        bytes: 81_768_585,
-        sha256: "c577b9a86e7e048a0b7eada054f4dd79a56bbfa911fbdacf900ac5b567cbb7d9",
+        engine: SpeechEngine::Whisper,
+        repo: "ggerganov/whisper.cpp",
+        commit: WHISPER_COMMIT,
+        folder: "",
+        files: &[SpeechFile {
+            name: "ggml-base-q8_0.bin",
+            bytes: 81_768_585,
+            sha256: "c577b9a86e7e048a0b7eada054f4dd79a56bbfa911fbdacf900ac5b567cbb7d9",
+        }],
         about: "Quick; clear speech in a quiet room",
     },
     SpeechModel {
         id: "small",
         name: "Whisper small",
-        file: "ggml-small-q8_0.bin",
-        bytes: 264_464_607,
-        sha256: "49c8fb02b65e6049d5fa6c04f81f53b867b5ec9540406812c643f177317f779f",
+        engine: SpeechEngine::Whisper,
+        repo: "ggerganov/whisper.cpp",
+        commit: WHISPER_COMMIT,
+        folder: "",
+        files: &[SpeechFile {
+            name: "ggml-small-q8_0.bin",
+            bytes: 264_464_607,
+            sha256: "49c8fb02b65e6049d5fa6c04f81f53b867b5ec9540406812c643f177317f779f",
+        }],
         about: "Hears accents, noise and other languages better; slower",
     },
     SpeechModel {
         id: "turbo",
         name: "Whisper large turbo",
-        file: "ggml-large-v3-turbo-q5_0.bin",
-        bytes: 574_041_195,
-        sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+        engine: SpeechEngine::Whisper,
+        repo: "ggerganov/whisper.cpp",
+        commit: WHISPER_COMMIT,
+        folder: "",
+        files: &[SpeechFile {
+            name: "ggml-large-v3-turbo-q5_0.bin",
+            bytes: 574_041_195,
+            sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+        }],
         about: "Hears best; slow on a computer without a strong processor",
+    },
+    SpeechModel {
+        id: "omnilingual",
+        name: "Omnilingual",
+        engine: SpeechEngine::Omnilingual,
+        repo: "csukuangfj/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12",
+        commit: "6abf1ece20cd2308bdb7d13cd78ec1c44fa4c094",
+        folder: "omnilingual-asr-300m",
+        files: &[
+            SpeechFile {
+                name: "model.int8.onnx",
+                bytes: 365_352_120,
+                sha256: "e7c4e54ee4c4c47829cc6667d5d00ed8ea7bef1dcfeef0fce766f77752a2726c",
+            },
+            SpeechFile {
+                name: "tokens.txt",
+                bytes: 86_423,
+                sha256: "a7a044c52cb29cbe8b0dc1953e92cefd4ca16b0ed968177b6beab21f9a7d0b31",
+            },
+        ],
+        about: "1600 languages, Malayalam, Telugu and Kannada among them; quick; no capitals or punctuation",
     },
 ];
 
@@ -252,28 +314,57 @@ pub fn speech_model(id: &str) -> Option<&'static SpeechModel> {
     SPEECH_MODELS.iter().find(|m| m.id == id)
 }
 
+/// The model Settings suggests for a language whisper writes poorly.
+pub fn omnilingual() -> &'static SpeechModel {
+    &SPEECH_MODELS[3]
+}
+
 impl SpeechModel {
-    pub fn url(&self) -> String {
+    /// Where `file` is downloaded from.
+    pub fn url(&self, file: &SpeechFile) -> String {
         format!(
-            "https://huggingface.co/ggerganov/whisper.cpp/resolve/{REPO_COMMIT}/{}",
-            self.file
+            "https://huggingface.co/{}/resolve/{}/{}",
+            self.repo, self.commit, file.name
         )
+    }
+
+    /// The bytes of all its files.
+    pub fn bytes(&self) -> u64 {
+        self.files.iter().map(|f| f.bytes).sum()
     }
 
     /// `82 MB`.
     pub fn size_words(&self) -> String {
-        format!("{} MB", (self.bytes as f64 / 1_000_000.0).round())
+        format!("{} MB", (self.bytes() as f64 / 1_000_000.0).round())
     }
 
-    /// Where it is on this computer: the package's own (`bundled`), then the one downloaded (`user`). A file of the
-    /// wrong size (cut short) is not it.
+    /// The folder its files are kept in, in the speech models folder `dir`.
+    pub fn dir_in(&self, dir: &Path) -> PathBuf {
+        if self.folder.is_empty() {
+            dir.to_path_buf()
+        } else {
+            dir.join(self.folder)
+        }
+    }
+
+    /// Where it is on this computer: the package's own (`bundled`), then the one downloaded (`user`), as the path of its
+    /// model file. Every file is there, whole: a file of the wrong size (cut short) is not it.
     pub fn found_in(&self, bundled: &Path, user: &Path) -> Option<PathBuf> {
-        [bundled, user]
-            .into_iter()
-            .map(|dir| dir.join(self.file))
-            .find(|p| std::fs::metadata(p).is_ok_and(|m| m.len() == self.bytes))
+        [bundled, user].into_iter().find_map(|dir| {
+            let dir = self.dir_in(dir);
+            self.files
+                .iter()
+                .all(|f| std::fs::metadata(dir.join(f.name)).is_ok_and(|m| m.len() == f.bytes))
+                .then(|| dir.join(self.files[0].name))
+        })
     }
 }
+
+/// The languages whisper writes poorly, by whisper's codes: Settings suggests Omnilingual for them. Measured on read
+/// sentences (2026-11), Whisper small wrote Malayalam as sounds in Latin letters, Punjabi and Gujarati in Devanagari,
+/// and Telugu, Kannada, Marathi and Bengali as made-up or repeated words; Omnilingual wrote all but Gujarati with a few
+/// characters in a hundred wrong. Tamil, which whisper writes fairly, is not among them.
+pub const WHISPER_WRITES_POORLY: [&str; 7] = ["bn", "gu", "kn", "ml", "mr", "pa", "te"];
 
 /// The languages whisper hears, as it names them, with their names: the common ones first, then the rest in the
 /// order of their names.
@@ -385,23 +476,60 @@ mod tests {
     }
 
     #[test]
+    fn the_languages_omnilingual_is_offered_for_are_whispers() {
+        for code in WHISPER_WRITES_POORLY {
+            assert_ne!(language_name(code), code, "{code} is not in LANGUAGES");
+        }
+        assert_eq!(omnilingual().engine, SpeechEngine::Omnilingual);
+        assert_eq!(speech_model("omnilingual"), Some(omnilingual()));
+    }
+
+    #[test]
     fn a_model_is_found_where_it_is_whole() {
         let dir = std::env::temp_dir().join(format!("quickai-speech-{}", std::process::id()));
         let (bundled, user) = (dir.join("bundled"), dir.join("user"));
         std::fs::create_dir_all(&user).unwrap();
         let base = &SPEECH_MODELS[0];
         assert_eq!(base.found_in(&bundled, &user), None);
-        let file = std::fs::File::create(user.join(base.file)).unwrap();
-        file.set_len(base.bytes - 1).unwrap();
+        let file = std::fs::File::create(user.join(base.files[0].name)).unwrap();
+        file.set_len(base.bytes() - 1).unwrap();
         assert_eq!(
             base.found_in(&bundled, &user),
             None,
             "a file cut short is not it"
         );
-        file.set_len(base.bytes).unwrap();
-        assert_eq!(base.found_in(&bundled, &user), Some(user.join(base.file)));
-        assert!(base.url().ends_with("/ggml-base-q8_0.bin"));
+        file.set_len(base.bytes()).unwrap();
+        assert_eq!(
+            base.found_in(&bundled, &user),
+            Some(user.join("ggml-base-q8_0.bin"))
+        );
+        assert!(base.url(&base.files[0]).ends_with(
+            "/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q8_0.bin"
+        ));
         assert_eq!(base.size_words(), "82 MB");
+
+        // Omnilingual: its files in a folder of their own, every one of them there
+        let omni = omnilingual();
+        assert_eq!(omni.id, "omnilingual");
+        let folder = user.join("omnilingual-asr-300m");
+        std::fs::create_dir_all(&folder).unwrap();
+        let model = std::fs::File::create(folder.join("model.int8.onnx")).unwrap();
+        model.set_len(omni.files[0].bytes).unwrap();
+        assert_eq!(
+            omni.found_in(&bundled, &user),
+            None,
+            "its tokens are missing"
+        );
+        let tokens = std::fs::File::create(folder.join("tokens.txt")).unwrap();
+        tokens.set_len(omni.files[1].bytes).unwrap();
+        assert_eq!(
+            omni.found_in(&bundled, &user),
+            Some(folder.join("model.int8.onnx"))
+        );
+        assert!(omni
+            .url(&omni.files[1])
+            .ends_with("/resolve/6abf1ece20cd2308bdb7d13cd78ec1c44fa4c094/tokens.txt"));
+        assert_eq!(omni.size_words(), "365 MB");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -444,6 +444,14 @@ pub fn install_program(archive: &Path) -> Result<(), String> {
     if program().is_none() {
         return Err("the voice program's archive did not hold it".into());
     }
+    // the releases downloaded before this one are no longer used
+    if let (Some(bin), Some(this)) = (dir.parent(), dir.file_name()) {
+        for entry in std::fs::read_dir(bin).into_iter().flatten().flatten() {
+            if entry.file_name() != this && entry.path().is_dir() {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
     Ok(())
 }
 

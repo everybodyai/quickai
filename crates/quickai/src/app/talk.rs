@@ -27,7 +27,8 @@ use super::App;
 use crate::jobs::Job;
 use crate::paths;
 use crate::voice::settings::{
-    language_name, speech_model, SpeechModel, VoiceSettings, LANGUAGES, SPEECH_MODELS,
+    language_name, omnilingual, speech_model, SpeechEngine, SpeechModel, VoiceSettings, LANGUAGES,
+    SPEECH_MODELS, WHISPER_WRITES_POORLY,
 };
 use crate::voice::settings::{Reader, MAX_PAUSE_MS, MIN_PAUSE_MS};
 use crate::voice::speak::{self, Speaker, Spoken};
@@ -249,14 +250,27 @@ impl Talk {
 /// The microphone works in this build.
 pub(super) const CAN_HEAR: bool = cfg!(feature = "voice");
 
+/// `model` can write down here: its files are on this computer, and, for Omnilingual, the voice program that runs it
+/// (downloaded with it). quickai-whisper, which the packages carry, is not asked for: its absence is said on its own.
+fn speech_ready(model: &SpeechModel) -> bool {
+    model
+        .found_in(&paths::bundled_speech_dir(), &paths::user_speech_dir())
+        .is_some()
+        && (model.engine == SpeechEngine::Whisper || voices::program().is_some())
+}
+
 impl App {
     fn speech_model_now(&self) -> &'static SpeechModel {
         speech_model(&self.talk.settings.model).unwrap_or(&SPEECH_MODELS[0])
     }
 
+    /// The chosen model's file, when it can write down here (`speech_ready`).
     fn speech_model_path(&self) -> Option<PathBuf> {
-        self.speech_model_now()
-            .found_in(&paths::bundled_speech_dir(), &paths::user_speech_dir())
+        let model = self.speech_model_now();
+        if !speech_ready(model) {
+            return None;
+        }
+        model.found_in(&paths::bundled_speech_dir(), &paths::user_speech_dir())
     }
 
     fn speaker(&mut self, ctx: &egui::Context) -> &Speaker {
@@ -431,8 +445,11 @@ impl App {
                     }
                 }
             }
-            // the program that writes down what was said (quickai-whisper), which the packages carry next to the app
-            if crate::voice::transcribe::program().is_none() {
+            // the program that writes down what was said with whisper (quickai-whisper), which the packages carry next to
+            // the app; Omnilingual's (quickai-voice) is downloaded with its model
+            if self.speech_model_now().engine == SpeechEngine::Whisper
+                && crate::voice::transcribe::program().is_none()
+            {
                 if purpose == Purpose::Test {
                     self.talk.trial.note = Some(crate::voice::transcribe::missing());
                     return;
@@ -520,6 +537,8 @@ impl App {
             let Some(model) = self.speech_model_path() else {
                 return;
             };
+            let engine = self.speech_model_now().engine;
+            let language = self.talk.settings.language.clone();
             self.talk.next += 1;
             let id = self.talk.next;
             let wake = ctx.clone();
@@ -527,7 +546,7 @@ impl App {
                 .talk
                 .transcriber
                 .get_or_insert_with(|| Transcriber::new(move || wake.request_repaint()));
-            transcriber.write(id, &model, samples, self.talk.settings.language.clone());
+            transcriber.write(id, engine, &model, samples, language);
             self.talk.writing = Some((id, l.purpose));
             if let Some(hf) = &mut self.talk.hands_free {
                 hf.phase = Phase::Writing;
@@ -1128,19 +1147,45 @@ impl App {
             return;
         }
         use quickai_core::lookup::present::{Download, Piece};
-        let download = Download {
-            files: vec![Piece {
+        let mut files: Vec<Piece> = model
+            .files
+            .iter()
+            .map(|f| Piece {
                 kind: None,
                 label: "speech model".into(),
-                url: model.url(),
-                store_as: model.file.into(),
-                name: model.file.into(),
-                size: Some(model.bytes),
-                sha256: Some(model.sha256.into()),
+                url: model.url(f),
+                store_as: f.name.into(),
+                name: f.name.into(),
+                size: Some(f.bytes),
+                sha256: Some(f.sha256.into()),
+                place: (!model.folder.is_empty()).then(|| model.folder.to_string()),
+            })
+            .collect();
+        // Omnilingual is run by quickai-voice: it comes too when it is not here, and is unpacked once it has
+        if model.engine == SpeechEngine::Omnilingual && voices::program().is_none() {
+            let Some(asset) = VOICE_PROGRAM.here() else {
+                self.talk.card = Some(Card::Said {
+                    title: "The speech model cannot run here".into(),
+                    words: "QuickAI's voice program, which runs it, is not made for this system."
+                        .into(),
+                });
+                return;
+            };
+            files.push(Piece {
+                kind: None,
+                label: "voice program".into(),
+                url: VOICE_PROGRAM.url(&asset),
+                store_as: asset.archive.into(),
+                name: asset.archive.into(),
+                size: Some(asset.bytes),
+                sha256: Some(asset.sha256.into()),
                 place: None,
-            }],
+            });
+        }
+        let download = Download {
+            files,
             bundle: None,
-            source: "huggingface:ggerganov/whisper.cpp".into(),
+            source: format!("huggingface:{}", model.repo),
             mode: None,
         };
         let with = crate::downloader::FetchWith {
@@ -1168,6 +1213,15 @@ impl App {
         let purpose = match &self.talk.card {
             Some(Card::Downloading { purpose, .. }) => *purpose,
             _ => None,
+        };
+        // the voice program, when it came with the model
+        let program = VOICE_PROGRAM
+            .here()
+            .map(|asset| paths::user_speech_dir().join(asset.archive))
+            .filter(|archive| archive.is_file());
+        let done = match (done, program) {
+            (Ok(got), Some(archive)) => voices::install_program(&archive).map(|()| got),
+            (done, _) => done,
         };
         match done {
             Ok(_) => {
@@ -1573,8 +1627,8 @@ impl App {
                             }
                             Card::Downloading { model, .. } => {
                                 head(ui, Icon::Download, p.body, "Downloading the speech model");
-                                let (done, total) = progress.unwrap_or((0, Some(model.bytes)));
-                                let total = total.unwrap_or(model.bytes).max(1);
+                                let (done, total) = progress.unwrap_or((0, Some(model.bytes())));
+                                let total = total.unwrap_or(model.bytes()).max(1);
                                 ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_height(6.0));
                                 ui.label(egui::RichText::new(format!(
                                     "{:.0} of {:.0} MB",
@@ -1651,6 +1705,7 @@ impl App {
                 return;
             };
             let model = self.speech_model_now().name;
+            let engine = self.speech_model_now().engine;
             self.talk.next += 1;
             let id = self.talk.next;
             let wake = ctx.clone();
@@ -1660,6 +1715,7 @@ impl App {
                 .get_or_insert_with(|| Transcriber::new(move || wake.request_repaint()));
             transcriber.write(
                 id,
+                engine,
                 &path,
                 self.talk.trial.samples.clone(),
                 self.talk.settings.language.clone(),
@@ -2068,54 +2124,79 @@ impl App {
                 .as_deref()
                 .map_or("Tell it from what is said", language_name)
                 .to_string();
-            setting_row(
-                ui,
-                "Language",
-                Some("What you speak in. Told from what is said, it can mistake a short sentence."),
-                None,
-                |ui| {
-                    egui::ComboBox::from_id_salt("voice_language")
-                        .selected_text(shown)
-                        .width(220.0)
-                        .height(320.0)
-                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                        .show_ui(ui, |ui| {
-                            let query =
-                                search_box(ui, &mut self.talk.language_search, "Search languages");
-                            if query.is_empty()
-                                && ui
-                                    .selectable_label(
-                                        language.is_none(),
-                                        "Tell it from what is said",
-                                    )
-                                    .clicked()
+            let language_about = if self.speech_model_now().engine == SpeechEngine::Omnilingual {
+                "What you speak in, for the Whisper models: Omnilingual tells it from what is said."
+            } else {
+                "What you speak in. Told from what is said, it can mistake a short sentence."
+            };
+            setting_row(ui, "Language", Some(language_about), None, |ui| {
+                egui::ComboBox::from_id_salt("voice_language")
+                    .selected_text(shown)
+                    .width(220.0)
+                    .height(320.0)
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                    .show_ui(ui, |ui| {
+                        let query =
+                            search_box(ui, &mut self.talk.language_search, "Search languages");
+                        if query.is_empty()
+                            && ui
+                                .selectable_label(language.is_none(), "Tell it from what is said")
+                                .clicked()
+                        {
+                            self.talk.settings.language = None;
+                            changed = true;
+                            ui.close();
+                        }
+                        for (code, name) in LANGUAGES
+                            .iter()
+                            .filter(|(code, name)| matches(&query, &[code, name]))
+                        {
+                            if ui
+                                .selectable_label(language.as_deref() == Some(*code), *name)
+                                .clicked()
                             {
-                                self.talk.settings.language = None;
+                                self.talk.settings.language = Some(code.to_string());
                                 changed = true;
                                 ui.close();
                             }
-                            for (code, name) in LANGUAGES
-                                .iter()
-                                .filter(|(code, name)| matches(&query, &[code, name]))
-                            {
-                                if ui
-                                    .selectable_label(language.as_deref() == Some(*code), *name)
-                                    .clicked()
-                                {
-                                    self.talk.settings.language = Some(code.to_string());
-                                    changed = true;
-                                    ui.close();
-                                }
-                            }
-                        });
-                },
-            );
+                        }
+                    });
+            });
+            // whisper writes some languages poorly (in another script, or as sounds in Latin letters): Omnilingual is
+            // offered for them
+            let poorly = self
+                .talk
+                .settings
+                .language
+                .as_deref()
+                .filter(|code| WHISPER_WRITES_POORLY.contains(code));
+            if let (Some(code), SpeechEngine::Whisper) = (poorly, self.speech_model_now().engine) {
+                ui.add_space(2.0);
+                ui.label(
+                    theme::muted(format!(
+                        "Whisper writes {} poorly, often in another script. Omnilingual writes it in its own.",
+                        language_name(code)
+                    ))
+                    .small(),
+                );
+                ui.add_space(4.0);
+                if theme::button_sized(
+                    ui,
+                    Role::Normal,
+                    true,
+                    "Use Omnilingual",
+                    egui::vec2(0.0, 24.0),
+                )
+                .clicked()
+                {
+                    self.talk.settings.model = omnilingual().id.to_string();
+                    changed = true;
+                }
+                ui.add_space(4.0);
+            }
             row_line(ui);
             let chosen = self.speech_model_now();
-            let here = |m: &SpeechModel| {
-                m.found_in(&paths::bundled_speech_dir(), &paths::user_speech_dir())
-                    .is_some()
-            };
+            let here = |m: &SpeechModel| speech_ready(m);
             setting_row(ui, "Speech model", Some(chosen.about), None, |ui| {
                 egui::ComboBox::from_id_salt("voice_model")
                     .selected_text(format!("{} · {}", chosen.name, chosen.size_words()))
