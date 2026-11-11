@@ -71,6 +71,8 @@ pub struct VoicePack {
     pub license: &'static str,
     /// The names of its voices, in the order of their numbers.
     pub speakers: &'static [&'static str],
+    /// A sentence in its language, for Settings › Voice to read with it (`sample`).
+    pub sample: &'static str,
 }
 
 /// Kokoro v1.0's voices, as the model names them: the first letter is the language, the second w(oman) or m(an).
@@ -135,12 +137,14 @@ const KOKORO_V1: &[&str] = &[
 const PACKS_AT: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/";
 
 /// The packs offered, the recommended first: the whole Kokoro, which is also the quicker on a desktop's processor (a
-/// sentence in a fifth of its own length on 8 threads), then the smaller one, for a slow connection.
-pub const VOICE_PACKS: [VoicePack; 2] = [
+/// sentence in a fifth of its own length on 8 threads), then the smaller one, for a slow connection; then a voice for
+/// each of the languages Kokoro lacks that QuickAI's people asked for, the clearest whose licence lets anyone use it
+/// (2026-11: each read sentences that speech recognition wrote back with 6 to 10 characters wrong in a hundred).
+pub const VOICE_PACKS: [VoicePack; 5] = [
     VoicePack {
         id: "kokoro",
         name: "Kokoro",
-        about: "Natural voices for English and eight other languages",
+        about: "Natural voices for English, Hindi and seven other languages",
         archive: "kokoro-multi-lang-v1_0.tar.bz2",
         bytes: 349_886_476,
         sha256: "60703707bc05ccd48d60e1eb723f38b07d6e474795a0b6a588d7220400e0f7a4",
@@ -149,6 +153,7 @@ pub const VOICE_PACKS: [VoicePack; 2] = [
         kind: ModelKind::Kokoro,
         license: "Apache-2.0",
         speakers: KOKORO_V1,
+        sample: "Hello. This is how QuickAI reads its answers.",
     },
     VoicePack {
         id: "kokoro-small",
@@ -162,8 +167,63 @@ pub const VOICE_PACKS: [VoicePack; 2] = [
         kind: ModelKind::Kokoro,
         license: "Apache-2.0",
         speakers: KOKORO_V1,
+        sample: "Hello. This is how QuickAI reads its answers.",
+    },
+    // Nabra-82M (oddadmix/Nabra-82M-v0.1): Kokoro fine-tuned for Modern Standard Arabic, in sherpa-onnx's packing
+    VoicePack {
+        id: "arabic-nabra",
+        name: "Arabic · Nabra",
+        about: "A natural voice for Modern Standard Arabic (Kokoro, fine-tuned)",
+        archive: "nabra-82m-arabic-int8.tar.bz2",
+        bytes: 82_810_819,
+        sha256: "a8608a504b1db4dd538b821409fe50b2d5cf37650c0a8753fa215bd6445e9964",
+        folder: "nabra-82m-arabic-int8",
+        model: "model.int8.onnx",
+        kind: ModelKind::Kokoro,
+        license: "Apache-2.0",
+        speakers: &["Nabra"],
+        sample: "مرحبًا. هكذا تُقرأ الإجابات بصوت عالٍ.",
+    },
+    VoicePack {
+        id: "persian-amir",
+        name: "Persian · Amir",
+        about: "A man's voice for Persian (Farsi), by Piper",
+        archive: "vits-piper-fa_IR-amir-medium.tar.bz2",
+        bytes: 67_180_373,
+        sha256: "46af65c1cdd86ec300db3998f2bf31a68d9e38da930c0655c1ff6f610e84f864",
+        folder: "vits-piper-fa_IR-amir-medium",
+        model: "fa_IR-amir-medium.onnx",
+        kind: ModelKind::Vits,
+        license: "CC0-1.0",
+        speakers: &["Amir"],
+        sample: "سلام. پاسخ‌ها این‌گونه با صدای بلند خوانده می‌شوند.",
+    },
+    VoicePack {
+        id: "urdu-fasih",
+        name: "Urdu · Fasih",
+        about: "A man's voice for Urdu, by Piper",
+        archive: "vits-piper-ur_PK-fasih-medium.tar.bz2",
+        bytes: 67_227_718,
+        sha256: "de64e03109f3c896b7cf910db6d9ffd2703e3d665580d9a19bedbf3e0760d0e4",
+        folder: "vits-piper-ur_PK-fasih-medium",
+        model: "ur_PK-fasih-medium.onnx",
+        kind: ModelKind::Vits,
+        license: "MIT",
+        speakers: &["Fasih"],
+        sample: "السلام علیکم۔ جوابات اس طرح بلند آواز سے پڑھے جاتے ہیں۔",
     },
 ];
+
+/// The sentence Settings › Voice reads to let a voice be heard: in English, unless the voice is of another language
+/// (a pack's own, or a Hindi voice of Kokoro's).
+pub fn sample(pack: Option<&VoicePack>, speaker: Option<&str>) -> &'static str {
+    const HINDI: &str = "नमस्ते। उत्तर इस तरह बोलकर पढ़े जाते हैं।";
+    match (pack, speaker) {
+        (Some(p), Some(name)) if p.kind == ModelKind::Kokoro && name.starts_with('h') => HINDI,
+        (Some(p), _) => p.sample,
+        _ => "Hello. This is how QuickAI reads its answers.",
+    }
+}
 
 pub fn voice_pack(id: &str) -> Option<&'static VoicePack> {
     VOICE_PACKS.iter().find(|p| p.id == id)
@@ -192,7 +252,21 @@ impl VoicePack {
 
     /// What quickai-voice loads for it.
     pub fn spec(&self) -> ModelSpec {
-        describe_kokoro(&self.dir(), self.model)
+        let dir = self.dir();
+        match self.kind {
+            ModelKind::Vits => {
+                let at = |f: &str| dir.join(f).to_string_lossy().into_owned();
+                ModelSpec {
+                    kind: ModelKind::Vits,
+                    files: BTreeMap::from([
+                        ("model", at(self.model)),
+                        ("tokens", at("tokens.txt")),
+                        ("data_dir", at("espeak-ng-data")),
+                    ]),
+                }
+            }
+            _ => describe_kokoro(&dir, self.model),
+        }
     }
 
     /// The number of a voice by its name.
@@ -496,6 +570,29 @@ mod tests {
         assert!(kokoro
             .url()
             .ends_with("/tts-models/kokoro-multi-lang-v1_0.tar.bz2"));
+    }
+
+    /// A Piper voice is loaded as VITS, with its espeak-ng data; Nabra, Kokoro's Arabic, as Kokoro.
+    #[test]
+    fn each_pack_is_loaded_as_its_kind() {
+        let amir = voice_pack("persian-amir").unwrap();
+        let spec = amir.spec();
+        assert_eq!(spec.kind, ModelKind::Vits);
+        assert!(
+            spec.files["model"].ends_with("vits-piper-fa_IR-amir-medium/fa_IR-amir-medium.onnx")
+        );
+        assert!(spec.files["data_dir"].ends_with("espeak-ng-data"));
+        assert_eq!(amir.speaker("Amir"), Some(0));
+        let nabra = voice_pack("arabic-nabra").unwrap().spec();
+        assert_eq!(nabra.kind, ModelKind::Kokoro);
+        assert!(nabra.files["voices"].ends_with("nabra-82m-arabic-int8/voices.bin"));
+        for pack in &VOICE_PACKS {
+            assert!(
+                !pack.speakers.is_empty() && pack.url().ends_with(pack.archive),
+                "{}",
+                pack.id
+            );
+        }
     }
 
     #[test]

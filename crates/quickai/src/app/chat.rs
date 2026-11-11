@@ -1396,7 +1396,7 @@ impl App {
         if row
             .on_hover_text(
                 "Keep each conversation on this computer (in QuickAI's own folder), listed beside it. Off, nothing is \
-                 kept. Nothing leaves this computer either way.",
+                 kept. Either way, a conversation goes only to the model you chat with.",
             )
             .changed()
         {

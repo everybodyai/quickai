@@ -27,8 +27,8 @@ use super::App;
 use crate::jobs::Job;
 use crate::paths;
 use crate::voice::settings::{
-    language_name, omnilingual, speech_model, SpeechEngine, SpeechModel, VoiceSettings, LANGUAGES,
-    OMNILINGUAL_SUGGESTED, SPEECH_MODELS,
+    language_name, speech_model, suggestion, SpeechEngine, SpeechModel, SpeechSource,
+    VoiceSettings, LANGUAGES, SPEECH_MODELS,
 };
 use crate::voice::settings::{Reader, MAX_PAUSE_MS, MIN_PAUSE_MS};
 use crate::voice::speak::{self, Speaker, Spoken};
@@ -148,6 +148,10 @@ pub(super) struct Talk {
     pub(super) hands_free: Option<HandsFree>,
     pub(super) card: Option<Card>,
     download: Option<Job<String>>,
+    /// The speech model being downloaded, then unpacked (an archive, and quickai-voice when it came too), and what it
+    /// is for.
+    downloading: Option<&'static SpeechModel>,
+    speech_unpacking: Option<(Unpacked, Option<Purpose>)>,
     /// The answer that was read aloud as it came (the speaker of the box), so that it is not read again.
     auto_turn: Option<usize>,
     /// Where the microphone is, for the cards over it.
@@ -249,6 +253,9 @@ impl Talk {
 
 /// The microphone works in this build.
 pub(super) const CAN_HEAR: bool = cfg!(feature = "voice");
+
+/// What came of unpacking a download, on its thread.
+type Unpacked = Receiver<Result<(), String>>;
 
 /// `model` can write down here: its files are on this computer, and, for Omnilingual, the voice program that runs it
 /// (downloaded with it). quickai-whisper, which the packages carry, is not asked for: its absence is said on its own.
@@ -1143,22 +1150,29 @@ impl App {
         purpose: Option<Purpose>,
         ctx: &egui::Context,
     ) {
-        if self.talk.download.is_some() {
+        if self.talk.download.is_some() || self.talk.speech_unpacking.is_some() {
             return;
         }
         use quickai_core::lookup::present::{Download, Piece};
+        // its files into its folder, or its archive into the speech models folder, to be unpacked
+        let place = match model.source {
+            SpeechSource::HuggingFace { .. } if !model.folder.is_empty() => {
+                Some(model.folder.to_string())
+            }
+            _ => None,
+        };
         let mut files: Vec<Piece> = model
-            .files
-            .iter()
-            .map(|f| Piece {
+            .downloads()
+            .into_iter()
+            .map(|(url, name, bytes, sha256)| Piece {
                 kind: None,
                 label: "speech model".into(),
-                url: model.url(f),
-                store_as: f.name.into(),
-                name: f.name.into(),
-                size: Some(f.bytes),
-                sha256: Some(f.sha256.into()),
-                place: (!model.folder.is_empty()).then(|| model.folder.to_string()),
+                url,
+                store_as: name.into(),
+                name: name.into(),
+                size: Some(bytes),
+                sha256: Some(sha256.into()),
+                place: place.clone(),
             })
             .collect();
         // Omnilingual is run by quickai-voice: it comes too when it is not here, and is unpacked once it has
@@ -1182,10 +1196,14 @@ impl App {
                 place: None,
             });
         }
+        let source = match model.source {
+            SpeechSource::HuggingFace { repo, .. } => format!("huggingface:{repo}"),
+            SpeechSource::Archive { .. } => "github".into(),
+        };
         let download = Download {
             files,
             bundle: None,
-            source: format!("huggingface:{}", model.repo),
+            source,
             mode: None,
         };
         let with = crate::downloader::FetchWith {
@@ -1198,10 +1216,22 @@ impl App {
             with,
             super::calm_wake(ctx.clone()),
         ));
+        self.talk.downloading = Some(model);
         self.talk.card = Some(Card::Downloading { model, purpose });
     }
 
     fn poll_speech_download(&mut self, ctx: &egui::Context) {
+        // unpacked: it is ready, or why not
+        if let Some((rx, purpose)) = &self.talk.speech_unpacking {
+            ctx.request_repaint_after(Duration::from_millis(250));
+            let purpose = *purpose;
+            if let Ok(done) = rx.try_recv() {
+                self.talk.speech_unpacking = None;
+                self.talk.downloading = None;
+                self.speech_model_came(done, purpose, ctx);
+            }
+            return;
+        }
         let Some(job) = &mut self.talk.download else {
             return;
         };
@@ -1214,17 +1244,46 @@ impl App {
             Some(Card::Downloading { purpose, .. }) => *purpose,
             _ => None,
         };
-        // the voice program, when it came with the model
-        let program = VOICE_PROGRAM
-            .here()
-            .map(|asset| paths::user_speech_dir().join(asset.archive))
-            .filter(|archive| archive.is_file());
-        let done = match (done, program) {
-            (Ok(got), Some(archive)) => voices::install_program(&archive).map(|()| got),
-            (done, _) => done,
-        };
+        if let Err(why) = done {
+            self.talk.downloading = None;
+            self.speech_model_came(Err(why), purpose, ctx);
+            return;
+        }
+        // what came is unpacked on a thread of its own (an archive is a few hundred MB): the model's archive, and the
+        // voice program when it came with the model
+        let model = self.talk.downloading;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let wake = ctx.clone();
+        std::thread::spawn(move || {
+            let root = paths::user_speech_dir();
+            let mut done = Ok(());
+            if let Some(archive) = VOICE_PROGRAM
+                .here()
+                .map(|asset| root.join(asset.archive))
+                .filter(|archive| archive.is_file())
+            {
+                done = voices::install_program(&archive);
+            }
+            if let (Ok(()), Some(model)) = (&done, model) {
+                if let SpeechSource::Archive { name, .. } = model.source {
+                    done = model.install_archive(&root.join(name), &root);
+                }
+            }
+            let _ = tx.send(done);
+            wake.request_repaint();
+        });
+        self.talk.speech_unpacking = Some((rx, purpose));
+    }
+
+    /// The speech model's download (and unpacking) ended: it listens, if that was what it was for, or says why not.
+    fn speech_model_came(
+        &mut self,
+        done: Result<(), String>,
+        purpose: Option<Purpose>,
+        ctx: &egui::Context,
+    ) {
         match done {
-            Ok(_) => {
+            Ok(()) => {
                 self.talk.card = None;
                 self.push_log("[quickai] The speech model is on this computer.".to_string());
                 if let Some(purpose) = purpose {
@@ -1590,6 +1649,7 @@ impl App {
         );
         let mut action: Option<&str> = None;
         let progress = self.talk.download.as_ref().map(|j| (j.downloaded, j.total));
+        let unpacking = self.talk.speech_unpacking.is_some();
         egui::Area::new(egui::Id::new("talk_card"))
             .pivot(egui::Align2::RIGHT_BOTTOM)
             .fixed_pos(anchor)
@@ -1624,6 +1684,11 @@ impl App {
                                         action = Some("close");
                                     }
                                 });
+                            }
+                            Card::Downloading { .. } if unpacking => {
+                                head(ui, Icon::Download, p.body, "Unpacking the speech model");
+                                ui.add(egui::ProgressBar::new(1.0).desired_height(6.0).animate(true));
+                                ui.label(egui::RichText::new("Downloaded; this takes a moment.").small().color(p.faint));
                             }
                             Card::Downloading { model, .. } => {
                                 head(ui, Icon::Download, p.body, "Downloading the speech model");
@@ -1676,6 +1741,7 @@ impl App {
                 if let Some(job) = self.talk.download.take() {
                     job.cancel();
                 }
+                self.talk.downloading = None;
                 self.talk.card = None;
             }
             Some("settings") => {
@@ -2162,20 +2228,22 @@ impl App {
                         }
                     });
             });
-            // whisper writes the languages of India poorly or not as well (in another script, as sounds in Latin
-            // letters, or as made-up words): Omnilingual is offered for them
-            let poorly = self
+            // a model more accurate for the language chosen than the one in use (SUGGESTED: Omnilingual for Urdu and
+            // most languages of India, Omnilingual large for Arabic and Persian, Whisper small for Hindi)
+            let better = self
                 .talk
                 .settings
                 .language
                 .as_deref()
-                .filter(|code| OMNILINGUAL_SUGGESTED.contains(code));
-            if let (Some(code), SpeechEngine::Whisper) = (poorly, self.speech_model_now().engine) {
+                .and_then(|code| Some((code, suggestion(code, self.speech_model_now())?)));
+            if let Some((code, better)) = better {
                 ui.add_space(2.0);
                 ui.label(
                     theme::muted(format!(
-                        "For {}, Omnilingual is usually more accurate than Whisper, which often writes Indian languages in another script.",
-                        language_name(code)
+                        "For {}, {} ({}) is the most accurate speech model QuickAI offers.",
+                        language_name(code),
+                        better.name,
+                        better.size_words()
                     ))
                     .small(),
                 );
@@ -2184,12 +2252,12 @@ impl App {
                     ui,
                     Role::Normal,
                     true,
-                    "Use Omnilingual",
+                    format!("Use {}", better.name),
                     egui::vec2(0.0, 24.0),
                 )
                 .clicked()
                 {
-                    self.talk.settings.model = omnilingual().id.to_string();
+                    self.talk.settings.model = better.id.to_string();
                     changed = true;
                 }
                 ui.add_space(4.0);
@@ -2226,11 +2294,14 @@ impl App {
                             .small(),
                     );
                     let downloading = self.talk.download.is_some();
+                    let unpacking = self.talk.speech_unpacking.is_some();
                     if theme::button_sized(
                         ui,
                         Role::Normal,
-                        !downloading,
-                        if downloading {
+                        !downloading && !unpacking,
+                        if unpacking {
+                            "Unpacking…"
+                        } else if downloading {
                             "Downloading…"
                         } else {
                             "Download"
@@ -2521,6 +2592,11 @@ impl App {
             self.talk.settings.speed = f64::from(speed);
             row_line(ui);
             let why_not = speak::backend_for(&self.talk.settings).err();
+            let pack = match &self.talk.settings.reader {
+                Reader::Pack(id) => voices::voice_pack(id),
+                _ => None,
+            };
+            let sample = voices::sample(pack, self.talk.settings.voice.as_deref());
             ui.horizontal(|ui| {
                 if theme::button_sized(
                     ui,
@@ -2535,15 +2611,10 @@ impl App {
                         (self.talk.settings.voice.clone(), self.talk.settings.speed);
                     self.talk.next += 1;
                     let id = self.talk.next;
-                    self.speaker(&ctx).say(
-                        id,
-                        vec!["Hello. This is how QuickAI reads its answers.".into()],
-                        false,
-                        voice,
-                        speed,
-                    );
+                    self.speaker(&ctx)
+                        .say(id, vec![sample.into()], false, voice, speed);
                 }
-                ui.label(theme::muted("“Hello. This is how QuickAI reads its answers.”").small());
+                ui.label(theme::muted(format!("“{sample}”")).small());
             });
             if let Some(why) = why_not {
                 ui.add_space(4.0);
@@ -2557,9 +2628,9 @@ impl App {
         ui.add_space(10.0);
         ui.label(
             theme::muted(
-                "Nothing you say leaves this computer: QuickAI writes it down itself, and reads the answers on it (unless you \
-                 chose a speech server elsewhere). Shortcuts: hold Ctrl+Space to talk, Ctrl+Shift+Space for hands-free, Esc \
-                 to stop.",
+                "QuickAI is designed to keep what you say on this computer: it writes your speech down and reads the \
+                 answers aloud here, unless you chose a speech server elsewhere. Shortcuts: hold Ctrl+Space to talk, \
+                 Ctrl+Shift+Space for hands-free, Esc to stop.",
             )
             .small(),
         );

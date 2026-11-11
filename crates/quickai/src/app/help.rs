@@ -365,13 +365,14 @@ const PAGES: &[Page] = &[
             step(
                 "On first use, QuickAI downloads its speech recognition model (82 MB), unless your package already \
                  includes it. In **Settings › Voice** you can choose a larger Whisper model, which handles accents \
-                 and background noise better, or **Omnilingual**, which is more accurate for Indian languages such \
-                 as Malayalam, Tamil and Bengali.",
+                 and background noise better, or **Omnilingual**, which is more accurate for Urdu, Arabic, Persian \
+                 and most Indian languages. When you select your language, Settings names the most accurate model \
+                 for it.",
             ),
             step(
-                "QuickAI does not include a voice: choose one in **Settings › Voice › Read with**. **Kokoro** is \
-                 downloaded on request; a voice from a folder, a speech server or a program of your own can also be \
-                 used.",
+                "QuickAI does not include a voice: choose one in **Settings › Voice › Read with**. **Kokoro** \
+                 (English, Hindi and seven other languages) and voices for Arabic, Persian and Urdu are downloaded \
+                 on request; a voice from a folder, a speech server or a program of your own can also be used.",
             ),
             step(
                 "**Read aloud** below a response reads it and highlights the sentence being read. **Read answers \

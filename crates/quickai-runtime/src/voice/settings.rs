@@ -222,15 +222,31 @@ pub struct SpeechFile {
     pub sha256: &'static str,
 }
 
-/// A speech model, pinned: files of a Hugging Face repository at one commit.
+/// Where a speech model's files come from, pinned.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpeechSource {
+    /// Each file from a Hugging Face repository at one commit.
+    HuggingFace {
+        repo: &'static str,
+        commit: &'static str,
+    },
+    /// One .tar.bz2 archive (of sherpa-onnx's releases on GitHub) holding the files in its folder `inner`.
+    Archive {
+        url: &'static str,
+        name: &'static str,
+        bytes: u64,
+        sha256: &'static str,
+        inner: &'static str,
+    },
+}
+
+/// A speech model, pinned.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SpeechModel {
     pub id: &'static str,
     pub name: &'static str,
     pub engine: SpeechEngine,
-    /// The Hugging Face repository its files are in, and the commit they are taken from.
-    pub repo: &'static str,
-    pub commit: &'static str,
+    pub source: SpeechSource,
     /// The folder of the speech models folder its files are kept in; empty for the folder itself.
     pub folder: &'static str,
     /// Its files, the model first.
@@ -239,18 +255,27 @@ pub struct SpeechModel {
     pub about: &'static str,
 }
 
-/// The commit of `ggerganov/whisper.cpp` on Hugging Face whisper's files are taken from (2024-10-29).
-const WHISPER_COMMIT: &str = "5359861c739e955e79d9a303bcbc70fb988958b1";
+/// whisper's files: `ggerganov/whisper.cpp` on Hugging Face at one commit (2024-10-29).
+const WHISPER: SpeechSource = SpeechSource::HuggingFace {
+    repo: "ggerganov/whisper.cpp",
+    commit: "5359861c739e955e79d9a303bcbc70fb988958b1",
+};
 
-/// The models, whisper's smallest first, then Omnilingual: the first is the default, and the one the bundled packages
-/// carry.
-pub const SPEECH_MODELS: [SpeechModel; 4] = [
+/// The tokens of Omnilingual ASR's v2 models, the same for both sizes.
+const OMNILINGUAL_TOKENS: SpeechFile = SpeechFile {
+    name: "tokens.txt",
+    bytes: 90_630,
+    sha256: "7d99997ef207ff14c2cfe825f2aa037528ea250113cc3c6392bfe49326884ba6",
+};
+
+/// The models, whisper's smallest first, then Omnilingual's: the first is the default, and the one the bundled
+/// packages carry.
+pub const SPEECH_MODELS: [SpeechModel; 5] = [
     SpeechModel {
         id: "base",
         name: "Whisper base",
         engine: SpeechEngine::Whisper,
-        repo: "ggerganov/whisper.cpp",
-        commit: WHISPER_COMMIT,
+        source: WHISPER,
         folder: "",
         files: &[SpeechFile {
             name: "ggml-base-q8_0.bin",
@@ -263,22 +288,20 @@ pub const SPEECH_MODELS: [SpeechModel; 4] = [
         id: "small",
         name: "Whisper small",
         engine: SpeechEngine::Whisper,
-        repo: "ggerganov/whisper.cpp",
-        commit: WHISPER_COMMIT,
+        source: WHISPER,
         folder: "",
         files: &[SpeechFile {
             name: "ggml-small-q8_0.bin",
             bytes: 264_464_607,
             sha256: "49c8fb02b65e6049d5fa6c04f81f53b867b5ec9540406812c643f177317f779f",
         }],
-        about: "Hears accents, noise and other languages better; slower",
+        about: "Hears accents, noise and other languages better, Hindi among them; slower",
     },
     SpeechModel {
         id: "turbo",
         name: "Whisper large turbo",
         engine: SpeechEngine::Whisper,
-        repo: "ggerganov/whisper.cpp",
-        commit: WHISPER_COMMIT,
+        source: WHISPER,
         folder: "",
         files: &[SpeechFile {
             name: "ggml-large-v3-turbo-q5_0.bin",
@@ -287,26 +310,51 @@ pub const SPEECH_MODELS: [SpeechModel; 4] = [
         }],
         about: "Hears best; slow on a computer without a strong processor",
     },
+    // Omnilingual ASR v2 (2026-02-05), 300M in 8 bits: only in sherpa-onnx's release, as one archive
     SpeechModel {
         id: "omnilingual",
         name: "Omnilingual",
         engine: SpeechEngine::Omnilingual,
-        repo: "csukuangfj/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12",
-        commit: "6abf1ece20cd2308bdb7d13cd78ec1c44fa4c094",
-        folder: "omnilingual-asr-300m",
+        source: SpeechSource::Archive {
+            url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/\
+                  sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-v2-int8-2026-02-05.tar.bz2",
+            name: "sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-v2-int8-2026-02-05.tar.bz2",
+            bytes: 292_313_120,
+            sha256: "951b32409aade32bd525310bb39e9666773ba3fc611a39e817f620936d76c631",
+            inner: "sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-v2-int8-2026-02-05",
+        },
+        folder: "omnilingual-asr-300m-v2",
         files: &[
             SpeechFile {
                 name: "model.int8.onnx",
-                bytes: 365_352_120,
-                sha256: "e7c4e54ee4c4c47829cc6667d5d00ed8ea7bef1dcfeef0fce766f77752a2726c",
+                bytes: 365_841_453,
+                sha256: "e3042b2f3b3ef0af2211bf99d2b4bf94a21f5ac0e9898827e7dd6d003a860e91",
             },
-            SpeechFile {
-                name: "tokens.txt",
-                bytes: 86_423,
-                sha256: "a7a044c52cb29cbe8b0dc1953e92cefd4ca16b0ed968177b6beab21f9a7d0b31",
-            },
+            OMNILINGUAL_TOKENS,
         ],
-        about: "1600 languages; the better choice for the languages of India; quick; no capitals or punctuation",
+        about: "1600 languages; the better choice for Urdu and most languages of India; quick; no capitals or \
+                punctuation",
+    },
+    // Omnilingual ASR v2 (2026-02-05), 1B in 8 bits
+    SpeechModel {
+        id: "omnilingual-large",
+        name: "Omnilingual large",
+        engine: SpeechEngine::Omnilingual,
+        source: SpeechSource::HuggingFace {
+            repo: "csukuangfj2/sherpa-onnx-omnilingual-asr-1600-languages-1B-ctc-v2-int8-2026-02-05",
+            commit: "5243e02858d1428b8fbeeb5f7f1cc6fccf4d9433",
+        },
+        folder: "omnilingual-asr-1b-v2",
+        files: &[
+            SpeechFile {
+                name: "model.int8.onnx",
+                bytes: 1_032_239_439,
+                sha256: "8af72da192fc2c8567c328d4f8059bdf47f182a0369077893c295ef39740c637",
+            },
+            OMNILINGUAL_TOKENS,
+        ],
+        about: "1600 languages; the most accurate for Arabic, Persian and Gujarati; slower; no capitals or \
+                punctuation",
     },
 ];
 
@@ -314,18 +362,30 @@ pub fn speech_model(id: &str) -> Option<&'static SpeechModel> {
     SPEECH_MODELS.iter().find(|m| m.id == id)
 }
 
-/// The model Settings suggests for a language whisper writes poorly.
-pub fn omnilingual() -> &'static SpeechModel {
-    &SPEECH_MODELS[3]
-}
-
 impl SpeechModel {
-    /// Where `file` is downloaded from.
-    pub fn url(&self, file: &SpeechFile) -> String {
-        format!(
-            "https://huggingface.co/{}/resolve/{}/{}",
-            self.repo, self.commit, file.name
-        )
+    /// What is downloaded for it: (address, name it is kept under, bytes, sha256) for each file, or the archive.
+    pub fn downloads(&self) -> Vec<(String, &'static str, u64, &'static str)> {
+        match self.source {
+            SpeechSource::HuggingFace { repo, commit } => self
+                .files
+                .iter()
+                .map(|f| {
+                    (
+                        format!("https://huggingface.co/{repo}/resolve/{commit}/{}", f.name),
+                        f.name,
+                        f.bytes,
+                        f.sha256,
+                    )
+                })
+                .collect(),
+            SpeechSource::Archive {
+                url,
+                name,
+                bytes,
+                sha256,
+                ..
+            } => vec![(url.to_string(), name, bytes, sha256)],
+        }
     }
 
     /// The bytes of all its files.
@@ -333,9 +393,14 @@ impl SpeechModel {
         self.files.iter().map(|f| f.bytes).sum()
     }
 
-    /// `82 MB`.
+    /// `82 MB`, `1.0 GB`.
     pub fn size_words(&self) -> String {
-        format!("{} MB", (self.bytes() as f64 / 1_000_000.0).round())
+        let bytes = self.bytes() as f64;
+        if bytes >= 1e9 {
+            format!("{:.1} GB", bytes / 1e9)
+        } else {
+            format!("{} MB", (bytes / 1e6).round())
+        }
     }
 
     /// The folder its files are kept in, in the speech models folder `dir`.
@@ -358,17 +423,84 @@ impl SpeechModel {
                 .then(|| dir.join(self.files[0].name))
         })
     }
+
+    /// Unpacks its downloaded archive (`archive`, in the speech models folder `root`) into its folder, replacing what
+    /// was there, and removes the archive. Nothing for a model of separate files.
+    pub fn install_archive(&self, archive: &Path, root: &Path) -> Result<(), String> {
+        use crate::prims::install::{unpack_archive, ArchiveKind};
+        let SpeechSource::Archive { name, inner, .. } = self.source else {
+            return Ok(());
+        };
+        let staging = root.join(format!(".unpacking-{}", self.id));
+        let _ = std::fs::remove_dir_all(&staging);
+        std::fs::create_dir_all(&staging).map_err(|e| format!("{}: {e}", staging.display()))?;
+        unpack_archive(ArchiveKind::TarBz2, archive, &staging, &[])?;
+        let unpacked = staging.join(inner);
+        let whole = self
+            .files
+            .iter()
+            .all(|f| std::fs::metadata(unpacked.join(f.name)).is_ok_and(|m| m.len() == f.bytes));
+        if !whole {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(format!("{name} did not hold the speech model"));
+        }
+        let target = self.dir_in(root);
+        let _ = std::fs::remove_dir_all(&target);
+        std::fs::rename(&unpacked, &target).map_err(|e| format!("{}: {e}", target.display()))?;
+        let _ = std::fs::remove_dir_all(&staging);
+        let _ = std::fs::remove_file(archive);
+        Ok(())
+    }
 }
 
-/// The languages of India whisper knows, by its codes: Settings suggests Omnilingual for them. Measured on read
-/// sentences (2026-11, characters wrong in a hundred), Whisper small wrote Malayalam as sounds in Latin letters, Punjabi
-/// and Gujarati in Devanagari, Telugu, Kannada, Marathi, Bengali and Assamese as made-up or repeated words, and Tamil
-/// with 19 wrong; Omnilingual wrote Malayalam, Telugu, Kannada, Marathi and Tamil with 2 to 4 wrong, Bengali with 14,
-/// Gujarati with 34 and Assamese with 64 (both partly in Devanagari), Punjabi in its own script. Hindi, Urdu, Nepali,
-/// Sanskrit and Sindhi were not measured.
-pub const OMNILINGUAL_SUGGESTED: [&str; 14] = [
-    "as", "bn", "gu", "hi", "kn", "ml", "mr", "ne", "pa", "sa", "sd", "ta", "te", "ur",
+/// The speech model Settings suggests for a language (by whisper's code), where it is more accurate than the one a
+/// person would otherwise use. Measured (2026-11) on recordings of Common Voice and of read Indian speech, as
+/// characters wrong in a hundred, with quickai-whisper 0.2.0:
+/// - Arabic: Omnilingual large 7, Omnilingual 14, Whisper small 17, Whisper base 25.
+/// - Persian: Omnilingual large 11, Omnilingual 21, Whisper small 32.
+/// - Urdu: Omnilingual 13, Omnilingual large 13, Whisper small 16.
+/// - Hindi: Whisper small 24, Whisper large turbo 25; Omnilingual writes Hindi mostly in Urdu's script (it cannot be
+///   told which of the two to write), and Whisper base mishears it.
+/// - Gujarati: Omnilingual large 1, Omnilingual 28 (partly in Devanagari).
+/// - Malayalam, Tamil, Telugu, Kannada, Marathi: Omnilingual 1 to 6; Bengali 10, Assamese 11 (Omnilingual large
+///   writes Assamese in another script), Punjabi 27.
+///
+/// Nepali, Sanskrit and Sindhi were not measured.
+pub const SUGGESTED: [(&str, &str); 16] = [
+    ("ar", "omnilingual-large"),
+    ("as", "omnilingual"),
+    ("bn", "omnilingual"),
+    ("fa", "omnilingual-large"),
+    ("gu", "omnilingual-large"),
+    ("hi", "small"),
+    ("kn", "omnilingual"),
+    ("ml", "omnilingual"),
+    ("mr", "omnilingual"),
+    ("ne", "omnilingual"),
+    ("pa", "omnilingual"),
+    ("sa", "omnilingual"),
+    ("sd", "omnilingual"),
+    ("ta", "omnilingual"),
+    ("te", "omnilingual"),
+    ("ur", "omnilingual"),
 ];
+
+/// The model suggested for `language`, when one is, and `current` is a poorer choice for it: a Whisper model where
+/// Omnilingual is suggested, and Whisper base or an Omnilingual model where a larger Whisper is. A model as good as
+/// the one suggested (the other Omnilingual, Whisper large turbo for Hindi) is left alone.
+pub fn suggestion(language: &str, current: &SpeechModel) -> Option<&'static SpeechModel> {
+    let suggested = SUGGESTED
+        .iter()
+        .find(|(code, _)| *code == language)
+        .and_then(|(_, id)| speech_model(id))?;
+    let poorer = match suggested.engine {
+        SpeechEngine::Omnilingual => current.engine == SpeechEngine::Whisper,
+        SpeechEngine::Whisper => {
+            current.id == "base" || current.engine == SpeechEngine::Omnilingual
+        }
+    };
+    poorer.then_some(suggested)
+}
 
 /// The languages whisper hears, as it names them, with their names: the common ones first, then the rest in the
 /// order of their names.
@@ -483,12 +615,33 @@ mod tests {
     }
 
     #[test]
-    fn the_languages_omnilingual_is_offered_for_are_whispers() {
-        for code in OMNILINGUAL_SUGGESTED {
+    fn a_better_model_is_suggested_for_a_language_and_only_over_a_poorer_one() {
+        for (code, id) in SUGGESTED {
             assert_ne!(language_name(code), code, "{code} is not in LANGUAGES");
+            assert!(speech_model(id).is_some(), "{id} is not a model");
         }
-        assert_eq!(omnilingual().engine, SpeechEngine::Omnilingual);
-        assert_eq!(speech_model("omnilingual"), Some(omnilingual()));
+        let model = |id| speech_model(id).unwrap();
+        // Omnilingual over Whisper, whichever Whisper
+        assert_eq!(
+            suggestion("ur", model("base")).map(|m| m.id),
+            Some("omnilingual")
+        );
+        assert_eq!(
+            suggestion("ar", model("turbo")).map(|m| m.id),
+            Some("omnilingual-large")
+        );
+        // not over the other Omnilingual
+        assert_eq!(suggestion("ar", model("omnilingual")), None);
+        // Whisper small for Hindi, over base and Omnilingual but not over turbo
+        assert_eq!(suggestion("hi", model("base")).map(|m| m.id), Some("small"));
+        assert_eq!(
+            suggestion("hi", model("omnilingual-large")).map(|m| m.id),
+            Some("small")
+        );
+        assert_eq!(suggestion("hi", model("turbo")), None);
+        assert_eq!(suggestion("hi", model("small")), None);
+        // nothing for a language whisper writes well
+        assert_eq!(suggestion("en", model("base")), None);
     }
 
     #[test]
@@ -510,15 +663,14 @@ mod tests {
             base.found_in(&bundled, &user),
             Some(user.join("ggml-base-q8_0.bin"))
         );
-        assert!(base.url(&base.files[0]).ends_with(
+        assert!(base.downloads()[0].0.ends_with(
             "/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q8_0.bin"
         ));
         assert_eq!(base.size_words(), "82 MB");
 
         // Omnilingual: its files in a folder of their own, every one of them there
-        let omni = omnilingual();
-        assert_eq!(omni.id, "omnilingual");
-        let folder = user.join("omnilingual-asr-300m");
+        let omni = speech_model("omnilingual").unwrap();
+        let folder = user.join("omnilingual-asr-300m-v2");
         std::fs::create_dir_all(&folder).unwrap();
         let model = std::fs::File::create(folder.join("model.int8.onnx")).unwrap();
         model.set_len(omni.files[0].bytes).unwrap();
@@ -533,10 +685,72 @@ mod tests {
             omni.found_in(&bundled, &user),
             Some(folder.join("model.int8.onnx"))
         );
-        assert!(omni
-            .url(&omni.files[1])
-            .ends_with("/resolve/6abf1ece20cd2308bdb7d13cd78ec1c44fa4c094/tokens.txt"));
-        assert_eq!(omni.size_words(), "365 MB");
+        // it comes as one archive; the large one as two files
+        assert_eq!(omni.downloads().len(), 1);
+        assert!(omni.downloads()[0]
+            .0
+            .ends_with("-300M-ctc-v2-int8-2026-02-05.tar.bz2"));
+        assert_eq!(omni.size_words(), "366 MB");
+        let large = speech_model("omnilingual-large").unwrap();
+        assert_eq!(large.downloads().len(), 2);
+        assert!(large.downloads()[1]
+            .0
+            .ends_with("/resolve/5243e02858d1428b8fbeeb5f7f1cc6fccf4d9433/tokens.txt"));
+        assert_eq!(large.size_words(), "1.0 GB");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A downloaded archive is unpacked into the model's folder and removed; one that lacks a file is refused and
+    /// leaves what was there.
+    #[test]
+    fn an_archive_is_unpacked_into_the_models_folder() {
+        use crate::testkit::archives::{tar_bz2, Entry};
+        let root =
+            std::env::temp_dir().join(format!("quickai-speech-archive-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        // a model of the same source, with small files
+        let small = SpeechModel {
+            files: &[
+                SpeechFile {
+                    name: "model.int8.onnx",
+                    bytes: 7,
+                    sha256: "",
+                },
+                SpeechFile {
+                    name: "tokens.txt",
+                    bytes: 3,
+                    sha256: "",
+                },
+            ],
+            ..*speech_model("omnilingual").unwrap()
+        };
+        let SpeechSource::Archive { name, inner, .. } = small.source else {
+            panic!("an archive");
+        };
+        let archive = root.join(name);
+        std::fs::write(
+            &archive,
+            tar_bz2(&[
+                Entry::file(&format!("{inner}/model.int8.onnx"), b"weights"),
+                Entry::file(&format!("{inner}/tokens.txt"), b"a 0"),
+                Entry::file(&format!("{inner}/README.md"), b"r"),
+            ]),
+        )
+        .unwrap();
+        small.install_archive(&archive, &root).unwrap();
+        assert_eq!(
+            small.found_in(&root.join("none"), &root),
+            Some(root.join("omnilingual-asr-300m-v2/model.int8.onnx"))
+        );
+        assert!(!archive.exists(), "the archive is removed once unpacked");
+        std::fs::write(
+            &archive,
+            tar_bz2(&[Entry::file(&format!("{inner}/tokens.txt"), b"a 0")]),
+        )
+        .unwrap();
+        assert!(small.install_archive(&archive, &root).is_err());
+        assert!(small.found_in(&root.join("none"), &root).is_some());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -138,17 +138,22 @@ All processing happens on your computer: [quickai-whisper](https://github.com/ev
 [whisper.cpp](https://github.com/ggml-org/whisper.cpp), transcribes your speech on the processor. The speech model
 (82 MB) is included in the bundled packages and is otherwise downloaded on first use. **Settings → Voice** lets you set
 the language you speak, choose larger speech models, and have every response read aloud, which is off by default.
-For Indian languages, such as Malayalam, Tamil, Hindi and Bengali, choose **Omnilingual** (Meta's Omnilingual ASR,
-1600 languages, 365 MB, downloaded on request): Whisper often writes them in another script or as made-up words, and
-Settings suggests Omnilingual when you select one. Omnilingual writes without capitals or punctuation.
+For Urdu and most Indian languages, such as Malayalam, Tamil and Bengali, choose **Omnilingual** (Meta's Omnilingual
+ASR, 1600 languages, 366 MB, downloaded on request), and for Arabic and Persian **Omnilingual large** (1.0 GB): Whisper
+often writes these languages less accurately, in another script or as made-up words. For Hindi, **Whisper small** is
+the most accurate, since Omnilingual often writes Hindi in Urdu's script. When you select your language, Settings
+names the most accurate model for it. Omnilingual writes without capitals or punctuation.
 
 QuickAI does not include a voice for reading aloud; choose one in **Settings → Voice → Read with**:
 
-- **Kokoro**: natural voices for English and eight other languages
+- **Kokoro**: natural voices for English, Hindi and seven other languages
   ([Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), Apache-2.0), downloaded on request (350 MB, or a smaller
   132 MB version), together with QuickAI's voice program
   [quickai-voice](https://github.com/everybodyai/quickai-voice) (GPL-3.0), built on
   [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). Speech is generated on your computer.
+- **Arabic, Persian and Urdu**: [Nabra](https://huggingface.co/oddadmix/Nabra-82M-v0.1), a Kokoro voice for Modern
+  Standard Arabic (Apache-2.0, 83 MB), and the Piper voices Amir for Persian (CC0, 67 MB) and Fasih for Urdu (MIT,
+  67 MB), downloaded on request in the same way.
 - **A voice from a folder**: any voice you have that sherpa-onnx can read, such as Kokoro, Kitten, Piper or Matcha.
 - **A speech server**: a server that implements OpenAI's `/v1/audio/speech`, for voices QuickAI cannot run itself.
 - **A program of your own**: a command that reads its input aloud.

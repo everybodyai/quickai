@@ -276,13 +276,14 @@ chat. It connects only when you press a button, or press Enter in an input box, 
   model, the panel above the microphone offers to download it. **Download** fetches one file of
   `ggerganov/whisper.cpp` from Hugging Face (`huggingface.co`, about 82 MB), which is verified against the checksum
   pinned in the app. A larger model is downloaded in the same way when you select it in Settings › Voice. The
-  Omnilingual model, if you select it, is two files of
-  `csukuangfj/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12` from Hugging Face (about 365 MB),
-  verified in the same way; QuickAI's voice program, quickai-voice, which runs it, is downloaded with it from GitHub if
-  it is not already on your computer.
-- **A voice for reading responses aloud.** No voice is included with QuickAI. When you select Kokoro in Settings ›
-  Voice › Read with and press **Download**, the voice is downloaded from sherpa-onnx's releases on GitHub
-  (`github.com`, 350 MB or 132 MB), verified against the checksum pinned in the app. With the first voice, QuickAI's
+  Omnilingual model, if you select it, is one archive of sherpa-onnx's releases on GitHub (`github.com`, about
+  290 MB), and Omnilingual large two files of
+  `csukuangfj2/sherpa-onnx-omnilingual-asr-1600-languages-1B-ctc-v2-int8-2026-02-05` from Hugging Face (about 1 GB),
+  each verified in the same way; QuickAI's voice program, quickai-voice, which runs them, is downloaded with either from
+  GitHub if it is not already on your computer.
+- **A voice for reading responses aloud.** No voice is included with QuickAI. When you select a voice in Settings ›
+  Voice › Read with (Kokoro, or the voices for Arabic, Persian and Urdu) and press **Download**, it is downloaded from
+  sherpa-onnx's releases on GitHub (`github.com`, 67 MB to 350 MB), verified against the checksum pinned in the app. With the first voice, QuickAI's
   voice program, quickai-voice, is downloaded from its releases on GitHub (`github.com/everybodyai/quickai-voice`).
   Both are stored in `~/.quickai/voice`. Reading aloud then takes place on your computer and contacts no one.
 - **A speech server, if you choose one.** If you select **A speech server** as the reader, each sentence of a response

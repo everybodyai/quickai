@@ -377,8 +377,8 @@ pub fn split_sentences(text: &str) -> (Vec<String>, &str) {
             // a dash's pause: what comes before it is read as a piece of its own
             PAUSE => true,
             '.' | '!' | '?' | '…' => next.is_some_and(char::is_whitespace),
-            // a full stop of Chinese and Japanese, of Hindi and of Arabic needs no space after it
-            '。' | '！' | '？' | '।' | '؟' => true,
+            // a full stop of Chinese and Japanese, of Hindi, and of Arabic, Persian and Urdu needs no space after it
+            '。' | '！' | '？' | '।' | '॥' | '؟' | '۔' => true,
             _ => false,
         };
         if !ends {
