@@ -434,7 +434,8 @@ and the one for a browser is the link; alongside it there is a slot for a host p
   progress, speed and estimated time remaining, and an × to stop it. The download belongs to ComfyUI rather than to
   the tab, so a page that is opened or reloaded midway shows it. When a file is in place, the page reloads its lists,
   as its `r` key does, so the model appears in the nodes and disappears from the list of missing models. In QuickAI's
-  window, **Refresh** finds a weights file that arrived this way, and **Open folder** shows the folders.
+  window, **On this computer** lists a weights file that arrived this way within a few seconds, without a click (the
+  window asks to be drawn every few seconds while ComfyUI runs, for this), and **Open folder** shows the folders.
 - **The setting.** Settings → Advanced → **The page's Download button**: `install` (the default) or `browser`. With
   `browser`, the bridge has no routes and no script, the page has no host, and ComfyUI contacts no site: the button
   belongs to the browser, as in a ComfyUI started manually. The setting is read at startup. A ComfyUI instance that was

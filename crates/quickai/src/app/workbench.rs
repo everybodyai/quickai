@@ -643,13 +643,19 @@ impl App {
     /// Manager put files there), and when the page is first drawn.
     fn refresh_model_files(&mut self, ctx: &egui::Context, state: ServerState) {
         let now = ctx.input(|i| i.time);
+        let running = state == ServerState::Running;
         let stale = match self.bench.files_at {
             None => true,
-            Some(at) => state == ServerState::Running && now - at > 3.0,
+            Some(at) => running && now - at > FILES_EVERY,
         };
         if stale {
             self.bench.files = scan_model_files(&self.models_dir);
             self.bench.files_at = Some(now);
+        }
+        // what the engine's page fetches lands in the folder without a word to the window, which draws nothing until
+        // something happens in it: a frame is asked for, so that the folder is read again when nothing else draws one
+        if running {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(FILES_EVERY));
         }
         // the launcher of the build in use says what it was made with: read again when it is another build
         let read = self
@@ -1052,6 +1058,9 @@ const STACKED_BELOW: f32 = 560.0;
 
 /// How many files the list shows before it says how many more there are.
 const SHOWN_FILES: usize = 12;
+
+/// How often, in seconds, the files of the models folder are read again while the engine runs.
+const FILES_EVERY: f64 = 3.0;
 
 /// The endings of the files the list shows: the formats models come in.
 const LISTED_ENDINGS: &[&str] = &[
@@ -1639,6 +1648,56 @@ mod tests {
         );
         assert_eq!(files[1].size, 20);
         assert!(scan_model_files(&dir.join("nowhere")).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn while_the_engine_runs_a_file_its_page_fetched_is_listed_without_anything_happening_in_the_window(
+    ) {
+        let dir = scratch("files-while-running");
+        let mut app = app_for(&dir, "comfyui");
+        let models = app.models_dir.clone();
+        let ctx = egui::Context::default();
+        // a frame at `time` seconds, and how long the window may then wait before it draws the next one
+        let frame = |app: &mut App, time: f64, state: ServerState| {
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(900.0, 1800.0),
+                )),
+                time: Some(time),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(raw, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| app.show_workbench(ui, state));
+            });
+            output.textures_delta.clear();
+            output.viewport_output[&egui::ViewportId::ROOT].repaint_delay
+        };
+        for t in 0..3 {
+            frame(&mut app, f64::from(t) * 0.1, ServerState::Idle);
+        }
+        // stopped, nothing comes into the folder on its own: no frame is asked for
+        assert!(
+            frame(&mut app, 0.4, ServerState::Idle) > std::time::Duration::from_secs(60),
+            "a stopped engine's page draws nothing by itself"
+        );
+        // running, ComfyUI's page (its Manager, a workflow's Download) puts files there without a word to the window
+        let wait = frame(&mut app, 0.5, ServerState::Running);
+        assert!(
+            wait <= std::time::Duration::from_secs_f64(FILES_EVERY),
+            "{wait:?}"
+        );
+        assert!(app.bench.files.is_empty());
+        put(&models, "diffusion_models", "ltxv-tiny.gguf", 40);
+        frame(&mut app, 1.0, ServerState::Running);
+        assert!(
+            app.bench.files.is_empty(),
+            "read again only every few seconds"
+        );
+        frame(&mut app, 0.5 + FILES_EVERY + 0.1, ServerState::Running);
+        let names: Vec<&str> = app.bench.files.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["ltxv-tiny.gguf"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
