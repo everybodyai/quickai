@@ -98,9 +98,9 @@ model offers **Details…**, **Show in folder** and **Delete…**; each row show
 fast on your computer, and whether it is the recommended choice for it. Add a model, model details, Help and About open
 in separate windows that you can move and resize like any other window.
 
-The panel on the right shows how the model runs: the context size (**Light**, **Balanced** or **Long**, with **Other…**
-offering more, up to 2M where the model supports it), whether it runs on the graphics card, the processor or both, and
-the tools it may use. The button at the top of the panel hides it, and the button at the right end of the toolbar
+The panel on the right shows how the model runs: the context size (**4K** to **256K**, each with a dot that shows
+whether it fits, and **Other…** offering more, up to 2M where the model supports it), whether it runs on the graphics
+card, the processor or both, and the tools it may use. The button at the top of the panel hides it, and the button at the right end of the toolbar
 shows it again.
 
 Choose the engine under **This computer**, at the top of the sidebar. An engine that is not yet installed has an

@@ -282,28 +282,33 @@ const PAGES: &[Page] = &[
         lead: "How to choose a model that suits this computer, and how to download it.",
         picture: Some(Picture {
             name: "add-model",
-            marks: &[(2, 618.0, 177.0), (3, 284.0, 28.0), (4, 660.0, 28.0), (5, 394.0, 369.0)],
-            ring: Some([681.0, 165.0, 24.0, 24.0]),
+            marks: &[(2, 591.0, 186.0), (3, 284.0, 28.0), (4, 660.0, 28.0), (5, 394.0, 393.0)],
+            ring: Some([604.0, 172.0, 96.0, 28.0]),
         }),
         steps: &[
             step("Press {plus} beside **MODELS**, then **Add a model…**, or press Ctrl+K.")
                 .at(Spot::AddModel)
                 .does(Deed::AddModel),
             step(
-                "With the search box empty, QuickAI suggests models that fit this computer's memory. Press {download} \
-                 beside one to download it.",
+                "With the search box empty, QuickAI suggests models that fit this computer's memory, one row each. \
+                 **Get** downloads the size that suits this computer; its ▾ lists the other sizes, such as **Higher \
+                 quality** or **Smaller**.",
             ),
             step(
-                "Type keywords to search online: Hugging Face for llama.cpp, ollama.com for Ollama. Pressing Enter in \
-                 the empty box lists the most popular models.",
+                "Type keywords to search online: Hugging Face for llama.cpp, ollama.com for Ollama. The best matches \
+                 come first, and a repository name such as owner/model also finds the GGUF versions others have made \
+                 of it. Pressing Enter in the empty box lists the most popular models.",
             ),
             step("Paste a link to a .gguf file to download it, or press the folder {folder} to add a file you already have."),
             step(
                 "To browse on your own, **Hugging Face** below the list opens its model directory in your browser. \
                  Paste the link of the model you choose into the box.",
             ),
-            step("**Recommended** in the sidebar lists every model QuickAI has verified, by type and size.")
-                .does(Deed::Recommended),
+            step(
+                "**Recommended** in the sidebar lists every model QuickAI has verified, by type, with the same **Get** \
+                 button. When nothing there matches your search, it offers to search Hugging Face.",
+            )
+            .does(Deed::Recommended),
         ],
         numbered: true,
         tip: Some(
@@ -611,6 +616,7 @@ const PAGES: &[Page] = &[
                 (3, 196.0, 169.0),
                 (4, 196.0, 211.0),
                 (5, 196.0, 253.0),
+                (6, 196.0, 295.0),
             ],
             ring: None,
         }),
@@ -625,9 +631,14 @@ const PAGES: &[Page] = &[
             ),
             step("**MCP servers**: the servers whose tools a model may use, as in **MCP servers** in the sidebar."),
             step("**Other computers**: whether QuickAI may set up a computer you add, in order to run models there."),
+            step("**Voice**: speaking to QuickAI and having responses read aloud, off until you enable it.")
+                .does(Deed::Voice),
         ],
         numbered: true,
-        tip: Some("With Ollama, **Open WebUI** has its own page: a chat interface in your browser."),
+        tip: Some(
+            "Rest the pointer on a setting's name to see what it does. With Ollama, **Open WebUI** has its own page: a \
+             chat interface in your browser.",
+        ),
     },
     Page {
         page: HelpPage::WontStart,
