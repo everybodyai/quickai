@@ -14,8 +14,9 @@ quickai-core = { path = "../quickai-core" }
 quickai-runtime = { path = "../quickai-runtime", default-features = false }
 crossbeam-channel = "0.5.16"
 directories = "6"
-eframe = "=0.36.1"
-egui = "=0.36.1"
+# 0.36.2: a window the compositor is not drawing (Wayland: covered, minimized) no longer keeps its event loop busy
+eframe = "=0.36.2"
+egui = "=0.36.2"
 # the fonts of this computer for the scripts the embedded ones lack (app/system_fonts.rs): the font reader egui itself uses
 memmap2 = "0.9"
 skrifa = { version = "0.44", default-features = false, features = ["std"] }
@@ -26,6 +27,11 @@ webbrowser = "1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# winit as eframe uses it (vendor/winit, through the root's [patch]): the patience of a window's redraw on Wayland
+# (main.rs, FRAME_PATIENCE)
+[target.'cfg(target_os = "linux")'.dependencies]
+winit = { version = "=0.30.13", default-features = false, features = ["wayland"] }
 
 [features]
 default = ["remote-setup", "voice"]
