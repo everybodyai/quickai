@@ -438,10 +438,14 @@ const PAGES: &[Page] = &[
         steps: &[
             step("Open the engine menu under **This computer** at the top of the sidebar.").at(Spot::EngineMenu),
             step(
-                "Choose **ComfyUI**. On first use, it installs with one click: about 17 GB, most of which is the \
-                 computation library it relies on.",
+                "Choose **ComfyUI**. Its page names the version it installs; leave **ComfyUI-Manager** ticked and click \
+                 **Install**: about 17 GB, most of which is the computation library it relies on.",
             ),
-            step("Get a model: **Recommended** lists the models QuickAI has verified, and **Look up online** searches for more."),
+            step(
+                "Get models: **Start and open the Manager** opens ComfyUI's page with its Model Manager, about 500 \
+                 models. **Recommended** lists the ones QuickAI has verified, and **Search or paste…** searches Hugging \
+                 Face.",
+            ),
             step("Press **Start**, then **Open ComfyUI** to open its page in your browser."),
             step("The **Download** button on that page saves a model directly to QuickAI's models folder."),
         ],

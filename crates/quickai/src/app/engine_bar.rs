@@ -4,13 +4,9 @@
 //! machine. Settings keep the page of the engine's program, where another version or a program of the person's own is
 //! chosen.
 
-use std::path::Path;
-
 use eframe::egui;
-use quickai_core::acquire;
 
-use super::runtime_manager::display_root;
-use super::theme::{self, Role};
+use super::theme;
 use super::App;
 use crate::prims::feed::LookupSpec;
 use crate::prims::install;
@@ -159,165 +155,6 @@ impl App {
             request,
             super::calm_wake(ctx.clone()),
         ));
-    }
-
-    /// The page of an engine that is not here: one sentence of what will be done, the button that does it, the ways
-    /// round it (another version, another computer, the engine that is ready), and then what it is doing or why it did
-    /// not.
-    pub(super) fn show_engine_setup(&mut self, ui: &mut egui::Ui) {
-        if !self.needs_install() {
-            return;
-        }
-        let Some(engine) = self.engine_doc() else {
-            return;
-        };
-        let name = engine.doc.engine.name.clone();
-        let repo = acquire::feed_repo_label(engine).unwrap_or_default();
-        let from_source = acquire::builds_from_source(engine);
-        let root = acquire::root_dir(engine, &self.host_facts)
-            .map(|r| display_root(Path::new(&r), &self.host_facts.home))
-            .unwrap_or_default();
-        let ticked = self.chosen_options();
-        let ticked: Vec<&str> = ticked.iter().map(String::as_str).collect();
-        let summary = self.install_sentence(engine, &ticked);
-        let looking = self.runtime.lookup_rx.is_some() && self.runtime.auto_install.is_some();
-        let installing = self.runtime.install.is_some();
-        let fallback = (self.engine != crate::settings::DEFAULT_ENGINE)
-            .then(|| self.registry.engine(crate::settings::DEFAULT_ENGINE))
-            .flatten()
-            .map(|e| (e.id.clone(), e.doc.engine.name.clone()));
-        let p = theme::palette();
-
-        ui.vertical_centered(|ui| {
-            ui.label(
-                egui::RichText::new(format!("{name} isn't installed yet"))
-                    .size(22.0)
-                    .family(theme::semibold(ui))
-                    .color(p.text),
-            );
-            ui.add_space(4.0);
-            let what = if from_source {
-                format!("QuickAI builds it from its source at {repo}")
-            } else {
-                format!("QuickAI downloads it from {repo}")
-            };
-            ui.label(theme::muted(format!(
-                "{what}, checks it and keeps it in {root}. Nothing else on your computer changes."
-            )))
-            .on_hover_text(
-                "Nothing is downloaded until you click Install. Deleting it again is in Settings.",
-            );
-            if let Some(summary) = summary {
-                ui.label(theme::muted(summary).small());
-            }
-            ui.add_space(12.0);
-            let idle = !looking && !installing && self.runtime.delete.is_none();
-            if theme::button_sized(
-                ui,
-                if idle { Role::Primary } else { Role::Normal },
-                idle,
-                format!("Install {name}"),
-                egui::vec2(160.0, 34.0),
-            )
-            .on_hover_text(format!(
-                "Download the {name} build QuickAI was tested with (or the newest, when that one is gone) for this \
-                 computer, check it and install it."
-            ))
-            .clicked()
-            {
-                self.install_engine(ui.ctx());
-            }
-            ui.add_space(6.0);
-            // the ways round it, in one row of quiet buttons under the one that matters
-            let mut links: Vec<(String, String)> = vec![(
-                "Choose a version...".to_string(),
-                format!(
-                    "Settings, Program: every build on offer, the ones installed, and a {name} you already \
-                     have."
-                ),
-            )];
-            if self.can_run_remote() {
-                links.push((
-                    "Run on another computer...".to_string(),
-                    format!(
-                        "Use the {name} of a more powerful computer instead, reached over SSH: nothing is installed \
-                         here."
-                    ),
-                ));
-            }
-            if let Some((_, other)) = &fallback {
-                links.push((
-                    format!("Use {other} instead"),
-                    format!("{other} is ready to use, with no download."),
-                ));
-            }
-            let font = egui::TextStyle::Button.resolve(ui.style());
-            let widths: f32 = links
-                .iter()
-                .map(|(l, _)| {
-                    ui.painter()
-                        .layout_no_wrap(l.clone(), font.clone(), p.muted)
-                        .size()
-                        .x
-                        + 2.0 * ui.spacing().button_padding.x
-                        + ui.spacing().item_spacing.x
-                })
-                .sum();
-            let mut clicked: Option<usize> = None;
-            ui.horizontal(|ui| {
-                ui.add_space(((ui.available_width() - widths) / 2.0).max(0.0));
-                for (i, (label, hover)) in links.iter().enumerate() {
-                    if theme::button_sized(ui, Role::Quiet, true, label.as_str(), egui::vec2(0.0, 26.0))
-                        .on_hover_text(hover.as_str())
-                        .clicked()
-                    {
-                        clicked = Some(i);
-                    }
-                }
-            });
-            match clicked.map(|i| links[i].0.as_str()) {
-                Some("Choose a version...") => {
-                    self.advanced_section_wanted = true;
-                    self.open_settings();
-                }
-                Some("Run on another computer...") => self.open_computers(),
-                Some(_) => {
-                    if let Some((id, _)) = &fallback {
-                        self.switch_engine(id);
-                    }
-                }
-                None => {}
-            }
-            if looking {
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label(theme::muted(self.runtime.lookup_status.clone()));
-                });
-            }
-            if let Some(job) = &self.runtime.install {
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    ui.colored_label(p.warn, job.progress_line());
-                    if let Some(cancel) = &self.runtime.cancel {
-                        if ui
-                            .small_button("Cancel")
-                            .on_hover_text("Stop the install. What was fetched so far is thrown away.")
-                            .clicked()
-                        {
-                            cancel.store(true, std::sync::atomic::Ordering::SeqCst);
-                        }
-                    }
-                });
-                super::widgets::progress_bar(ui, job.fraction());
-                if let Some(detail) = job.detail() {
-                    ui.label(theme::muted(detail));
-                }
-            } else if let Some(why) = &self.runtime.setup_failure {
-                ui.add_space(6.0);
-                ui.colored_label(p.bad, why);
-            }
-        });
     }
 }
 
@@ -648,10 +485,11 @@ mod tests {
         let found = settled(&mut app, &ctx, 980.0);
         let button = found
             .iter()
-            .find(|(t, _)| t == "Install Ollama")
+            .find(|(t, _)| t.starts_with("Install Ollama v"))
             .map(|(_, r)| *r)
             .unwrap_or_else(|| panic!("no Install button: {found:?}"));
-        assert!(found.iter().any(|(t, _)| t == "Ollama isn't installed yet"));
+        // the page's title, and the version the button installs on it (the tested one, or the newest when it is gone)
+        assert!(found.iter().any(|(t, _)| t == "Install Ollama"));
 
         // one click: the builds are looked up and the first is installed, with nothing else to choose
         click(&mut app, &ctx, 980.0, button.center());
@@ -675,7 +513,7 @@ mod tests {
         assert_eq!(app.bin_override().as_deref(), Some(app.binary.as_path()));
         let found = settled(&mut app, &ctx, 980.0);
         assert!(
-            !found.iter().any(|(t, _)| t == "Ollama isn't installed yet"),
+            !found.iter().any(|(t, _)| t == "Install Ollama"),
             "the page is still there once the engine is"
         );
         let _ = std::fs::remove_dir_all(&dir);

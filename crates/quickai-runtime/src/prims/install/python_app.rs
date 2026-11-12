@@ -1194,7 +1194,11 @@ fn write_launcher(
 
 /// The steps of the install in the order they are done: what the journal records, and what the line
 /// under the bar counts.
-fn plan_steps(app: &PythonApp, request: &InstallRequest, check: bool) -> Vec<StepRecord> {
+pub(super) fn plan_steps(
+    app: &PythonApp,
+    request: &InstallRequest,
+    check: bool,
+) -> Vec<StepRecord> {
     let step = |id: String, label: String| StepRecord { id, label };
     let mut steps = vec![step(
         "source".into(),

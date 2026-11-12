@@ -121,6 +121,14 @@ impl App {
                         )
                         .on_hover_text(&title);
                     });
+                    // the version of an engine that runs on its own, beside its name (`ComfyUI v0.45.2`)
+                    if alone && !self.needs_install() && ui.available_width() >= state_width + 80.0
+                    {
+                        if let Some(version) = self.build_in_use() {
+                            ui.add_space(4.0);
+                            ui.label(egui::RichText::new(version).monospace().color(p.faint));
+                        }
+                    }
                     if model_page {
                         ui.add_space(2.0);
                         pressed.details = icons::icon_button(

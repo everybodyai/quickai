@@ -28,9 +28,11 @@ mod zstd;
 
 /// The voices of reading aloud are unpacked as an install is (`voice::voices`).
 pub(crate) use extract::{extract as unpack_archive, ArchiveKind};
-pub use journal::{is_unfinished, list_unfinished, SourceRecord, Unfinished};
 #[cfg(any(test, feature = "testkit"))]
-pub use journal::{Journal, StepRecord};
+pub use journal::Journal;
+/// The steps of an install as `planned_steps` lists them, for the install page.
+pub use journal::StepRecord;
+pub use journal::{is_unfinished, list_unfinished, SourceRecord, Unfinished};
 
 /// Holds the lock of the directory of an install, as an install working in it does: for a test of what is
 /// said of a directory that is in use.
@@ -99,6 +101,16 @@ pub struct InstallSpec {
     /// Set by the interface to stop an install that is running: the download stops, the program it
     /// started is killed, and nothing is left behind.
     pub cancel: Arc<AtomicBool>,
+}
+
+/// The steps an install of `request` goes through, in the order it does them and as the line under its bar numbers them
+/// (`Step 4 of 8 · PyTorch for AMD GPUs (ROCm 7.2)`): what the install page lists while it runs. An install that unpacks
+/// an archive is one step, and has none to list.
+pub fn planned_steps(spec: &InstallSpec, request: &InstallRequest) -> Vec<StepRecord> {
+    match &spec.kind {
+        InstallKind::PythonApp(app) => python_app::plan_steps(app, request, spec.smoke.is_some()),
+        InstallKind::Archive => Vec::new(),
+    }
 }
 
 /// What an install does.
@@ -200,7 +212,7 @@ impl InstallSpec {
                     versions: python.versions.clone(),
                     python: None,
                     own: python.own.as_deref().cloned(),
-                    launch_args: quickai_core::acquire::launch_args(engine, chosen),
+                    launch_args: quickai_core::acquire::launch_args_with(engine, facts, chosen),
                     pip: quickai_core::acquire::pip_steps_with(engine, facts, chosen)
                         .into_iter()
                         .map(|step| PipPlan {

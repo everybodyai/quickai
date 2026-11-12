@@ -225,6 +225,21 @@ pub fn launch_args(engine: &Engine, chosen: &[&str]) -> Vec<String> {
         .collect()
 }
 
+/// What the launcher of a build made on this machine with the options `chosen` passes to the program before its own
+/// arguments: the words of those options, then the words of the pip steps the install does (`--cpu` of PyTorch for the
+/// processor), in the document's order.
+pub fn launch_args_with(engine: &Engine, facts: &HostFacts, chosen: &[&str]) -> Vec<String> {
+    let mut words = launch_args(engine, chosen);
+    for step in pip_steps_with(engine, facts, chosen) {
+        for word in &step.launch_args {
+            if !words.contains(word) {
+                words.push(word.clone());
+            }
+        }
+    }
+    words
+}
+
 /// Which options an install had, from the ids of the steps it was going to do (`pip:manager`): an option is
 /// one when a step that belongs to it is among them. For the install that stopped to be gone on with the same
 /// choice that it was begun with.
@@ -385,6 +400,36 @@ pub fn tested_tag(engine: &Engine) -> Option<&str> {
         .tested
         .as_ref()
         .map(|t| t.tag.as_str())
+}
+
+/// The day the tested release was published, as the document says it (`2026-11-11`).
+pub fn tested_date(engine: &Engine) -> Option<&str> {
+    engine
+        .doc
+        .acquire
+        .as_ref()?
+        .tested
+        .as_ref()?
+        .date
+        .as_deref()
+}
+
+/// The room an install of a `python_app` engine needs, as the document says it (`30GiB`).
+pub fn install_space(engine: &Engine) -> Option<&str> {
+    match engine.doc.acquire.as_ref()?.install.as_ref()? {
+        crate::doc::engine::Install::PythonApp { space, .. } => space.as_deref(),
+        _ => None,
+    }
+}
+
+/// The version of the Python QuickAI downloads for an engine whose environment is made with its own (`3.12.15`).
+pub fn own_python_version(engine: &Engine) -> Option<&str> {
+    match engine.doc.acquire.as_ref()?.install.as_ref()? {
+        crate::doc::engine::Install::PythonApp { python, .. } => {
+            python.own.as_ref().map(|own| own.version.as_str())
+        }
+        _ => None,
+    }
 }
 
 /// The sha256 (hex, lower case) the document pins for a file of the tested release.

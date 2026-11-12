@@ -54,11 +54,11 @@ strategies = [
 root = "${data}/comfyui"
 feed = { use = "github_release", repo = "Comfy-Org/ComfyUI", per_page = 10, show = 5, prereleases = false }
 assets = { by = "source", label = "${tag}" }
-tested = { tag = "v0.39.0" }
-filter_hint = "e.g. v0.39"
+tested = { tag = "v0.45.2", date = "2026-11-11" }     # a patch of v0.45.0 that ComfyUI tagged without a release of its own
+filter_hint = "e.g. v0.45"
 
-[acquire.pins]                  # recorded 2026-10-08 from https://github.com/Comfy-Org/ComfyUI/archive/refs/tags/v0.39.0.tar.gz
-"v0.39.0.tar.gz" = "sha256:095d95805bdf36e73bbd15d6d2ee15fa627708679a2e67b5f467db4c57e7ff0a"
+[acquire.pins]                  # recorded 2026-11-11 from https://github.com/Comfy-Org/ComfyUI/archive/refs/tags/v0.45.2.tar.gz (twice, the same)
+"v0.45.2.tar.gz" = "sha256:2a3ed8ddfac570a5af96180b0a7e9e462c35ff17829e1ede647811f5aea94825"
 
 # How the source becomes a program: a Python of 3.10 or newer makes an environment, the packages go into it
 # (only as wheels: no package gets to run a build script on the person's machine), and a launcher is written
@@ -113,6 +113,7 @@ when = "os != 'macos' and not has(gpu.vendors, 'nvidia') and not (os == 'linux' 
 packages = ["torch", "torchvision"]
 index = "https://download.pytorch.org/whl/cpu"
 weight = 6
+launch_args = ["--cpu"]         # ComfyUI stops at once on a PyTorch with no graphics card unless it is told to use the processor (v0.39.0 and v0.45.2 alike)
 
 [[acquire.install.pip]]
 id = "torch_mac"
@@ -139,6 +140,7 @@ id = "manager"
 label = "Install ComfyUI-Manager"
 badge = "highly recommended"
 default = true
+summary = "The easiest way to get models and custom nodes: its Model Manager lists about 500 models (checkpoints, LoRAs, VAEs, upscalers, ControlNets) and puts the one you pick in the right folder. About 30 MB."
 help = "ComfyUI-Manager installs custom nodes from inside ComfyUI's page, and its Model Manager lists about 500 models (checkpoints, LoRAs, VAEs, upscalers, ControlNets) and puts the one you choose in the models folder: the way to get models for ComfyUI that this list and Look up online do not have. It is small (13 packages, about 30 MB) and leaves PyTorch alone. Open it from the Manager button at the top of ComfyUI's page. It contacts raw.githubusercontent.com and api.comfy.org whenever ComfyUI starts, to refresh its lists, and the site a node or a model is on when you ask for it; a custom node is another person's program, which runs on this computer."
 launch_args = ["--enable-manager-legacy-ui"]
 

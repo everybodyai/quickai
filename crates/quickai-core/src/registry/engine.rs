@@ -1859,6 +1859,16 @@ fn compile_python_app(
     let mut pip_when = Vec::new();
     for (i, step) in pip.iter().enumerate() {
         let step_at = install_at.clone().key("pip").index(i);
+        // the words go into the launcher, as an option's do
+        for arg in &step.launch_args {
+            if !is_launch_arg(arg) {
+                c.error_hint(
+                    &step_at.clone().key("launch_args"),
+                    format!("`{arg}` is not one plain word of a command line"),
+                    "write an option such as --cpu: it starts with - and holds letters, digits and - _ . =",
+                );
+            }
+        }
         if let Some(option) = &step.option {
             if !option_ids.contains(&option.as_str()) {
                 c.error_hint(

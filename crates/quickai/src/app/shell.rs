@@ -381,8 +381,13 @@ impl App {
             .id_salt("setup_page")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                ui.add_space((ui.available_height() * 0.22).max(24.0));
-                theme::column(ui, 560.0, |ui| self.show_engine_setup(ui));
+                ui.add_space((ui.available_height() * 0.12).max(24.0));
+                page_margin(ui, |ui| {
+                    theme::column(ui, super::install_page::CARD_WIDTH, |ui| {
+                        self.show_engine_setup(ui)
+                    })
+                });
+                ui.add_space(24.0);
             });
     }
 
@@ -428,25 +433,27 @@ impl App {
     }
 
     /// The page of an engine that runs on its own (ComfyUI): its settings, the workbench, and what went wrong.
-    fn show_workbench_page(&mut self, ui: &mut egui::Ui, state: ServerState, active: bool) {
+    fn show_workbench_page(&mut self, ui: &mut egui::Ui, state: ServerState, _active: bool) {
         egui::ScrollArea::vertical()
             .id_salt("page")
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 page_margin(ui, |ui| {
+                    // not installed: the card that installs it, alone (its models are got once there is a ComfyUI to use them)
+                    if self.needs_install() {
+                        ui.add_space(28.0);
+                        theme::column(ui, super::install_page::CARD_WIDTH, |ui| {
+                            self.show_engine_setup(ui)
+                        });
+                        ui.add_space(24.0);
+                        return;
+                    }
+                    // what went wrong (a crash, a computer that cannot be reached) first, then the page
                     theme::column(ui, theme::PAGE_WIDTH, |ui| {
-                        // its files can be got before it is installed (they are kept in a folder of their own): the models
-                        // area stays under the button that installs it
-                        if self.needs_install() {
-                            ui.add_space(24.0);
-                            self.show_engine_setup(ui);
-                            ui.add_space(24.0);
-                            theme::card(ui, |ui| self.show_workbench(ui, active));
-                            return;
-                        }
-                        ui.add_space(6.0);
-                        theme::card(ui, |ui| self.show_workbench(ui, active));
+                        ui.add_space(14.0);
                         self.show_diagnostics(ui, state);
+                        self.show_workbench(ui, state);
+                        ui.add_space(24.0);
                     })
                 });
             });

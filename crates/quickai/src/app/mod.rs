@@ -46,6 +46,7 @@ mod header;
 mod help;
 mod icons;
 mod inspector;
+mod install_page;
 mod live_traffic;
 mod log_pane;
 mod lookup_view;
@@ -715,6 +716,8 @@ impl App {
     fn rescan_models(&mut self) {
         let current = self.models.get(self.selected).map(|m| m.filename.clone());
         self.models = self.scan_models();
+        // the files of the page of an engine that runs on its own are looked at again with them
+        self.bench.files_at = None;
         if self.runs_alone() {
             // the results of a look-up say which of their files are there: a file the page fetched, or one put
             // in by hand, counts
@@ -1009,6 +1012,8 @@ impl App {
                 self.bench_fetched();
                 let current = self.models.get(self.selected).map(|m| m.filename.clone());
                 self.models = self.scan_models();
+                // and the files of the page of an engine that runs on its own, which the fetch added to
+                self.bench.files_at = None;
                 if self.catalog.open || self.lookup.open {
                     self.refresh_catalog_have();
                 }

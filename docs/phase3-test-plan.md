@@ -232,6 +232,7 @@ The proxy in front of the fake Ollama. D01 and D07 hold today: the OpenAI shape 
 | ID | WP | State | Case | Where |
 |---|---|---|---|---|
 | D01 | 3.6 | ready | An OpenAI chat through the proxy is read as it always was. | `p3/proxy.rs` |
+| D01b | 3.6 | ready | The turns of one conversation are one session whatever connection they come on: a client that opens a new connection for each turn (a voice conversation) is one session, and two conversations of one client are two. | `p3/proxy.rs` |
 | D02 | 3.6 | ready | Ollama's native chat is read like an OpenAI chat. | `p3/proxy.rs` |
 | D03 | 3.6 | ready | Ollama's generate is read from its prompt and its response field. | `p3/proxy.rs` |
 | D03b | 3.6 | ready | A load or an unload is not shown as a conversation. | `p3/proxy.rs` |
@@ -554,7 +555,7 @@ embedding model) says so in the record beside its weights as the id of the engin
 | J17 | 4.10 | ready | A button is installed when every file it fetches is in the folders at the size the list says, or the name is among those the engine lists, whichever way either is written. | `app/engine.rs` |
 | J18 | 4.10 | ready | A model fits comfortably in half of the memory with the overhead counted, tightly in four fifths and not beyond; an unknown memory judges nothing. | `hardware.rs` |
 | J19 | 4.10 | ready | The window opens without asking anything of any site (it is drawn closed, open and in every choice), shows what the engine offers and starts with what the list says to start with, says what is known of a model, closes, and starts again from nothing when the engine changes. | `app/engine.rs` |
-| J19b | 4.10 | ready | The two rows of a model that has a companion say what it is for: the bundled row what the extra file is and that it can be left out, the row of the weights alone what it leaves out and that the choice is the person's; a model with no bundle says nothing. | `app/lookup_view.rs` |
+| J19b | 4.10 | ready | The sizes in the ▾ of a model that has a companion say what each is for (the rows of C220): the bundled ones what comes with them (`Recommended · comfy`), the weights alone that they are the model only (`Model only`, `Bigger, model only`), each compared with its own kind and not with the bundle; a model with no bundle says neither. | `app/model_row.rs` |
 | J20 | 4.10 | ready | A button of the window fetches through the code of the look-up (one job, each file checked, the commit named in the address), the window then knows the model is installed, the picker names it as the list does with its note and its projector, and an embedding model's record, picker note and selection say its mode. | `app/engine.rs` |
 | J20b | 4.10 | ready | A file that is not the one the list was made for is not kept, the log says which and the window says it too (the log is under it), and the window can fetch again; a download that ends well leaves no such note. | `app/engine.rs` |
 | J21 | 4.10 | ready | In Ollama's window the list offers names as buttons that pull and marks the ones the daemon lists; llama.cpp's window does not offer what has no files and the reverse. | `app/engine.rs` |
@@ -1056,7 +1057,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 740 / 0 / 16 / 5 (total 761). The test kit has 29 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 741 / 0 / 16 / 5 (total 762). The test kit has 29 tests of its own and the Python fake
 22, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 

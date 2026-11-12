@@ -927,11 +927,13 @@ fn p3_f96_the_install_the_document_makes_has_the_managers_step_and_word_only_whe
             app.launch_args,
         )
     };
-    // the install of nobody's choice (the headless runner, the installs of before) is what it was
+    // the install of nobody's choice (the headless runner, the installs of before) is what it was; on a computer whose
+    // cards are not known its PyTorch is the processor's, and its launcher tells ComfyUI to use the processor (it stops at
+    // once on such a PyTorch otherwise)
     let (steps, words) = made(None);
     let ids: Vec<&str> = steps.iter().map(|(id, _)| id.as_str()).collect();
     assert_eq!(ids, ["torch_cpu", "requirements"]);
-    assert!(words.is_empty());
+    assert_eq!(words, ["--cpu"]);
     assert_eq!(made(Some(&[])), made(None));
     // chosen: one step more, last of the packages, from the file ComfyUI's release has for it, and its word
     let (steps, words) = made(Some(&["manager"]));
@@ -943,9 +945,21 @@ fn p3_f96_the_install_the_document_makes_has_the_managers_step_and_word_only_whe
         ))
     );
     assert_eq!(steps.len(), 3);
-    assert_eq!(words, ["--enable-manager-legacy-ui"]);
+    assert_eq!(words, ["--enable-manager-legacy-ui", "--cpu"]);
     // what is not an option of the document is not one
     assert_eq!(made(Some(&["something"])), made(None));
+
+    // with an AMD card on Linux, PyTorch is ROCm's and ComfyUI uses the card: no word of the processor
+    let amd = HostFacts {
+        gpu_vendors: vec!["amd".into()],
+        ..facts.clone()
+    };
+    let spec = InstallSpec::from_engine_with(engine, &amd, &["manager"]).expect("an install spec");
+    let InstallKind::PythonApp(app) = spec.kind else {
+        panic!("a python_app install")
+    };
+    assert_eq!(app.pip[0].id, "torch_amd");
+    assert_eq!(app.launch_args, ["--enable-manager-legacy-ui"]);
 }
 
 #[cfg(unix)]
@@ -1343,24 +1357,24 @@ mod feed {
     ) {
         let (_, builds) = lookup(
             vec![
-                release("v0.41.0", false),
-                release("v0.40.0", false),
-                release("v0.39.0", false),
-                release("v0.39.0-rc1", true),
-                release("v0.38.0", false),
+                release("v0.47.0", false),
+                release("v0.46.0", false),
+                release("v0.45.2", false),
+                release("v0.45.2-rc1", true),
+                release("v0.44.0", false),
             ],
             "linux",
         );
         // the tested release first, then the feed's order; the prerelease is left out, as the document says
         let tags: Vec<&str> = builds.iter().map(|b| b.tag.as_str()).collect();
-        assert_eq!(tags, ["v0.39.0", "v0.41.0", "v0.40.0", "v0.38.0"]);
+        assert_eq!(tags, ["v0.45.2", "v0.47.0", "v0.46.0", "v0.44.0"]);
         let tested = &builds[0];
         assert!(tested.tested && !builds[1].tested);
-        assert_eq!(tested.label, "v0.39.0");
-        assert_eq!(tested.asset_name, "v0.39.0.tar.gz");
+        assert_eq!(tested.label, "v0.45.2");
+        assert_eq!(tested.asset_name, "v0.45.2.tar.gz");
         assert_eq!(
             tested.url,
-            "https://github.com/Comfy-Org/ComfyUI/archive/refs/tags/v0.39.0.tar.gz"
+            "https://github.com/Comfy-Org/ComfyUI/archive/refs/tags/v0.45.2.tar.gz"
         );
         let pin = tested
             .pin
@@ -1376,12 +1390,12 @@ mod feed {
             .all(|b| b.sha256.is_none() && b.overlays.is_empty()));
         // what an install of it is told: the source, its pin, no host digest
         let request = tested.install_request(&[]);
-        assert_eq!(request.label, "v0.39.0");
+        assert_eq!(request.label, "v0.45.2");
         assert_eq!(request.base.url, tested.url);
         assert_eq!(request.base.pin.as_deref(), Some(pin));
         assert!(request.base.host_digest.is_none() && request.overlays.is_empty());
         // the same on every platform: the source is not a file for one of them
-        let (_, on_windows) = lookup(vec![release("v0.39.0", false)], "windows");
+        let (_, on_windows) = lookup(vec![release("v0.45.2", false)], "windows");
         assert_eq!(on_windows.len(), 1);
     }
 
@@ -1392,12 +1406,12 @@ mod feed {
             "linux",
         );
         let tags: Vec<&str> = builds.iter().map(|b| b.tag.as_str()).collect();
-        assert_eq!(tags, ["v0.39.0", "v0.50.0", "v0.49.0"]);
+        assert_eq!(tags, ["v0.45.2", "v0.50.0", "v0.49.0"]);
         assert!(builds[0].tested && builds[0].pin.is_some());
         // and with no release at all (a feed that says nothing), the tested one is still there to be installed
         let (_, none) = lookup(Vec::new(), "linux");
         assert_eq!(none.len(), 1);
-        assert_eq!(none[0].tag, "v0.39.0");
+        assert_eq!(none[0].tag, "v0.45.2");
     }
 }
 

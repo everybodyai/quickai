@@ -914,7 +914,8 @@ mod tests {
     }
 
     #[test]
-    fn the_model_alone_beside_a_bundle_is_compared_with_the_model_alone_and_not_with_the_bundle() {
+    fn p3_j19b_the_model_alone_beside_a_bundle_is_compared_with_the_model_alone_and_not_with_the_bundle(
+    ) {
         let e = entry(vec![
             offer("Q6_K", 6600, Some("comfy"), true),
             offer("Q8_0", 7000, Some("comfy"), false),

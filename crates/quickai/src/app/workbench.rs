@@ -1,8 +1,8 @@
-//! The model area of an engine that runs on its own (panel `workbench`): ComfyUI has no model to
-//! choose before Start, because the workflow a person builds in its page names the files it uses. What
-//! the window shows is what is installed, the ways to get more (the recommended list, a look-up of the
-//! hub, a box that takes a link or a file of this computer and the folder it goes in) and where the
-//! files are.
+//! The page of an engine that runs on its own (ComfyUI), once it is here: it has no model to choose before Start,
+//! because the workflow a person builds in its page names the files it uses. The page says how it is used in three
+//! steps, offers the three ways to get models (its own Manager first, then QuickAI's list, then Hugging Face, with the box
+//! that takes a name, a link or a file of this computer and the folder it goes in), and lists the files of its models
+//! folder.
 //!
 //! The models of the other engines are drawn by `model_bar.rs` and `acquire.rs`; nothing here changes
 //! what they show.
@@ -12,12 +12,13 @@ use std::path::{Path, PathBuf};
 use eframe::egui;
 use quickai_core::lookup::present::Download;
 
+use super::icons::{self, Icon};
+use super::theme::{self, Role, Tone};
 use super::App;
 use crate::downloader;
+use crate::events::ServerState;
 use crate::hardware;
-
-/// How many models the panel lists; Settings lists them all.
-const SHOWN: usize = 5;
+use quickai_core::acquire;
 
 /// The endings of the files a link or a file given by hand may be: the formats that hold numbers and
 /// cannot hold a program. A pickled `.ckpt`, `.pt` or `.pth` is the person's to put in the folder
@@ -34,6 +35,20 @@ pub struct Bench {
     fetching: Option<String>,
     /// What the last fetch did, or why the box would not take what was given.
     pub note: Option<Note>,
+    /// The panel of Hugging Face was asked for (Search or paste…).
+    pub box_open: bool,
+    /// It was asked for in this frame, or a look-up has just brought results into it: it is scrolled to, once it is
+    /// drawn.
+    scroll_to_box: bool,
+    /// A look-up was running at the last frame.
+    lookup_was_running: bool,
+    /// The Manager was asked for before ComfyUI ran: its page is opened with it once it does.
+    pub open_manager: Option<std::time::Instant>,
+    /// The files of the models folder, as the list shows them, and when they were looked at (the frame's time).
+    pub files: Vec<ModelFile>,
+    pub files_at: Option<f64>,
+    /// The launcher of the build in use and what it says, for what the build was made with.
+    pub launcher: Option<(PathBuf, Option<String>)>,
 }
 
 /// A sentence about the last thing that was tried, and whether it went wrong.
@@ -174,110 +189,119 @@ fn file_name_of(given: &str) -> String {
 }
 
 impl App {
-    /// The models installed, the ways to get more, the progress of a download and a sentence about what
-    /// to do next.
-    pub(super) fn show_workbench(&mut self, ui: &mut egui::Ui, _active: bool) {
+    /// The page of an engine that runs on its own (ComfyUI), once it is here: how it is used in three steps, the three
+    /// ways to get models (its Manager first, then QuickAI's list, then Hugging Face, whose box opens under them), and the
+    /// files that are in its models folder.
+    pub(super) fn show_workbench(&mut self, ui: &mut egui::Ui, state: ServerState) {
         let engine = self.engine_name();
-        ui.scope(|ui| {
-            // its buttons go on to a second line in a narrow page (between the sidebar and the panel, C203)
-            ui.horizontal_wrapped(|ui| {
-                ui.label("Models:").on_hover_text(format!(
-                    "The files {engine}'s workflows use: the weights of a model, its text encoder, its \
-                     VAE. They are kept in the folders {engine} looks in, under the models folder, and a \
-                     workflow names them by file name."
-                ));
-                let count = self.models.len();
-                ui.label(match count {
-                    0 => "none yet".to_string(),
-                    1 => "1 installed".to_string(),
-                    n => format!("{n} installed"),
+        let page_label = self
+            .engine_doc()
+            .and_then(|e| e.doc.provides.web_ui.as_ref())
+            .map(|w| w.label.clone())
+            .unwrap_or_else(|| format!("Open {engine}"));
+        self.open_manager_when_ready(state);
+        self.refresh_model_files(ui.ctx(), state);
+
+        let steps = howto_steps(state, self.session.port(), &page_label);
+        howto_strip(ui, &steps);
+        ui.add_space(16.0);
+
+        ui.label(
+            egui::RichText::new("Get models")
+                .family(theme::semibold(ui))
+                .color(theme::palette().text),
+        );
+        ui.add_space(6.0);
+        let manager = self.manager_tile(state);
+        let pressed = self.ways_to_get_models(ui, manager.as_ref());
+        match pressed {
+            Some(Way::Manager) => self.open_manager(ui.ctx(), state),
+            Some(Way::ManagerSettings) => {
+                self.advanced_section_wanted = true;
+                self.open_settings();
+            }
+            Some(Way::Recommended) => self.open_catalog(),
+            Some(Way::HuggingFace) => {
+                self.bench.box_open = !self.hub_panel_open();
+                self.bench.scroll_to_box = self.bench.box_open;
+            }
+            None => {}
+        }
+        // a look-up that has just ended with results brings the panel up with them, once: in a short window they would
+        // be under the fold, and when the panel was opened the page was not yet long enough to scroll it up
+        let running = self.lookup.running();
+        if std::mem::replace(&mut self.bench.lookup_was_running, running)
+            && !running
+            && !self.lookup.entries.is_empty()
+        {
+            self.bench.scroll_to_box = true;
+        }
+        if self.hub_panel_open() {
+            ui.add_space(10.0);
+            let panel = self.show_hub_panel(ui);
+            // opened by its button, in a page too short to show it: it is brought up to where it can be seen
+            if std::mem::take(&mut self.bench.scroll_to_box) {
+                panel.scroll_to_me(Some(egui::Align::Min));
+            }
+        }
+        ui.add_space(16.0);
+        self.show_model_files(ui, &engine);
+    }
+
+    /// Whether the panel of Hugging Face is open: asked for, or with something in it (a look-up's results, words in its
+    /// box, a fetch it began).
+    fn hub_panel_open(&self) -> bool {
+        self.bench.box_open
+            || self.lookup.open
+            || !self.model_input.trim().is_empty()
+            || self.download.is_some()
+    }
+
+    /// The panel of Hugging Face, under the three ways: the box that takes a name or a link, the look-up of the most
+    /// downloaded, what the last fetch did, and the results.
+    fn show_hub_panel(&mut self, ui: &mut egui::Ui) -> egui::Response {
+        let p = theme::palette();
+        let mut close = false;
+        let shown = theme::card(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("Hugging Face")
+                        .family(theme::semibold(ui))
+                        .color(p.text),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if self.download.is_none() && super::named_models::close_button(ui).clicked() {
+                        close = true;
+                    }
                 });
-                ui.add_space(8.0);
-                if ui
-                    .add_enabled(self.can_recommend(), egui::Button::new("Recommended"))
-                    .on_hover_text(format!(
-                        "Browse the models QuickAI recommends for {engine}, with the files that go \
-                         with each, and fetch them into the right folders with one click. The list is \
-                         part of the application: nothing is asked of the internet to open it."
-                    ))
-                    .clicked()
-                {
-                    self.open_catalog();
-                }
+            });
+            ui.add_space(4.0);
+            self.show_get_box(ui);
+            ui.add_space(2.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(theme::muted("Or"));
                 let can_look_up = self.can_look_up() && self.download.is_none();
                 if ui
-                    .add_enabled(can_look_up, egui::Button::new("Look up online"))
+                    .add_enabled(can_look_up, egui::Button::new("Look up online").small())
                     .on_hover_text(
-                        "Search Hugging Face for the most downloaded GGUF models of pictures and video, \
-                         with the text encoders and VAEs that go with them, each of which you can fetch \
-                         with one click into the folder it belongs in. Type a name in the box first to \
-                         look for that instead.",
+                        "Search Hugging Face for the most downloaded GGUF models of pictures and video, with the text \
+                         encoders and VAEs that go with them, each of which you can fetch with one click into the \
+                         folder it belongs in. Type a name in the box first to look for that instead.",
                     )
                     .clicked()
                 {
                     self.start_lookup(ui.ctx(), "");
                 }
-                if ui
-                    .button("Refresh")
-                    .on_hover_text(format!(
-                        "Look in the models folder again, for a file you put there by hand or one that \
-                         {engine}'s page fetched with its Download button."
-                    ))
-                    .clicked()
-                {
-                    self.rescan_models();
-                }
-                if ui
-                    .button("Open folder")
-                    .on_hover_text(format!(
-                        "Show the models folder ({}) in your file manager.",
-                        self.models_dir.display()
-                    ))
-                    .clicked()
-                {
-                    open_folder(&self.models_dir);
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if self.lookup.has_results() && super::named_models::close_button(ui).clicked() {
-                        self.lookup.open = false;
-                    }
-                });
+                ui.label(theme::muted(
+                    "the most downloaded models of pictures and video, with their text encoders and VAEs.",
+                ));
             });
-
-            self.show_get_box(ui);
-
-            for model in self.models.iter().take(SHOWN) {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(format!(
-                        "• {} ({})",
-                        model.display,
-                        hardware::format_bytes(model.size_bytes)
-                    )));
-                });
-                if !model.note.is_empty() {
-                    ui.label(
-                        egui::RichText::new(&model.note)
-                            .small()
-                            .color(super::theme::palette().muted),
-                    );
-                }
-            }
-            if self.models.len() > SHOWN {
-                ui.label(
-                    egui::RichText::new(format!(
-                        "... and {} more (Settings lists them all)",
-                        self.models.len() - SHOWN
-                    ))
-                    .small()
-                    .color(super::theme::palette().muted),
-                );
-            }
-
             if let Some(job) = &self.download {
                 ui.add_space(4.0);
                 let mut cancel = false;
                 ui.horizontal(|ui| {
-                    ui.colored_label(super::theme::palette().warn, job.progress_line());
+                    ui.colored_label(p.warn, job.progress_line());
                     cancel = ui
                         .small_button("Cancel")
                         .on_hover_text("Stop the download. What was fetched so far is thrown away.")
@@ -292,26 +316,515 @@ impl App {
             }
             if let Some(note) = &self.bench.note {
                 ui.add_space(2.0);
-                let colour = if note.failed {
-                    super::theme::palette().bad
-                } else {
-                    super::theme::palette().ok
-                };
-                ui.add(egui::Label::new(egui::RichText::new(&note.text).small().color(colour)).wrap());
+                let colour = if note.failed { p.bad } else { p.ok };
+                ui.add(
+                    egui::Label::new(egui::RichText::new(&note.text).small().color(colour)).wrap(),
+                );
             }
-
             self.show_lookup_results(ui);
-
-            ui.add_space(2.0);
-            ui.label(
-                egui::RichText::new(format!(
-                    "{engine} makes pictures and video from workflows built in its own page: press Start, then \
-                     Open {engine}."
-                ))
-                .small()
-                .color(super::theme::palette().muted),
-            );
         });
+        if close {
+            self.bench.box_open = false;
+            self.lookup.open = false;
+        }
+        shown.response
+    }
+
+    /// The three ways to get models, side by side (under each other in a narrow page), the Manager first and in the
+    /// colour of a recommendation. What was pressed.
+    fn ways_to_get_models(
+        &mut self,
+        ui: &mut egui::Ui,
+        manager: Option<&ManagerTile>,
+    ) -> Option<Way> {
+        let p = theme::palette();
+        let mut tiles: Vec<Tile> = Vec::new();
+        if let Some(manager) = manager {
+            tiles.push(Tile {
+                icon: Icon::Package,
+                title: "ComfyUI-Manager",
+                badge: Some("recommended"),
+                words: manager.words.clone(),
+                button: manager.button,
+                primary: manager.primary,
+                enabled: manager.enabled,
+                hover: manager.hover.clone(),
+                best: true,
+                way: manager.way,
+            });
+        }
+        tiles.push(Tile {
+            icon: Icon::Star,
+            title: "QuickAI's picks",
+            badge: None,
+            words: "A few models tested with QuickAI, with every file each one needs, checked against its sha256."
+                .to_string(),
+            button: "Recommended",
+            primary: false,
+            enabled: self.can_recommend(),
+            hover: format!(
+                "Browse the models QuickAI recommends for {}, with the files that go with each, and fetch them into \
+                 the right folders with one click. The list is part of the application: nothing is asked of the \
+                 internet to open it.",
+                self.engine_name()
+            ),
+            best: false,
+            way: Way::Recommended,
+        });
+        tiles.push(Tile {
+            icon: Icon::Search,
+            title: "Hugging Face",
+            badge: None,
+            words: "Search GGUF models of pictures and video, or paste a link to one file.".to_string(),
+            button: "Search or paste…",
+            primary: false,
+            enabled: true,
+            hover: "A box for a name to search Hugging Face for, a link to a model file, or a file of this computer; \
+                    and the most downloaded models of pictures and video."
+                .to_string(),
+            best: false,
+            way: Way::HuggingFace,
+        });
+        let gap = 10.0;
+        let room = ui.available_width();
+        let narrow = room < 600.0;
+        // the first is wider: it has the most to say
+        let shares: Vec<f32> = tiles
+            .iter()
+            .map(|t| if t.best { 1.6 } else { 1.0 })
+            .collect();
+        let total: f32 = shares.iter().sum();
+        let free = room - gap * (tiles.len() as f32 - 1.0);
+        // the tiles of a row are as tall as the tallest was in the frame before
+        let height_id = ui.id().with("ways_height");
+        let tallest: f32 = ui.ctx().data(|d| d.get_temp(height_id)).unwrap_or(0.0);
+        let mut measured: f32 = 0.0;
+        let mut pressed = None;
+        let mut draw = |ui: &mut egui::Ui, tile: &Tile, width: f32, min_height: f32| {
+            let (fill, stroke) = if tile.best {
+                (
+                    p.card.lerp_to_gamma(p.accent, 0.16),
+                    p.accent.gamma_multiply(0.7),
+                )
+            } else {
+                (p.card, p.line)
+            };
+            let shown = egui::Frame::new()
+                .fill(fill)
+                .stroke(egui::Stroke::new(1.0, stroke))
+                .corner_radius(egui::CornerRadius::same(8))
+                .inner_margin(egui::Margin::symmetric(12, 10))
+                .show(ui, |ui| {
+                    ui.set_width(width - 26.0);
+                    ui.set_min_height((min_height - 22.0).max(0.0));
+                    // a tile of a row is a column of its own; in a narrow page, where they are under each other, the button
+                    // is at the right of the title when the title, its chip and the button fit on one line, and the
+                    // words under them
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 6.0;
+                        let role = if tile.primary {
+                            Role::Primary
+                        } else {
+                            Role::Normal
+                        };
+                        let spacing = ui.spacing().item_spacing.x;
+                        let line = 22.0
+                            + theme::text_width(ui, tile.title, egui::TextStyle::Body)
+                            + tile.badge.map_or(0.0, |b| {
+                                theme::text_width(ui, b, egui::TextStyle::Small) + 12.0 + spacing
+                            })
+                            + theme::text_width(ui, tile.button, egui::TextStyle::Button)
+                            + 2.0 * ui.spacing().button_padding.x
+                            + 3.0 * spacing
+                            + 8.0;
+                        let beside = narrow && line <= ui.available_width();
+                        ui.horizontal(|ui| {
+                            icons::paint(
+                                ui.painter(),
+                                egui::Rect::from_min_size(
+                                    ui.cursor().min + egui::vec2(0.0, 2.0),
+                                    egui::vec2(16.0, 16.0),
+                                ),
+                                tile.icon,
+                                p.accent_text,
+                            );
+                            ui.add_space(22.0);
+                            ui.label(
+                                egui::RichText::new(tile.title)
+                                    .family(theme::semibold(ui))
+                                    .color(p.text),
+                            );
+                            if beside {
+                                if let Some(badge) = tile.badge {
+                                    theme::chip(ui, badge, Some(Tone::Good));
+                                }
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if theme::button_sized(
+                                            ui,
+                                            role,
+                                            tile.enabled,
+                                            tile.button,
+                                            egui::vec2(0.0, 26.0),
+                                        )
+                                        .on_hover_text(&tile.hover)
+                                        .clicked()
+                                        {
+                                            pressed = Some(tile.way);
+                                        }
+                                    },
+                                );
+                            } else if let Some(badge) = tile.badge {
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        theme::chip(ui, badge, Some(Tone::Good));
+                                    },
+                                );
+                            }
+                        });
+                        ui.add(egui::Label::new(theme::muted(&tile.words)).wrap());
+                        if !beside
+                            && theme::button_sized(
+                                ui,
+                                role,
+                                tile.enabled,
+                                tile.button,
+                                egui::vec2(0.0, 28.0),
+                            )
+                            .on_hover_text(&tile.hover)
+                            .clicked()
+                        {
+                            pressed = Some(tile.way);
+                        }
+                    });
+                });
+            measured = measured.max(shown.response.rect.height());
+        };
+        if narrow {
+            for tile in &tiles {
+                draw(ui, tile, room, 0.0);
+                ui.add_space(gap - ui.spacing().item_spacing.y);
+            }
+        } else {
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                for (tile, share) in tiles.iter().zip(&shares) {
+                    draw(ui, tile, (free * share / total).floor(), tallest);
+                }
+            });
+            if (measured - tallest).abs() > 0.5 {
+                ui.ctx().data_mut(|d| d.insert_temp(height_id, measured));
+                ui.ctx().request_repaint();
+            }
+        }
+        pressed
+    }
+
+    /// What the Manager's tile says and does: whether the build has it, and whether ComfyUI runs. `None` for an engine
+    /// whose install has no Manager to offer.
+    fn manager_tile(&self, state: ServerState) -> Option<ManagerTile> {
+        let engine = self.engine_doc()?;
+        let offered = acquire::install_options(engine, &self.host_facts)
+            .iter()
+            .any(|o| o.id == MANAGER_OPTION);
+        if !offered {
+            return None;
+        }
+        let name = self.engine_name();
+        if self.build_has_option(MANAGER_OPTION) == Some(false) {
+            return Some(ManagerTile {
+                words: format!(
+                    "This build of {name} has no ComfyUI-Manager. Install a build with Install ComfyUI-Manager ticked \
+                     (Settings, Program) to get about 500 models and every custom node from inside its page."
+                ),
+                button: "Settings…",
+                primary: false,
+                enabled: true,
+                hover: "Settings, Program: the builds, and the box of ComfyUI-Manager over them.".to_string(),
+                way: Way::ManagerSettings,
+            });
+        }
+        let running = state == ServerState::Running;
+        let starting = state == ServerState::Starting;
+        Some(ManagerTile {
+            words: if running {
+                format!(
+                    "In {name}'s page: Manager at the top, then Model Manager. A model a workflow is missing has its \
+                     own Download button there too."
+                )
+            } else {
+                format!(
+                    "About 500 models and every custom node, from inside {name}'s page: Manager, then Model Manager. \
+                     Each goes in the right folder."
+                )
+            },
+            button: if running || starting {
+                "Open the Manager"
+            } else {
+                "Start and open the Manager"
+            },
+            primary: true,
+            enabled: running || starting || !self.engine_missing(),
+            hover: if running {
+                format!("Open {name}'s page in your browser with the Manager's Model Manager open.")
+            } else {
+                format!(
+                    "Start {name}, then open its page in your browser with the Manager's Model Manager open, as soon \
+                     as it is ready."
+                )
+            },
+            way: Way::Manager,
+        })
+    }
+
+    /// Whether the build in use was made with the part `option` of the install (its words are in its launcher). `None`
+    /// when that cannot be told: a program the person named, or a launcher that cannot be read.
+    fn build_has_option(&self, option: &str) -> Option<bool> {
+        let engine = self.engine_doc()?;
+        let words = acquire::launch_args(engine, &[option]);
+        if words.is_empty() {
+            return None;
+        }
+        let (path, text) = self.bench.launcher.as_ref()?;
+        if *path != self.binary {
+            return None;
+        }
+        let text = text.as_ref()?;
+        Some(words.iter().all(|w| text.contains(w.as_str())))
+    }
+
+    /// Opens ComfyUI's page with the Manager's Model Manager open: now, when it runs; once it is ready, when it does not
+    /// yet (it is started).
+    fn open_manager(&mut self, ctx: &egui::Context, state: ServerState) {
+        match state {
+            ServerState::Running => self.open_page_at(MANAGER_QUERY),
+            ServerState::Starting => self.bench.open_manager = Some(std::time::Instant::now()),
+            _ => {
+                self.bench.open_manager = Some(std::time::Instant::now());
+                self.start_pressed_at = Some(std::time::Instant::now());
+                self.start_selected(ctx);
+            }
+        }
+    }
+
+    /// The Manager that was asked for before ComfyUI ran is opened once it does; an ask that ComfyUI did not come up for
+    /// (it stopped, or failed to start) is let go.
+    fn open_manager_when_ready(&mut self, state: ServerState) {
+        let Some(asked) = self.bench.open_manager else {
+            return;
+        };
+        match state {
+            ServerState::Running => {
+                self.bench.open_manager = None;
+                self.open_page_at(MANAGER_QUERY);
+            }
+            ServerState::Starting => {}
+            _ if asked.elapsed() > std::time::Duration::from_secs(5) => {
+                self.bench.open_manager = None
+            }
+            _ => {}
+        }
+    }
+
+    /// Opens the engine's own page in the browser, with `query` after its address (`?quickai=manager`).
+    fn open_page_at(&self, query: &str) {
+        if let Some(url) = self
+            .engine_doc()
+            .and_then(|e| e.doc.provides.web_ui.clone())
+            .and_then(|w| self.web_ui_url(&w))
+        {
+            let _ = webbrowser::open(&page_address(&url, query));
+        }
+    }
+
+    /// The files of the models folder are looked at again every few seconds while the engine runs (its page and its
+    /// Manager put files there), and when the page is first drawn.
+    fn refresh_model_files(&mut self, ctx: &egui::Context, state: ServerState) {
+        let now = ctx.input(|i| i.time);
+        let stale = match self.bench.files_at {
+            None => true,
+            Some(at) => state == ServerState::Running && now - at > 3.0,
+        };
+        if stale {
+            self.bench.files = scan_model_files(&self.models_dir);
+            self.bench.files_at = Some(now);
+        }
+        // the launcher of the build in use says what it was made with: read again when it is another build
+        let read = self
+            .bench
+            .launcher
+            .as_ref()
+            .is_none_or(|(path, _)| *path != self.binary);
+        if read || stale {
+            // a launcher is a few lines; a program the person named may be anything, and is not read whole
+            let small = std::fs::metadata(&self.binary).is_ok_and(|m| m.len() < 64 * 1024);
+            let text = small
+                .then(|| std::fs::read_to_string(&self.binary).ok())
+                .flatten();
+            self.bench.launcher = Some((self.binary.clone(), text));
+        }
+    }
+
+    /// The files of the models folder, by kind, each with its size, the ones still coming first.
+    fn show_model_files(&mut self, ui: &mut egui::Ui, engine: &str) {
+        let p = theme::palette();
+        let files = &self.bench.files;
+        let done: Vec<&ModelFile> = files.iter().filter(|f| !f.coming).collect();
+        let coming = files.len() - done.len();
+        let bytes: u64 = done.iter().map(|f| f.size).sum();
+        let mut refresh = false;
+        let mut open = false;
+        let mut said = match done.len() {
+            0 => "none yet".to_string(),
+            1 => format!("1 file · {}", hardware::format_bytes(bytes)),
+            n => format!("{n} files · {}", hardware::format_bytes(bytes)),
+        };
+        if coming > 0 {
+            said.push_str(&format!(" · {coming} coming"));
+        }
+        theme::card(ui, |ui| {
+            // the heading, how many and how big, and the two buttons: on one line when they fit, else how many under the
+            // heading (a narrow page, between the sidebar and the panel)
+            let padding = 2.0 * ui.spacing().button_padding.x;
+            let spacing = ui.spacing().item_spacing.x;
+            let wanted = theme::text_width(ui, "On this computer", egui::TextStyle::Body)
+                + theme::text_width(ui, &said, egui::TextStyle::Small)
+                + theme::text_width(ui, "Open folder", egui::TextStyle::Button)
+                + theme::text_width(ui, "Refresh", egui::TextStyle::Button)
+                + 2.0 * padding
+                + 4.0 * spacing
+                + 12.0;
+            let one_line = ui.available_width() >= wanted;
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("On this computer")
+                        .family(theme::semibold(ui))
+                        .color(p.text),
+                )
+                .on_hover_text(format!(
+                    "The files {engine}'s workflows use: the weights of a model, its text encoder, its VAE, a LoRA. \
+                     They are kept in the folders {engine} looks in, under the models folder, and a workflow names \
+                     them by file name."
+                ));
+                if one_line {
+                    ui.label(theme::muted(said.as_str()));
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    open = ui
+                        .button("Open folder")
+                        .on_hover_text(format!(
+                            "Show the models folder ({}) in your file manager.",
+                            self.models_dir.display()
+                        ))
+                        .clicked();
+                    refresh = ui
+                        .button("Refresh")
+                        .on_hover_text(format!(
+                            "Look in the models folder again, for a file you put there by hand. A file {engine}'s page \
+                             or its Manager fetched shows by itself."
+                        ))
+                        .clicked();
+                });
+            });
+            if !one_line {
+                ui.label(theme::muted(said.as_str()));
+            }
+            if files.is_empty() {
+                ui.add_space(4.0);
+                ui.label(theme::muted(
+                    "Nothing yet. What you get in any of the three ways above is listed here.",
+                ));
+                return;
+            }
+            ui.add_space(2.0);
+            let named = |file: &ModelFile| {
+                self.models
+                    .iter()
+                    .find(|m| m.filename == file.name.rsplit('/').next().unwrap_or(&file.name))
+                    .map(|m| m.display.clone())
+                    .filter(|d| *d != file.name)
+            };
+            for file in files.iter().take(SHOWN_FILES) {
+                ui.separator();
+                ui.horizontal(|ui| {
+                    // the kind, at the left of a column of its own
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(116.0, 18.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.set_min_width(116.0);
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(kind_of_folder(&file.folder))
+                                        .small()
+                                        .color(p.faint),
+                                )
+                                .truncate(),
+                            );
+                        },
+                    );
+                    let size = if file.coming {
+                        format!("{} so far", hardware::format_bytes(file.size))
+                    } else {
+                        hardware::format_bytes(file.size)
+                    };
+                    let size_width = theme::text_width(ui, &size, egui::TextStyle::Small) + 4.0;
+                    let name_width = (ui.available_width() - size_width - 12.0).max(80.0);
+                    ui.scope(|ui| {
+                        ui.set_width(name_width);
+                        ui.horizontal(|ui| {
+                            let mut text = egui::text::LayoutJob::default();
+                            text.append(
+                                &file.name,
+                                0.0,
+                                egui::TextFormat {
+                                    font_id: egui::TextStyle::Body.resolve(ui.style()),
+                                    color: p.text,
+                                    ..Default::default()
+                                },
+                            );
+                            let aside = if file.coming {
+                                Some("coming".to_string())
+                            } else {
+                                named(file)
+                            };
+                            if let Some(aside) = aside {
+                                text.append(
+                                    &format!("  {aside}"),
+                                    0.0,
+                                    egui::TextFormat {
+                                        font_id: egui::TextStyle::Small.resolve(ui.style()),
+                                        color: p.faint,
+                                        ..Default::default()
+                                    },
+                                );
+                            }
+                            ui.add(egui::Label::new(text).truncate())
+                                .on_hover_text(format!("{}/{}", file.folder, file.name));
+                        });
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(theme::muted(size));
+                    });
+                });
+            }
+            if files.len() > SHOWN_FILES {
+                ui.separator();
+                ui.label(theme::muted(format!(
+                    "… and {} more (Open folder shows them all)",
+                    files.len() - SHOWN_FILES
+                )));
+            }
+        });
+        if refresh {
+            self.rescan_models();
+            self.bench.files_at = None;
+        }
+        if open {
+            open_folder(&self.models_dir);
+        }
     }
 
     /// The box: a link to a file, a file of this computer, or a name to search the hub for, and the
@@ -525,6 +1038,398 @@ impl App {
     }
 }
 
+// ---- the page of an engine that runs on its own, once it is here ------------------------------------------------------
+
+/// The part of the install that is ComfyUI-Manager (`[[acquire.install.options]] id`).
+const MANAGER_OPTION: &str = "manager";
+
+/// What the address of ComfyUI's page is given for QuickAI's script in it (`quickai_manager.js`) to open the Manager's
+/// Model Manager as the page opens.
+pub(super) const MANAGER_QUERY: &str = "?quickai=manager";
+
+/// A page narrower than this has the three steps under each other, and not side by side.
+const STACKED_BELOW: f32 = 560.0;
+
+/// How many files the list shows before it says how many more there are.
+const SHOWN_FILES: usize = 12;
+
+/// The endings of the files the list shows: the formats models come in.
+const LISTED_ENDINGS: &[&str] = &[
+    ".gguf",
+    ".safetensors",
+    ".sft",
+    ".ckpt",
+    ".pt",
+    ".pth",
+    ".bin",
+    ".onnx",
+];
+
+/// The folders of the models folder, in the order the list puts their files: the model first, then what goes with it.
+const FOLDER_ORDER: &[&str] = &[
+    "diffusion_models",
+    "unet",
+    "checkpoints",
+    "text_encoders",
+    "clip",
+    "vae",
+    "loras",
+    "upscale_models",
+    "controlnet",
+    "clip_vision",
+    "embeddings",
+];
+
+/// `http://127.0.0.1:8188` and `?quickai=manager` as `http://127.0.0.1:8188/?quickai=manager`.
+pub(super) fn page_address(url: &str, query: &str) -> String {
+    let url = url.trim_end_matches('/');
+    if url.contains('?') {
+        format!("{url}&{}", query.trim_start_matches('?'))
+    } else {
+        format!("{url}/{query}")
+    }
+}
+
+/// One file of the models folder, as the list of the page shows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct ModelFile {
+    /// The folder of the models folder it is in (`diffusion_models`), empty for the models folder itself.
+    pub folder: String,
+    /// Its name below that folder (`wan/wan2.2.safetensors`), without the `.part` of one that is still coming.
+    pub name: String,
+    pub size: u64,
+    /// It is still being fetched: what is there is a `.part`.
+    pub coming: bool,
+}
+
+/// Every model file of the models folder and of the folders in it, down to two folders below each: the ones still
+/// coming first, then by kind in the order of `FOLDER_ORDER` (a folder it does not name after those), then by name.
+/// A file whose ending is not a model's (ComfyUI's `put_models_here` notes, a `.yaml`) is not listed.
+pub(super) fn scan_model_files(models_dir: &Path) -> Vec<ModelFile> {
+    fn listed(name: &str) -> Option<(String, bool)> {
+        let lower = name.to_ascii_lowercase();
+        let (stem, coming) = match lower.strip_suffix(".part") {
+            Some(_) => (&name[..name.len() - ".part".len()], true),
+            None => (name, false),
+        };
+        let stem_lower = stem.to_ascii_lowercase();
+        LISTED_ENDINGS
+            .iter()
+            .any(|e| stem_lower.ends_with(e))
+            .then(|| (stem.to_string(), coming))
+    }
+    fn walk(dir: &Path, folder: &str, below: &str, depth: u32, into: &mut Vec<ModelFile>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            // a file linked in from elsewhere on the computer (Import) is the file it points to
+            let Ok(meta) = std::fs::metadata(entry.path()).or_else(|_| entry.metadata()) else {
+                continue;
+            };
+            let path = if below.is_empty() {
+                name.clone()
+            } else {
+                format!("{below}/{name}")
+            };
+            if meta.is_dir() {
+                if depth > 0 {
+                    walk(&entry.path(), folder, &path, depth - 1, into);
+                }
+            } else if let Some((stem, coming)) = listed(&name) {
+                let shown = match path.rsplit_once('/') {
+                    Some((dir, _)) => format!("{dir}/{stem}"),
+                    None => stem,
+                };
+                into.push(ModelFile {
+                    folder: folder.to_string(),
+                    name: shown,
+                    size: meta.len(),
+                    coming,
+                });
+            }
+        }
+    }
+    let mut files = Vec::new();
+    let Ok(entries) = std::fs::read_dir(models_dir) else {
+        return files;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        match std::fs::metadata(entry.path()).or_else(|_| entry.metadata()) {
+            Ok(meta) if meta.is_dir() => walk(&entry.path(), &name, "", 2, &mut files),
+            Ok(meta) => {
+                if let Some((stem, coming)) = listed(&name) {
+                    files.push(ModelFile {
+                        folder: String::new(),
+                        name: stem,
+                        size: meta.len(),
+                        coming,
+                    });
+                }
+            }
+            Err(_) => {}
+        }
+    }
+    let rank = |folder: &str| {
+        FOLDER_ORDER
+            .iter()
+            .position(|f| *f == folder)
+            .unwrap_or(FOLDER_ORDER.len())
+    };
+    files.sort_by(|a, b| {
+        b.coming
+            .cmp(&a.coming)
+            .then(rank(&a.folder).cmp(&rank(&b.folder)))
+            .then(a.folder.cmp(&b.folder))
+            .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    // a file that is there whole is not also coming (a `.part` left over beside it)
+    let whole: Vec<(String, String)> = files
+        .iter()
+        .filter(|f| !f.coming)
+        .map(|f| (f.folder.clone(), f.name.clone()))
+        .collect();
+    files.retain(|f| !f.coming || !whole.contains(&(f.folder.clone(), f.name.clone())));
+    files
+}
+
+/// What a folder of the models folder holds, in a person's words: `vae` is `VAE`, `diffusion_models` is
+/// `Diffusion model`; a folder this does not know is named as it is, with spaces.
+pub(super) fn kind_of_folder(folder: &str) -> String {
+    let known = match folder {
+        "diffusion_models" | "unet" => "Diffusion model",
+        "checkpoints" => "Checkpoint",
+        "text_encoders" | "clip" => "Text encoder",
+        "vae" => "VAE",
+        "loras" => "LoRA",
+        "upscale_models" => "Upscaler",
+        "controlnet" => "ControlNet",
+        "clip_vision" => "CLIP vision",
+        "embeddings" => "Embedding",
+        "" => "Model",
+        _ => "",
+    };
+    if known.is_empty() {
+        super::install_page::sentence_case(&folder.replace('_', " "))
+    } else {
+        known.to_string()
+    }
+}
+
+/// Where one of the three steps of using the engine is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum StepLook {
+    Done,
+    Now,
+    Next,
+}
+
+/// The three steps of using the engine, as its state has them: start it, open its page, load a workflow.
+pub(super) fn howto_steps(
+    state: ServerState,
+    port: Option<u16>,
+    page_label: &str,
+) -> [(String, String, StepLook); 3] {
+    let open = (
+        page_label.to_string(),
+        "Its page opens in your browser".to_string(),
+    );
+    let load = (
+        "Load a workflow".to_string(),
+        "Templates, or one you have".to_string(),
+    );
+    match state {
+        ServerState::Running => [
+            (
+                "Started".to_string(),
+                port.map_or("It runs".to_string(), |p| format!("On port {p}")),
+                StepLook::Done,
+            ),
+            (open.0, "The button at the top".to_string(), StepLook::Now),
+            (load.0, load.1, StepLook::Next),
+        ],
+        ServerState::Starting => [
+            (
+                "Starting…".to_string(),
+                "The first start can take a minute".to_string(),
+                StepLook::Now,
+            ),
+            (open.0, open.1, StepLook::Next),
+            (load.0, load.1, StepLook::Next),
+        ],
+        _ => [
+            (
+                "Start".to_string(),
+                "It runs on this computer".to_string(),
+                StepLook::Now,
+            ),
+            (open.0, open.1, StepLook::Next),
+            (load.0, load.1, StepLook::Next),
+        ],
+    }
+}
+
+/// The three steps in a box, each with its number (a tick once done), the one to do now in green: side by side, or, in a
+/// page too narrow for three columns of words, under each other with the words after the name.
+fn howto_strip(ui: &mut egui::Ui, steps: &[(String, String, StepLook); 3]) {
+    let p = theme::palette();
+    let frame = egui::Frame::new()
+        .fill(p.card)
+        .stroke(egui::Stroke::new(1.0, p.line))
+        .corner_radius(egui::CornerRadius::same(8))
+        .inner_margin(egui::Margin::symmetric(0, 10));
+    frame.show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        let stacked = ui.available_width() < STACKED_BELOW;
+        let width = if stacked {
+            ui.available_width()
+        } else {
+            ui.available_width() / 3.0
+        };
+        let room = (width - 54.0).max(20.0);
+        let title_font = egui::FontId::new(13.5, theme::semibold(ui));
+        let small = egui::TextStyle::Small.resolve(ui.style());
+        // each step's words, laid out in the room it has: side by side the strip is as tall as the tallest, under each other
+        // a step is a line, the name and then what it is
+        type Laid = (std::sync::Arc<egui::Galley>, std::sync::Arc<egui::Galley>);
+        let laid: Vec<Laid> = steps
+            .iter()
+            .map(|(title, words, _)| {
+                let title = ui
+                    .painter()
+                    .layout(title.clone(), title_font.clone(), p.text, room);
+                let words_room = if stacked {
+                    (room - title.size().x - 10.0).max(20.0)
+                } else {
+                    room
+                };
+                let words = ui
+                    .painter()
+                    .layout(words.clone(), small.clone(), p.muted, words_room);
+                (title, words)
+            })
+            .collect();
+        let height_of = |(t, w): &Laid| {
+            if stacked {
+                t.size().y.max(w.size().y).max(22.0)
+            } else {
+                t.size().y + w.size().y + 1.0
+            }
+        };
+        let tallest = laid.iter().map(height_of).fold(24.0_f32, f32::max);
+        let draw = |ui: &mut egui::Ui, i: usize, look: StepLook, (title, words): Laid| {
+            let height = if stacked {
+                height_of(&(title.clone(), words.clone()))
+            } else {
+                tallest
+            };
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+            if i > 0 && !stacked {
+                ui.painter().vline(
+                    rect.left(),
+                    (rect.top() - 2.0)..=(rect.bottom() + 2.0),
+                    egui::Stroke::new(1.0, p.line),
+                );
+            }
+            let centre = egui::pos2(rect.left() + 26.0, rect.top() + 11.0);
+            let (fill, number) = match look {
+                StepLook::Done => (p.accent_soft, p.accent_text),
+                StepLook::Now => (p.accent, p.on_accent),
+                StepLook::Next => (p.raised, p.text),
+            };
+            ui.painter().circle_filled(centre, 11.0, fill);
+            if look == StepLook::Done {
+                icons::paint(
+                    ui.painter(),
+                    egui::Rect::from_center_size(centre, egui::vec2(12.0, 12.0)),
+                    Icon::Check,
+                    number,
+                );
+            } else {
+                ui.painter().text(
+                    centre,
+                    egui::Align2::CENTER_CENTER,
+                    format!("{}", i + 1),
+                    egui::FontId::new(12.0, theme::semibold(ui)),
+                    number,
+                );
+            }
+            let left = rect.left() + 46.0;
+            let title_top = rect.top() + (22.0 - title.size().y).max(0.0) / 2.0;
+            let words_at = if stacked {
+                egui::pos2(left + title.size().x + 10.0, title_top + 1.0)
+            } else {
+                egui::pos2(left, rect.top() + title.size().y + 1.0)
+            };
+            ui.painter().galley(
+                egui::pos2(left, if stacked { title_top } else { rect.top() }),
+                title,
+                p.text,
+            );
+            ui.painter().galley(words_at, words, p.muted);
+        };
+        if stacked {
+            ui.spacing_mut().item_spacing.y = 6.0;
+            for (i, ((_, _, look), laid)) in steps.iter().zip(laid).enumerate() {
+                draw(ui, i, *look, laid);
+            }
+        } else {
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                for (i, ((_, _, look), laid)) in steps.iter().zip(laid).enumerate() {
+                    draw(ui, i, *look, laid);
+                }
+            });
+        }
+    });
+}
+
+/// Which of the ways to get models was pressed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Way {
+    /// Open ComfyUI's page with the Manager's Model Manager open (started first when it is not running).
+    Manager,
+    /// The build has no Manager: Settings, Program, where a build with it is installed.
+    ManagerSettings,
+    /// QuickAI's list.
+    Recommended,
+    /// The panel of Hugging Face.
+    HuggingFace,
+}
+
+/// One of the ways to get models, as its tile says it.
+struct Tile {
+    icon: Icon,
+    title: &'static str,
+    badge: Option<&'static str>,
+    words: String,
+    button: &'static str,
+    primary: bool,
+    enabled: bool,
+    hover: String,
+    /// The recommended way: wider, and in the colour of a recommendation.
+    best: bool,
+    way: Way,
+}
+
+/// What the Manager's tile says and does.
+struct ManagerTile {
+    words: String,
+    button: &'static str,
+    primary: bool,
+    enabled: bool,
+    hover: String,
+    way: Way,
+}
+
 /// Shows a folder in the file manager of the system. Best effort: nothing is said when there is none.
 pub(super) fn open_folder(path: &Path) {
     let _ = std::fs::create_dir_all(path);
@@ -573,7 +1478,7 @@ mod tests {
         )
     }
 
-    /// The texts a frame of `show` paints.
+    /// The texts a frame of `show` paints, in a window tall enough for the whole page of ComfyUI.
     fn painted(ctx: &egui::Context, show: impl FnMut(&mut egui::Ui)) -> Vec<String> {
         fn walk(shape: &egui::epaint::Shape, into: &mut Vec<String>) {
             match shape {
@@ -585,7 +1490,7 @@ mod tests {
         let raw = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
-                egui::vec2(760.0, 560.0),
+                egui::vec2(900.0, 1800.0),
             )),
             ..Default::default()
         };
@@ -596,6 +1501,28 @@ mod tests {
             walk(&clipped.shape, &mut texts);
         }
         texts
+    }
+
+    /// How many offers of the results are marked installed, in their row or in its ▾: the rule the rows are drawn by
+    /// (`lookup_view`), what is there at its size in its folder, for an engine that keeps its files in folders of their
+    /// own; llama.cpp's are never marked. The page is drawn too, so that what it draws is drawn from the same results.
+    fn marked(app: &mut App) -> usize {
+        let ctx = egui::Context::default();
+        for _ in 0..2 {
+            painted(&ctx, |ui| {
+                egui::CentralPanel::default()
+                    .show(ui, |ui| app.show_workbench(ui, ServerState::Idle));
+            });
+        }
+        if !app.runs_alone() {
+            return 0;
+        }
+        app.lookup
+            .entries
+            .iter()
+            .flat_map(|e| &e.offers)
+            .filter(|o| super::super::catalog_view::installed(o, &app.catalog.have, &[]))
+            .count()
     }
 
     fn put(dir: &Path, folder: &str, name: &str, bytes: usize) {
@@ -640,52 +1567,223 @@ mod tests {
     }
 
     #[test]
+    fn the_page_of_comfyui_is_opened_with_the_manager_and_the_folders_are_named_in_words() {
+        assert_eq!(
+            page_address("http://127.0.0.1:8188", MANAGER_QUERY),
+            "http://127.0.0.1:8188/?quickai=manager"
+        );
+        assert_eq!(
+            page_address("http://127.0.0.1:8188/", MANAGER_QUERY),
+            "http://127.0.0.1:8188/?quickai=manager"
+        );
+        assert_eq!(
+            page_address("http://127.0.0.1:8188/?token=a", MANAGER_QUERY),
+            "http://127.0.0.1:8188/?token=a&quickai=manager"
+        );
+        assert_eq!(kind_of_folder("diffusion_models"), "Diffusion model");
+        assert_eq!(kind_of_folder("vae"), "VAE");
+        assert_eq!(kind_of_folder("loras"), "LoRA");
+        assert_eq!(kind_of_folder("style_models"), "Style models");
+        assert_eq!(kind_of_folder(""), "Model");
+    }
+
+    #[test]
+    fn the_three_steps_follow_the_state_of_comfyui() {
+        let [start, open, load] = howto_steps(ServerState::Idle, None, "Open ComfyUI");
+        assert_eq!((start.0.as_str(), start.2), ("Start", StepLook::Now));
+        assert_eq!((open.0.as_str(), open.2), ("Open ComfyUI", StepLook::Next));
+        assert_eq!(load.2, StepLook::Next);
+        let [start, open, _] = howto_steps(ServerState::Running, Some(8188), "Open ComfyUI");
+        assert_eq!(
+            (start.0.as_str(), start.1.as_str(), start.2),
+            ("Started", "On port 8188", StepLook::Done)
+        );
+        assert_eq!(open.2, StepLook::Now);
+        let [start, _, _] = howto_steps(ServerState::Starting, None, "Open ComfyUI");
+        assert_eq!((start.0.as_str(), start.2), ("Starting…", StepLook::Now));
+    }
+
+    #[test]
+    fn the_files_of_the_models_folder_are_listed_two_folders_down_and_a_whole_file_is_not_also_coming(
+    ) {
+        let dir = scratch("model-files");
+        put(&dir, "checkpoints", "sdxl.safetensors", 20);
+        put(&dir, "diffusion_models/wan", "wan.gguf", 10);
+        put(&dir, "diffusion_models/a/b/c", "too-deep.gguf", 10);
+        put(&dir, "loras", "style.safetensors", 5);
+        put(&dir, "loras", "style.safetensors.part", 2);
+        put(&dir, "vae", "notes.txt", 5);
+        put(&dir, "vae", ".hidden.safetensors", 5);
+        put(&dir, "", "loose.gguf", 7);
+        let files = scan_model_files(&dir);
+        let seen: Vec<(String, String, bool)> = files
+            .iter()
+            .map(|f| (f.folder.clone(), f.name.clone(), f.coming))
+            .collect();
+        assert_eq!(
+            seen,
+            [
+                (
+                    "diffusion_models".to_string(),
+                    "wan/wan.gguf".to_string(),
+                    false
+                ),
+                (
+                    "checkpoints".to_string(),
+                    "sdxl.safetensors".to_string(),
+                    false
+                ),
+                ("loras".to_string(), "style.safetensors".to_string(), false),
+                (String::new(), "loose.gguf".to_string(), false),
+            ]
+        );
+        assert_eq!(files[1].size, 20);
+        assert!(scan_model_files(&dir.join("nowhere")).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_file_linked_into_the_models_folder_is_listed_at_the_size_of_the_file_it_is() {
+        let dir = scratch("model-files-link");
+        let elsewhere = scratch("model-files-elsewhere");
+        let real = elsewhere.join("mine.safetensors");
+        std::fs::write(&real, vec![b'x'; 33]).unwrap();
+        std::fs::create_dir_all(dir.join("diffusion_models")).unwrap();
+        std::os::unix::fs::symlink(&real, dir.join("diffusion_models/mine.safetensors")).unwrap();
+        let files = scan_model_files(&dir);
+        assert_eq!(files.len(), 1);
+        assert_eq!(
+            (files[0].name.as_str(), files[0].size),
+            ("mine.safetensors", 33)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&elsewhere);
+    }
+
+    #[test]
     fn p3_f61_the_models_area_says_what_is_installed_and_how_to_get_more() {
         let dir = scratch("f61");
         let mut app = app_for(&dir, "comfyui");
         let ctx = egui::Context::default();
+        // a page as tall as it is: what is under the fold is drawn too
         let texts = |app: &mut App, ctx: &egui::Context| {
-            painted(ctx, |ui| {
-                egui::CentralPanel::default().show(ui, |ui| {
-                    super::super::theme::card(ui, |ui| app.show_workbench(ui, false))
+            let raw = || egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(900.0, 1400.0),
+                )),
+                ..Default::default()
+            };
+            let mut shown = Vec::new();
+            for _ in 0..2 {
+                let mut output = ctx.run_ui(raw(), |ui| {
+                    egui::CentralPanel::default()
+                        .show(ui, |ui| app.show_workbench(ui, ServerState::Idle));
                 });
-            })
-            .join("\n")
+                output.textures_delta.clear();
+                fn walk(shape: &egui::epaint::Shape, into: &mut Vec<String>) {
+                    match shape {
+                        egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, into)),
+                        egui::epaint::Shape::Text(t) => into.push(t.galley.text().to_string()),
+                        _ => {}
+                    }
+                }
+                shown.clear();
+                for clipped in &output.shapes {
+                    walk(&clipped.shape, &mut shown);
+                }
+            }
+            shown.join("\n")
         };
         let shown = texts(&mut app, &ctx);
+        // how it is used, in three steps, the first to do now
+        for step in ["Start", "Open ComfyUI", "Load a workflow"] {
+            assert!(shown.contains(step), "`{step}`: {shown}");
+        }
+        // the three ways to get models, the Manager first and recommended
+        for way in [
+            "Get models",
+            "ComfyUI-Manager",
+            "recommended",
+            "Start and open the Manager",
+            "QuickAI's picks",
+            "Recommended",
+            "Hugging Face",
+            "Search or paste…",
+        ] {
+            assert!(shown.contains(way), "`{way}`: {shown}");
+        }
+        let manager = shown.find("ComfyUI-Manager").unwrap();
         assert!(
-            shown.contains("Models:")
-                && shown.contains("none yet")
-                && shown.contains("Recommended"),
+            manager < shown.find("QuickAI's picks").unwrap()
+                && manager < shown.find("Hugging Face").unwrap()
+        );
+        // the list of the files, empty
+        assert!(
+            shown.contains("On this computer") && shown.contains("none yet"),
             "{shown}"
         );
         assert!(
-            shown.contains("press Start, then Open ComfyUI"),
-            "the next step is said: {shown}"
-        );
-        // it is not llama.cpp's picker (no `.gguf` to find in a folder, no picker), but it has the ways
-        // to get a model that llama.cpp's has: a look-up of the hub, and a box for a link and the folder
-        assert!(
-            !shown.contains("(no models found)") && !shown.contains("Model:"),
+            shown.contains("Refresh") && shown.contains("Open folder"),
             "{shown}"
         );
+        // the box of Hugging Face is under its button, not on the page until it is asked for; then it has the box, the
+        // folder, and the look-up of the most downloaded
+        assert!(
+            !shown.contains("Get:") && !shown.contains("Into:"),
+            "{shown}"
+        );
+        app.bench.box_open = true;
+        let shown = texts(&mut app, &ctx);
         assert!(
             shown.contains("Look up online") && shown.contains("Get:") && shown.contains("Into:"),
             "{shown}"
         );
+        app.bench.box_open = false;
 
+        // the files of every folder, each with its kind and size, the model first; one still coming is said so
         let models = app.models_dir.clone();
         for i in 0..7 {
             put(&models, "diffusion_models", &format!("m{i}.gguf"), 100 + i);
         }
+        put(&models, "vae", "ae.safetensors", 50);
+        put(&models, "text_encoders", "t5.gguf.part", 30);
+        put(&models, "vae", "put_vae_here", 0);
         app.rescan_models();
+        app.bench.files_at = None;
         let shown = texts(&mut app, &ctx);
-        assert!(shown.contains("7 installed"), "{shown}");
         assert!(
-            shown.contains("m0.gguf") && shown.contains("m4.gguf") && !shown.contains("m5.gguf"),
+            shown.contains("8 files") && shown.contains("1 coming"),
             "{shown}"
         );
-        assert!(shown.contains("... and 2 more"), "{shown}");
+        assert!(
+            shown.contains("m0.gguf")
+                && shown.contains("m6.gguf")
+                && shown.contains("ae.safetensors"),
+            "{shown}"
+        );
+        assert!(
+            shown.contains("Diffusion model")
+                && shown.contains("VAE")
+                && shown.contains("Text encoder"),
+            "{shown}"
+        );
+        assert!(
+            shown.contains("t5.gguf") && shown.contains("coming"),
+            "{shown}"
+        );
+        assert!(!shown.contains("put_vae_here"), "{shown}");
+        assert!(
+            shown.find("t5.gguf").unwrap() < shown.find("m0.gguf").unwrap(),
+            "what is still coming is first: {shown}"
+        );
+        for i in 7..14 {
+            put(&models, "loras", &format!("l{i}.safetensors"), 10);
+        }
+        app.bench.files_at = None;
+        let shown = texts(&mut app, &ctx);
+        assert!(shown.contains("… and 4 more"), "{shown}");
 
         // llama.cpp's window is the list of models on the left, under Add a model, and with none yet, the box of Add a
         // model on the page (its program is there, a file being all the window looks for: the page of an engine that is not
@@ -1050,10 +2148,11 @@ mod tests {
         for _ in 0..3 {
             texts = painted(&ctx, |ui| app.show_catalog_page(ui));
         }
+        // the row of the model, whose Get fetches it with its text encoder and VAE (what its ▾ says), at the size of all three
         assert!(
-            texts
-                .iter()
-                .any(|t| t.contains("with text encoder and VAE")),
+            texts.iter().any(|t| t == "LTX-Video 2B distilled")
+                && texts.iter().any(|t| t == "Get")
+                && texts.iter().any(|t| t == "6.6 GB"),
             "the row of the bundled download is there: {texts:?}"
         );
     }
@@ -1338,7 +2437,7 @@ mod tests {
         for _ in 0..3 {
             painted(&ctx, |ui| {
                 egui::CentralPanel::default().show(ui, |ui| {
-                    super::super::theme::card(ui, |ui| app.show_workbench(ui, false))
+                    super::super::theme::card(ui, |ui| app.show_workbench(ui, ServerState::Idle))
                 });
             });
         }
@@ -1402,19 +2501,8 @@ mod tests {
             app.lookup.status
         );
 
-        // only the model whose VAE was there before is marked
-        let marks = |app: &mut App| -> usize {
-            let mut texts = Vec::new();
-            for _ in 0..3 {
-                texts = painted(&ctx, |ui| {
-                    egui::CentralPanel::default().show(ui, |ui| {
-                        super::super::theme::card(ui, |ui| app.show_workbench(ui, false))
-                    });
-                });
-            }
-            texts.iter().filter(|t| t.as_str() == "Installed").count()
-        };
-        assert_eq!(marks(&mut app), 1);
+        // only the VAE of the model whose VAE was there before is marked (it is an item of that model's ▾)
+        assert_eq!(marked(&mut app), 1);
 
         // the weights go with the models, the VAE of the model's repository into `vae`, the text encoder
         // into `text_encoders`, each under its own name, and the hash the hub states is checked as it comes
@@ -1483,9 +2571,9 @@ mod tests {
             "{:?}",
             app.log_lines
         );
-        // what is there is said in the results, by the model that has it: the video model (its weights and
-        // its VAE) and the text encoder, and not the picture model, which is not
-        assert_eq!(marks(&mut app), 2);
+        // what is there is said in the results, offer by offer: the video model's weights and its VAE (in its ▾), and
+        // the text encoder, and not the picture model, which is not
+        assert_eq!(marked(&mut app), 3);
         // none of them is a pair of anything: no record beside any, and the picker lists the model only
         assert!(std::fs::read_dir(models.join("text_encoders"))
             .unwrap()
@@ -1501,7 +2589,7 @@ mod tests {
             .join("diffusion_models/tiny-picture-Q8_0.gguf")
             .is_file());
         assert_eq!(app.models.len(), 2);
-        assert_eq!(marks(&mut app), 3);
+        assert_eq!(marked(&mut app), 4);
         // a file put there by hand, or fetched by the page, is found by Refresh
         std::fs::write(
             models.join("text_encoders/tiny-encoder-Q5_K_M.gguf"),
@@ -1587,7 +2675,7 @@ mod tests {
         );
         let shown = painted(&ctx, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                super::super::theme::card(ui, |ui| app.show_workbench(ui, false))
+                super::super::theme::card(ui, |ui| app.show_workbench(ui, ServerState::Idle))
             });
         })
         .join("\n");
@@ -1695,44 +2783,49 @@ mod tests {
         for _ in 0..3 {
             texts = painted(&ctx, |ui| {
                 egui::CentralPanel::default().show(ui, |ui| {
-                    super::super::theme::card(ui, |ui| app.show_workbench(ui, false))
+                    super::super::theme::card(ui, |ui| app.show_workbench(ui, ServerState::Idle))
                 });
             });
         }
         let all = texts.join("\n");
+        // a row for each repository, under the chip of its kind, with its Get
         for wanted in [
-            "Video (1)",
-            "Text encoders (1)",
-            "QuantStack/Wan2.2-TI2V-5B-GGUF",
-            "city96/umt5-xxl-encoder-gguf",
-            "Get model:",
-            "Get VAE only:",
-            "Get text encoder only:",
-            "Wan2.2_VAE",
-            "Q8_0",
+            "Video",
+            "Text encoders",
+            "Wan2.2-TI2V-5B-GGUF",
+            "by QuantStack",
+            "umt5-xxl-encoder-gguf",
+            "by city96",
+            "Get",
         ] {
             assert!(all.contains(wanted), "`{wanted}` is not drawn:\n{all}");
         }
-        // the weights row does not say "model only" when no bundle gives it a sibling to be told from
-        assert!(!all.contains("Get model only:"), "{all}");
+        // and in the ▾ of the model, its VAE by itself, a file of its own, as the menu says it
+        let wan = app
+            .lookup
+            .entries
+            .iter()
+            .find(|e| e.name.ends_with("Wan2.2-TI2V-5B-GGUF"))
+            .expect("the model's entry");
+        let alone: Vec<&str> = wan
+            .offers
+            .iter()
+            .filter_map(|o| o.only())
+            .map(|piece| piece.label.as_str())
+            .collect();
+        assert!(alone.contains(&"VAE"), "{alone:?}");
+        assert!(
+            wan.offers.iter().any(|o| o.label.contains("Q8_0")),
+            "{:?}",
+            wan.offers.iter().map(|o| &o.label).collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn p3_q11b_comfyui_marks_the_results_it_has_and_llamacpps_results_are_never_marked() {
         use std::fs::File;
         let dir = scratch("q11b");
-        let draw = |app: &mut App| -> usize {
-            let ctx = egui::Context::default();
-            let mut texts = Vec::new();
-            for _ in 0..3 {
-                texts = painted(&ctx, |ui| {
-                    egui::CentralPanel::default().show(ui, |ui| {
-                        super::super::theme::card(ui, |ui| app.show_workbench(ui, false))
-                    });
-                });
-            }
-            texts.iter().filter(|t| t.as_str() == "Installed").count()
-        };
+        let draw = marked;
         // the text encoder of a person's list, Q4_K_M, as a file of the size the hub states
         let name = "umt5-xxl-encoder-Q4_K_M.gguf";
         let size = 3_655_145_312;

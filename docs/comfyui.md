@@ -19,16 +19,51 @@ at your request.
 | What starts | A program that is given a model | A server that is given none (`needs_model = false`): each workflow a client sends names the files it uses |
 | A build | A release archive, unpacked | The **source** of a release, with its own Python environment created beside it |
 | Models | One file, or a file and its projector | Files of several kinds, each stored in the folder where ComfyUI looks for that kind (`diffusion_models/`, `text_encoders/`, `vae/`, `loras/`) |
-| The window | A picker and a model field | The list of installed models, **Recommended**, **Look up online**, a field for a link or a file with its target folder, Refresh, Open folder, and **Open ComfyUI** once it is running |
+| The window | A picker and a model field | A page of its own ([below](#the-page)): before it is installed, the card that installs it; once it is, three steps of using it, three ways to get models (**ComfyUI-Manager** first, **Recommended**, and **Search or paste…** for Hugging Face with a field for a link or a file and its target folder), the files of its models folder, and **Open ComfyUI** once it is running |
 | API | `/v1`, Ollama's | `POST /prompt`, `GET /history/<id>`, `GET /view`, `/ws`, `GET /system_stats` (`comfyui.workflow`) |
 | Its page | None, or the server's own | A web page of its own, to which QuickAI adds a **Download** that installs into the models folder ([below](#the-pages-download-button)) and, with ComfyUI-Manager, a **Manager** button ([below](#comfyui-manager)) |
 | Its files | Under `~/.quickai/<engine>` (Ollama's also in its own home and temporary folders there; llama.cpp writes nothing else) | Under `~/.quickai/comfyui`, **including its own home and temporary folders there** (`home/`, `cache/tmp/`): otherwise the ROCm compiler cache, the PyTorch and driver caches and the kernels it compiles would go to your `~/.cache` and the system's temporary folder (F28). The Python variables of your shell are also cleared (C92: every engine is completely isolated) |
 
+## The page
+
+ComfyUI's page in the window has two states (C222).
+
+**Before a build is installed**, it is one card that installs it:
+
+- **The version** it installs, the release the document was tested with (`ComfyUI v0.45.2 · tested with QuickAI`), the
+  day it was published (`Released 11 November 2026`, from the document's `tested.date`: nothing is asked of GitHub to
+  say it), where it comes from and how it is checked (built from its source at `github.com/Comfy-Org/ComfyUI` and checked
+  against its sha256). **Other versions…** opens Settings → Program, where every release on offer is listed.
+- **What it installs**: a box for each part that is yours to choose, **Install ComfyUI-Manager** (*highly recommended*,
+  ticked; its summary says what it is for), then what comes with it whatever is ticked (the PyTorch for this computer's
+  graphics card, what ComfyUI needs, ComfyUI-GGUF) and the Python the environment is made with (QuickAI's own, with
+  **Use another Python…**).
+- **The room and the button**: `Needs 30 GiB · 266 GB free`, where it is kept, and **Install ComfyUI v0.45.2**.
+
+While it installs, the same card lists every step of the installation with a mark (done, under way, to come), the one
+under way with what pip is doing, under one progress bar and **Cancel**.
+
+**Once a build is installed**, the bar names its version beside ComfyUI (`ComfyUI v0.45.2 · Stopped`), and the page has:
+
+- **Three steps**: Start, Open ComfyUI, Load a workflow, the one to do now in green.
+- **Get models, three ways**, the first recommended: **ComfyUI-Manager** (about 500 models and every custom node, from
+  inside ComfyUI's page; **Start and open the Manager** starts ComfyUI and opens its page with the Model Manager open,
+  [below](#comfyui-manager)), **QuickAI's picks** (**Recommended**: the models QuickAI has verified, every file checked),
+  and **Hugging Face** (**Search or paste…** opens a panel with the field for a name, a link or a file, its target
+  folder, and **Look up online**, [below](#getting-models)). A build installed without the Manager says so in its tile.
+- **On this computer**: every file of the models folder, by kind (`Diffusion model`, `Text encoder`, `VAE`, `LoRA`...)
+  and size, the ones still being fetched first (`coming`), with **Refresh** and **Open folder**. While ComfyUI runs,
+  the list is read again every few seconds, so what its page or its Manager fetches appears by itself.
+
+In a narrow window the steps and the three ways are under each other rather than side by side.
+
 ## Installing it
 
-**Settings → Advanced → Look up ComfyUI builds** lists the releases of `Comfy-Org/ComfyUI`, with the tested release
-first (its source archive has a pinned sha256; any other release is installed with a log entry stating that it was not
-verified). A single click installs it. The installation is a single primitive, `install.python_app@1`, and all of its
+**Install ComfyUI v0.45.2** on its page installs the tested release with what its card has ticked. **Settings → Program
+→ Look up ComfyUI builds** lists the releases of `Comfy-Org/ComfyUI`, with the tested release first (its source archive
+has a pinned sha256; any other release is installed with a log entry stating that it was not verified). The tested
+release is **v0.45.2** (11 November 2026), a patch of v0.45.0 that ComfyUI tagged without publishing a release of its
+own; it was installed, started and run on the date it was pinned (F37, F38). The installation is a single primitive, `install.python_app@1`, and all of its
 work takes place in the staging directory `~/.quickai/comfyui/<tag>.partial/`:
 
 | Step | What it does | Test |
@@ -61,7 +96,7 @@ and places the one you choose in the models folder. ComfyUI's own release refers
 a section of its README explaining how to enable it), and the user who requested this option described it as highly
 recommended. QuickAI offers it **when a build is installed**, as an option that is selected unless you clear it (C152).
 
-- **The option.** Settings → Advanced → **ComfyUI**, under **Look up ComfyUI builds**: **Install ComfyUI-Manager**,
+- **The option.** On the install page itself (C222), and in Settings → Program, under **Look up ComfyUI builds**: **Install ComfyUI-Manager**,
   marked *highly recommended*, with a tooltip explaining what it is, what it contacts, and that a custom node is
   another party's program. The sentence below it describes what the installation will put on the machine, including
   ComfyUI-Manager when the option is selected. The state of the option when **Use** is clicked determines what that
@@ -86,6 +121,11 @@ recommended. QuickAI offers it **when a build is installed**, as an option that 
   the page, beside **Run**, when ComfyUI reports that the Manager is present. It opens the Manager's own menu:
   **Custom Nodes Manager**, **Install Missing Custom Nodes**, **Model Manager**, **Install via Git URL**, Snapshot
   Manager... Without the Manager, the script adds nothing and reports nothing.
+- **Opened from the window (C222).** **Start and open the Manager** (**Open the Manager** while ComfyUI runs), the first of
+  the page's ways to get models, opens ComfyUI's page at `/?quickai=manager`: the same script reads that word, opens the
+  Manager's menu and in it the **Model Manager**, and takes the word out of the address, so that a reload does not open
+  them again. Started from the button, ComfyUI's page opens once it answers. Whether a build has the Manager is read from
+  its launcher (the Manager's flag is in it), so a build installed without it is said to be one.
 - **Models (the user's recommendation, 2026-10-24).** The Model Manager is the way to obtain a model for ComfyUI that
   **Recommended** and **Look up online** do not know about: it downloads the file from the location its list gives
   (GitHub, Hugging Face and others) into the folder for its kind under the models folder ComfyUI was given
@@ -140,12 +180,12 @@ hand in order to continue (on 2026-10-08 a user had to: see *If the window stops
   the check fails) and one that is **killed** keep their directory. One that **you cancel**, or that fails before the
   environment is created (a checksum mismatch, no Python, insufficient space), leaves nothing behind.
 - **Not a build.** A directory with a journal is not a build, whatever its name: `Installed builds` does not list it,
-  and the engine's own search for its program skips it. If you rename `v0.39.0.partial` to `v0.39.0` because it appears
+  and the engine's own search for its program skips it. If you rename `v0.45.2.partial` to `v0.45.2` because it appears
   complete, the result is still not a build, and QuickAI says so under **Unfinished installs**.
 - **Continue.** When QuickAI starts with ComfyUI selected, the log notes, once, that an installation was interrupted
   (`ComfyUI: an
-  install of v0.39.0 stopped before it was whole (3 of 7 steps done, ...)`). Settings → Advanced lists such
-  installations (`v0.39.0 (3 of 7 steps done, 4.8 MB, stopped 12 min ago)`), each with **Continue** and a delete
+  install of v0.45.2 stopped before it was whole (3 of 7 steps done, ...)`). Settings → Advanced lists such
+  installations (`v0.45.2 (3 of 7 steps done, 4.8 MB, stopped 12 min ago)`), each with **Continue** and a delete
   button. Continue, or requesting the same installation again, performs the remaining steps and none of the completed
   ones (the log lists them: `Already done by the install that stopped: ...`; `Going on with the install that
   stopped (3 of 7 steps are done)`), and **always** runs the check, since the check confirms that the whole works. A
@@ -259,26 +299,28 @@ from a single repository, and these come from three.
 
 ## Getting models
 
-As in llama.cpp's window, there are three ways to obtain a model from the window, a fourth from the page
-([below](#the-pages-download-button)) and, in a build that includes ComfyUI-Manager, a fifth: its **Model Manager**
-([above](#comfyui-manager)). They differ in what they know: **Recommended** knows a model and every file it needs;
-**Look up online** finds files on the hub and places each one where it belongs; and the field accepts a file you
-already have an address for. In every case, a file is stored in the folder of the models folder where ComfyUI looks for
-that kind, and a workflow refers to it by its file name. QuickAI does not modify ComfyUI for this: it places a file in a
-folder, and **Refresh** in the window (or the `r` key in the page) makes ComfyUI rescan the folders.
+The page offers three ways to get models, the first recommended (C222): **ComfyUI-Manager**'s Model Manager, in
+ComfyUI's own page ([above](#comfyui-manager)); **Recommended**, which knows a model and every file it needs; and
+**Search or paste…**, the panel of Hugging Face, whose **Look up online** finds files on the hub and places each one
+where it belongs, and whose field accepts a file you already have an address for. A fourth is the page's own Download
+button ([below](#the-pages-download-button)). In every case, a file is stored in the folder of the models folder where
+ComfyUI looks for that kind, and a workflow refers to it by its file name. QuickAI does not modify ComfyUI for this: it
+places a file in a folder, and the `r` key in ComfyUI's page makes ComfyUI rescan the folders; the window's list of the
+files (**On this computer**) is read again by **Refresh**, after a fetch of its own, and every few seconds while ComfyUI
+runs.
 
 ```
-Models: 3 installed   [Recommended] [Look up online] [Refresh] [Open folder]
+Hugging Face                                                                              [x]
 Get: [ link to a file, or search by name...       ] [...]  Into: [auto v]  [Search]
-Results (3)   Size: Any  Small  Medium  Large
-v Video (1)
-    QuantStack/Wan2.2-TI2V-5B-GGUF         text-to-video · 224.2K downloads · Quantized from Wan-AI/Wan2.2-TI2V-5B · apache-2.0
-    Get model:           [Q4_K_M · 3.2 GB] [Q5_K_M · 3.5 GB] [Q6_K · 3.9 GB] [Q8_0 · 5.0 GB]
-    Get VAE only:        [Wan2.2_VAE · 1.3 GB]
-v Text encoders (1)
-    city96/umt5-xxl-encoder-gguf           270.9K downloads · Quantized from google/umt5-xxl · apache-2.0
-    Get text encoder only:   [Q4_K_M · 3.4 GB] [Q5_K_M · 3.9 GB] [Q6_K · 4.3 GB] [Q8_0 · 5.6 GB]
+Or [Look up online] the most downloaded models of pictures and video, with their text encoders and VAEs.
+Most downloaded · 2     Size: Any    Sort: Most downloaded
+All 2   Video 1   Text encoders 1
+  Wan2.2-TI2V-5B-GGUF        by QuantStack · 224.2K downloads · apache-2.0      5.0 GB   Fits   [Get v]
+  umt5-xxl-encoder-gguf      by city96 · 270.9K downloads · apache-2.0          5.6 GB   Fits   [Get v]
 ```
+
+Each result is a row with its **Get** and, in its ▾, the other sizes and the files that go by themselves (*The VAE
+alone*, *The text encoder alone*).
 
 - **Look up online.** With nothing entered, it builds the default list: the most downloaded GGUF repositories for each
   pipeline the document names (`text-to-video`, `image-to-video`, `text-to-image`, `image-to-image`) and for the word
@@ -287,15 +329,14 @@ v Text encoders (1)
   requests in five minutes are allowed). Words entered in the field form a single search, as in llama.cpp's window: the
   phrase, then each of its words on its own. The most downloaded GGUF repositories overall are language models, which
   ComfyUI does not run, and they are not listed; any that a search returns anyway appear under **Other**, collapsed.
-- **What a result offers.** The quantizations of a repository's weights appear as buttons: the four the preferences
-  favor (closest to the original first: `Q8_0`, `Q6_K`, `Q5_K_M`, `Q4_K_M`), ordered smallest first, with the preferred
-  one in bold and each showing its size. Beside them, **a file of a kind that can be used on its own gets a row of its
-  own**: *Get VAE only* for a VAE and *Get text encoder only* for a text encoder, listing each file of that kind in the
-  repository (the document defines how a kind is identified, through the parts of its `[[models.bundle]]`, and which
-  kinds are offered on their own, through `alone`). A repository that holds only text encoders
-  (`city96/umt5-xxl-encoder-gguf`) has no model row and forms a section of its own, **Text encoders**. A repository that
-  holds the model, a text encoder and a VAE (the one in the recommended list) also has a row that downloads all three
-  together. What each repository holds is determined by the repository itself: three parties' repositories are three
+- **What a result offers.** A repository is one row: its **Get** fetches the size the preferences favor (closest to
+  the original first: `Q8_0`, `Q6_K`, `Q5_K_M`, `Q4_K_M`), and its ▾ lists the others, each with its size. In the ▾,
+  **a file of a kind that can be used on its own is an item of its own**: *The VAE alone* for a VAE and *The text
+  encoder alone* for a text encoder, for each file of that kind in the repository (the document defines how a kind is
+  identified, through the parts of its `[[models.bundle]]`, and which kinds are offered on their own, through `alone`).
+  A repository that holds only text encoders (`city96/umt5-xxl-encoder-gguf`) is a row of its own kind, **Text
+  encoders**. A repository that holds the model, a text encoder and a VAE (the one in the recommended list) also offers
+  all three together. What each repository holds is determined by the repository itself: three parties' repositories are three
   results.
 - **What is already installed.** A result whose files are all present in their folders, at the size the hub reports, is
   marked **Installed** and its button does nothing (a file that is present is never downloaded again in any case). The

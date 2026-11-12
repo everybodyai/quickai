@@ -260,6 +260,10 @@ pub struct Acquire {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Tested {
     pub tag: String,
+    /// The day the release was published (`2026-11-11`): what the install page says beside its name, with nothing
+    /// asked of the feed.
+    #[serde(default)]
+    pub date: Option<String>,
 }
 
 /// Extra files of a release that are added to a build when the person chooses them: never a
@@ -442,6 +446,9 @@ pub struct InstallOption {
     pub badge: Option<String>,
     /// What the pointer on the box is told.
     pub help: Option<String>,
+    /// A sentence or two under the box on the install page: what it is for, in short (the `help` is the long version).
+    #[serde(default)]
+    pub summary: Option<String>,
     /// Ticked until the person unticks it. An option that is not ticked by default is not installed unless asked for.
     #[serde(default)]
     pub default: bool,
@@ -507,6 +514,11 @@ pub struct PipStep {
     /// the time an install takes, and a bar that gave every step an equal share would stand still
     /// for it.
     pub weight: Option<u32>,
+    /// What the launcher of a build made with this step passes to the program, before the arguments it is
+    /// given (`--cpu` for PyTorch for the processor: ComfyUI does not start on a PyTorch with no graphics
+    /// card unless it is told to use the processor).
+    #[serde(default)]
+    pub launch_args: Vec<String>,
 }
 
 /// A package of extra nodes that is unpacked into the source of a `python_app`, pinned by a sha256.

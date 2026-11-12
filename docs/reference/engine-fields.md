@@ -619,7 +619,7 @@ Where builds of the engine come from and where they are kept. It configures the 
 | `install` | table, below | How a downloaded file becomes an installed build. |
 | `backends` | list of tables, below | What a file name says about the GPU it was made for. |
 | `filter_hint` | text | The placeholder of the box that narrows the list of builds. |
-| `tested` | `{ tag }` | The release this document was tested with: it is offered first, marked, and `pins` are for it. |
+| `tested` | `{ tag, date }` | The release this document was tested with: it is offered first, marked, and `pins` are for it. `date` (`2026-11-11`, optional) is the day it was published, which the install page shows beside its name without asking the feed. |
 | `overlays` | list of tables, below | Archives unpacked over a build on request, by platform (ROCm's libraries): never a build of their own, and off until chosen. |
 | `pins` | table of text | The sha256 of each file of the tested release by file name, as `sha256:` and 64 hexadecimal digits. A download of that release must have it, and must agree with the digest the host lists. |
 
@@ -733,6 +733,7 @@ One part of the install that the person chooses (ComfyUI-Manager), and what the 
 | `label` | text | What the box says (`Install ComfyUI-Manager`). |
 | `badge` | text | A few words beside the label, in the colour of a recommendation (`highly recommended`). |
 | `help` | text | What the pointer on the box is told. |
+| `summary` | text | A sentence or two under the box on the install page: what it is for, in short (`help` is the long version). |
 | `default` | bool | Ticked until the person unticks it. Default false: a part nobody asked for is not installed. |
 | `launch_args` | list of text | What the launcher of a build made with it passes to the program before the arguments it is given, one plain word each (`--enable-manager-legacy-ui`): the build is the one that knows what it has, so a build made without it is started without it. |
 
@@ -751,6 +752,7 @@ One `pip install`.
 | `wheel` | bool | Installs the wheel the build is (`assets` of `by = "wheel"`): the file that was downloaded and checked, with what it needs from the index. A build that is a wheel has exactly one such step, and it names no packages or requirements file. |
 | `index` | address | The package index the packages come from instead of PyPI. It is the only one used: a second could offer a newer package built for something else. |
 | `weight` | whole number | How much of the progress bar this step is, next to the others (default 1). |
+| `launch_args` | list of text | What the launcher of a build made with this step passes to the program before the arguments it is given, one plain word each (`--cpu` for PyTorch for the processor, which ComfyUI does not start on unless it is told to use the processor): the build knows what it was made with. |
 
 ## `[[acquire.install.nodes]]`
 

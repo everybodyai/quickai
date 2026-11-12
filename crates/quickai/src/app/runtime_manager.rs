@@ -763,6 +763,19 @@ impl App {
         }
     }
 
+    /// Ticks or unticks the part `id` of the install (the box of the install page): what the next install is made of.
+    pub(super) fn set_install_option(&mut self, id: &str, on: bool) {
+        let Some(engine_id) = self.runtime_engine().map(|e| e.id.clone()) else {
+            return;
+        };
+        let mut chosen = self.chosen_options();
+        chosen.retain(|o| o != id);
+        if on {
+            chosen.push(id.to_string());
+        }
+        self.runtime.options = Some((engine_id, chosen));
+    }
+
     /// The widget `runtime_manager` for the field `field` (the binary override).
     pub(super) fn show_runtime_manager(&mut self, ui: &mut egui::Ui, field: &FormField) {
         let Some(texts) = self.runtime_texts() else {
@@ -1878,7 +1891,14 @@ backends = [ { match = "gpu", label = "GPU" } ]
         assert_eq!(app.chosen_options(), ["manager"]);
         let (pip, words) = made_of(&app);
         assert_eq!(pip.last().map(String::as_str), Some("manager"), "{pip:?}");
-        assert_eq!(words, ["--enable-manager-legacy-ui"]);
+        // and, on a computer whose PyTorch is the processor's (the tests', whose cards are not told), the word that has
+        // ComfyUI use the processor
+        let cpu = pip.iter().any(|id| id == "torch_cpu");
+        let mut wanted = vec!["--enable-manager-legacy-ui"];
+        if cpu {
+            wanted.push("--cpu");
+        }
+        assert_eq!(words, wanted);
 
         // a click on the box unticks it: the install is what it was before the option, and the sentence says so
         let label = where_is(&drawn, "Install ComfyUI-Manager").expect("the box is drawn");
@@ -1891,7 +1911,8 @@ backends = [ { match = "gpu", label = "GPU" } ]
             app.chosen_options()
         );
         let (pip, words) = made_of(&app);
-        assert!(!pip.iter().any(|id| id == "manager") && words.is_empty());
+        assert!(!pip.iter().any(|id| id == "manager"));
+        assert_eq!(words, if cpu { vec!["--cpu"] } else { Vec::new() });
         let texts: Vec<String> = drawn.iter().map(|(t, _)| t.clone()).collect();
         assert!(
             texts
@@ -2021,11 +2042,11 @@ backends = [ { match = "gpu", label = "GPU" } ]
     }
 
     fn stopped_install(dir: &Path) -> PathBuf {
-        let stopped = dir.join("data/comfyui/v0.39.0.partial");
+        let stopped = dir.join("data/comfyui/v0.45.2.partial");
         std::fs::create_dir_all(stopped.join("venv")).unwrap();
         std::fs::write(stopped.join("venv/x"), vec![0u8; 4096]).unwrap();
         let steps: Vec<StepRecord> = [
-            ("source", "the source of v0.39.0"),
+            ("source", "the source of v0.45.2"),
             ("node:gguf", "ComfyUI-GGUF"),
             ("venv", "the Python environment"),
             ("pip:torch_amd", "PyTorch for AMD GPUs (ROCm 7.2)"),
@@ -2039,7 +2060,7 @@ backends = [ { match = "gpu", label = "GPU" } ]
             label: label.to_string(),
         })
         .collect();
-        let mut journal = Journal::new("v0.39.0", "f".into(), steps);
+        let mut journal = Journal::new("v0.45.2", "f".into(), steps);
         for id in ["source", "node:gguf", "venv"] {
             journal.mark(id);
         }
@@ -2268,22 +2289,22 @@ backends = [ { match = "gpu", label = "GPU" } ]
         assert!(
             texts
                 .iter()
-                .any(|t| t.starts_with("v0.39.0 (3 of 7 steps done, ")),
+                .any(|t| t.starts_with("v0.45.2 (3 of 7 steps done, ")),
             "{texts:?}"
         );
         assert!(said(&texts, "Continue"), "{texts:?}");
         assert!(
-            !texts.iter().any(|t| t == "v0.39.0"),
+            !texts.iter().any(|t| t == "v0.45.2"),
             "it is not a row of the builds: {texts:?}"
         );
 
         // going on is asked for the release of that label, from the document alone, with its pin
         let engine = app.runtime_engine().unwrap();
-        let request = feed::request_for_label(engine, &app.host_facts, "v0.39.0").unwrap();
-        assert_eq!(request.label, "v0.39.0");
+        let request = feed::request_for_label(engine, &app.host_facts, "v0.45.2").unwrap();
+        assert_eq!(request.label, "v0.45.2");
         assert_eq!(
             request.base.url,
-            "https://github.com/Comfy-Org/ComfyUI/archive/refs/tags/v0.39.0.tar.gz"
+            "https://github.com/Comfy-Org/ComfyUI/archive/refs/tags/v0.45.2.tar.gz"
         );
         assert!(request.base.pin.is_some(), "the tested release is checked");
         assert!(feed::request_for_label(engine, &app.host_facts, "v0.40.0")
@@ -2301,10 +2322,10 @@ backends = [ { match = "gpu", label = "GPU" } ]
         // deleting it takes a thread of its own: the engine cannot be changed meanwhile, the window is not
         // waiting, and when it is gone the disk is read again and the log says so
         app.set_bin_override(Some(stopped.join("comfyui")));
-        app.start_delete("v0.39.0".into(), stopped.clone(), true, &ctx);
+        app.start_delete("v0.45.2".into(), stopped.clone(), true, &ctx);
         assert!(app.runtime.delete.is_some() && app.engine_locked());
         let texts = painted(&ctx, |ui| app.show_runtime_manager(ui, &field));
-        assert!(said(&texts, "Deleting v0.39.0..."), "{texts:?}");
+        assert!(said(&texts, "Deleting v0.45.2..."), "{texts:?}");
         wait_until(Duration::from_secs(10), "the delete to end", || {
             app.poll_runtime_manager();
             app.runtime.delete.is_none()
@@ -2318,7 +2339,7 @@ backends = [ { match = "gpu", label = "GPU" } ]
         assert!(
             app.log_lines
                 .iter()
-                .any(|l| l == "Deleted unfinished ComfyUI install: v0.39.0"),
+                .any(|l| l == "Deleted unfinished ComfyUI install: v0.45.2"),
             "{:?}",
             app.log_lines
         );
@@ -2344,7 +2365,7 @@ backends = [ { match = "gpu", label = "GPU" } ]
             .unwrap();
         assert!(
             line.starts_with(
-                "ComfyUI: an install of v0.39.0 stopped before it was whole (3 of 7 steps done, "
+                "ComfyUI: an install of v0.45.2 stopped before it was whole (3 of 7 steps done, "
             ) && line.contains("Unfinished installs"),
             "{line}"
         );
@@ -2390,7 +2411,7 @@ backends = [ { match = "gpu", label = "GPU" } ]
         let ctx = egui::Context::default();
         let (release, held) = crossbeam_channel::bounded::<()>(1);
         app.runtime.install = Some(Job::spawn(
-            "v0.39.0".into(),
+            "v0.45.2".into(),
             "Installing",
             || {},
             move |send| {
@@ -2400,7 +2421,7 @@ backends = [ { match = "gpu", label = "GPU" } ]
                 ));
                 let _ = held.recv_timeout(Duration::from_secs(30));
                 send(crate::jobs::JobEvent::Done(PathBuf::from(
-                    "/x/v0.39.0/comfyui",
+                    "/x/v0.45.2/comfyui",
                 )));
             },
         ));
@@ -2413,7 +2434,7 @@ backends = [ { match = "gpu", label = "GPU" } ]
         });
         app.runtime.cancel = Some(Default::default());
         let texts = painted(&ctx, |ui| app.show_runtime_manager(ui, &field));
-        assert!(said(&texts, "Installing v0.39.0: 25%"), "{texts:?}");
+        assert!(said(&texts, "Installing v0.45.2: 25%"), "{texts:?}");
         assert!(
             said(&texts, "Step 4 of 7 · PyTorch for AMD GPUs (ROCm 7.2) · downloading torch.whl: 2.0 GB of 6.0 GB"),
             "{texts:?}"
@@ -2430,7 +2451,7 @@ backends = [ { match = "gpu", label = "GPU" } ]
         assert!(app.runtime.disk.stale);
         assert_eq!(
             app.bin_override(),
-            Some(PathBuf::from("/x/v0.39.0/comfyui"))
+            Some(PathBuf::from("/x/v0.45.2/comfyui"))
         );
         let _ = std::fs::remove_dir_all(dir);
     }

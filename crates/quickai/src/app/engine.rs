@@ -255,6 +255,8 @@ impl App {
             self.models_dir_input = self.models_dir.display().to_string();
             self.models = self.scan_models();
         }
+        // the files of the page of an engine that runs on its own are read again for the engine now chosen
+        self.bench.files_at = None;
         // the model chosen last time, else the one recommended for this computer (a first start: the README says so),
         // else the first
         self.refresh_recommendation();

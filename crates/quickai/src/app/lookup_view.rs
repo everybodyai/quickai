@@ -119,11 +119,6 @@ pub(super) fn result_line(entry: &Entry) -> String {
 }
 
 impl LookupView {
-    /// Whether results are on the screen to close.
-    pub fn has_results(&self) -> bool {
-        self.open && !self.entries.is_empty()
-    }
-
     /// Whether a look-up is under way.
     pub fn running(&self) -> bool {
         self.rx.is_some()
@@ -515,48 +510,51 @@ impl App {
         // in the window of Add a model, the rest of its height but the line under them: as big as the person makes it;
         // in a page of the main window (a first run's, ComfyUI's), which scrolls itself, all of them: a list that
         // scrolled in a page that scrolls had the page's room and showed a part of it
-        let room = if ui.ctx().viewport_id() == super::add_model::add_model_viewport() {
-            (ui.available_height() - 40.0).max(160.0)
-        } else {
-            f32::INFINITY
+        // (egui sizes a scroll area to the room left on the screen even when it is told no limit: in a page it is not one)
+        let in_window = ui.ctx().viewport_id() == super::add_model::add_model_viewport();
+        let room = (ui.available_height() - 40.0).max(160.0);
+        let rows = |ui: &mut egui::Ui| {
+            ui.set_max_width(ui.available_width() - 10.0);
+            if shown.is_empty() {
+                ui.label(
+                    egui::RichText::new("Nothing found in this size range.")
+                        .small()
+                        .color(p.muted),
+                );
+            }
+            for (i, offers) in &shown {
+                let entry = &entries[*i];
+                let Some(main) = main_of(entry, offers) else {
+                    continue;
+                };
+                let row = Row {
+                    entry,
+                    main,
+                    choices: offers.iter().map(|o| &entry.offers[*o]).collect(),
+                    title: entry
+                        .name
+                        .split_once('/')
+                        .map_or(entry.name.as_str(), |(_, name)| name)
+                        .to_string(),
+                    by: String::new(),
+                    line: result_line(entry),
+                    star: false,
+                    abilities: false,
+                    expandable: false,
+                };
+                if let Some(RowAction::Fetch(fetch)) = model_row::show(ui, &row, &look, false) {
+                    chosen = Some(fetch);
+                }
+            }
         };
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, true])
-            .max_height(room)
-            .show(ui, |ui| {
-                ui.set_max_width(ui.available_width() - 10.0);
-                if shown.is_empty() {
-                    ui.label(
-                        egui::RichText::new("Nothing found in this size range.")
-                            .small()
-                            .color(p.muted),
-                    );
-                }
-                for (i, offers) in &shown {
-                    let entry = &entries[*i];
-                    let Some(main) = main_of(entry, offers) else {
-                        continue;
-                    };
-                    let row = Row {
-                        entry,
-                        main,
-                        choices: offers.iter().map(|o| &entry.offers[*o]).collect(),
-                        title: entry
-                            .name
-                            .split_once('/')
-                            .map_or(entry.name.as_str(), |(_, name)| name)
-                            .to_string(),
-                        by: String::new(),
-                        line: result_line(entry),
-                        star: false,
-                        abilities: false,
-                        expandable: false,
-                    };
-                    if let Some(RowAction::Fetch(fetch)) = model_row::show(ui, &row, &look, false) {
-                        chosen = Some(fetch);
-                    }
-                }
-            });
+        if in_window {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, true])
+                .max_height(room)
+                .show(ui, rows);
+        } else {
+            ui.vertical(rows);
+        }
         self.lookup.entries = entries;
         self.lookup.size = size;
         self.lookup.kind = kind;
