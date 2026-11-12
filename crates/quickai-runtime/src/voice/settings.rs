@@ -1,5 +1,5 @@
-//! What the person chose for talking to QuickAI (`app.voice` in the settings), the speech models (whisper.cpp's, and
-//! Omnilingual ASR), and the languages whisper hears.
+//! What the person chose for talking to QuickAI (`app.voice` in the settings), and the speech models (whisper.cpp's,
+//! and Omnilingual ASR). The languages are `languages`.
 
 use std::path::{Path, PathBuf};
 
@@ -19,7 +19,7 @@ pub struct VoiceSettings {
     pub enabled: bool,
     /// The microphone by the id `capture::microphones` gives it; `None` is the system's own choice.
     pub microphone: Option<String>,
-    /// The language spoken, as whisper names it (`en`, `ml`); `None` lets it tell.
+    /// The language spoken, by its code in `languages` (whisper's: `en`, `ml`); `None` lets it tell.
     pub language: Option<String>,
     /// The id of the speech model (`SPEECH_MODELS`).
     pub model: String,
@@ -29,6 +29,10 @@ pub struct VoiceSettings {
     pub pause_ms: u32,
     /// Every answer is read aloud as it comes.
     pub read_answers: bool,
+    /// The language answers are read in, by its code in `languages`, as the person chose it; `None` when it is the
+    /// language of the voice (settings kept before it was asked). A language QuickAI has no voice for is read with the
+    /// default voice until the person uses one of their own.
+    pub read_language: Option<String>,
     /// The voice to read in, by the name the speech program knows; `None` is its usual one.
     pub voice: Option<String>,
     /// 0.5 to 2, 1 is the usual speed.
@@ -37,15 +41,16 @@ pub struct VoiceSettings {
     pub hands_free_muted: bool,
     /// Symbols are read too (`#`, `/`, arrows, emoji…), by their names; off, they are left out.
     pub read_symbols: bool,
-    /// What reads the answers aloud: nothing until the person chooses (QuickAI ships no voice).
+    /// What reads the answers aloud: English with Kokoro until the person chooses otherwise (QuickAI ships no voice:
+    /// Kokoro is downloaded when they ask for it, and nothing is read until it is here).
     pub reader: Reader,
 }
 
 /// What reads the answers aloud. `voice` (in `VoiceSettings`) is the voice in it: a speaker's name of a pack, the
 /// number of a speaker of a folder's voice, or the voice a speech server is asked for.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Reader {
-    #[default]
+    /// Nothing reads: the person chose none.
     None,
     /// A pack downloaded from `voices::VOICE_PACKS`, read by quickai-voice.
     Pack(String),
@@ -65,7 +70,7 @@ pub enum Reader {
 impl Reader {
     fn to_value(&self) -> Option<Value> {
         match self {
-            Reader::None => None,
+            Reader::None => Some(json!({ "kind": "none" })),
             Reader::Pack(id) => Some(json!({ "kind": "pack", "id": id })),
             Reader::Folder(path) => Some(json!({ "kind": "folder", "path": path })),
             Reader::Server { url, model, key } => {
@@ -110,11 +115,12 @@ impl Default for VoiceSettings {
             send_when_stopped: false,
             pause_ms: DEFAULT_PAUSE_MS,
             read_answers: false,
+            read_language: None,
             voice: None,
             speed: 1.0,
             hands_free_muted: false,
             read_symbols: false,
-            reader: Reader::None,
+            reader: Reader::Pack(super::voices::DEFAULT_PACK.into()),
         }
     }
 }
@@ -149,6 +155,7 @@ impl VoiceSettings {
                 .map(|ms| (ms as u32).clamp(MIN_PAUSE_MS, MAX_PAUSE_MS))
                 .unwrap_or(d.pause_ms),
             read_answers: flag("read_answers", d.read_answers),
+            read_language: text("read_language"),
             voice: text("voice"),
             speed: v
                 .get("speed")
@@ -157,7 +164,11 @@ impl VoiceSettings {
                 .unwrap_or(d.speed),
             hands_free_muted: flag("hands_free_muted", d.hands_free_muted),
             read_symbols: flag("read_symbols", d.read_symbols),
-            reader: Reader::from_value(v.get("reader")),
+            // English with Kokoro unless something else was chosen (none, among them)
+            reader: match v.get("reader") {
+                None => d.reader,
+                given => Reader::from_value(given),
+            },
         }
     }
 
@@ -186,6 +197,9 @@ impl VoiceSettings {
         if self.read_answers != d.read_answers {
             map.insert("read_answers".into(), json!(self.read_answers));
         }
+        if let Some(l) = &self.read_language {
+            map.insert("read_language".into(), json!(l));
+        }
         if let Some(v) = &self.voice {
             map.insert("voice".into(), json!(v));
         }
@@ -198,8 +212,10 @@ impl VoiceSettings {
         if self.read_symbols != d.read_symbols {
             map.insert("read_symbols".into(), json!(self.read_symbols));
         }
-        if let Some(reader) = self.reader.to_value() {
-            map.insert("reader".into(), reader);
+        if self.reader != d.reader {
+            if let Some(reader) = self.reader.to_value() {
+                map.insert("reader".into(), reader);
+            }
         }
         (!map.is_empty()).then_some(Value::Object(map))
     }
@@ -485,10 +501,17 @@ pub const SUGGESTED: [(&str, &str); 16] = [
     ("ur", "omnilingual"),
 ];
 
-/// The model suggested for `language`, when one is, and `current` is a poorer choice for it: a Whisper model where
-/// Omnilingual is suggested, and Whisper base or an Omnilingual model where a larger Whisper is. A model as good as
-/// the one suggested (the other Omnilingual, Whisper large turbo for Hindi) is left alone.
+/// The model suggested for `language`, when one is, and `current` is a poorer choice for it: Omnilingual for a language
+/// whisper does not know (`languages::Language::whisper`), when a Whisper model is in use; else the one `SUGGESTED`
+/// names, over a Whisper model where Omnilingual is suggested, and over Whisper base or an Omnilingual model where a
+/// larger Whisper is. A model as good as the one suggested (the other Omnilingual, Whisper large turbo for Hindi) is
+/// left alone.
 pub fn suggestion(language: &str, current: &SpeechModel) -> Option<&'static SpeechModel> {
+    if !super::languages::whisper_hears(language) {
+        return (current.engine == SpeechEngine::Whisper)
+            .then(|| speech_model("omnilingual"))
+            .flatten();
+    }
     let suggested = SUGGESTED
         .iter()
         .find(|(code, _)| *code == language)
@@ -500,66 +523,6 @@ pub fn suggestion(language: &str, current: &SpeechModel) -> Option<&'static Spee
         }
     };
     poorer.then_some(suggested)
-}
-
-/// The languages whisper hears, as it names them, with their names: the common ones first, then the rest in the
-/// order of their names.
-pub const LANGUAGES: [(&str, &str); 47] = [
-    ("en", "English"),
-    ("ar", "Arabic"),
-    ("as", "Assamese"),
-    ("bn", "Bengali"),
-    ("zh", "Chinese"),
-    ("cs", "Czech"),
-    ("da", "Danish"),
-    ("nl", "Dutch"),
-    ("fi", "Finnish"),
-    ("fr", "French"),
-    ("de", "German"),
-    ("el", "Greek"),
-    ("gu", "Gujarati"),
-    ("he", "Hebrew"),
-    ("hi", "Hindi"),
-    ("hu", "Hungarian"),
-    ("id", "Indonesian"),
-    ("it", "Italian"),
-    ("ja", "Japanese"),
-    ("kn", "Kannada"),
-    ("ko", "Korean"),
-    ("ms", "Malay"),
-    ("ml", "Malayalam"),
-    ("mr", "Marathi"),
-    ("no", "Norwegian"),
-    ("fa", "Persian"),
-    ("pl", "Polish"),
-    ("pt", "Portuguese"),
-    ("pa", "Punjabi"),
-    ("ro", "Romanian"),
-    ("ru", "Russian"),
-    ("sa", "Sanskrit"),
-    ("sr", "Serbian"),
-    ("sd", "Sindhi"),
-    ("es", "Spanish"),
-    ("sw", "Swahili"),
-    ("sv", "Swedish"),
-    ("tl", "Tagalog"),
-    ("ta", "Tamil"),
-    ("te", "Telugu"),
-    ("th", "Thai"),
-    ("tr", "Turkish"),
-    ("uk", "Ukrainian"),
-    ("ur", "Urdu"),
-    ("vi", "Vietnamese"),
-    ("cy", "Welsh"),
-    ("ne", "Nepali"),
-];
-
-/// The name of a language whisper names `code`, or the code.
-pub fn language_name(code: &str) -> &str {
-    LANGUAGES
-        .iter()
-        .find(|(c, _)| *c == code)
-        .map_or(code, |(_, name)| name)
 }
 
 #[cfg(test)]
@@ -578,6 +541,7 @@ mod tests {
             send_when_stopped: true,
             pause_ms: 800,
             read_answers: true,
+            read_language: Some("ka".into()),
             voice: Some("en-gb".into()),
             speed: 1.25,
             hands_free_muted: true,
@@ -590,6 +554,24 @@ mod tests {
         };
         let kept = chosen.to_value().unwrap();
         assert_eq!(VoiceSettings::from_value(Some(&kept)), chosen);
+    }
+
+    #[test]
+    fn answers_are_read_in_english_with_kokoro_unless_something_else_was_chosen() {
+        let d = VoiceSettings::default();
+        assert_eq!(d.reader, Reader::Pack("kokoro".into()));
+        assert_eq!(
+            VoiceSettings::from_value(Some(&json!({ "enabled": true }))).reader,
+            d.reader
+        );
+        // none chosen is kept as such, not taken for nothing chosen
+        let none = VoiceSettings {
+            reader: Reader::None,
+            ..VoiceSettings::default()
+        };
+        let kept = none.to_value().unwrap();
+        assert_eq!(kept["reader"], json!({ "kind": "none" }));
+        assert_eq!(VoiceSettings::from_value(Some(&kept)).reader, Reader::None);
     }
 
     #[test]
@@ -617,7 +599,10 @@ mod tests {
     #[test]
     fn a_better_model_is_suggested_for_a_language_and_only_over_a_poorer_one() {
         for (code, id) in SUGGESTED {
-            assert_ne!(language_name(code), code, "{code} is not in LANGUAGES");
+            assert!(
+                super::super::languages::language(code).is_some(),
+                "{code} is not a language"
+            );
             assert!(speech_model(id).is_some(), "{id} is not a model");
         }
         let model = |id| speech_model(id).unwrap();
@@ -650,6 +635,20 @@ mod tests {
         }
         // nothing for a language whisper writes well
         assert_eq!(suggestion("en", model("base")), None);
+        // a language whisper does not know: Omnilingual, over any Whisper, and nothing over an Omnilingual
+        for code in ["or", "zu", "ig", "ky"] {
+            assert_eq!(
+                suggestion(code, model("base")).map(|m| m.id),
+                Some("omnilingual"),
+                "{code}"
+            );
+            assert_eq!(
+                suggestion(code, model("turbo")).map(|m| m.id),
+                Some("omnilingual"),
+                "{code}"
+            );
+            assert_eq!(suggestion(code, model("omnilingual-large")), None, "{code}");
+        }
     }
 
     #[test]

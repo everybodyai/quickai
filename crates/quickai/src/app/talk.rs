@@ -22,18 +22,19 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 
 use super::icons::{self, Icon};
+use super::language_list::{language_list, Choice, ListState, Offer};
 use super::theme::{self, Role};
 use super::App;
 use crate::jobs::Job;
 use crate::paths;
+use crate::voice::languages::{self, LANGUAGES};
 use crate::voice::settings::{
-    language_name, speech_model, suggestion, SpeechEngine, SpeechModel, SpeechSource,
-    VoiceSettings, LANGUAGES, SPEECH_MODELS,
+    speech_model, suggestion, SpeechEngine, SpeechModel, SpeechSource, VoiceSettings, SPEECH_MODELS,
 };
 use crate::voice::settings::{Reader, MAX_PAUSE_MS, MIN_PAUSE_MS};
 use crate::voice::speak::{self, Speaker, Spoken};
 use crate::voice::spoken::{self, SentenceFeed};
-use crate::voice::voices::{self, VoicePack, VOICE_PACKS, VOICE_PROGRAM};
+use crate::voice::voices::{self, Voice, VoicePack, VOICE_PROGRAM};
 #[cfg(feature = "voice")]
 use crate::voice::{
     capture::{self, MicError, Microphone},
@@ -172,8 +173,9 @@ pub(super) struct Talk {
     terms_open: bool,
     /// Settings › Voice's try of speech to text.
     trial: Trial,
-    /// What is typed in the search box at the top of the lists of languages and of voices.
-    language_search: String,
+    /// The lists of languages (spoken, and read in) while open, and what is typed in the search box of the voices.
+    hear_list: ListState,
+    read_list: ListState,
     voice_search: String,
     /// There is something to read aloud with (a voice the person installed); without it Read aloud is not offered and
     /// hands-free does not read.
@@ -2056,50 +2058,175 @@ impl App {
         }
     }
 
-    /// A pack chosen: its download, or once here, which of its voices reads.
-    fn show_pack(
+    /// The voice of the language answers are read in (`reading`): the voices offered for it, each with what reads it;
+    /// or, for a language QuickAI has no voice for, why, and the two ways on (a voice of one's own, or the default
+    /// one). Then what reads (`show_voice_pack`).
+    fn show_reading_voice(
+        &mut self,
+        ui: &mut egui::Ui,
+        voice: Voice,
+        reading: Option<&'static str>,
+        ctx: &egui::Context,
+    ) -> bool {
+        use super::settings_window::{row_line, setting_row};
+        let mut changed = false;
+        let options = reading.map(voices::voices_for).unwrap_or_default();
+        if let (Some(code), true) = (reading, options.is_empty()) {
+            if no_voice_yet(ui, languages::name(code)) {
+                self.talk.settings.reader = Reader::Folder(String::new());
+                self.talk.settings.voice = None;
+                self.talk.terms_open = false;
+                return true;
+            }
+        } else {
+            // Kokoro and its smaller download are the same voices: the one chosen is the voice of either
+            let chosen = (
+                voices::larger(voice.pack).unwrap_or(voice.pack).id,
+                voice.speaker,
+            );
+            setting_row(
+                ui,
+                "Voice",
+                Some(
+                    "The voices for this language. Each is a download of its own, except Kokoro's: one download \
+                     holds all of them.",
+                ),
+                None,
+                |ui| {
+                    egui::ComboBox::from_id_salt("voice_voice")
+                        .selected_text(voice.label())
+                        .width(220.0)
+                        .height(300.0)
+                        .truncate()
+                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                        .show_ui(ui, |ui| {
+                            ui.set_min_width(330.0);
+                            let query = if options.len() > 8 {
+                                search_box(ui, &mut self.talk.voice_search, "Search voices")
+                            } else {
+                                String::new()
+                            };
+                            for v in options
+                                .iter()
+                                .filter(|v| matches(&query, &[&v.label(), v.pack.name]))
+                            {
+                                if voice_row(ui, v, (v.pack.id, v.speaker) == chosen).clicked() {
+                                    self.talk.settings.reader =
+                                        Reader::Pack(in_size_of(v, Some(voice)).id.into());
+                                    self.talk.settings.voice = Some(v.name().to_string());
+                                    self.talk.terms_open = false;
+                                    changed = true;
+                                    ui.close();
+                                }
+                            }
+                        });
+                },
+            );
+        }
+        row_line(ui);
+        changed |= self.show_voice_pack(ui, voice.pack, ctx);
+        changed
+    }
+
+    /// What reads with the voice chosen: its model, size and licence (with the (i) mark of a licence that limits
+    /// commercial use, and its terms when that is clicked); its download until it is here; and, for Kokoro, the
+    /// choice of its smaller download.
+    fn show_voice_pack(
         &mut self,
         ui: &mut egui::Ui,
         pack: &'static VoicePack,
         ctx: &egui::Context,
     ) -> bool {
-        use super::settings_window::setting_row;
         let p = theme::palette();
         let mut changed = false;
-        let here = pack.installed() && voices::program().is_some();
-        if !here {
-            let downloading = self
-                .talk
-                .voice_download
-                .as_ref()
-                .map(|(job, _)| (job.downloaded, job.total));
-            if let Some((done, total)) = downloading {
-                let total = total.unwrap_or(pack.bytes()).max(1);
-                ui.label(
+        let about = if pack.about.is_empty() {
+            format!("Read by {}", pack.name)
+        } else {
+            format!("Read by {}: {}", pack.name, pack.about)
+        };
+        ui.horizontal_wrapped(|ui| {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+            icons::paint(ui.painter(), r, Icon::Info, p.muted);
+            ui.label(
+                theme::muted(format!(
+                    "{about} · {} · {} license",
+                    megabytes(pack.bytes()),
+                    pack.license
+                ))
+                .small(),
+            );
+            if let Some(terms) = pack.terms() {
+                if licence_mark(ui, self.talk.terms_open)
+                    .on_hover_text(format!(
+                        "{}\n\n{}\n\nClick for the license.",
+                        terms.title, terms.summary
+                    ))
+                    .clicked()
+                {
+                    self.talk.terms_open = !self.talk.terms_open;
+                }
+            }
+        });
+        if let Some(terms) = pack.terms() {
+            if self.talk.terms_open && show_terms(ui, &terms) {
+                self.talk.terms_open = false;
+            }
+        }
+        // the same voices in a third of the size, slower on most processors
+        if let Some((full, small)) = voices::smaller(pack)
+            .map(|small| (pack, small))
+            .or_else(|| voices::larger(pack).map(|full| (full, pack)))
+        {
+            let mut smaller = pack.id == small.id;
+            if ui
+                .checkbox(
+                    &mut smaller,
                     theme::muted(format!(
-                        "Downloading {}: {} of {}",
-                        pack.name,
-                        megabytes(done),
-                        megabytes(total)
+                        "The smaller download ({}, slower on most processors)",
+                        megabytes(small.bytes())
                     ))
                     .small(),
-                );
-                ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_height(6.0));
-            } else if self.talk.voice_unpacking.is_some() {
-                ui.horizontal(|ui| {
-                    ui.add(egui::Spinner::new().size(14.0).color(p.muted));
-                    ui.label(theme::muted(format!("Unpacking {}…", pack.name)).small());
-                });
-            } else {
+                )
+                .changed()
+            {
+                let next = if smaller { small } else { full };
+                self.talk.settings.reader = Reader::Pack(next.id.into());
+                changed = true;
+            }
+        }
+        let here = pack.installed() && voices::program().is_some();
+        if here {
+            return changed;
+        }
+        ui.add_space(4.0);
+        let downloading = self
+            .talk
+            .voice_download
+            .as_ref()
+            .map(|(job, _)| (job.downloaded, job.total));
+        if let Some((done, total)) = downloading {
+            let total = total.unwrap_or(pack.bytes()).max(1);
+            ui.label(
+                theme::muted(format!(
+                    "Downloading {}: {} of {}",
+                    pack.title(),
+                    megabytes(done),
+                    megabytes(total)
+                ))
+                .small(),
+            );
+            ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_height(6.0));
+        } else if self.talk.voice_unpacking.is_some() {
+            ui.horizontal(|ui| {
+                ui.add(egui::Spinner::new().size(14.0).color(p.muted));
+                ui.label(theme::muted(format!("Unpacking {}…", pack.title())).small());
+            });
+        } else {
+            ui.horizontal(|ui| {
                 let what = if pack.installed() {
-                    "The voice program is not on this computer yet.".to_string()
+                    "The voice program is not on this computer yet."
                 } else {
-                    format!(
-                        "{} is not on this computer yet ({}, {} licence).",
-                        pack.name,
-                        megabytes(pack.bytes()),
-                        pack.license
-                    )
+                    "Not on this computer yet."
                 };
                 ui.label(theme::muted(what).small());
                 if theme::button_sized(ui, Role::Primary, true, "Download", egui::vec2(96.0, 26.0))
@@ -2107,48 +2234,8 @@ impl App {
                 {
                     self.download_voice(Some(pack), ctx);
                 }
-            }
-            return changed;
+            });
         }
-        let voice = self
-            .talk
-            .settings
-            .voice
-            .clone()
-            .filter(|v| pack.speaker(v).is_some());
-        let shown = voices::speaker_label(
-            voice
-                .as_deref()
-                .unwrap_or(pack.speakers[3.min(pack.speakers.len() - 1)]),
-        );
-        setting_row(ui, "Voice", Some("The voices of this pack."), None, |ui| {
-            egui::ComboBox::from_id_salt("voice_voice")
-                .selected_text(shown)
-                .width(220.0)
-                .height(320.0)
-                .truncate()
-                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                .show_ui(ui, |ui| {
-                    let query = search_box(ui, &mut self.talk.voice_search, "Search voices");
-                    for name in pack
-                        .speakers
-                        .iter()
-                        .filter(|n| matches(&query, &[n, &voices::speaker_label(n)]))
-                    {
-                        if ui
-                            .selectable_label(
-                                voice.as_deref() == Some(*name),
-                                voices::speaker_label(name),
-                            )
-                            .clicked()
-                        {
-                            self.talk.settings.voice = Some(name.to_string());
-                            changed = true;
-                            ui.close();
-                        }
-                    }
-                });
-        });
         changed
     }
 
@@ -2283,48 +2370,51 @@ impl App {
             let language = self.talk.settings.language.clone();
             let shown = language
                 .as_deref()
-                .map_or("Tell it from what is said", language_name)
+                .map_or("Tell it from what is said", languages::name)
                 .to_string();
             let language_about = if self.speech_model_now().engine == SpeechEngine::Omnilingual {
                 "What you speak in, for the Whisper models: Omnilingual tells it from what is said."
             } else {
                 "What you speak in. Told from what is said, it can mistake a short sentence."
             };
+            // every language Whisper or Omnilingual hears, by the part of the world it is spoken in
+            let heard: Vec<&'static languages::Language> = LANGUAGES.iter().collect();
+            let current = language
+                .as_deref()
+                .and_then(languages::language)
+                .map_or(Choice::Top, |l| Choice::Language(l.code));
             setting_row(ui, "Language", Some(language_about), None, |ui| {
-                egui::ComboBox::from_id_salt("voice_language")
-                    .selected_text(shown)
-                    .width(220.0)
-                    .height(320.0)
-                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                    .show_ui(ui, |ui| {
-                        let query =
-                            search_box(ui, &mut self.talk.language_search, "Search languages");
-                        if query.is_empty()
-                            && ui
-                                .selectable_label(language.is_none(), "Tell it from what is said")
-                                .clicked()
-                        {
-                            self.talk.settings.language = None;
-                            changed = true;
-                            ui.close();
-                        }
-                        for (code, name) in LANGUAGES
-                            .iter()
-                            .filter(|(code, name)| matches(&query, &[code, name]))
-                        {
-                            if ui
-                                .selectable_label(language.as_deref() == Some(*code), *name)
-                                .clicked()
-                            {
-                                self.talk.settings.language = Some(code.to_string());
-                                changed = true;
-                                ui.close();
-                            }
-                        }
-                    });
+                let offer = Offer {
+                    top: "Tell it from what is said",
+                    pinned: &["en"],
+                    top_first: true,
+                    own: &[],
+                    unoffered: &[],
+                };
+                match language_list(
+                    ui,
+                    "voice_language",
+                    &shown,
+                    false,
+                    &heard,
+                    current,
+                    &offer,
+                    &mut self.talk.hear_list,
+                ) {
+                    Some(Choice::Top) => {
+                        self.talk.settings.language = None;
+                        changed = true;
+                    }
+                    Some(Choice::Language(code)) => {
+                        self.talk.settings.language = Some(code.to_string());
+                        changed = true;
+                    }
+                    _ => {}
+                }
             });
             // a model more accurate for the language chosen than the one in use (SUGGESTED: Omnilingual for Urdu and
-            // most languages of India, Omnilingual large for Arabic and Persian, Whisper small for Hindi)
+            // most languages of India, Omnilingual large for Arabic and Persian, Whisper small for Hindi), or the one
+            // that hears a language Whisper does not know
             let better = self
                 .talk
                 .settings
@@ -2333,15 +2423,22 @@ impl App {
                 .and_then(|code| Some((code, suggestion(code, self.speech_model_now())?)));
             if let Some((code, better)) = better {
                 ui.add_space(2.0);
-                ui.label(
-                    theme::muted(format!(
+                let why = if languages::whisper_hears(code) {
+                    format!(
                         "For {}, {} ({}) is the most accurate speech model QuickAI offers.",
-                        language_name(code),
+                        languages::name(code),
                         better.name,
                         better.size_words()
-                    ))
-                    .small(),
-                );
+                    )
+                } else {
+                    format!(
+                        "Whisper does not know {}: {} ({}) hears it.",
+                        languages::name(code),
+                        better.name,
+                        better.size_words()
+                    )
+                };
+                ui.label(theme::muted(why).small());
                 ui.add_space(4.0);
                 if theme::button_sized(
                     ui,
@@ -2451,114 +2548,113 @@ impl App {
         ui.label(theme::muted("ANSWERS").small());
         ui.add_space(4.0);
         group(ui, |ui| {
-            // what reads aloud: nothing until the person chooses, for QuickAI ships no voice
+            // what reads aloud: nothing until the person chooses a language (and a voice for it, downloaded), for
+            // QuickAI ships no voice; or a voice of their own
             let reader = self.talk.settings.reader.clone();
-            let mut chosen: Option<Reader> = None;
+            let voice_now = match &reader {
+                Reader::Pack(id) => voices::voice_in(id, self.talk.settings.voice.as_deref()),
+                _ => None,
+            };
+            // the language read in: as chosen (one without a voice is read with the default voice), else the voice's
+            let reading: Option<&'static str> = match &reader {
+                Reader::Pack(_) => self
+                    .talk
+                    .settings
+                    .read_language
+                    .as_deref()
+                    .and_then(languages::language)
+                    .map(|l| l.code)
+                    .or_else(|| voice_now.and_then(|v| v.language())),
+                _ => None,
+            };
+            let current = match &reader {
+                Reader::None => Choice::Top,
+                Reader::Pack(_) => reading.map_or(Choice::Top, Choice::Language),
+                Reader::Folder(_) => Choice::Own(0),
+                Reader::Server { .. } => Choice::Own(1),
+                Reader::Program(_) => Choice::Own(2),
+            };
+            let (shown, placeholder) = match current {
+                Choice::Top => ("None".to_string(), true),
+                Choice::Language(code) => (languages::name(code).to_string(), false),
+                Choice::Own(k) => (OWN_VOICES[k].0.trim_end_matches('…').to_string(), false),
+            };
+            let readable: Vec<&'static languages::Language> = LANGUAGES.iter().collect();
+            let unoffered = voices::unoffered_languages();
+            let mut picked = None;
             setting_row(
                 ui,
-                "Read with",
-                Some("No voice comes with QuickAI: download one, or use one of your own."),
+                "Read in",
+                Some(
+                    "The language answers are read aloud in. No voice comes with QuickAI: download one for the \
+                     language, or use one of your own.",
+                ),
                 None,
                 |ui| {
-                    // a voice whose licence limits commercial use: a quiet mark beside it, whose hover says the terms in
-                    // short and whose click shows them with a link to the licence
-                    let terms = match &reader {
-                        Reader::Pack(id) => voices::voice_pack(id).and_then(|p| p.terms()),
-                        _ => None,
+                    // English first, the language read in unless another is chosen; then none
+                    let offer = Offer {
+                        top: "None",
+                        pinned: &["en"],
+                        top_first: false,
+                        own: &OWN_VOICES,
+                        unoffered,
                     };
-                    if let Some(terms) = terms {
-                        if licence_mark(ui, self.talk.terms_open)
-                            .on_hover_text(format!(
-                                "{}\n\n{}\n\nClick for the license.",
-                                terms.title, terms.summary
-                            ))
-                            .clicked()
-                        {
-                            self.talk.terms_open = !self.talk.terms_open;
-                        }
-                    }
-                    egui::ComboBox::from_id_salt("voice_reader")
-                        .selected_text(reader_label(&reader))
-                        .width(220.0)
-                        .truncate()
-                        .show_ui(ui, |ui| {
-                            if ui.selectable_label(reader == Reader::None, "Nothing").clicked() {
-                                chosen = Some(Reader::None);
-                            }
-                            for pack in &VOICE_PACKS {
-                                let on = reader == Reader::Pack(pack.id.into());
-                                let hover = match pack.terms() {
-                                    Some(t) => format!("{}. {} license.\n\n{}: {}", pack.about, pack.license, t.title, t.summary),
-                                    None => format!("{}. {} license.", pack.about, pack.license),
-                                };
-                                let clicked = ui
-                                    .horizontal(|ui| {
-                                        let label = ui
-                                            .selectable_label(on, format!("{} · {}", pack.name, megabytes(pack.bytes())))
-                                            .on_hover_text(&hover);
-                                        if let Some(t) = pack.terms() {
-                                            let (r, mark) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                                            let p = theme::palette();
-                                            icons::paint(ui.painter(), r, Icon::Info, if mark.hovered() { p.text } else { p.faint });
-                                            mark.on_hover_text(format!("{}\n\n{}", t.title, t.summary));
-                                        }
-                                        label.clicked()
-                                    })
-                                    .inner;
-                                if clicked {
-                                    chosen = Some(Reader::Pack(pack.id.into()));
-                                }
-                            }
-                            if ui
-                                .selectable_label(matches!(reader, Reader::Folder(_)), "A voice from a folder…")
-                                .on_hover_text("A voice of sherpa-onnx's you have: Kokoro, Kitten, Piper or another VITS voice, Matcha.")
-                                .clicked()
-                            {
-                                chosen = Some(Reader::Folder(String::new()));
-                            }
-                            if ui
-                                .selectable_label(matches!(reader, Reader::Server { .. }), "A speech server…")
-                                .on_hover_text("A server that speaks OpenAI's /v1/audio/speech, for voices QuickAI cannot run itself.")
-                                .clicked()
-                            {
-                                chosen = Some(Reader::Server { url: String::new(), model: String::new(), key: String::new() });
-                            }
-                            if ui
-                                .selectable_label(matches!(reader, Reader::Program(_)), "A program of my own…")
-                                .on_hover_text("A command that reads its input aloud.")
-                                .clicked()
-                            {
-                                chosen = Some(Reader::Program(String::new()));
-                            }
-                        });
+                    picked = language_list(
+                        ui,
+                        "voice_read_in",
+                        &shown,
+                        placeholder,
+                        &readable,
+                        current,
+                        &offer,
+                        &mut self.talk.read_list,
+                    );
                 },
             );
-            if let Some(next) = chosen {
-                // a different kind of reader keeps nothing of the last one's voice
-                if std::mem::discriminant(&next) != std::mem::discriminant(&reader) {
-                    self.talk.settings.voice = None;
-                }
-                if next != reader {
-                    self.talk.settings.reader = next;
-                    self.talk.terms_open = false;
-                    changed = true;
-                }
+            let next = match picked {
+                Some(Choice::Top) => Some((Reader::None, None, None)),
+                // a language: the voice of it that is the most natural (the first), in the size of download chosen
+                // for that voice before; for a language QuickAI has no voice for, the default voice
+                Some(Choice::Language(code)) if Some(code) != reading => voices::voices_for(code)
+                    .first()
+                    .copied()
+                    .or_else(|| voices::voice_in(voices::DEFAULT_PACK, None))
+                    .map(|v| {
+                        (
+                            Reader::Pack(in_size_of(&v, voice_now).id.into()),
+                            Some(v.name().to_string()),
+                            Some(code.to_string()),
+                        )
+                    }),
+                Some(Choice::Own(k)) if current != Choice::Own(k) => Some((
+                    match k {
+                        0 => Reader::Folder(String::new()),
+                        1 => Reader::Server {
+                            url: String::new(),
+                            model: String::new(),
+                            key: String::new(),
+                        },
+                        _ => Reader::Program(String::new()),
+                    },
+                    None,
+                    None,
+                )),
+                _ => None,
+            };
+            if let Some((next, voice, language)) = next {
+                self.talk.settings.reader = next;
+                self.talk.settings.voice = voice;
+                self.talk.settings.read_language = language;
+                self.talk.terms_open = false;
+                changed = true;
             }
             let reader = self.talk.settings.reader.clone();
-            // the terms of the chosen voice's licence, under its (i) mark
-            if let Reader::Pack(id) = &reader {
-                if let Some(terms) = voices::voice_pack(id).and_then(|p| p.terms()) {
-                    if self.talk.terms_open && show_terms(ui, &terms) {
-                        self.talk.terms_open = false;
-                    }
-                }
-            }
             match &reader {
                 Reader::None => {}
                 Reader::Pack(id) => {
-                    if let Some(pack) = voices::voice_pack(id) {
+                    if let Some(voice) = voices::voice_in(id, self.talk.settings.voice.as_deref()) {
                         row_line(ui);
-                        changed |= self.show_pack(ui, pack, &ctx);
+                        changed |= self.show_reading_voice(ui, voice, reading, &ctx);
                     }
                 }
                 Reader::Folder(path) => {
@@ -2727,11 +2823,12 @@ impl App {
             self.talk.settings.speed = f64::from(speed);
             row_line(ui);
             let why_not = speak::backend_for(&self.talk.settings).err();
-            let pack = match &self.talk.settings.reader {
-                Reader::Pack(id) => voices::voice_pack(id),
+            // a sentence in the language of the voice (English for a voice of the person's own)
+            let sample = voices::sample(match &self.talk.settings.reader {
+                Reader::Pack(id) => voices::voice_in(id, self.talk.settings.voice.as_deref())
+                    .and_then(|v| v.language()),
                 _ => None,
-            };
-            let sample = voices::sample(pack, self.talk.settings.voice.as_deref());
+            });
             ui.horizontal(|ui| {
                 if theme::button_sized(
                     ui,
@@ -2828,17 +2925,105 @@ fn blocked_card(e: &MicError) -> Card {
     }
 }
 
-/// What reads aloud, in a few words, for the list's head.
-fn reader_label(reader: &Reader) -> String {
-    match reader {
-        Reader::None => "Nothing".into(),
-        Reader::Pack(id) => {
-            voices::voice_pack(id).map_or_else(|| id.clone(), |p| p.name.to_string())
-        }
-        Reader::Folder(_) => "A voice from a folder".into(),
-        Reader::Server { .. } => "A speech server".into(),
-        Reader::Program(_) => "A program of my own".into(),
+/// The person's own voices, as the list of languages offers them, with what each is.
+const OWN_VOICES: [(&str, &str); 3] = [
+    (
+        "A voice from a folder…",
+        "A voice of sherpa-onnx's you have: Kokoro, Kitten, Piper or another VITS voice, Matcha.",
+    ),
+    (
+        "A speech server…",
+        "A server that speaks OpenAI's /v1/audio/speech, for voices QuickAI cannot run itself.",
+    ),
+    (
+        "A program of my own…",
+        "A command that reads its input aloud.",
+    ),
+];
+
+/// The pack `v` is read with, in the size of download chosen before: the smaller Kokoro when the voice in use (`now`)
+/// is read with it.
+fn in_size_of(v: &Voice, now: Option<Voice>) -> &'static VoicePack {
+    match (voices::smaller(v.pack), now) {
+        (Some(small), Some(now)) if now.pack.id == small.id => small,
+        _ => v.pack,
     }
+}
+
+/// A voice in the list of a language's voices: its name and who it sounds like, and at the right what reads it, with
+/// its size until it is on this computer. A licence that limits commercial use is said when the pointer rests on it.
+fn voice_row(ui: &mut egui::Ui, v: &Voice, chosen: bool) -> egui::Response {
+    let p = theme::palette();
+    let row = ui
+        .with_layout(egui::Layout::top_down_justified(egui::Align::Min), |ui| {
+            ui.selectable_label(chosen, v.label())
+        })
+        .inner;
+    let here = v.pack.installed() || voices::smaller(v.pack).is_some_and(|s| s.installed());
+    let tag = if here {
+        format!("{} · on this computer", v.pack.name)
+    } else {
+        format!("{} · {}", v.pack.name, megabytes(v.pack.bytes()))
+    };
+    ui.painter().with_clip_rect(row.rect).text(
+        row.rect.right_center() - egui::vec2(8.0, 0.0),
+        egui::Align2::RIGHT_CENTER,
+        tag,
+        egui::TextStyle::Small.resolve(ui.style()),
+        if chosen { p.on_accent } else { p.faint },
+    );
+    match v.pack.terms() {
+        Some(t) => row.on_hover_text(format!("{}: {}", t.title, t.summary)),
+        None => row,
+    }
+}
+
+/// A language QuickAI has no voice for, said kindly, with the two ways on: find a voice and use it as one's own, or
+/// keep the default voice meanwhile. True when the person chose to use their own.
+fn no_voice_yet(ui: &mut egui::Ui, language: &str) -> bool {
+    let p = theme::palette();
+    let mut own = false;
+    ui.add_space(6.0);
+    egui::Frame::new()
+        .fill(p.card)
+        .stroke(egui::Stroke::new(1.0, p.line))
+        .corner_radius(egui::CornerRadius::same(8))
+        .inner_margin(egui::Margin::same(12))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                icons::paint(ui.painter(), r, Icon::Info, p.muted);
+                ui.label(
+                    egui::RichText::new(format!("No {language} voice yet"))
+                        .family(theme::semibold(ui))
+                        .color(p.text),
+                );
+            });
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(format!(
+                    "QuickAI offers only voices it has tested and whose license lets it offer them, and it has \
+                     none for {language} yet. If you find a {language} voice you like, you can use it here as your own. \
+                     Until then, the default voice, Kokoro, reads the answers: it speaks English and a few other \
+                     languages, so {language} may not sound right."))
+                .small()
+                .color(p.body),
+            );
+            ui.add_space(6.0);
+            if theme::button_sized(
+                ui,
+                Role::Normal,
+                true,
+                "Use a voice of my own…",
+                egui::vec2(0.0, 24.0),
+            )
+            .clicked()
+            {
+                own = true;
+            }
+        });
+    own
 }
 
 /// The mark of a voice whose licence limits commercial use: a quiet (i) button, pressed while its terms are shown.
@@ -2918,7 +3103,7 @@ fn kind_words(kind: voices::ModelKind) -> &'static str {
 }
 
 /// The search box at the top of a long list: what is typed, made small, to match the list's words with.
-fn search_box(ui: &mut egui::Ui, text: &mut String, hint: &str) -> String {
+pub(super) fn search_box(ui: &mut egui::Ui, text: &mut String, hint: &str) -> String {
     let field = ui.add(
         egui::TextEdit::singleline(text)
             .hint_text(hint)

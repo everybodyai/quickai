@@ -281,11 +281,11 @@ chat. It connects only when you press a button, or press Enter in an input box, 
   `csukuangfj2/sherpa-onnx-omnilingual-asr-1600-languages-1B-ctc-v2-int8-2026-02-05` from Hugging Face (about 1 GB),
   each verified in the same way; QuickAI's voice program, quickai-voice, which runs them, is downloaded with either from
   GitHub if it is not already on your computer.
-- **A voice for reading responses aloud.** No voice is included with QuickAI. When you select a voice in Settings ›
-  Voice › Read with and press **Download**, it is downloaded, verified against the checksum pinned in the app, from
-  sherpa-onnx's releases on GitHub (`github.com`: Kokoro, the voices for Arabic, Persian, Urdu, Malayalam and Nepali,
-  and the espeak-ng data some voices use) or from Hugging Face (`huggingface.co`: the MMS voices of
-  `willwade/mms-tts-multilingual-models-onnx` and the Telugu voices of `rhasspy/piper-voices`), 63 MB to 350 MB. With the first voice, QuickAI's
+- **A voice for reading responses aloud.** No voice is included with QuickAI. When you select a language and a voice
+  in Settings › Voice (Read in, Voice) and press **Download**, the voice is downloaded, verified against the checksum
+  pinned in the app, from sherpa-onnx's releases on GitHub (`github.com`: Kokoro, Nabra, most Piper voices, the Coqui
+  and Mimic 3 voices, and the espeak-ng data some voices use) or from Hugging Face (`huggingface.co`: the MMS voices of
+  `willwade/mms-tts-multilingual-models-onnx` and the Piper voices of `rhasspy/piper-voices`), 27 MB to 350 MB. With the first voice, QuickAI's
   voice program, quickai-voice, is downloaded from its releases on GitHub (`github.com/everybodyai/quickai-voice`).
   Both are stored in `~/.quickai/voice`. Reading aloud then takes place on your computer and contacts no one.
 - **A speech server, if you choose one.** If you select **A speech server** as the reader, each sentence of a response

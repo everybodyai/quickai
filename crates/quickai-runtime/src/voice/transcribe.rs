@@ -330,10 +330,12 @@ fn write_down(running: &mut Option<Running>, job: Job) -> Result<Written, String
     let Some(r) = running.as_mut() else {
         return Err("the speech program is not running".into());
     };
+    // whisper is told only a language it knows: another it tells by itself (Omnilingual, told any, tells it anyway)
     let language = job
         .language
         .as_deref()
         .filter(|l| !l.is_empty())
+        .filter(|l| job.engine != SpeechEngine::Whisper || super::languages::whisper_hears(l))
         .unwrap_or("auto");
     let mut request =
         format!("transcribe {} {} {language}\n", job.id, job.samples.len()).into_bytes();

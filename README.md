@@ -142,23 +142,25 @@ For Urdu and most Indian languages, such as Malayalam, Tamil and Bengali, choose
 ASR, 1600 languages, 366 MB, downloaded on request), and for Arabic and Persian **Omnilingual large** (1.0 GB): Whisper
 often writes these languages less accurately, in another script or as made-up words. For Hindi, **Whisper small** is
 the most accurate, since Omnilingual often writes Hindi in Urdu's script. When you select your language, Settings
-names the most accurate model for it. Omnilingual writes without capitals or punctuation.
+names the most accurate model for it. Omnilingual writes without capitals or punctuation. The lists of languages are
+grouped by region, with English first and the most widely spoken languages after it, and can be searched by a
+language's name in English or in itself; Whisper hears 100 of the 135 languages listed, and Omnilingual all of them.
 
-QuickAI does not include a voice for reading aloud; choose one in **Settings → Voice → Read with**:
+QuickAI does not include a voice for reading aloud. In **Settings → Voice**, **Read in** sets the language responses
+are read in (English unless you choose another), and **Voice** offers the voices for it, each downloaded on request:
 
-- **Kokoro**: natural voices for English, Hindi and seven other languages
-  ([Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), Apache-2.0), downloaded on request (350 MB, or a smaller
-  132 MB version), together with QuickAI's voice program
-  [quickai-voice](https://github.com/everybodyai/quickai-voice) (GPL-3.0), built on
-  [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). Speech is generated on your computer.
-- **Arabic, Persian and Urdu**: [Nabra](https://huggingface.co/oddadmix/Nabra-82M-v0.1), a Kokoro voice for Modern
-  Standard Arabic (Apache-2.0, 83 MB), and the Piper voices Amir for Persian (CC0, 67 MB) and Fasih for Urdu (MIT,
-  67 MB), downloaded on request in the same way.
-- **The languages of India**: [Piper](https://github.com/rhasspy/piper) voices for Malayalam (Meera, Arjun), Telugu
-  (Maya, Venkatesh) and Nepali (Chitwan), and Meta's [MMS](https://huggingface.co/facebook/mms-tts) voices for Tamil,
-  Kannada, Marathi, Bengali, Gujarati, Punjabi, Odia and Assamese (63 to 114 MB each), downloaded on request. Each keeps
-  its own license, which Settings shows: MMS's allows non-commercial use only, and the IndicTTS license of IIT Madras
-  (Meera, Arjun, Maya) asks businesses to agree terms with it.
+- **Kokoro**: natural voices for English, Chinese, Hindi, Spanish, French, Italian and Portuguese
+  ([Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), Apache-2.0), 350 MB (or a smaller download of 132 MB),
+  together with QuickAI's voice program [quickai-voice](https://github.com/everybodyai/quickai-voice) (GPL-3.0), built
+  on [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). Speech is generated on your computer.
+- **Voices for 98 languages in all**: [Piper](https://github.com/rhasspy/piper) voices, Meta's
+  [MMS](https://huggingface.co/facebook/mms-tts) voices, [Nabra](https://huggingface.co/oddadmix/Nabra-82M-v0.1) for
+  Arabic, and voices of Coqui and Mimic 3, 27 to 129 MB each. Each was tested by having speech recognition
+  write back what it read, and each keeps its own license, which Settings shows: a license that limits commercial use,
+  such as MMS's (non-commercial use only) or the IndicTTS license of IIT Madras (businesses agree terms with it), has
+  an (i) mark with its terms.
+- **A language without a voice yet**: QuickAI offers only voices whose license allows it. Settings says so, and the
+  default voice, Kokoro, reads in the meantime. If you find a voice for your language, you can use it as your own:
 - **A voice from a folder**: any voice you have that sherpa-onnx can read, such as Kokoro, Kitten, Piper or Matcha.
 - **A speech server**: a server that implements OpenAI's `/v1/audio/speech`, for voices QuickAI cannot run itself.
 - **A program of your own**: a command that reads its input aloud.

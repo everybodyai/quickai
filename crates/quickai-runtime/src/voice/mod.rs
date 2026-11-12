@@ -23,6 +23,7 @@ pub mod transcribe;
 pub mod vad;
 // reading aloud, which every build has
 mod engine;
+pub mod languages;
 pub mod settings;
 pub mod speak;
 pub mod spoken;

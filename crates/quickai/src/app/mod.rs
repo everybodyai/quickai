@@ -47,6 +47,7 @@ mod help;
 mod icons;
 mod inspector;
 mod install_page;
+mod language_list;
 mod live_traffic;
 mod log_pane;
 mod lookup_view;

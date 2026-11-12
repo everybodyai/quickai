@@ -375,10 +375,11 @@ const PAGES: &[Page] = &[
                  for it.",
             ),
             step(
-                "QuickAI does not include a voice: choose one in **Settings › Voice › Read with**. **Kokoro** \
-                 (English, Hindi and seven other languages) and voices for Arabic, Persian, Urdu and the languages \
-                 of India are downloaded on request, each under its own license; a voice from a folder, a speech \
-                 server or a program of your own can also be used.",
+                "QuickAI does not include a voice. In **Settings › Voice**, **Read in** sets the language responses \
+                 are read in (English unless you choose another) and **Voice** offers its voices: **Kokoro** for \
+                 English and six more languages, and voices for 98 languages in all, downloaded on request, each \
+                 under its own license. For a language without a voice yet, the default voice reads in the \
+                 meantime, and a voice from a folder, a speech server or a program of your own can be used.",
             ),
             step(
                 "**Read aloud** below a response reads it and highlights the sentence being read. **Read answers \

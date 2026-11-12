@@ -196,9 +196,6 @@ fn no_program() -> String {
     "QuickAI has no voice to read with yet".into()
 }
 
-/// Kokoro's voice read when none was chosen: af_heart.
-const FIRST_SPEAKER: usize = 3;
-
 /// What reads aloud with the person's choices, or why nothing can: `QUICKAI_SPEECH_COMMAND` when it is set (tests),
 /// else the reader of the settings.
 pub fn backend_for(settings: &VoiceSettings) -> Result<Backend, String> {
@@ -215,16 +212,17 @@ pub fn backend_for(settings: &VoiceSettings) -> Result<Backend, String> {
         Reader::Pack(id) => {
             let pack = voices::voice_pack(id).ok_or("that voice is no longer offered")?;
             if !pack.installed() {
-                return Err(format!("{} is not on this computer yet", pack.name));
+                return Err(format!("{} is not on this computer yet", pack.title()));
             }
             let speaker = settings
                 .voice
                 .as_deref()
                 .and_then(|v| pack.speaker(v))
-                .unwrap_or(FIRST_SPEAKER.min(pack.speakers.len().saturating_sub(1)));
+                .unwrap_or(pack.first_speaker());
             Ok(Backend::Voice {
                 program: program()?,
-                spec: pack.spec(),
+                // what is loaded depends on the voice too: Kokoro is told the language each of its voices reads
+                spec: pack.spec(speaker),
                 speaker,
             })
         }
