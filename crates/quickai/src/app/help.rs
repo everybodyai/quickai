@@ -352,9 +352,14 @@ const PAGES: &[Page] = &[
         icon: Icon::Mic,
         title: "Talk to QuickAI (experimental)",
         lead: "Speak your message instead of typing it, have responses read aloud, or hold a hands-free conversation. \
-               All processing takes place on this computer. This feature is new and still being refined, so it is off \
-               until you enable it.",
-        picture: None,
+               Your speech is transcribed, and responses are read aloud, on this computer, unless you choose a speech \
+               server elsewhere. This feature is new and still being refined, so it is off until you enable it.",
+        // Settings › Voice with voice on: its switch, the language spoken, the speech model, and what answers are read in
+        picture: Some(Picture {
+            name: "voice",
+            marks: &[(1, 18.0, 75.0), (3, 18.0, 221.0), (4, 18.0, 272.0), (5, 18.0, 553.0)],
+            ring: None,
+        }),
         steps: &[
             step(
                 "Enable **Use voice** in **Settings › Voice**. Until then, QuickAI shows no microphone and does not \
@@ -368,18 +373,25 @@ const PAGES: &[Page] = &[
             )
             .at(Spot::Mic),
             step(
-                "On first use, QuickAI downloads its speech recognition model (82 MB), unless your package already \
-                 includes it. In **Settings › Voice** you can choose a larger Whisper model, which handles accents \
-                 and background noise better, or **Omnilingual**, which is more accurate for Urdu, Arabic, Persian \
-                 and most Indian languages. When you select your language, Settings names the most accurate model \
-                 for it.",
+                "**Language** is the language you speak. Its list shows English first, then the most widely spoken \
+                 languages and the languages of each part of the world; type a few letters of a language's name, in \
+                 English or in the language itself, to find it. Whisper recognizes 100 of its 135 languages, and \
+                 **Omnilingual** all of them: when you select a language, Settings names the most accurate speech \
+                 model for it.",
             ),
             step(
-                "QuickAI does not include a voice. In **Settings › Voice**, **Read in** sets the language responses \
-                 are read in (English unless you choose another) and **Voice** offers its voices: **Kokoro** for \
-                 English and six more languages, and voices for 98 languages in all, downloaded on request, each \
-                 under its own license. For a language without a voice yet, the default voice reads in the \
-                 meantime, and a voice from a folder, a speech server or a program of your own can be used.",
+                "On first use, QuickAI downloads its speech recognition model (82 MB), unless your package already \
+                 includes it. In **Speech model** you can choose a larger Whisper model, which handles accents and \
+                 background noise better, or **Omnilingual**, which is more accurate for Urdu, Arabic, Persian and \
+                 most Indian languages.",
+            ),
+            step(
+                "QuickAI does not include a voice. **Read in** sets the language responses are read aloud in (English \
+                 unless you choose another), and **Voice** lists its voices, the most natural first; the line below \
+                 them names what reads, its size and its license. Each voice is downloaded on request: **Kokoro** for \
+                 English and six more languages, and voices for 98 languages in all. For a language without a voice \
+                 yet, Kokoro reads in the meantime, and you can use a voice of your own: a voice folder, a speech \
+                 server or a program.",
             ),
             step(
                 "**Read aloud** below a response reads it and highlights the sentence being read. **Read answers \
@@ -392,8 +404,8 @@ const PAGES: &[Page] = &[
             )
             .at(Spot::ChatMenu),
             step(
-                "**Settings › Voice** also covers the microphone, the language you speak, the speech recognition \
-                 model, the pause that sends your message, and the voice and speed used for reading.",
+                "**Settings › Voice** also covers the microphone, the pause that sends your message, and the speed of \
+                 reading.",
             ),
         ],
         numbered: true,
@@ -953,6 +965,7 @@ pictures!(
     "change",
     "settings",
     "port-taken",
+    "voice",
 );
 
 impl App {
