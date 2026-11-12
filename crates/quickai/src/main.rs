@@ -51,6 +51,7 @@ fn with_app_icon(builder: egui::ViewportBuilder) -> egui::ViewportBuilder {
 /// compositor asks only a window it shows: one that is covered, minimized or on another workspace is never asked, and
 /// the other windows of QuickAI (Add a model, Settings, a problem report) are drawn in the frames of the main one. They
 /// stopped with it, and the window, drawing nothing while a download ran, was taken for one that stopped answering.
+#[cfg(target_os = "linux")]
 const FRAME_PATIENCE: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// Whether the windows are Wayland's: winit chooses Wayland when the session says where it is (`WAYLAND_DISPLAY`, or
