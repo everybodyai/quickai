@@ -1,3 +1,4 @@
+// Changed for QuickAI, 2026-11-12: `set_frame_callback_patience` is added. See vendor/README.md in QuickAI's source.
 //! # Wayland
 //!
 //! **Note:** Windows don't appear on Wayland until you draw/present to them.
@@ -128,4 +129,15 @@ impl MonitorHandleExtWayland for MonitorHandle {
     fn native_id(&self) -> u32 {
         self.inner.native_identifier()
     }
+}
+
+/// QuickAI: how long a window's redraw waits for the compositor's frame callback before it goes through anyway, for every
+/// window from now on. `None`, the default, waits for as long as it takes, as winit is published.
+///
+/// A compositor sends no frame callback to a window it does not draw (covered, minimized, on another workspace): with a
+/// patience such a window is drawn at most once a patience while it is asked to be, which an application that draws its
+/// other windows in that window's redraw needs. Only for presents that do not wait for the compositor (mailbox or
+/// immediate): one that waits for the frame callback of a window that is not drawn waits until the window is shown.
+pub fn set_frame_callback_patience(patience: Option<std::time::Duration>) {
+    crate::platform_impl::wayland::frame_patience::set(patience);
 }

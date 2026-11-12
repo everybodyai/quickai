@@ -1,3 +1,5 @@
+// Changed for QuickAI, 2026-11-12: a redraw waits for its frame callback at most a patience (frame_patience.rs). See
+// vendor/README.md in QuickAI's source.
 //! Winit's Wayland backend.
 
 use std::fmt::Display;
@@ -15,6 +17,7 @@ pub use output::{MonitorHandle, VideoModeHandle};
 pub use window::Window;
 
 mod event_loop;
+pub(crate) mod frame_patience;
 mod output;
 mod seat;
 mod state;

@@ -1,3 +1,5 @@
+// Changed for QuickAI, 2026-11-12: a redraw waits for its frame callback at most a patience (frame_patience.rs). See
+// vendor/README.md in QuickAI's source.
 //! The event-loop routines.
 
 use std::cell::{Cell, RefCell};
@@ -272,7 +274,11 @@ impl<T: 'static> EventLoop<T> {
                         Some(wait_deadline.saturating_duration_since(start))
                     },
                 };
-                min_timeout(control_flow_timeout, timeout)
+                // QuickAI: wake when a redraw held back for a frame callback has waited its patience
+                let held_back = self
+                    .held_back_redraw_deadline()
+                    .map(|deadline| deadline.saturating_duration_since(start));
+                min_timeout(min_timeout(control_flow_timeout, timeout), held_back)
             };
 
             // NOTE Ideally we should flush as the last thing we do before polling
@@ -326,6 +332,23 @@ impl<T: 'static> EventLoop<T> {
         };
 
         self.single_iteration(&mut callback, cause);
+    }
+
+    /// QuickAI: when the first redraw held back for a frame callback goes through anyway (`frame_patience`), if a redraw
+    /// is asked for and held back.
+    fn held_back_redraw_deadline(&mut self) -> Option<Instant> {
+        self.with_state(|state| {
+            let requests = state.window_requests.get_mut();
+            state
+                .windows
+                .get_mut()
+                .iter()
+                .filter(|(id, _)| {
+                    requests.get(*id).is_some_and(|r| r.redraw_requested.load(Ordering::Relaxed))
+                })
+                .filter_map(|(_, window)| window.lock().unwrap().frame_callback_held_back_until())
+                .min()
+        })
     }
 
     fn single_iteration<F>(&mut self, callback: &mut F, cause: StartCause)
@@ -483,17 +506,30 @@ impl<T: 'static> EventLoop<T> {
                 let mut window =
                     state.windows.get_mut().get_mut(window_id).unwrap().lock().unwrap();
 
-                if window.frame_callback_state() == FrameCallbackState::Requested {
+                // QuickAI: a redraw held back for a frame callback the compositor does not send (it does not draw
+                // the window) goes through once it has waited its patience; the callback stays in flight
+                let held_back = window.frame_callback_state() == FrameCallbackState::Requested;
+                let overdue = held_back
+                    && window
+                        .frame_callback_held_back_until()
+                        .is_some_and(|deadline| Instant::now() >= deadline);
+                if held_back && !overdue {
                     return None;
                 }
 
-                // Reset the frame callbacks state.
-                window.frame_callback_reset();
+                if !held_back {
+                    // Reset the frame callbacks state.
+                    window.frame_callback_reset();
+                }
                 let mut redraw_requested =
                     window_requests.get(window_id).unwrap().take_redraw_requested();
 
                 // Redraw the frame while at it.
                 redraw_requested |= window.refresh_frame();
+
+                if overdue && redraw_requested {
+                    window.frame_callback_wait_again();
+                }
 
                 redraw_requested.then_some(WindowEvent::RedrawRequested)
             });

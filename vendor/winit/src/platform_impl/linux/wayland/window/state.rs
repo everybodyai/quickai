@@ -1,9 +1,10 @@
-// Changed for QuickAI, 2026-11-05: KDE's blur protocol is taken out. See vendor/README.md in QuickAI's source.
+// Changed for QuickAI, 2026-11-05: KDE's blur protocol is taken out; 2026-11-12: a redraw waits for its frame callback
+// at most a patience (frame_patience.rs). See vendor/README.md in QuickAI's source.
 //! The state of the window, which is shared with the event-loop.
 
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ahash::HashSet;
 use tracing::{info, warn};
@@ -140,6 +141,9 @@ pub struct WindowState {
     /// The state of the frame callback.
     frame_callback_state: FrameCallbackState,
 
+    /// When the frame callback in flight was asked for (QuickAI: `frame_patience`).
+    frame_callback_asked_at: Option<Instant>,
+
     viewport: Option<WpViewport>,
     fractional_scale: Option<WpFractionalScaleV1>,
 
@@ -191,6 +195,7 @@ impl WindowState {
             fractional_scale,
             frame: None,
             frame_callback_state: FrameCallbackState::None,
+            frame_callback_asked_at: None,
             seat_focus: Default::default(),
             has_pending_move: None,
             ime_allowed: false,
@@ -237,11 +242,13 @@ impl WindowState {
     /// The frame callback was received, but not yet sent to the user.
     pub fn frame_callback_received(&mut self) {
         self.frame_callback_state = FrameCallbackState::Received;
+        self.frame_callback_asked_at = None;
     }
 
     /// Reset the frame callbacks state.
     pub fn frame_callback_reset(&mut self) {
         self.frame_callback_state = FrameCallbackState::None;
+        self.frame_callback_asked_at = None;
     }
 
     /// Request a frame callback if we don't have one for this window in flight.
@@ -250,9 +257,28 @@ impl WindowState {
         match self.frame_callback_state {
             FrameCallbackState::None | FrameCallbackState::Received => {
                 self.frame_callback_state = FrameCallbackState::Requested;
+                self.frame_callback_asked_at = Some(Instant::now());
                 surface.frame(&self.queue_handle, surface.clone());
             },
             FrameCallbackState::Requested => (),
+        }
+    }
+
+    /// QuickAI: when a redraw held back for the frame callback in flight goes through anyway (`frame_patience`): never
+    /// without a patience, as published.
+    pub fn frame_callback_held_back_until(&self) -> Option<Instant> {
+        super::super::frame_patience::held_back_until(
+            self.frame_callback_state,
+            self.frame_callback_asked_at,
+            super::super::frame_patience::get(),
+        )
+    }
+
+    /// QuickAI: a redraw went through without the frame callback, which stays in flight; the next redraw waits a
+    /// patience again, from now.
+    pub fn frame_callback_wait_again(&mut self) {
+        if self.frame_callback_state == FrameCallbackState::Requested {
+            self.frame_callback_asked_at = Some(Instant::now());
         }
     }
 
