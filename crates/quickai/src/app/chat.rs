@@ -231,6 +231,8 @@ pub enum ChatEvent {
     Calls(Vec<AskedCall>),
     /// Something to say under the conversation: the engine did not take the tools, and the reply came without them.
     Notice(String),
+    /// Why the engine ended the reply (`finish_reason`: `stop`, `length`, `tool_calls`), when it said.
+    Finished(String),
     Done,
     Failed(String),
 }
@@ -256,6 +258,8 @@ pub struct Chat {
     pieces: usize,
     /// When the model began to think before its reply, while it has said no word of it yet.
     thinking: Option<Instant>,
+    /// Why the engine ended the reply that is coming (`finish_reason`), once it has said.
+    finish: Option<String>,
     /// Why the last reply did not come, in the engine's words when it gave some.
     pub error: Option<String>,
     /// The tab has been opened since the application started: the dot that points to it is not drawn again.
@@ -387,6 +391,7 @@ pub fn spawn_reply_with_tools(
             send(match piece {
                 Piece::Text(text) => ChatEvent::Text(text),
                 Piece::Thinking => ChatEvent::Thinking,
+                Piece::Finished(why) => ChatEvent::Finished(why),
             })
         };
         let mut outcome =
@@ -490,6 +495,67 @@ pub fn request_body_with(
 enum Piece {
     Text(String),
     Thinking,
+    /// The engine's `finish_reason`.
+    Finished(String),
+}
+
+/// A context size as the panel says it: `4K` for 4096, the number itself when it is not a whole number of K.
+fn context_words(context: i64) -> String {
+    if context >= 1024 && context % 1024 == 0 {
+        format!("{}K", context / 1024)
+    } else {
+        context.to_string()
+    }
+}
+
+/// What the chat says when a model thought and stopped before it answered, by why the engine ended the reply
+/// (`finish_reason`): `length` with a reply limit is that limit, which Options raises; `length` with none is the context
+/// (the room the conversation and the thinking share), which How it runs makes longer, as a new chat makes room in it;
+/// anything else is the model's own end.
+pub(super) fn stopped_thinking_words(
+    seconds: u64,
+    finish: Option<&str>,
+    limit: Option<u32>,
+    context: Option<i64>,
+) -> String {
+    match (finish, limit) {
+        (Some("length"), Some(limit)) => format!(
+            "It thought for {seconds} s and reached the reply limit ({limit} tokens) before it answered. Allow longer \
+             answers in Options… (⋯ at the right of the bar), then send again."
+        ),
+        (Some("length"), None) => {
+            let size = context
+                .map(|c| format!(" ({} tokens)", context_words(c)))
+                .unwrap_or_default();
+            format!(
+                "It thought for {seconds} s and ran out of context{size} before it answered: the conversation and its \
+                 thinking fill it. Choose a longer context in How it runs, or start a new chat, then send again."
+            )
+        }
+        _ => format!(
+            "It thought for {seconds} s and stopped before it answered. Send it again, or ask in other words."
+        ),
+    }
+}
+
+/// What the chat says under an answer the engine cut off (`finish_reason` `length`): the reply limit the person set, or
+/// the context.
+pub(super) fn cut_off_words(limit: Option<u32>, context: Option<i64>) -> String {
+    match limit {
+        Some(limit) => format!(
+            "The answer stopped at the reply limit ({limit} tokens). Allow longer answers in Options… (⋯ at the right \
+             of the bar)."
+        ),
+        None => {
+            let size = context
+                .map(|c| format!(" ({} tokens)", context_words(c)))
+                .unwrap_or_default();
+            format!(
+                "The answer stopped when the context{size} was full. Choose a longer context in How it runs, or start a \
+                 new chat."
+            )
+        }
+    }
 }
 
 /// The request and its stream of events (`data: {...}` lines, then `data: [DONE]`). An `error` the engine sends,
@@ -573,10 +639,13 @@ fn stream_reply(
         if let Some(piece) = delta("content") {
             said(Piece::Text(piece.to_string()));
         }
-        if event
+        if let Some(why) = event
             .pointer("/choices/0/finish_reason")
-            .is_some_and(|r| !r.is_null())
+            .filter(|r| !r.is_null())
         {
+            said(Piece::Finished(
+                why.as_str().unwrap_or_default().to_string(),
+            ));
             break;
         }
     }
@@ -1011,6 +1080,9 @@ impl App {
         self.chat.first = None;
         self.chat.pieces = 0;
         self.chat.thinking = None;
+        self.chat.finish = None;
+        // what was said under the last reply (cut off, tools not taken) is about that reply
+        self.chat.notice = None;
     }
 
     /// A file the person gave the next message: a picture goes with it, text goes in it.
@@ -1121,6 +1193,7 @@ impl App {
                     }
                 }
                 ChatEvent::Notice(said) => self.chat.notice = Some(said),
+                ChatEvent::Finished(why) => self.chat.finish = Some(why),
                 ChatEvent::Done => ended = true,
                 ChatEvent::Failed(why) => {
                     self.chat.error = Some(why);
@@ -1131,20 +1204,28 @@ impl App {
         if ended {
             self.chat.reply = None;
             self.chat.cancel = None;
-            // a model that only thought ran out of room before its answer: an empty reply would be dropped unsaid
+            // a model that only thought stopped before its answer: an empty reply would be dropped unsaid, so why it
+            // stopped is said, by what the engine gave as the reason (the limit the person set, or the context filled)
+            let finish = self.chat.finish.take();
+            let limit = self.chat.max_tokens;
+            let context = self.values.int("ctx_size");
+            let nothing = self
+                .chat
+                .turns
+                .last()
+                .is_some_and(|t| !t.from_person && t.text.is_empty() && t.calls.is_empty());
             if let Some(since) = self.chat.thinking.take() {
-                let nothing = self
-                    .chat
-                    .turns
-                    .last()
-                    .is_some_and(|t| !t.from_person && t.text.is_empty() && t.calls.is_empty());
                 if nothing && self.chat.error.is_none() {
-                    self.chat.error = Some(format!(
-                        "It thought for {} s and stopped before it answered. Allow longer answers in Options… \
-                         (⋯ at the right of the bar), then send again.",
-                        since.elapsed().as_secs()
+                    self.chat.error = Some(stopped_thinking_words(
+                        since.elapsed().as_secs(),
+                        finish.as_deref(),
+                        limit,
+                        context,
                     ));
                 }
+            } else if !nothing && self.chat.error.is_none() && finish.as_deref() == Some("length") {
+                // an answer that was cut off says so, and why
+                self.chat.notice = Some(cut_off_words(limit, context));
             }
             let stats = match (self.chat.started, self.chat.first) {
                 (Some(started), Some(first)) => Some(Stats {
@@ -2103,7 +2184,10 @@ mod tests {
         loop {
             match rx.recv_timeout(Duration::from_secs(20)).expect("an answer") {
                 ChatEvent::Text(piece) => text.push_str(&piece),
-                ChatEvent::Thinking | ChatEvent::Calls(_) | ChatEvent::Notice(_) => {}
+                ChatEvent::Thinking
+                | ChatEvent::Calls(_)
+                | ChatEvent::Notice(_)
+                | ChatEvent::Finished(_) => {}
                 ChatEvent::Done => break,
                 ChatEvent::Failed(why) => {
                     failed = Some(why);
@@ -2143,6 +2227,95 @@ mod tests {
             body.get("temperature").is_none() && body.get("max_tokens").is_none(),
             "the model's own"
         );
+    }
+
+    #[test]
+    fn a_model_that_thought_and_stopped_is_told_why_by_the_reason_the_engine_gave() {
+        // the reply limit the person set: Options raises it
+        let said = stopped_thinking_words(65, Some("length"), Some(512), Some(4096));
+        assert!(
+            said.starts_with("It thought for 65 s and reached the reply limit (512 tokens)"),
+            "{said}"
+        );
+        assert!(said.contains("Allow longer answers in Options"), "{said}");
+        // no limit (the person's No limit): the context filled, which Options cannot help with
+        let said = stopped_thinking_words(65, Some("length"), None, Some(4096));
+        assert!(said.contains("ran out of context (4K tokens)"), "{said}");
+        assert!(
+            said.contains("longer context in How it runs") && said.contains("new chat"),
+            "{said}"
+        );
+        assert!(!said.contains("Options"), "{said}");
+        assert!(
+            stopped_thinking_words(5, Some("length"), None, Some(5000)).contains("(5000 tokens)")
+        );
+        assert!(stopped_thinking_words(5, Some("length"), None, None)
+            .contains("ran out of context before"));
+        // it ended by itself, or the engine did not say why: no setting is blamed
+        for finish in [Some("stop"), None] {
+            let said = stopped_thinking_words(9, finish, None, Some(4096));
+            assert!(
+                said.contains("stopped before it answered")
+                    && !said.contains("Options")
+                    && !said.contains("context"),
+                "{said}"
+            );
+        }
+        // an answer that was cut off says which of the two cut it
+        assert!(cut_off_words(Some(256), Some(4096)).contains("reply limit (256 tokens)"));
+        assert!(cut_off_words(None, Some(8192)).contains("context (8K tokens) was full"));
+    }
+
+    #[test]
+    fn the_reason_the_engine_ends_a_reply_with_is_heard() {
+        use std::io::{Read, Write};
+        // an engine that thinks, then ends the reply for length before any word of it
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut asked = Vec::new();
+            let mut buf = [0u8; 4096];
+            while !String::from_utf8_lossy(&asked).contains("\r\n\r\n") {
+                let n = stream.read(&mut buf).unwrap();
+                asked.extend_from_slice(&buf[..n]);
+            }
+            let events = [
+                r#"{"choices":[{"delta":{"reasoning_content":"Let me think"},"finish_reason":null}]}"#,
+                r#"{"choices":[{"delta":{},"finish_reason":"length"}]}"#,
+            ];
+            let mut body = String::new();
+            for event in events {
+                body.push_str(&format!("data: {event}\n\n"));
+            }
+            body.push_str("data: [DONE]\n\n");
+            let _ = stream.write_all(
+                format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{body}").as_bytes(),
+            );
+        });
+        let (rx, _cancel) = spawn_reply_with_tools(
+            port,
+            "m".into(),
+            Options::default(),
+            vec![Turn::said(true, "Hello")],
+            None,
+            || {},
+        );
+        let mut heard = Vec::new();
+        loop {
+            match rx
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .expect("the reply ends")
+            {
+                ChatEvent::Done => break,
+                ChatEvent::Failed(why) => panic!("{why}"),
+                ChatEvent::Thinking => heard.push("thinking".to_string()),
+                ChatEvent::Finished(why) => heard.push(format!("finished {why}")),
+                ChatEvent::Text(text) => heard.push(format!("text {text}")),
+                _ => {}
+            }
+        }
+        assert_eq!(heard, ["thinking", "finished length"]);
     }
 
     #[test]
