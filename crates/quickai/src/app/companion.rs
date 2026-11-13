@@ -794,7 +794,8 @@ mod tests {
         app
     }
 
-    /// The program of the companion: it writes down what it was started with, and then waits.
+    /// The program of the companion: it writes down what it was started with, and then waits. The record is written
+    /// whole and then put in its place, so that a test that reads it as soon as it is there reads all of it.
     #[cfg(unix)]
     fn launcher(dir: &Path, then: &str) -> PathBuf {
         let record = dir.join("record");
@@ -802,7 +803,7 @@ mod tests {
             dir,
             "open-webui",
             &format!(
-                "{{\n echo \"cwd=$(pwd)\"\n echo \"args=$*\"\n env | grep -E '^(DATA_DIR|STATIC_DIR|XDG_CACHE_HOME|HF_HOME|HOME|TMPDIR|OLLAMA_BASE_URL|ENABLE_OLLAMA_API|OFFLINE_MODE|CORS_ALLOW_ORIGIN|PYTHONPATH|PYTHONHOME|PYTHONNOUSERSITE)='\n}} > '{}'\necho $$ > '{}'\n{then}\n",
+                "{{\n echo \"cwd=$(pwd)\"\n echo \"args=$*\"\n env | grep -E '^(DATA_DIR|STATIC_DIR|XDG_CACHE_HOME|HF_HOME|HOME|TMPDIR|OLLAMA_BASE_URL|ENABLE_OLLAMA_API|OFFLINE_MODE|CORS_ALLOW_ORIGIN|PYTHONPATH|PYTHONHOME|PYTHONNOUSERSITE)='\n}} > '{0}.part'\nmv '{0}.part' '{0}'\necho $$ > '{1}'\n{then}\n",
                 record.display(),
                 dir.join("pid").display()
             ),

@@ -1044,6 +1044,7 @@ Asked for on 2026-10-23 ("Lets stick to classic, but lets turn things around a b
 | I49 | 4.22 | ready | **The MCP servers are one list, whatever the engine** (C204): a server added with Ollama is kept in llama.cpp's field (`llamacpp.mcp_servers`), so llama.cpp, chosen, has it; switched off from the chat's menu it stays in the list, off, and is not counted. | `app/tools.rs` |
 | I50 | 4.22 | ready | **What the person said of a tool is kept** (C204): Always and Off are in the settings (`app.tool_permissions`) and a window started again knows them; a tool not said of asks; Ask again takes it out of what is kept. | `app/tools.rs` |
 | I51 | 4.22 | ready | **While the model runs, the panel is Connect an app and the chat's box has Tools** (C203, C204): stopped, the panel is *How it runs*; running, it is *Connect an app* with the address and Ollama's own (*Ollama API*), the box's wrench has *1* in its corner, and the sidebar says *MCP servers* with *1 on*. | `app/tools.rs` |
+| I52 | 4.22 | ready | **Tools can run without asking, and the calls in a row have the limit chosen** (the person's request, 2026-11-13): *Allow all tools* on a card runs it and every call after it without a card (`app.tools_allow_all`); a model that keeps asking for tools is stopped after 8 replies in a row, or as many as *Tool calls in a row* says (`app.tool_rounds`), goes on with no limit, and *Stop* ends it. | `app/tools.rs` |
 
 ### N. llama.cpp must not change
 
@@ -1057,7 +1058,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 741 / 0 / 16 / 5 (total 762). The test kit has 29 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 742 / 0 / 16 / 5 (total 763). The test kit has 29 tests of its own and the Python fake
 22, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 
