@@ -136,8 +136,8 @@ message. If a long chat runs out of context, choose **Long chats** in the panel 
 
 **If the model does not use a tool,** ask it directly and check that the tool is enabled. If it still ignores tools,
 or repeatedly calls them incorrectly, try another model: it must be one designed for tool use, and smaller models make
-more mistakes. A model can request tools eight times in a row after a single message from you; the chat then stops and
-waits for you. **Tool calls in a row**, under **When the model uses a tool**, raises this limit to 16, 32 or 64, or
+more mistakes. A model can request tools twenty times in a row after a single message from you; the chat then stops and
+waits for you. **Tool calls in a row**, under **When the model uses a tool**, sets this limit to 10, 50 or 100, or
 removes it; without a limit, press **Stop** to end a chat in which the model keeps requesting tools.
 
 **If the engine does not support tools,** the chat says so below the conversation and answers without them.

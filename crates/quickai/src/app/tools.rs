@@ -23,7 +23,7 @@ use super::theme::{self, Role};
 use super::App;
 
 /// The limits of replies in a row that may use tools the person can choose (Settings › MCP servers), besides none.
-const TOOL_ROUND_CHOICES: [u32; 4] = [8, 16, 32, 64];
+const TOOL_ROUND_CHOICES: [u32; 4] = [10, 20, 50, 100];
 /// The longest description of a tool the model is given.
 const MOST_DESCRIPTION: usize = 1024;
 
@@ -1513,7 +1513,7 @@ for line in sys.stdin:
     }
 
     /// I52: Allow all tools on a card runs that call and every one after it without asking (Ask before a tool runs, off);
-    /// a model that keeps asking for tools is stopped after 8 replies in a row, or as many as Tool calls in a row says,
+    /// a model that keeps asking for tools is stopped after 20 replies in a row, or as many as Tool calls in a row says,
     /// and with no limit it goes on.
     #[cfg(unix)]
     #[test]
@@ -1533,7 +1533,7 @@ for line in sys.stdin:
         });
         let calls = |a: &App| a.chat.turns.iter().map(|t| t.calls.len()).sum::<usize>();
 
-        // the first call asks; Allow all tools runs it, and the ones after it run without a card, up to 8 in a row
+        // the first call asks; Allow all tools runs it, and the ones after it run without a card, up to 20 in a row
         assert!(!app.tools_allow_all());
         app.chat.input = "hello".into();
         app.send_chat(&ctx);
@@ -1543,13 +1543,13 @@ for line in sys.stdin:
         let at = app.chat.turns.len() - 1;
         app.allow_all_tools(at);
         assert!(app.tools_allow_all());
-        until(&mut app, &ctx, "the chat to stop at 8", |a| {
+        until(&mut app, &ctx, "the chat to stop at 20", |a| {
             a.chat.error.is_some()
         });
         let error = app.chat.error.clone().unwrap();
-        assert!(error.contains("8 times in a row"), "{error}");
+        assert!(error.contains("20 times in a row"), "{error}");
         assert!(error.contains("Tool calls in a row"), "{error}");
-        assert_eq!(calls(&app), 8);
+        assert_eq!(calls(&app), 20);
         assert!(app
             .chat
             .turns
@@ -1570,14 +1570,14 @@ for line in sys.stdin:
             .as_deref()
             .unwrap()
             .contains("3 times in a row"));
-        assert_eq!(calls(&app), 11);
+        assert_eq!(calls(&app), 23);
 
-        // no limit: past the 8 of before, and nothing stops it
+        // no limit: past the 20 of the default, and nothing stops it
         app.set_tool_rounds(None);
         app.chat.input = "once more".into();
         app.send_chat(&ctx);
-        until(&mut app, &ctx, "more than 9 replies with tools", |a| {
-            a.chat.tool_rounds > 9
+        until(&mut app, &ctx, "more than 21 replies with tools", |a| {
+            a.chat.tool_rounds > 21
         });
         assert_eq!(app.chat.error, None);
         // Stop ends it, whether a reply comes or its tools run

@@ -72,7 +72,7 @@ pub const TOOLS_ALLOW_ALL_KEY: &str = "app.tools_allow_all";
 /// limit, absent is `DEFAULT_TOOL_ROUNDS`.
 pub const TOOL_ROUNDS_KEY: &str = "app.tool_rounds";
 /// The replies in a row that may use tools, unless the person chose otherwise.
-pub const DEFAULT_TOOL_ROUNDS: u32 = 8;
+pub const DEFAULT_TOOL_ROUNDS: u32 = 20;
 /// Talking to QuickAI (C216): the microphone, the language, the speech model, reading aloud and its voice, as an
 /// object of what differs from the defaults (the window's `voice::settings::VoiceSettings`).
 pub const VOICE_KEY: &str = "app.voice";
@@ -1149,7 +1149,7 @@ default = 1.5
     }
 
     #[test]
-    fn tools_ask_and_stop_after_eight_rounds_unless_the_person_chose_otherwise() {
+    fn tools_ask_and_stop_after_twenty_rounds_unless_the_person_chose_otherwise() {
         let mut s: Settings =
             serde_json::from_str(r#"{"port": 8080, "ctx_size": 4096, "n_gpu_layers": 999}"#)
                 .unwrap();
