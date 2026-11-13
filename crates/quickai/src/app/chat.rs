@@ -1835,6 +1835,7 @@ impl App {
             match action {
                 super::tools::CardAction::Allow => self.allow_call(turn, call, false),
                 super::tools::CardAction::Always => self.allow_call(turn, call, true),
+                super::tools::CardAction::AllowAll => self.allow_all_tools(turn),
                 super::tools::CardAction::Deny => self.deny_call(turn, call),
                 super::tools::CardAction::Toggle => {
                     if let Some(c) = self
@@ -1960,7 +1961,9 @@ impl App {
                     }
                     // the speaker and the microphone, before the arrow (C216, M1)
                     self.show_talk_buttons(ui, ready);
-                    if self.chat.replying() {
+                    // while a reply comes, and while its tools run before the next one: a model that keeps asking for tools
+                    // (with no limit to the calls in a row) is stopped here
+                    if self.chat.replying() || self.chat.tools_waiting {
                         if icons::icon_button(ui, Icon::Close, egui::vec2(32.0, 28.0), true, true)
                             .on_hover_text("Stop the reply. What came of it stays.")
                             .clicked()

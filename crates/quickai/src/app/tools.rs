@@ -22,8 +22,8 @@ use super::icons::{self, Icon};
 use super::theme::{self, Role};
 use super::App;
 
-/// How many replies in a row may ask for tools after one message of the person's: then the chat stops asking for more.
-const MOST_TOOL_ROUNDS: u32 = 8;
+/// The limits of replies in a row that may use tools the person can choose (Settings › MCP servers), besides none.
+const TOOL_ROUND_CHOICES: [u32; 4] = [8, 16, 32, 64];
 /// The longest description of a tool the model is given.
 const MOST_DESCRIPTION: usize = 1024;
 
@@ -356,6 +356,27 @@ impl App {
         }
     }
 
+    /// Whether a tool left at Ask runs without asking (Ask before a tool runs, off).
+    pub(super) fn tools_allow_all(&self) -> bool {
+        self.stored.tools_allow_all()
+    }
+
+    /// Keeps whether a tool left at Ask runs without asking.
+    pub(super) fn set_tools_allow_all(&mut self, allow: bool) {
+        let mut stored = self.settings_now();
+        stored.set_tools_allow_all(allow);
+        self.write_settings(&stored);
+        self.stored = stored;
+    }
+
+    /// Keeps how many replies in a row may use tools after one message (`None`: no limit).
+    pub(super) fn set_tool_rounds(&mut self, rounds: Option<u32>) {
+        let mut stored = self.settings_now();
+        stored.set_tool_rounds(rounds);
+        self.write_settings(&stored);
+        self.stored = stored;
+    }
+
     /// Keeps what the person said of a tool.
     pub(super) fn set_tool_permission(&mut self, server: &str, tool: &str, permission: Permission) {
         let mut stored = self.settings_now();
@@ -472,6 +493,8 @@ impl App {
                 Permission::Off => {
                     self.chat.turns[at].calls[i].state = CallState::Denied;
                 }
+                // Ask before a tool runs, off: a tool left at Ask runs as Always does
+                Permission::Ask if self.tools_allow_all() => self.run_call(at, i),
                 Permission::Ask => {}
             }
         }
@@ -495,6 +518,28 @@ impl App {
             self.set_tool_permission(&asked.server, &asked.tool, Permission::Always);
         }
         self.run_call(turn, call);
+    }
+
+    /// The person allowed every tool from now on (a tool set to Off still is not offered): this call runs, and the
+    /// others of its reply that wait.
+    pub(super) fn allow_all_tools(&mut self, turn: usize) {
+        self.set_tools_allow_all(true);
+        let waiting: Vec<usize> = self
+            .chat
+            .turns
+            .get(turn)
+            .map(|t| {
+                t.calls
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, c)| c.state == CallState::Asking)
+                    .map(|(i, _)| i)
+                    .collect()
+            })
+            .unwrap_or_default();
+        for call in waiting {
+            self.run_call(turn, call);
+        }
     }
 
     /// The person did not allow a call: the model is told so.
@@ -553,11 +598,14 @@ impl App {
             return;
         }
         self.chat.tools_waiting = false;
-        if self.chat.tool_rounds >= MOST_TOOL_ROUNDS {
-            self.chat.error = Some(format!(
-                "The model asked for tools {MOST_TOOL_ROUNDS} times in a row; the chat stopped there. Send a message to go on."
-            ));
-            return;
+        if let Some(most) = self.stored.tool_rounds() {
+            if self.chat.tool_rounds >= most {
+                self.chat.error = Some(format!(
+                    "The model asked for tools {most} times in a row; the chat stopped there. Send a message to go on, \
+                     or allow more under Tool calls in a row in MCP servers."
+                ));
+                return;
+            }
         }
         self.ask_for_reply(ctx);
     }
@@ -574,6 +622,7 @@ impl App {
             paint_badge(ui, button.rect, badge);
         }
         let button = button.on_hover_text(self.tools_hover(&servers));
+        let allow_all = self.tools_allow_all();
         let mut switch: Option<(String, bool)> = None;
         let mut manage = false;
         egui::Popup::menu(&button)
@@ -588,11 +637,16 @@ impl App {
                 }
                 for server in &servers {
                     let mut ticked = !server.disabled;
+                    let how = if allow_all {
+                        "runs without asking"
+                    } else {
+                        "asks before it runs"
+                    };
                     let said = match self.tools.status.get(&server.name) {
                         _ if server.disabled => "off".to_string(),
                         Some(ServerStatus::Ready(tools)) => match tools.len() {
-                            1 => "1 tool · asks before it runs".to_string(),
-                            n => format!("{n} tools · asks before it runs"),
+                            1 => format!("1 tool · {how}"),
+                            n => format!("{n} tools · {how}"),
                         },
                         Some(ServerStatus::Starting) => "starting…".to_string(),
                         Some(ServerStatus::Failed(why)) => {
@@ -800,7 +854,7 @@ impl App {
             Some(
                 "Tools the model can use when you chat in QuickAI, with llama.cpp or Ollama, and with a model on \
                  another computer too: QuickAI runs them on this computer, and asks you before a tool runs unless you \
-                 chose Always. llama.cpp's own chat page (Open Chat UI) gets them as well.",
+                 chose otherwise below. llama.cpp's own chat page (Open Chat UI) gets them as well.",
             ),
         );
         ui.hyperlink_to(
@@ -815,6 +869,7 @@ impl App {
         if let Some(new) = reply {
             self.set_mcp_text(new, ui.ctx());
         }
+        self.show_tool_use(ui);
         let servers: Vec<Server> = self
             .mcp_list()
             .into_iter()
@@ -830,8 +885,8 @@ impl App {
             );
             ui.label(
                 theme::muted(
-                    "Ask: QuickAI asks each time the model wants the tool. Always: it runs without asking. Off: the \
-                     model is not offered it.",
+                    "Ask: QuickAI asks each time the model wants the tool (unless Ask before a tool runs is off). \
+                     Always: it runs without asking. Off: the model is not offered it.",
                 )
                 .small(),
             );
@@ -943,11 +998,75 @@ impl App {
     }
 }
 
+impl App {
+    /// When the model uses a tool: whether QuickAI asks first, and how many replies in a row may use tools after one
+    /// message before the chat waits for the person.
+    fn show_tool_use(&mut self, ui: &mut egui::Ui) {
+        use super::settings_window::{group, row_line, setting_row, switch_row};
+        let p = theme::palette();
+        ui.add_space(14.0);
+        ui.label(
+            egui::RichText::new("WHEN THE MODEL USES A TOOL")
+                .size(11.5)
+                .family(theme::semibold(ui))
+                .color(p.muted),
+        );
+        ui.add_space(4.0);
+        let mut ask = !self.tools_allow_all();
+        let mut rounds = self.stored.tool_rounds();
+        let mut changed_rounds = false;
+        group(ui, |ui| {
+            if switch_row(
+                ui,
+                "Ask before a tool runs",
+                Some(
+                    "On, QuickAI shows what the tool would receive and waits for you. Off, every tool runs as soon as \
+                     the model asks for it, except those set to Off below: turn it off only for servers you trust.",
+                ),
+                None,
+                &mut ask,
+                true,
+            ) {
+                self.set_tools_allow_all(!ask);
+            }
+            row_line(ui);
+            setting_row(
+                ui,
+                "Tool calls in a row",
+                Some(
+                    "How many replies in a row may use tools after one message of yours. Then the chat stops and waits \
+                     for you, so that a model that keeps asking for tools does not go on alone.",
+                ),
+                None,
+                |ui| {
+                    let words = |r: Option<u32>| r.map_or("No limit".to_string(), |n| n.to_string());
+                    egui::ComboBox::from_id_salt("tool_rounds")
+                        .selected_text(words(rounds))
+                        .width(120.0)
+                        .show_ui(ui, |ui| {
+                            for choice in TOOL_ROUND_CHOICES.map(Some).into_iter().chain([None]) {
+                                if ui.selectable_label(rounds == choice, words(choice)).clicked() {
+                                    rounds = choice;
+                                    changed_rounds = true;
+                                }
+                            }
+                        });
+                },
+            );
+        });
+        if changed_rounds {
+            self.set_tool_rounds(rounds);
+        }
+    }
+}
+
 /// What can be done with a call of the chat, from its card.
 #[derive(Clone, Copy)]
 pub enum CardAction {
     Allow,
     Always,
+    /// Every tool, from now on (Ask before a tool runs, off).
+    AllowAll,
     Deny,
     Toggle,
 }
@@ -1022,6 +1141,15 @@ pub fn tool_card(
                             .clicked()
                         {
                             action = Some(CardAction::Always);
+                        }
+                        if theme::button_sized(ui, Role::Normal, true, "Allow all tools", egui::vec2(0.0, 26.0))
+                            .on_hover_text(
+                                "Run every tool without asking from now on, except those set to Off (Ask before a tool \
+                                 runs, in MCP servers, changes it back).",
+                            )
+                            .clicked()
+                        {
+                            action = Some(CardAction::AllowAll);
                         }
                         if theme::button_sized(ui, Role::Quiet, true, "Deny", egui::vec2(0.0, 26.0))
                             .on_hover_text("Do not run it: the model is told so.")
@@ -1381,6 +1509,86 @@ for line in sys.stdin:
             .clone()
             .unwrap();
         assert!(plain.get("tools").is_none(), "{plain}");
+        app.session.stop_blocking();
+    }
+
+    /// I52: Allow all tools on a card runs that call and every one after it without asking (Ask before a tool runs, off);
+    /// a model that keeps asking for tools is stopped after 8 replies in a row, or as many as Tool calls in a row says,
+    /// and with no limit it goes on.
+    #[cfg(unix)]
+    #[test]
+    fn p3_i52_tools_run_without_asking_when_allowed_and_stop_at_the_limit_chosen() {
+        let dir = scratch("u09");
+        let Some(echo) = echo_server(&dir) else {
+            return; // no Python on this computer to run the MCP server with
+        };
+        let fake = FakeOllama::start();
+        fake.add_model("qwen3:4b", 2 * GB);
+        fake.behave(|b| b.tools = ToolsBehave::Loop);
+        let mut app = app_with(&dir, "ollama", Some(fake.port()), &[echo]);
+        let ctx = egui::Context::default();
+        start_with(&mut app, "qwen3:4b");
+        until(&mut app, &ctx, "Ollama to run", |a| {
+            a.session.state() == ServerState::Running
+        });
+        let calls = |a: &App| a.chat.turns.iter().map(|t| t.calls.len()).sum::<usize>();
+
+        // the first call asks; Allow all tools runs it, and the ones after it run without a card, up to 8 in a row
+        assert!(!app.tools_allow_all());
+        app.chat.input = "hello".into();
+        app.send_chat(&ctx);
+        until(&mut app, &ctx, "the card that asks", |a| {
+            last_call(a).is_some_and(|c| c.state == CallState::Asking)
+        });
+        let at = app.chat.turns.len() - 1;
+        app.allow_all_tools(at);
+        assert!(app.tools_allow_all());
+        until(&mut app, &ctx, "the chat to stop at 8", |a| {
+            a.chat.error.is_some()
+        });
+        let error = app.chat.error.clone().unwrap();
+        assert!(error.contains("8 times in a row"), "{error}");
+        assert!(error.contains("Tool calls in a row"), "{error}");
+        assert_eq!(calls(&app), 8);
+        assert!(app
+            .chat
+            .turns
+            .iter()
+            .flat_map(|t| t.calls.iter())
+            .all(|c| matches!(c.state, CallState::Done(_))));
+
+        // a limit of 3
+        app.set_tool_rounds(Some(3));
+        app.chat.input = "again".into();
+        app.send_chat(&ctx);
+        until(&mut app, &ctx, "the chat to stop at 3", |a| {
+            a.chat.error.is_some()
+        });
+        assert!(app
+            .chat
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("3 times in a row"));
+        assert_eq!(calls(&app), 11);
+
+        // no limit: past the 8 of before, and nothing stops it
+        app.set_tool_rounds(None);
+        app.chat.input = "once more".into();
+        app.send_chat(&ctx);
+        until(&mut app, &ctx, "more than 9 replies with tools", |a| {
+            a.chat.tool_rounds > 9
+        });
+        assert_eq!(app.chat.error, None);
+        // Stop ends it, whether a reply comes or its tools run
+        app.chat.stop();
+        let rounds = app.chat.tool_rounds;
+        for _ in 0..40 {
+            frame(&mut app, &ctx);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(app.chat.tool_rounds, rounds, "the chat went on after Stop");
+        assert!(!app.chat.replying() && !app.chat.tools_waiting);
         app.session.stop_blocking();
     }
 

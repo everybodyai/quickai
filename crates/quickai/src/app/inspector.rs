@@ -84,9 +84,10 @@ impl App {
             rule(ui);
             let hover = if self.engine == crate::settings::DEFAULT_ENGINE {
                 "The MCP servers the model can use when you chat here, and in Open Chat UI. QuickAI asks before a tool \
-                 runs."
+                 runs, unless you turned that off in MCP servers."
             } else {
-                "The MCP servers the model can use when you chat here. QuickAI asks before a tool runs."
+                "The MCP servers the model can use when you chat here. QuickAI asks before a tool runs, unless you \
+                 turned that off in MCP servers."
             };
             let tools = ui.scope(|ui| self.show_tools_rows(ui, hover)).response.rect;
             super::help::mark_spot(ui, super::help::Spot::Tools, tools);

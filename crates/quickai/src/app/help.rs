@@ -518,10 +518,14 @@ const PAGES: &[Page] = &[
             ),
             step(
                 "When the model requests a tool, a card shows what the tool would receive: press **Allow once**, \
-                 **Always allow** or **Deny**. The model then responds using what the tool returned.",
+                 **Always allow**, **Allow all tools** or **Deny**. The model then responds using what the tool \
+                 returned.",
             ),
             step(
-                "Under **What they offer** on the same page, each tool can be set to **Ask**, **Always** or **Off**. \
+                "On the **MCP servers** page, **Ask before a tool runs** can be turned off so that tools run without asking, and \
+                 **Tool calls in a row** sets how many replies in a row may use tools after one message (8 unless you \
+                 choose more, or no limit). Under **What they offer**, each tool can be set to **Ask**, **Always** or \
+                 **Off**. \
                  With llama.cpp, its own chat page (**Open Chat UI**) can use the servers as well.",
             ),
         ],
@@ -854,7 +858,8 @@ const TOUR: &[(Spot, &str, &str)] = &[
     (
         Spot::Tools,
         "Tools",
-        "The MCP servers the model can use in the chat, each with a switch. QuickAI asks before a tool runs.",
+        "The MCP servers the model can use in the chat, each with a switch. QuickAI asks before a tool runs, unless \
+         you turned that off in MCP servers.",
     ),
     (
         Spot::ThisComputer,

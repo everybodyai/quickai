@@ -66,6 +66,13 @@ pub const MCP_SERVERS_KEY: &str = "llamacpp.mcp_servers";
 /// What the person said of each tool of an MCP server, `<server>.<tool>` to `always` or `off`; a tool not in it is asked
 /// about each time (C204).
 pub const TOOL_PERMISSIONS_KEY: &str = "app.tool_permissions";
+/// Whether a tool the person left at Ask runs without asking (`true`); absent, QuickAI asks each time.
+pub const TOOLS_ALLOW_ALL_KEY: &str = "app.tools_allow_all";
+/// How many replies in a row may use tools after one message of the person's before the chat waits for them; 0 is no
+/// limit, absent is `DEFAULT_TOOL_ROUNDS`.
+pub const TOOL_ROUNDS_KEY: &str = "app.tool_rounds";
+/// The replies in a row that may use tools, unless the person chose otherwise.
+pub const DEFAULT_TOOL_ROUNDS: u32 = 8;
 /// Talking to QuickAI (C216): the microphone, the language, the speech model, reading aloud and its voice, as an
 /// object of what differs from the defaults (the window's `voice::settings::VoiceSettings`).
 pub const VOICE_KEY: &str = "app.voice";
@@ -425,6 +432,43 @@ impl Settings {
             TOOL_PERMISSIONS_KEY,
             (!map.is_empty()).then_some(serde_json::Value::Object(map)),
         );
+    }
+
+    /// Whether a tool left at Ask runs without asking.
+    pub fn tools_allow_all(&self) -> bool {
+        self.app_value(TOOLS_ALLOW_ALL_KEY)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    }
+
+    /// Keeps it; asking, the default, takes the key away.
+    pub fn set_tools_allow_all(&mut self, allow: bool) {
+        self.set_app_value(
+            TOOLS_ALLOW_ALL_KEY,
+            allow.then_some(serde_json::Value::Bool(true)),
+        );
+    }
+
+    /// How many replies in a row may use tools after one message of the person's; `None` is no limit.
+    pub fn tool_rounds(&self) -> Option<u32> {
+        match self
+            .app_value(TOOL_ROUNDS_KEY)
+            .and_then(serde_json::Value::as_u64)
+        {
+            Some(0) => None,
+            Some(n) => Some(u32::try_from(n).unwrap_or(u32::MAX)),
+            None => Some(DEFAULT_TOOL_ROUNDS),
+        }
+    }
+
+    /// Keeps it (`None`: no limit); the default takes the key away.
+    pub fn set_tool_rounds(&mut self, rounds: Option<u32>) {
+        let value = match rounds {
+            Some(DEFAULT_TOOL_ROUNDS) => None,
+            Some(n) => Some(serde_json::Value::from(n.max(1))),
+            None => Some(serde_json::Value::from(0)),
+        };
+        self.set_app_value(TOOL_ROUNDS_KEY, value);
     }
 
     /// What the person chose for talking to QuickAI, as it is kept.
@@ -1102,6 +1146,27 @@ default = 1.5
             .set_engine_values(engine, &std::collections::BTreeMap::new())
             .unwrap();
         assert!(!settings.to_json().unwrap().contains("values"));
+    }
+
+    #[test]
+    fn tools_ask_and_stop_after_eight_rounds_unless_the_person_chose_otherwise() {
+        let mut s: Settings =
+            serde_json::from_str(r#"{"port": 8080, "ctx_size": 4096, "n_gpu_layers": 999}"#)
+                .unwrap();
+        assert!(!s.tools_allow_all());
+        assert_eq!(s.tool_rounds(), Some(DEFAULT_TOOL_ROUNDS));
+        s.set_tools_allow_all(true);
+        s.set_tool_rounds(None);
+        assert!(s.tools_allow_all());
+        assert_eq!(s.tool_rounds(), None);
+        assert_eq!(s.app_value(TOOL_ROUNDS_KEY), Some(&serde_json::json!(0)));
+        s.set_tool_rounds(Some(32));
+        assert_eq!(s.tool_rounds(), Some(32));
+        // the defaults are not written down
+        s.set_tools_allow_all(false);
+        s.set_tool_rounds(Some(DEFAULT_TOOL_ROUNDS));
+        assert_eq!(s.app_value(TOOLS_ALLOW_ALL_KEY), None);
+        assert_eq!(s.app_value(TOOL_ROUNDS_KEY), None);
     }
 
     #[test]

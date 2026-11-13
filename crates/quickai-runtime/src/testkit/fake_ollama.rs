@@ -103,6 +103,9 @@ pub enum ToolsBehave {
     Call,
     /// The request is refused, as Ollama refuses tools for a model whose template has none.
     Refuse,
+    /// Every message, the person's or what a tool gave back, is answered by a call of the first tool: a model that keeps
+    /// asking for tools.
+    Loop,
 }
 
 impl Default for Behave {
@@ -814,7 +817,9 @@ fn v1_chat(shared: &Arc<Mutex<State>>, behave: &Behave, body: Option<Value>, res
                 "application/json",
             );
         }
-        ToolsBehave::Call if !tools.is_empty() && last_role == "user" => {
+        ToolsBehave::Call | ToolsBehave::Loop
+            if !tools.is_empty() && (last_role == "user" || behave.tools == ToolsBehave::Loop) =>
+        {
             let function = tools[0].get("function").cloned().unwrap_or(Value::Null);
             let first = function
                 .pointer("/parameters/properties")

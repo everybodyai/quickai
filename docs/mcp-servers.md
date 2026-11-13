@@ -7,7 +7,8 @@ not a model: you keep the model you use and add tools to it.
 In QuickAI, MCP servers work:
 
 - in **QuickAI's own chat**, with **llama.cpp** and **Ollama**, and with a model running on **another computer** you
-  have added. QuickAI runs the servers itself, on this computer, and asks you before a tool runs;
+  have added. QuickAI runs the servers itself, on this computer, and asks you before a tool runs, unless you choose
+  otherwise;
 - in **llama.cpp's chat page** in your browser (**Open Chat UI**), which receives the same servers.
 
 ComfyUI has no chat, so it does not use them. Applications you connect to the model do not receive them either; they
@@ -113,6 +114,9 @@ of a server under **What they offer**.
 
 **Choosing when to be asked.** Each tool is set to **Ask** (QuickAI asks each time the model wants to use it),
 **Always** (it runs without asking) or **Off** (it is not offered to the model). New tools are set to **Ask**.
+Under **When the model uses a tool** on the same page, **Ask before a tool runs** can be turned off: every tool then runs
+as soon as the model requests it, except those set to **Off**. Turn it off only for servers you trust, since their tools
+then run without your review.
 
 **Responding to the card.** When the model wants to use a tool, a card shows the tool and the input it would receive:
 
@@ -120,6 +124,7 @@ of a server under **What they offer**.
 | --- | --- |
 | **Allow once** | Runs this one call. |
 | **Always allow** | Runs it, and runs this tool without asking from then on (**What they offer** reverts this). |
+| **Allow all tools** | Runs it, and every tool without asking from then on, except those set to **Off** (**Ask before a tool runs** reverts this). |
 | **Deny** | Does not run it. The model is informed and continues without it. |
 
 **Asking clearly.** The model decides whether to use a tool, so state what you want and give exact paths and
@@ -132,7 +137,8 @@ message. If a long chat runs out of context, choose **Long chats** in the panel 
 **If the model does not use a tool,** ask it directly and check that the tool is enabled. If it still ignores tools,
 or repeatedly calls them incorrectly, try another model: it must be one designed for tool use, and smaller models make
 more mistakes. A model can request tools eight times in a row after a single message from you; the chat then stops and
-waits for you.
+waits for you. **Tool calls in a row**, under **When the model uses a tool**, raises this limit to 16, 32 or 64, or
+removes it; without a limit, press **Stop** to end a chat in which the model keeps requesting tools.
 
 **If the engine does not support tools,** the chat says so below the conversation and answers without them.
 
