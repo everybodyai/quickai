@@ -289,6 +289,46 @@ pub struct Chat {
     pub waiting_for_tools: bool,
     /// Said under the conversation (the engine did not take the tools).
     pub notice: Option<String>,
+    /// What the person sent, the oldest first, for Up and Down in the box to bring back (a new conversation keeps it).
+    pub sent: Vec<String>,
+    /// While the box shows one of `sent` brought back with Up: which, counted from the newest (0).
+    pub recalled: Option<usize>,
+}
+
+/// The most messages Up and Down in the box go back through.
+const MOST_SENT: usize = 200;
+
+/// Up (`up`) or Down in the chat's box, as a terminal's history of what the person sent (`sent`, the oldest first): Up
+/// brings back the message before when the box is empty, or when it shows one brought back (`recalled`, from the newest)
+/// with the cursor (`cursor`, in characters) on its first line; Down the one after, and past the newest an empty box. What
+/// the box then shows, and which it is; `None` when the key is the box's own, to move the cursor in what is typed.
+pub(super) fn recall(
+    sent: &[String],
+    recalled: Option<usize>,
+    input: &str,
+    cursor: usize,
+    up: bool,
+) -> Option<(Option<usize>, String)> {
+    let newest = |k: usize| sent.len().checked_sub(k + 1).map(|i| sent[i].clone());
+    // a message brought back and then changed is the person's draft: the keys are its own
+    let shown = recalled.filter(|k| newest(*k).as_deref() == Some(input));
+    let before: String = input.chars().take(cursor).collect();
+    let after: String = input.chars().skip(cursor).collect();
+    if up {
+        let next = match shown {
+            Some(k) if !before.contains('\n') => k + 1,
+            None if input.is_empty() => 0,
+            _ => return None,
+        };
+        newest(next).map(|text| (Some(next), text))
+    } else {
+        match shown {
+            Some(_) if after.contains('\n') => None,
+            Some(0) => Some((None, String::new())),
+            Some(k) => newest(k - 1).map(|text| (Some(k - 1), text)),
+            None => None,
+        }
+    }
 }
 
 impl Chat {
@@ -297,7 +337,7 @@ impl Chat {
     }
 
     /// A new conversation that keeps what is the person's and not the engine's: the options, whether chats are kept,
-    /// and that the tab was found.
+    /// that the tab was found, and what they sent (for Up in the box).
     pub fn carried_over(&mut self) -> Chat {
         Chat {
             opened: self.opened,
@@ -307,6 +347,7 @@ impl Chat {
             show_instructions: self.show_instructions,
             keep: self.keep,
             kept: std::mem::take(&mut self.kept),
+            sent: std::mem::take(&mut self.sent),
             ..Chat::default()
         }
     }
@@ -1027,6 +1068,14 @@ impl App {
             return;
         }
         self.chat.input.clear();
+        // for Up in the box: once, however many times in a row it was sent
+        if self.chat.sent.last() != Some(&text) {
+            self.chat.sent.push(text.clone());
+            if self.chat.sent.len() > MOST_SENT {
+                self.chat.sent.remove(0);
+            }
+        }
+        self.chat.recalled = None;
         let mut turn = Turn::said(true, text);
         turn.pictures = std::mem::take(&mut self.chat.pictures);
         self.chat.turns.push(turn);
@@ -1933,6 +1982,32 @@ impl App {
                     let focused = ui.memory(|m| m.has_focus(input_id));
                     let enter = focused
                         && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+                    // Up and Down bring back what was sent, as a terminal's history does (`recall`): taken before the box
+                    // sees them only when they do, so that in what is being typed they move the cursor
+                    if focused {
+                        let cursor = egui::TextEdit::load_state(ui.ctx(), input_id)
+                            .and_then(|s| s.cursor.char_range())
+                            .map_or(self.chat.input.chars().count(), |r| r.primary.index.into());
+                        for (key, up) in [(egui::Key::ArrowUp, true), (egui::Key::ArrowDown, false)] {
+                            if !ui.input(|i| i.key_pressed(key) && i.modifiers.is_none()) {
+                                continue;
+                            }
+                            let Some((at, text)) =
+                                recall(&self.chat.sent, self.chat.recalled, &self.chat.input, cursor, up)
+                            else {
+                                continue;
+                            };
+                            ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, key));
+                            self.chat.recalled = at;
+                            self.chat.input = text;
+                            // the cursor at its end, where Down goes on from
+                            if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), input_id) {
+                                let end = egui::text::CCursor::new(self.chat.input.chars().count());
+                                state.cursor.set_char_range(Some(egui::text::CCursorRange::one(end)));
+                                state.store(ui.ctx(), input_id);
+                            }
+                        }
+                    }
                     let talk_width = self.talk_buttons_width();
                     let hint = match &model {
                         _ if ready && self.talk.said_nothing_heard() => {
@@ -2166,6 +2241,46 @@ pub(super) fn chat_options_viewport() -> egui::ViewportId {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Up and Down in the box go through what was sent as a terminal's history does: Up from an empty box to the newest
+    /// and on to older ones, Down back and to an empty box; in what is typed, or past the first line of a message
+    /// brought back, they are the box's own.
+    #[test]
+    fn up_and_down_bring_back_what_was_sent() {
+        let sent: Vec<String> = ["first", "second\nwith a second line", "third"]
+            .map(String::from)
+            .to_vec();
+        let up = |recalled, input: &str, cursor| recall(&sent, recalled, input, cursor, true);
+        let down = |recalled, input: &str, cursor| recall(&sent, recalled, input, cursor, false);
+        let third = (Some(0), "third".to_string());
+        let second = (Some(1), sent[1].clone());
+        let first = (Some(2), "first".to_string());
+
+        // from an empty box: the newest, then older ones; none older than the first
+        assert_eq!(up(None, "", 0), Some(third.clone()));
+        assert_eq!(up(Some(0), "third", 5), Some(second.clone()));
+        // in a message of two lines Up moves the cursor until it is on the first line
+        assert_eq!(up(Some(1), &sent[1], sent[1].chars().count()), None);
+        assert_eq!(up(Some(1), &sent[1], 3), Some(first.clone()));
+        assert_eq!(up(Some(2), "first", 5), None);
+
+        // Down: the newer ones (from the last line), then the empty box again
+        assert_eq!(down(Some(2), "first", 5), Some(second.clone()));
+        assert_eq!(down(Some(1), &sent[1], 3), None, "not on the last line");
+        assert_eq!(
+            down(Some(1), &sent[1], sent[1].chars().count()),
+            Some(third.clone())
+        );
+        assert_eq!(down(Some(0), "third", 5), Some((None, String::new())));
+        assert_eq!(down(None, "", 0), None);
+
+        // what is being typed, or a message brought back and changed, keeps the keys for the cursor
+        assert_eq!(up(None, "a draft", 7), None);
+        assert_eq!(up(Some(0), "third, changed", 14), None);
+        assert_eq!(down(Some(0), "third, changed", 14), None);
+        // nothing sent yet: nothing to bring back
+        assert_eq!(recall(&[], None, "", 0, true), None);
+    }
     use crate::testkit::fake_ollama::FakeOllama;
 
     /// The pieces of a sentence cut at a dash are lit in the answer, which has the dash and not their comma.
