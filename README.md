@@ -24,7 +24,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/quickai-dark.png">
-    <img src="assets/readme/quickai-light.png" width="760" alt="The QuickAI window running Bonsai 2 4B, the model included with QuickAI: the model list in the sidebar on the left, the model name and its Start button in the toolbar, a reply in the chat, and the model's run settings in the panel on the right.">
+    <img src="assets/readme/quickai-light.png" width="760" alt="The QuickAI window running Bonsai 2 4B, the model included with QuickAI: the model in the sidebar on the left, its name and Stop in the toolbar, a reply to a question about packing for a hike with Copy, Regenerate and Read aloud under it, and the chat box with the tools and the microphone.">
   </picture>
 </p>
 
