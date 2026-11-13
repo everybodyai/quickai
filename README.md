@@ -5,13 +5,13 @@
 <h1 align="center">QuickAI</h1>
 
 <p align="center">
-  <strong>Run AI models on your own computer. Private by default.</strong>
+  <strong>Run AI models on your own computer: local AI that you control.</strong>
 </p>
 
 <p align="center">
   <a href="https://github.com/everybodyai/quickai/actions/workflows/ci.yml"><img src="https://github.com/everybodyai/quickai/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-246E37" alt="License: MIT"></a>
-  <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-0E1611" alt="Platforms: Linux, macOS and Windows">
+  <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS%20soon-0E1611" alt="Platforms: Linux and Windows; macOS coming soon">
 </p>
 
 <p align="center">
@@ -30,19 +30,21 @@
 
 QuickAI is a lightweight desktop application that downloads, runs and manages AI models on the hardware you already
 own, for chat, code, vision, speech, documents, images and video. You can type to it or speak to it. It requires no
-account, uses no cloud service and collects no telemetry, and it is designed to keep your prompts on your computer.
+account and sends nothing to EverybodyAI, and it is designed to keep your prompts, its answers and your files on your
+computer; it goes online only for what you ask of it, such as downloads and the tools you add.
 
 ## Why QuickAI
 
-- **Private by default.** Models run on your computer, and the servers QuickAI starts listen on `127.0.0.1` only.
+- **Local, under your control.** Models run on your computer, and the servers QuickAI starts listen on `127.0.0.1` only.
   There are no accounts, no update checks and no telemetry; nothing is sent to us. QuickAI connects to the internet
   only when you choose an action that requires it. [PRIVACY.md](PRIVACY.md) lists every host it can contact, and why.
 - **Ready to use.** The packages whose names end in `-with-llamacpp-bonsai2-4b` include llama.cpp, Bonsai 2 4B
   (ternary weights, 1.2 GB) and a speech model, so your first chat requires no download. The application-only
   package is about 30 MB and downloads these components when you request them.
 - **Voice (experimental).** Once you enable voice in **Settings → Voice**, the microphone in the chat transcribes
-  what you say, **Read aloud** reads answers with a natural voice you download (Kokoro) or one of your own, and
-  hands-free mode lets you hold a conversation without pressing anything. Your voice stays on your computer as well.
+  what you say in any of 135 languages, **Read aloud** reads answers with one of 206 voices for 98 languages, each
+  downloaded on request (Kokoro, Piper, Meta's MMS and others), or with one of your own, and hands-free mode lets you
+  hold a conversation without pressing anything. QuickAI is designed to keep your voice on your computer as well.
 - **Runs on everyday hardware.** GPU acceleration through Vulkan on AMD, NVIDIA and Intel, and Metal on Apple
   silicon. Before you start a model, QuickAI suggests one that fits your memory and estimates how fast it will run
   on the graphics card, the processor, or both.
@@ -61,8 +63,9 @@ account, uses no cloud service and collects no telemetry, and it is designed to 
 
 ## Install
 
-> QuickAI for Windows (zip), Linux (AppImage and tar.gz) and macOS (a single disk image for Apple silicon and Intel
-> Macs) is available on the [Releases](https://github.com/everybodyai/quickai/releases) page. Packages for the AUR,
+> QuickAI for Windows (zip) and Linux (AppImage and tar.gz) is available on the
+> [Releases](https://github.com/everybodyai/quickai/releases) page; macOS (a single disk image for Apple silicon and
+> Intel Macs) is coming soon. Packages for the AUR,
 > Homebrew, Snap, Scoop, Chocolatey and the Microsoft Store will follow; to be notified when they are available, sign
 > up at [everybodyai.dev](https://everybodyai.dev/quickai). You can also [build it from source](#build-from-source).
 
@@ -76,7 +79,7 @@ Two downloads are available for each platform:
 System requirements: Linux with glibc 2.34 or newer (Ubuntu 22.04 and later); Windows 10 or 11; macOS 13.3 (Ventura)
 or later, with Metal on Apple silicon.
 
-On macOS, drag QuickAI to the Applications folder. Until the app is notarized by Apple, macOS blocks it the first time
+On macOS, once its disk image is available, drag QuickAI to the Applications folder. Until the app is notarized by Apple, macOS blocks it the first time
 it is opened: choose **Done**, then click **Open Anyway** in **System Settings → Privacy & Security**. This is required
 only once.
 
@@ -280,5 +283,5 @@ follow the [Code of Conduct](CODE_OF_CONDUCT.md). Please report security issues 
 ---
 
 <p align="center">
-  QuickAI is made by <a href="https://everybodyai.dev"><strong>EverybodyAI</strong></a>: tools that make AI usable by everybody, privately.
+  QuickAI is made by <a href="https://everybodyai.dev"><strong>EverybodyAI</strong></a>: tools that make AI usable by everybody, on their own computers.
 </p>
