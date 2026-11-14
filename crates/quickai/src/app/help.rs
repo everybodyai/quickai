@@ -330,13 +330,16 @@ const PAGES: &[Page] = &[
         }),
         steps: &[
             step("Start the model with **Start** in the toolbar above the page.").at(Spot::Play),
-            step("Type in the box at the bottom. **Enter** sends the message; **Shift+Enter** starts a new line.")
-                .at(Spot::ChatBox),
+            step(
+                "Type in the box at the bottom. **Enter** sends the message; **Shift+Enter** starts a new line. While \
+                 the model responds, the round button at the right of the box stops it, as does **Esc**.",
+            )
+            .at(Spot::ChatBox),
             step("The paper clip {clip} attaches an image, for models that support vision, or a text file to read.")
                 .at(Spot::Clip),
             step(
-                "Below each response: **Copy**, **Regenerate**, and the generation speed. A response that was cut off \
-                 also has **Continue**, which asks the model to go on with it.",
+                "Below each response: **Copy**, **Regenerate**, and the generation speed. A response that you stopped, \
+                 or that was cut off, also has **Continue**, which asks the model to go on with it.",
             ),
             step(
                 "The {more} at the right end of the toolbar lets you keep chats on this computer, set instructions and \
@@ -404,8 +407,9 @@ const PAGES: &[Page] = &[
             ),
             step(
                 "**Hands-free**, in the {more} at the right end of the toolbar or by pressing and holding the microphone, \
-                 listens, sends what you said when you pause, reads the response and listens again. Press **Esc** to \
-                 end it.",
+                 listens, sends what you said when you pause, reads the response and listens again. **Interrupt** stops \
+                 the response and listens to you again; **Back to chat**, or **Esc**, stops the voice and returns to \
+                 the chat, where the response stays.",
             )
             .at(Spot::ChatMenu),
             step(
@@ -791,6 +795,7 @@ const PAGES: &[Page] = &[
             step("Ctrl+K|Add a model"),
             step("Ctrl+L|Move to the chat box"),
             step("Enter|Send a message"),
+            step("Esc|Stop the response being written (and the voice reading it)"),
             step("Ctrl+Space|Hold to speak, when voice is enabled (your words appear in the chat box)"),
             step("Ctrl+Shift+Space|Start or end hands-free mode, when voice is enabled"),
             step("Shift+Enter|Insert a new line in a message"),

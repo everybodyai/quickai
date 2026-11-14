@@ -79,6 +79,7 @@ mod settings_window;
 mod shell;
 mod sidebar;
 mod stall;
+mod stoppable;
 mod system_fonts;
 mod theme;
 mod tools;

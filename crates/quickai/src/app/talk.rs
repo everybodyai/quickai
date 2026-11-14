@@ -1021,6 +1021,17 @@ impl App {
         if self.talk.reading.as_ref().is_some_and(|r| r.hands_free) {
             self.stop_reading();
         }
+        // the answer goes on being written in the chat, unread: Read answers aloud does not take it up again (C224)
+        let last = self.chat.turns.len().checked_sub(1);
+        let answer = match last {
+            Some(i) if !self.chat.turns[i].from_person => Some(i),
+            // the answer has not begun (the servers start, a summary makes room): it is the next turn
+            _ if self.chat_busy() => Some(self.chat.turns.len()),
+            _ => None,
+        };
+        if answer.is_some() {
+            self.talk.auto_turn = answer;
+        }
         let _ = ctx;
     }
 
@@ -1159,11 +1170,14 @@ impl App {
         self.poll_trial(ctx);
     }
 
-    /// Ctrl+Space held records for the box; Ctrl+Shift+Space starts and ends hands-free; Escape stops reading and ends
-    /// hands-free.
+    /// Ctrl+Space held records for the box; Ctrl+Shift+Space starts and ends hands-free; Escape goes back to the chat from
+    /// hands-free, and else stops what is read aloud and the answer that is written (C224).
     fn talk_keys(&mut self, ctx: &egui::Context) {
-        // voice off: the keys are left to the rest of the window
+        // voice off: Esc stops the answer, and the other keys are left to the rest of the window
         if !self.talk.settings.enabled {
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.escape_answer(ctx);
+            }
             return;
         }
         let mut hold: Option<bool> = None;
@@ -1227,11 +1241,18 @@ impl App {
         let _ = hold;
         if escape {
             if self.talk.hands_free.is_some() {
+                // back to the chat: the voice stops, and the answer goes on being written there
                 self.end_hands_free(ctx);
-            } else if self.talk.reading.is_some() {
-                self.stop_reading();
-            } else if self.talk.card.is_some() {
-                self.talk.card = None;
+            } else {
+                // what is read aloud and the answer that is written stop together
+                let reading = self.talk.reading.is_some();
+                if reading {
+                    self.stop_reading();
+                }
+                let answering = self.escape_answer(ctx);
+                if !reading && !answering && self.talk.card.is_some() {
+                    self.talk.card = None;
+                }
             }
         }
     }
@@ -1706,20 +1727,18 @@ impl App {
                                 "Interrupt",
                                 egui::vec2(100.0, 30.0),
                             )
-                            .on_hover_text("Stop the answer and listen.")
+                            .on_hover_text("Stop the answer, and listen to you again.")
                             .clicked()
                         {
                             action = Some("interrupt");
                         }
-                        if theme::button_sized(
-                            ui,
-                            Role::Danger,
-                            true,
-                            "End",
-                            egui::vec2(90.0, 30.0),
-                        )
-                        .on_hover_text("End hands-free (Esc, or Ctrl+Shift+Space).")
-                        .clicked()
+                        // back to the chat (C224): the voice stops, and the answer stays there, still being written
+                        if icons::labelled_button(ui, Role::Normal, true, Icon::Chat, "Back to chat", 30.0)
+                            .on_hover_text(
+                                "Stop the voice and go back to the chat (Esc, or Ctrl+Shift+Space). The answer stays in \
+                                 the chat.",
+                            )
+                            .clicked()
                         {
                             action = Some("end");
                         }
@@ -3125,6 +3144,72 @@ fn matches(query: &str, words: &[&str]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An application with nothing running, for what the chat and hands-free do with what they hold.
+    fn quiet_app(name: &str) -> App {
+        let dir = crate::testkit::scratch(name);
+        App::build_in(
+            crate::settings::Settings::default(),
+            crate::config::build_registry(&crate::config::ConfigDirs::default()),
+            16 * 1024 * 1024 * 1024,
+            Vec::new(),
+            Some(dir.join("settings.json")),
+            Some(dir.join("data").display().to_string()),
+        )
+    }
+
+    /// C224: Back to chat (and Esc) ends hands-free while it reads an answer that is still being written: the voice stops,
+    /// and Read answers aloud does not take that answer up again in the chat.
+    #[test]
+    fn back_to_chat_stops_the_voice_for_good() {
+        let mut app = quiet_app("talk-back");
+        let ctx = egui::Context::default();
+        app.chat.turns = vec![
+            crate::app::chat::Turn::said(true, "Plan a garden"),
+            crate::app::chat::Turn::said(false, "Two raised beds"),
+        ];
+        app.talk.hands_free = Some(HandsFree {
+            phase: Phase::Answering,
+            after: Some(0),
+            read_turn: None,
+            heard: "Plan a garden".into(),
+            note: None,
+        });
+        app.end_hands_free(&ctx);
+        assert!(app.talk.hands_free.is_none());
+        assert_eq!(app.talk.auto_turn, Some(1), "the answer is not read again");
+        // ended before the answer began (the servers start): the answer to come is not read either
+        app.chat.turns.pop();
+        app.chat.waiting_for_tools = true;
+        app.talk.hands_free = Some(HandsFree {
+            phase: Phase::Waiting,
+            after: Some(0),
+            read_turn: None,
+            heard: "Plan a garden".into(),
+            note: None,
+        });
+        app.end_hands_free(&ctx);
+        assert_eq!(app.talk.auto_turn, Some(1));
+    }
+
+    /// C224: Esc stops the answer from the message sent on (here, while the MCP servers start), on the page of the
+    /// chat; with nothing to stop, it does nothing.
+    #[test]
+    fn esc_stops_the_answer() {
+        let mut app = quiet_app("talk-esc");
+        let ctx = egui::Context::default();
+        assert!(!app.escape_answer(&ctx), "nothing to stop");
+        app.chat.turns = vec![crate::app::chat::Turn::said(true, "Plan a garden")];
+        app.chat.waiting_for_tools = true;
+        assert!(app.chat_busy());
+        assert!(app.escape_answer(&ctx));
+        assert!(!app.chat_busy());
+        // on another page (the MCP servers), Esc is that page's
+        app.chat.waiting_for_tools = true;
+        app.view = crate::app::MainView::Tools;
+        assert!(!app.escape_answer(&ctx));
+        assert!(app.chat_busy());
+    }
 
     #[test]
     fn a_click_on_the_microphone_dictates_and_holding_it_starts_hands_free_once() {

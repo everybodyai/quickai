@@ -9,7 +9,7 @@
 //! beside the conversation, opened, deleted and exported as Markdown.
 
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader};
+use std::io::BufRead;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -41,6 +41,8 @@ pub struct Turn {
     /// seconds: shown folded above it when Show thinking is on, and never sent back to the model.
     pub thought: String,
     pub thought_secs: Option<u64>,
+    /// For a reply, the person stopped it while it was written (C224): what it wrote stays, said to be stopped.
+    pub stopped: bool,
 }
 
 impl Turn {
@@ -53,6 +55,7 @@ impl Turn {
             calls: Vec::new(),
             thought: String::new(),
             thought_secs: None,
+            stopped: false,
         }
     }
 }
@@ -435,17 +438,37 @@ impl Chat {
         if let Some(summarizing) = self.summarizing.take() {
             summarizing.cancel();
         }
-        self.continuing = false;
+        let continued = std::mem::take(&mut self.continuing);
         if let Some(cancel) = self.cancel.take() {
             cancel.store(true, Ordering::SeqCst);
         }
-        if self.reply.take().is_some()
-            && self
-                .turns
-                .last()
-                .is_some_and(|t| !t.from_person && t.text.is_empty() && t.calls.is_empty())
-        {
-            self.turns.pop();
+        let stats = self.stats_now();
+        if self.reply.take().is_some() {
+            match self.turns.last_mut() {
+                Some(last)
+                    if !last.from_person && last.text.is_empty() && last.calls.is_empty() =>
+                {
+                    self.turns.pop();
+                }
+                // what it wrote stays, said to be stopped; Continue goes on with it (C224)
+                Some(last) if !last.from_person && !last.text.is_empty() => {
+                    last.stopped = true;
+                    last.stats = match (last.stats.filter(|_| continued), stats) {
+                        (Some(before), Some(now)) => Some(Stats {
+                            tokens: before.tokens + now.tokens,
+                            first_ms: before.first_ms,
+                            total_ms: before.total_ms + now.total_ms,
+                        }),
+                        (before, now) => now.or(before),
+                    };
+                    self.cut_off = true;
+                    self.cut_by_context = false;
+                    // said under it too, where a narrow window has no room for it in the line of its buttons
+                    self.notice =
+                        Some("The answer was stopped. Continue goes on with it.".to_string());
+                }
+                _ => {}
+            }
         }
         self.thinking = None;
         self.waiting_for_tools = false;
@@ -458,6 +481,18 @@ impl Chat {
             .filter(|c| !c.settled())
         {
             call.state = CallState::Denied;
+        }
+    }
+
+    /// How the reply that is coming came so far: its pieces, the time to the first, and the whole.
+    fn stats_now(&self) -> Option<Stats> {
+        match (self.started, self.first) {
+            (Some(started), Some(first)) => Some(Stats {
+                tokens: self.pieces,
+                first_ms: first.duration_since(started).as_millis() as u64,
+                total_ms: started.elapsed().as_millis() as u64,
+            }),
+            _ => None,
         }
     }
 
@@ -797,18 +832,19 @@ pub(super) fn stream_reply(
     stop: &AtomicBool,
     said: &dyn Fn(ChatEvent),
 ) -> Result<Vec<AskedCall>, Failure> {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .timeout_connect(Some(Duration::from_secs(10)))
-        .build()
-        .into();
-    let response = agent
-        .post(format!("http://127.0.0.1:{port}/v1/chat/completions"))
-        .header("Content-Type", "application/json")
-        .send(body.to_string())
-        .map_err(|e| Failure::on_the_way(format!("could not reach the server: {e}")))?;
-    let status = response.status().as_u16();
-    let reader = response.into_body().into_reader();
+    // a request the stop closes at once, whatever the engine is doing (C224)
+    let answer = match super::stoppable::post(port, "/v1/chat/completions", &body.to_string(), stop)
+    {
+        Ok(answer) => answer,
+        Err(_) if stop.load(Ordering::SeqCst) => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(Failure::on_the_way(format!(
+                "could not reach the server: {e}"
+            )))
+        }
+    };
+    let status = answer.status;
+    let reader = answer.body;
     if !(200..300).contains(&status) {
         let answer: serde_json::Value =
             serde_json::from_reader(reader).unwrap_or(serde_json::Value::Null);
@@ -822,11 +858,15 @@ pub(super) fn stream_reply(
     let mut calls: Vec<AskedCall> = Vec::new();
     // the reply ended (`finish_reason`): only what it took of the context is still to come
     let mut finished = false;
-    for line in BufReader::new(reader).lines() {
+    for line in reader.lines() {
         if stop.load(Ordering::SeqCst) {
             return Ok(Vec::new());
         }
-        let line = line.map_err(|e| Failure::on_the_way(format!("the reply stopped: {e}")))?;
+        let line = match line {
+            Ok(line) => line,
+            Err(_) if stop.load(Ordering::SeqCst) => return Ok(Vec::new()),
+            Err(e) => return Err(Failure::on_the_way(format!("the reply stopped: {e}"))),
+        };
         let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else {
             continue;
         };
@@ -1462,6 +1502,30 @@ fn info_note(ui: &mut egui::Ui, text: &str) {
     });
 }
 
+/// The stop of an answer, in the box where the arrow is while the answer is written (C224): a round button with a square
+/// in it, as chat applications have it (light on the dark theme, dark on the light one).
+fn stop_button(ui: &mut egui::Ui) -> egui::Response {
+    let p = theme::palette();
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(32.0, 28.0), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let round = if response.hovered() {
+            p.text
+        } else {
+            p.text.gamma_multiply(0.86)
+        };
+        ui.painter().circle_filled(rect.center(), 12.5, round);
+        ui.painter().rect_filled(
+            egui::Rect::from_center_size(rect.center(), egui::vec2(9.0, 9.0)),
+            2.0,
+            p.well,
+        );
+    }
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    response
+}
+
 /// A grey (i) before a note that informs.
 fn info_mark(ui: &mut egui::Ui) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
@@ -1549,6 +1613,25 @@ fn saved_turn(t: &Turn) -> SavedTurn {
 }
 
 impl App {
+    /// Whether there is an answer to stop (C224): from the message sent (the MCP servers starting, a summary that makes
+    /// room) to the answer's end, and while its tools run before the next reply.
+    pub(super) fn chat_busy(&self) -> bool {
+        self.chat.replying() || self.chat.tools_waiting || self.chat.waiting_for_tools
+    }
+
+    /// Esc stops the answer (C224) while the chat is what the window shows and Esc closes nothing else there (a menu, the
+    /// tour of Help). Whether there was one to stop.
+    pub(super) fn escape_answer(&mut self, ctx: &egui::Context) -> bool {
+        let shown = self.view == super::MainView::Model || self.setup_in_use().is_some();
+        if !self.chat_busy() || !shown || egui::Popup::is_any_open(ctx) || self.help.tour.is_some()
+        {
+            return false;
+        }
+        self.chat.stop();
+        self.poll_chat();
+        true
+    }
+
     /// Whether the engine in use can be talked to here: it serves the OpenAI chat API. On a computer QuickAI set up, the
     /// chat is there until its run says it serves no API.
     pub(super) fn can_chat(&self) -> bool {
@@ -1662,6 +1745,9 @@ impl App {
         let mut turns = self.chat.turns[self.chat.summarized_upto()..].to_vec();
         if self.chat.continuing {
             turns.push(Turn::said(true, super::compact::CONTINUE_ASK));
+            if let Some(last) = self.chat.turns.last_mut().filter(|t| !t.from_person) {
+                last.stopped = false;
+            }
         }
         self.chat.asked_chars = super::compact::request_chars(&options, &turns);
         self.chat.asked_tokens = None;
@@ -1897,14 +1983,7 @@ impl App {
             }
             self.chat.used = Some(used);
         }
-        let stats = match (self.chat.started, self.chat.first) {
-            (Some(started), Some(first)) => Some(Stats {
-                tokens: self.chat.pieces,
-                first_ms: first.duration_since(started).as_millis() as u64,
-                total_ms: started.elapsed().as_millis() as u64,
-            }),
-            _ => None,
-        };
+        let stats = self.chat.stats_now();
         match self.chat.turns.last_mut() {
             // a reply that said nothing (and asked for no tool) is not kept as a turn
             Some(last) if !last.from_person && last.text.is_empty() && last.calls.is_empty() => {
@@ -2192,7 +2271,7 @@ impl App {
             let hands_free = super::icons::menu_item(ui, super::icons::Icon::Wave, "Hands-free", can_talk, false)
                 .on_hover_text(
                     "Talk to the model with nothing to press: it listens, sends what you said when you pause, reads the \
-                     answer aloud and listens again (Ctrl+Shift+Space). Esc ends it.",
+                     answer aloud and listens again (Ctrl+Shift+Space). Esc goes back to the chat.",
                 );
             if hands_free.clicked() && can_talk {
                 ui.close();
@@ -2491,8 +2570,11 @@ impl App {
                     }
                     let idle = !self.chat.replying();
                     if !turn.from_person && !typing && !turn.text.is_empty() {
+                        // wrapped, so that a narrow column (the list of kept chats beside it) does not widen the rest; its
+                        // lines all start where the answer does
                         ui.horizontal(|ui| {
                             ui.add_space(8.0);
+                            ui.horizontal_wrapped(|ui| {
                             if theme::button_sized(
                                 ui,
                                 Role::Quiet,
@@ -2539,11 +2621,19 @@ impl App {
                             if let Some(start) = self.show_read_aloud(ui, i) {
                                 read = Some((i, start));
                             }
-                            if let Some(stats) = &turn.stats {
+                            // a stopped answer says so (C224)
+                            let said = match (&turn.stats, turn.stopped) {
+                                (Some(stats), true) => Some(format!("Stopped · {}", stats.line())),
+                                (Some(stats), false) => Some(stats.line()),
+                                (None, true) => Some("Stopped".to_string()),
+                                (None, false) => None,
+                            };
+                            if let Some(said) = said {
                                 // cut with … where the row is narrow (Read aloud beside it, C216): a line that runs on
                                 // widens the page under the panel and pushes the box's buttons out of it
-                                ui.add(egui::Label::new(theme::muted(stats.line())).truncate());
+                                ui.add(egui::Label::new(theme::muted(said)).truncate());
                             }
+                            });
                         });
                     } else if turn.from_person && Some(i) == last_message && idle {
                         // a row of its own height: a row from right to left in what is left of the room is as high
@@ -2823,13 +2913,11 @@ impl App {
                     }
                     // the speaker and the microphone, before the arrow (C216, M1)
                     self.show_talk_buttons(ui, ready);
-                    // while a reply comes, and while its tools run before the next one: a model that keeps asking for tools
-                    // (with no limit to the calls in a row) is stopped here
-                    if self.chat.replying() || self.chat.tools_waiting {
-                        if icons::icon_button(ui, Icon::Close, egui::vec2(32.0, 28.0), true, true)
-                            .on_hover_text("Stop the reply. What came of it stays.")
-                            .clicked()
-                        {
+                    // from the message sent to the answer's end, the arrow is the stop (C224): while the MCP servers start,
+                    // while the model thinks and writes, and while its tools run before the next reply (a model that keeps
+                    // asking for tools, with no limit to the calls in a row, is stopped here too)
+                    if self.chat_busy() {
+                        if stop_button(ui).on_hover_text("Stop the answer (Esc).").clicked() {
                             self.chat.stop();
                             self.poll_chat();
                         }
@@ -3576,6 +3664,96 @@ mod tests {
         assert_eq!(joint("about the ", "school"), "");
         assert_eq!(joint("about the", " school"), "");
         assert_eq!(joint("", "The"), "");
+    }
+
+    /// C224: an answer stopped while it is written stays, said to be stopped, with how it came and Continue; one that had
+    /// said nothing yet is not kept; and the request is told to stop.
+    #[test]
+    fn a_stopped_answer_stays_said_to_be_stopped_and_can_go_on() {
+        let mut chat = Chat {
+            turns: vec![
+                Turn::said(true, "Plan a garden"),
+                Turn::said(false, "Choose the spot. Six hours of"),
+            ],
+            ..Chat::default()
+        };
+        let (_tx, rx) = crossbeam_channel::unbounded();
+        let cancel = Arc::new(AtomicBool::new(false));
+        chat.reply = Some(rx);
+        chat.cancel = Some(cancel.clone());
+        chat.started = Some(Instant::now());
+        chat.first = Some(Instant::now());
+        chat.pieces = 7;
+        chat.stop();
+        assert!(cancel.load(Ordering::SeqCst), "the request is told to stop");
+        assert!(!chat.replying());
+        let last = chat.turns.last().unwrap();
+        assert!(last.stopped && last.text.ends_with("Six hours of"));
+        assert_eq!(last.stats.map(|s| s.tokens), Some(7));
+        assert!(
+            chat.cut_off && !chat.cut_by_context,
+            "Continue goes on with it"
+        );
+        assert!(chat
+            .notice
+            .as_deref()
+            .is_some_and(|n| n.contains("stopped")));
+        // nothing said yet: no turn is kept, and nothing is said to be stopped
+        let mut chat = Chat {
+            turns: vec![Turn::said(true, "Plan a garden"), Turn::said(false, "")],
+            ..Chat::default()
+        };
+        let (_tx, rx) = crossbeam_channel::unbounded();
+        chat.reply = Some(rx);
+        chat.stop();
+        assert_eq!(chat.turns.len(), 1);
+        assert!(!chat.cut_off);
+    }
+
+    /// C224: a stop is heard while the engine says nothing yet (it reads a long conversation, or thinks without saying
+    /// so): the request ends at once, and the engine sees its connection closed, which makes llama.cpp stop working on it.
+    #[test]
+    fn a_stop_ends_the_request_while_the_engine_says_nothing() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (closed_tx, closed_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 8192];
+            let _ = stream.read(&mut buf);
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n");
+            let started = Instant::now();
+            let closed = loop {
+                match stream.read(&mut buf) {
+                    Ok(0) | Err(_) => break true,
+                    Ok(_) if started.elapsed() > Duration::from_secs(10) => break false,
+                    Ok(_) => {}
+                }
+            };
+            let _ = closed_tx.send(closed);
+        });
+        let (rx, cancel) = spawn_reply(
+            port,
+            "m".into(),
+            Options::default(),
+            vec![Turn::said(true, "Hello")],
+            || {},
+        );
+        std::thread::sleep(Duration::from_millis(300));
+        let stopped = Instant::now();
+        cancel.store(true, Ordering::SeqCst);
+        assert_eq!(rx.recv_timeout(Duration::from_secs(3)), Ok(ChatEvent::Done));
+        assert!(
+            stopped.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            stopped.elapsed()
+        );
+        assert_eq!(
+            closed_rx.recv_timeout(Duration::from_secs(5)),
+            Ok(true),
+            "the engine saw the request closed"
+        );
     }
 
     /// C204: a call is settled once it ran, failed or was not allowed, and what the model is told says which.
