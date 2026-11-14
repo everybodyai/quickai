@@ -107,12 +107,13 @@ pub(super) enum Spot {
     Computer,
     Settings,
     Help,
-    /// The parts of the panel at the right (C213): the configuration's box, Context, Graphics, Extras, Tools and This
-    /// computer at its foot.
+    /// The parts of the panel at the right (C213): the configuration's box, Context, Graphics, Extras, Capabilities
+    /// (C223), Tools and This computer at its foot.
     Configuration,
     Context,
     Graphics,
     Extras,
+    Capabilities,
     Tools,
     ThisComputer,
 }
@@ -141,6 +142,7 @@ impl Spot {
                 | Spot::Context
                 | Spot::Graphics
                 | Spot::Extras
+                | Spot::Capabilities
                 | Spot::Tools
                 | Spot::ThisComputer
         )
@@ -332,11 +334,14 @@ const PAGES: &[Page] = &[
                 .at(Spot::ChatBox),
             step("The paper clip {clip} attaches an image, for models that support vision, or a text file to read.")
                 .at(Spot::Clip),
-            step("Below each response: **Copy**, **Regenerate**, and the generation speed."),
+            step(
+                "Below each response: **Copy**, **Regenerate**, and the generation speed. A response that was cut off \
+                 also has **Continue**, which asks the model to go on with it.",
+            ),
             step(
                 "The {more} at the right end of the toolbar lets you keep chats on this computer, set instructions and \
-                 the response style in **Options…** (in a separate window), or export a chat to a file. The {pencil} \
-                 beside it starts a new chat.",
+                 the response style in **Options…** (in a separate window), summarize the earlier messages to make \
+                 room in the context, or export a chat to a file. The {pencil} beside it starts a new chat.",
             )
             .at(Spot::ChatMenu),
         ],
@@ -435,6 +440,11 @@ const PAGES: &[Page] = &[
             ),
             step("Copy the **Model** name below it as well. Any **API key** is accepted, or none."),
             step("**Open Chat UI** {globe} below them opens a chat in your browser, when the engine provides one."),
+            step(
+                "**How it runs**, at the bottom of the panel, shows the context, where the model runs and what was \
+                 added at startup; the context also shows how much of it the chat uses. Below it, **Capabilities** \
+                 has its switches.",
+            ),
         ],
         numbered: true,
         tip: Some(
@@ -597,9 +607,11 @@ const PAGES: &[Page] = &[
             .at(Spot::Graphics),
             step(
                 "**Extras** shows what is added at startup: a vision model's projector, with a switch, and your own \
-                 arguments and environment variables, each as a chip you can edit or remove. **Tools** shows a switch \
-                 for each MCP server. The gear at the top of the panel opens the remaining startup settings, including \
-                 the port.",
+                 arguments and environment variables, each as a chip you can edit or remove. **Capabilities** has a \
+                 switch for each thing the chat can do, such as **Auto-compact**, which summarizes the earlier \
+                 messages when the conversation nears the end of the context; rest the pointer on one to see what it \
+                 does. **Tools** shows a switch for each MCP server. The gear at the top of the panel opens the \
+                 remaining startup settings, including the port.",
             )
             .at(Spot::Extras),
             step(
@@ -854,6 +866,13 @@ const TOUR: &[(Spot, &str, &str)] = &[
         "Extras",
         "What is added at startup: a vision model's projector, and your own arguments and environment variables, each \
          as a chip.",
+    ),
+    (
+        Spot::Capabilities,
+        "Capabilities",
+        "A switch for each thing the chat can do: Auto-compact summarizes the earlier messages when the conversation \
+         nears the end of the context, and models that think have Thinking and Show thinking. Rest the pointer on \
+         one to see what it does.",
     ),
     (
         Spot::Tools,

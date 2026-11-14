@@ -73,6 +73,12 @@ pub const TOOLS_ALLOW_ALL_KEY: &str = "app.tools_allow_all";
 pub const TOOL_ROUNDS_KEY: &str = "app.tool_rounds";
 /// The replies in a row that may use tools, unless the person chose otherwise.
 pub const DEFAULT_TOOL_ROUNDS: u32 = 20;
+/// The capabilities of the chat (How it runs, Capabilities): Auto-compact summarizes the earlier messages when the
+/// conversation nears the end of the context (`true`; absent, off); Thinking is `true` or `false` once the person chose
+/// (absent, as the model runs); Show thinking shows what a model thought, folded above its answer (`true`; absent, off).
+pub const AUTO_COMPACT_KEY: &str = "app.auto_compact";
+pub const THINKING_KEY: &str = "app.thinking";
+pub const SHOW_THINKING_KEY: &str = "app.show_thinking";
 /// Talking to QuickAI (C216): the microphone, the language, the speech model, reading aloud and its voice, as an
 /// object of what differs from the defaults (the window's `voice::settings::VoiceSettings`).
 pub const VOICE_KEY: &str = "app.voice";
@@ -469,6 +475,48 @@ impl Settings {
             None => Some(serde_json::Value::from(0)),
         };
         self.set_app_value(TOOL_ROUNDS_KEY, value);
+    }
+
+    /// Whether the chat summarizes its earlier messages when the conversation nears the end of the context.
+    pub fn auto_compact(&self) -> bool {
+        self.app_value(AUTO_COMPACT_KEY)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    }
+
+    /// Keeps it; off, the default, takes the key away.
+    pub fn set_auto_compact(&mut self, on: bool) {
+        self.set_app_value(
+            AUTO_COMPACT_KEY,
+            on.then_some(serde_json::Value::Bool(true)),
+        );
+    }
+
+    /// Whether a model that can answer without thinking first is told to think (`Some(true)`) or not (`Some(false)`);
+    /// `None` leaves it as the model runs.
+    pub fn thinking(&self) -> Option<bool> {
+        self.app_value(THINKING_KEY)
+            .and_then(serde_json::Value::as_bool)
+    }
+
+    /// Keeps it; `None` takes the key away.
+    pub fn set_thinking(&mut self, thinking: Option<bool>) {
+        self.set_app_value(THINKING_KEY, thinking.map(serde_json::Value::Bool));
+    }
+
+    /// Whether what a model thought is shown, folded above its answer.
+    pub fn show_thinking(&self) -> bool {
+        self.app_value(SHOW_THINKING_KEY)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    }
+
+    /// Keeps it; off, the default, takes the key away.
+    pub fn set_show_thinking(&mut self, on: bool) {
+        self.set_app_value(
+            SHOW_THINKING_KEY,
+            on.then_some(serde_json::Value::Bool(true)),
+        );
     }
 
     /// What the person chose for talking to QuickAI, as it is kept.
@@ -1167,6 +1215,30 @@ default = 1.5
         s.set_tool_rounds(Some(DEFAULT_TOOL_ROUNDS));
         assert_eq!(s.app_value(TOOLS_ALLOW_ALL_KEY), None);
         assert_eq!(s.app_value(TOOL_ROUNDS_KEY), None);
+    }
+
+    /// The chat's capabilities: Auto-compact and Show thinking are off and Thinking is as the model runs until the
+    /// person chooses; what they choose is kept, and going back to the default writes nothing down.
+    #[test]
+    fn the_chats_capabilities_are_off_until_the_person_turns_them_on() {
+        let mut s: Settings =
+            serde_json::from_str(r#"{"port": 8080, "ctx_size": 4096, "n_gpu_layers": 999}"#)
+                .unwrap();
+        assert!(!s.auto_compact());
+        assert_eq!(s.thinking(), None);
+        assert!(!s.show_thinking());
+        s.set_auto_compact(true);
+        s.set_thinking(Some(false));
+        s.set_show_thinking(true);
+        let again: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert!(again.auto_compact() && again.show_thinking());
+        assert_eq!(again.thinking(), Some(false));
+        s.set_auto_compact(false);
+        s.set_thinking(None);
+        s.set_show_thinking(false);
+        for key in [AUTO_COMPACT_KEY, THINKING_KEY, SHOW_THINKING_KEY] {
+            assert_eq!(s.app_value(key), None, "{key}");
+        }
     }
 
     #[test]

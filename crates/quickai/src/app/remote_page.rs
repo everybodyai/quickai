@@ -153,10 +153,12 @@ impl App {
         });
         ui.label(theme::muted(computer_line));
         ui.add_space(8.0);
+        let mut chats_there = false;
         match shown {
             Shown::Running => {
                 if let Some(run) = run {
                     show_addresses(ui, run);
+                    chats_there = run.endpoint("api").is_some();
                 }
                 ui.label(theme::muted(format!(
                     "It runs on {} until you stop it, also when QuickAI is closed.",
@@ -192,6 +194,14 @@ impl App {
                     spec.name
                 )));
             }
+        }
+        // the chat talks to that run: how much of its context the conversation takes, and the capabilities (C223)
+        if chats_there {
+            if let Some((words, hover, share)) = self.context_in_use() {
+                ui.add_space(6.0);
+                super::extras::pill(ui, None, &words, &hover, Some(share));
+            }
+            self.show_capabilities(ui);
         }
         if pressed.start {
             self.start_pressed_at = Some(std::time::Instant::now());

@@ -37,6 +37,10 @@ pub struct Turn {
     pub pictures: Vec<Picture>,
     /// For a reply, the tools the model asked to use (C204), and what came of each.
     pub calls: Vec<ToolCall>,
+    /// For a reply, what the model thought before it (`reasoning_content`, Ollama's `reasoning`), and for how many
+    /// seconds: shown folded above it when Show thinking is on, and never sent back to the model.
+    pub thought: String,
+    pub thought_secs: Option<u64>,
 }
 
 impl Turn {
@@ -47,6 +51,8 @@ impl Turn {
             stats: None,
             pictures: Vec::new(),
             calls: Vec::new(),
+            thought: String::new(),
+            thought_secs: None,
         }
     }
 }
@@ -224,17 +230,42 @@ impl Stats {
 #[derive(Debug, PartialEq, Eq)]
 pub enum ChatEvent {
     Text(String),
-    /// A piece of the model's thinking came (`reasoning_content`, or Ollama's `reasoning`): it is not shown, but the
-    /// reply is on its way.
-    Thinking,
+    /// A piece of the model's thinking came (`reasoning_content`, or Ollama's `reasoning`): it is kept apart from the
+    /// reply, shown folded above it when Show thinking is on, and says the reply is on its way.
+    Thinking(String),
     /// The reply asks to use tools (C204): they come before its end.
     Calls(Vec<AskedCall>),
     /// Something to say under the conversation: the engine did not take the tools, and the reply came without them.
     Notice(String),
     /// Why the engine ended the reply (`finish_reason`: `stop`, `length`, `tool_calls`), when it said.
     Finished(String),
+    /// What the request took, as the engine counted it (`usage`): the conversation as it was sent, and the reply
+    /// (with its thinking).
+    Usage {
+        prompt: u64,
+        completion: u64,
+    },
     Done,
     Failed(String),
+    /// The engine refused the request because it does not fit in the context (llama.cpp's `exceed_context_size_error`),
+    /// with the length of the context when it said it.
+    TooLong {
+        why: String,
+        context: Option<u64>,
+    },
+}
+
+/// How a server of the OpenAI chat API is told what that API has no word for (whether the model thinks), and asked
+/// how long its context is: by the engine it is.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Dialect {
+    /// llama.cpp's server: `chat_template_kwargs`, `/props`.
+    LlamaCpp,
+    /// Ollama: `reasoning_effort`, `/api/ps` and `/api/show`.
+    Ollama,
+    /// Another server of the API: the API's own words only.
+    #[default]
+    Other,
 }
 
 /// What a reply is asked with besides the conversation; `None` leaves it to the model.
@@ -243,6 +274,12 @@ pub struct Options {
     pub instructions: Option<String>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
+    /// What the model reads in place of the first turns once they were summarized (Auto-compact), after the
+    /// instructions.
+    pub summary: Option<String>,
+    /// Whether the model is told to think (`None`: as it runs), and how its engine is told.
+    pub thinking: Option<bool>,
+    pub dialect: Dialect,
 }
 
 /// The conversation of the tab, and the reply that is coming.
@@ -293,6 +330,35 @@ pub struct Chat {
     pub sent: Vec<String>,
     /// While the box shows one of `sent` brought back with Up: which, counted from the newest (0).
     pub recalled: Option<usize>,
+    /// What the model reads in place of the first turns once they were summarized to make room (Auto-compact).
+    pub summary: Option<super::compact::Summary>,
+    /// The summary being written, while it is (`compact.rs`).
+    pub(super) summarizing: Option<super::compact::Summarizing>,
+    /// The summary is shown under the line where the model's view begins, and what the person types in its place while
+    /// they edit it.
+    pub summary_open: bool,
+    pub summary_edit: Option<String>,
+    /// What the last request took of the context, as the engine counted it (`compact::Used`).
+    pub(super) used: Option<super::compact::Used>,
+    /// The characters of the request that is coming, and what the engine counted of it, for `used`.
+    pub(super) asked_chars: usize,
+    pub(super) asked_tokens: Option<u64>,
+    /// What the run the chat talks to says of itself (its engine, its context, whether its model thinks), for the run
+    /// it was asked of, and the asking while it goes on (`compact::probe`).
+    pub(super) run_facts: Option<super::compact::RunFacts>,
+    pub(super) probing: Option<super::compact::Probing>,
+    /// The last reply was cut off (`finish_reason` `length`): Continue goes on with it. By the context, and not by the
+    /// reply limit, when `cut_by_context`: Continue then needs earlier messages to summarize.
+    pub cut_off: bool,
+    pub cut_by_context: bool,
+    /// The reply that is coming goes on with the last one (Continue) instead of being one of its own.
+    pub(super) continuing: bool,
+    /// The conversation takes most of the context while Auto-compact is off: said under it, with the tokens it takes and
+    /// the context's.
+    pub room_note: Option<(u64, u64)>,
+    /// The engine refused the request as too long: it is summarized and asked again, once for each message.
+    pub(super) too_long: bool,
+    pub(super) retried: bool,
 }
 
 /// The most messages Up and Down in the box go back through.
@@ -332,8 +398,16 @@ pub(super) fn recall(
 }
 
 impl Chat {
+    /// A reply is coming, or the summary that makes room for one is being written: the chat waits.
     pub fn replying(&self) -> bool {
-        self.reply.is_some()
+        self.reply.is_some() || self.summarizing.is_some()
+    }
+
+    /// The first turn the model reads whole: the ones before it are in the summary.
+    pub fn summarized_upto(&self) -> usize {
+        self.summary
+            .as_ref()
+            .map_or(0, |s| s.upto.min(self.turns.len()))
     }
 
     /// A new conversation that keeps what is the person's and not the engine's: the options, whether chats are kept,
@@ -348,12 +422,20 @@ impl Chat {
             keep: self.keep,
             kept: std::mem::take(&mut self.kept),
             sent: std::mem::take(&mut self.sent),
+            // what the run said of itself is the run's, not the conversation's
+            run_facts: self.run_facts.take(),
+            probing: self.probing.take(),
             ..Chat::default()
         }
     }
 
     /// Stops the reply that is coming; what came of it stays. A reply that had said nothing yet is not kept as a turn.
+    /// A summary being written is given up, and the conversation is as it was.
     pub fn stop(&mut self) {
+        if let Some(summarizing) = self.summarizing.take() {
+            summarizing.cancel();
+        }
+        self.continuing = false;
         if let Some(cancel) = self.cancel.take() {
             cancel.store(true, Ordering::SeqCst);
         }
@@ -379,11 +461,14 @@ impl Chat {
         }
     }
 
-    fn options(&self) -> Options {
+    /// What the person set for the replies; what the run is told besides is added by `App::reply_options`.
+    pub(super) fn options(&self) -> Options {
         Options {
             instructions: Some(self.instructions.clone()).filter(|i| !i.trim().is_empty()),
             temperature: self.temperature,
             max_tokens: self.max_tokens,
+            summary: self.summary.as_ref().map(|s| s.text.clone()),
+            ..Options::default()
         }
     }
 
@@ -395,6 +480,21 @@ impl Chat {
         self.saved_id = None;
         self.notice = None;
         self.tool_rounds = 0;
+        self.forget_room();
+    }
+
+    /// What was known of the conversation's room in the context, for another conversation: its summary, what its last
+    /// request took, that its last reply was cut off, and what was said of it.
+    pub fn forget_room(&mut self) {
+        self.summary = None;
+        self.summary_open = false;
+        self.summary_edit = None;
+        self.used = None;
+        self.cut_off = false;
+        self.cut_by_context = false;
+        self.room_note = None;
+        self.too_long = false;
+        self.retried = false;
     }
 }
 
@@ -411,7 +511,7 @@ pub fn spawn_reply(
 }
 
 /// `spawn_reply`, offering the model `tools` (the request's `tools`, C204). An engine that refuses the request with them
-/// is asked again without them, and that is said.
+/// is asked again without them, and that is said; one that refuses it as too long for its context is not.
 pub fn spawn_reply_with_tools(
     port: u16,
     model: String,
@@ -419,6 +519,33 @@ pub fn spawn_reply_with_tools(
     turns: Vec<Turn>,
     tools: Option<serde_json::Value>,
     wake: impl Fn() + Send + Sync + 'static,
+) -> (Receiver<ChatEvent>, Arc<AtomicBool>) {
+    spawn_request(wake, move |stop, send| {
+        let body = request_body_with(&model, &options, &turns, tools.as_ref());
+        let mut outcome = stream_reply(port, &body, stop, send);
+        if tools.is_some() {
+            if let Err(failure) = &outcome {
+                if failure.refused && failure.too_long.is_none() {
+                    send(ChatEvent::Notice(format!(
+                        "The engine did not take the tools ({}): this reply is without them.",
+                        failure.why
+                    )));
+                    let body = request_body_with(&model, &options, &turns, None);
+                    outcome = stream_reply(port, &body, stop, send);
+                }
+            }
+        }
+        outcome
+    })
+}
+
+/// Runs `ask` on a thread of its own, what it says sent as events as it comes: then the tools it asked for and its end,
+/// or why it failed (a request too long for the context said as such).
+pub(super) fn spawn_request(
+    wake: impl Fn() + Send + Sync + 'static,
+    ask: impl FnOnce(&AtomicBool, &dyn Fn(ChatEvent)) -> Result<Vec<AskedCall>, Failure>
+        + Send
+        + 'static,
 ) -> (Receiver<ChatEvent>, Arc<AtomicBool>) {
     let (tx, rx) = crossbeam_channel::unbounded();
     let cancel = Arc::new(AtomicBool::new(false));
@@ -428,33 +555,18 @@ pub fn spawn_reply_with_tools(
             let _ = tx.send(event);
             wake();
         };
-        let said = |piece: Piece| {
-            send(match piece {
-                Piece::Text(text) => ChatEvent::Text(text),
-                Piece::Thinking => ChatEvent::Thinking,
-                Piece::Finished(why) => ChatEvent::Finished(why),
-            })
-        };
-        let mut outcome =
-            stream_reply(port, &model, &options, &turns, tools.as_ref(), &stop, &said);
-        if tools.is_some() {
-            if let Err(failure) = &outcome {
-                if failure.refused {
-                    send(ChatEvent::Notice(format!(
-                        "The engine did not take the tools ({}): this reply is without them.",
-                        failure.why
-                    )));
-                    outcome = stream_reply(port, &model, &options, &turns, None, &stop, &said);
-                }
-            }
-        }
-        match outcome {
+        match ask(&stop, &send) {
             Ok(calls) => {
                 if !calls.is_empty() {
                     send(ChatEvent::Calls(calls));
                 }
                 send(ChatEvent::Done);
             }
+            Err(Failure {
+                why,
+                too_long: Some(context),
+                ..
+            }) => send(ChatEvent::TooLong { why, context }),
             Err(failure) => send(ChatEvent::Failed(failure.why)),
         }
     });
@@ -476,12 +588,8 @@ pub fn request_body_with(
     turns: &[Turn],
     tools: Option<&serde_json::Value>,
 ) -> serde_json::Value {
-    let system = options
-        .instructions
-        .as_deref()
-        .map(str::trim)
-        .filter(|i| !i.is_empty())
-        .map(|i| serde_json::json!({"role": "system", "content": i}));
+    let system = system_text(options.instructions.as_deref(), options.summary.as_deref())
+        .map(|text| serde_json::json!({"role": "system", "content": text}));
     let messages: Vec<serde_json::Value> = system
         .into_iter()
         .chain(turns.iter().flat_map(|t| {
@@ -519,7 +627,13 @@ pub fn request_body_with(
             vec![serde_json::json!({"role": role, "content": content})]
         }))
         .collect();
-    let mut body = serde_json::json!({"model": model, "messages": messages, "stream": true});
+    // what the request takes of the context, counted by the engine and said after the reply (`usage`)
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "stream": true,
+        "stream_options": {"include_usage": true},
+    });
     if let Some(tools) = tools {
         body["tools"] = tools.clone();
     }
@@ -529,19 +643,48 @@ pub fn request_body_with(
     if let Some(n) = options.max_tokens {
         body["max_tokens"] = serde_json::json!(n);
     }
+    thinking_words(&mut body, options.dialect, options.thinking);
     body
 }
 
-/// What a line of the stream brings: words of the reply, or a piece of the thinking before it.
-enum Piece {
-    Text(String),
-    Thinking,
-    /// The engine's `finish_reason`.
-    Finished(String),
+/// What the model reads before the conversation: the person's instructions, then the summary it reads in place of the
+/// first turns (Auto-compact), introduced as such.
+pub(super) fn system_text(instructions: Option<&str>, summary: Option<&str>) -> Option<String> {
+    let instructions = instructions.map(str::trim).filter(|i| !i.is_empty());
+    let summary = summary
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("{SUMMARY_LEAD}\n\n{s}"));
+    match (instructions, summary) {
+        (Some(i), Some(s)) => Some(format!("{i}\n\n{s}")),
+        (Some(i), None) => Some(i.to_string()),
+        (None, s) => s,
+    }
+}
+
+/// What the model is told of the summary it reads in place of the first messages.
+const SUMMARY_LEAD: &str =
+    "The earlier part of this conversation was summarized to make room. This summary stands for those messages:";
+
+/// Tells the engine whether the model is to think, in its own words: llama.cpp's chat templates read `enable_thinking`,
+/// Ollama takes `reasoning_effort` `none` for no thinking (and thinks as the model does without it). Another server is
+/// told nothing, nor is any while the person has not chosen.
+pub(super) fn thinking_words(
+    body: &mut serde_json::Value,
+    dialect: Dialect,
+    thinking: Option<bool>,
+) {
+    match (dialect, thinking) {
+        (Dialect::LlamaCpp, Some(on)) => {
+            body["chat_template_kwargs"] = serde_json::json!({"enable_thinking": on});
+        }
+        (Dialect::Ollama, Some(false)) => body["reasoning_effort"] = serde_json::json!("none"),
+        _ => {}
+    }
 }
 
 /// A context size as the panel says it: `4K` for 4096, the number itself when it is not a whole number of K.
-fn context_words(context: i64) -> String {
+pub(super) fn context_words(context: i64) -> String {
     if context >= 1024 && context % 1024 == 0 {
         format!("{}K", context / 1024)
     } else {
@@ -580,33 +723,38 @@ pub(super) fn stopped_thinking_words(
 }
 
 /// What the chat says under an answer the engine cut off (`finish_reason` `length`): the reply limit the person set, or
-/// the context.
-pub(super) fn cut_off_words(limit: Option<u32>, context: Option<i64>) -> String {
+/// the context, which Continue makes room in when Auto-compact is on (`compacts`). Continue is the button under it.
+pub(super) fn cut_off_words(limit: Option<u32>, context: Option<i64>, compacts: bool) -> String {
     match limit {
         Some(limit) => format!(
-            "The answer stopped at the reply limit ({limit} tokens). Allow longer answers in Options… (⋯ at the right \
-             of the bar)."
+            "The answer stopped at the reply limit ({limit} tokens). Continue goes on with it; Options… (⋯ at the \
+             right of the bar) allows longer answers."
         ),
         None => {
             let size = context
                 .map(|c| format!(" ({} tokens)", context_words(c)))
                 .unwrap_or_default();
-            format!(
-                "The answer stopped when the context{size} was full. Choose a longer context in How it runs, or start a \
-                 new chat."
-            )
+            if compacts {
+                format!(
+                    "The answer stopped when the context{size} was full. Continue summarizes earlier messages to make \
+                     room, and goes on with it."
+                )
+            } else {
+                format!(
+                    "The answer stopped when the context{size} was full. Turn on Auto-compact in How it runs to make \
+                     room, choose a longer context, or start a new chat."
+                )
+            }
         }
     }
 }
 
-/// The request and its stream of events (`data: {...}` lines, then `data: [DONE]`). An `error` the engine sends,
-/// in the body of a refusal or in the stream, is the failure's sentence. A model that thinks first sends its thinking
-/// apart from its reply (llama-server as `reasoning_content`, Ollama as `reasoning`): that it thinks is said, so the
-/// window can show the reply is on its way.
-/// Why a reply did not come: the words, and whether the engine refused the request before any of it came.
-struct Failure {
-    why: String,
-    refused: bool,
+/// Why a request did not come to its end: the words, whether the engine refused it before any of it came, and whether
+/// that is because it does not fit in the context (with the context's length, when the engine said it).
+pub(super) struct Failure {
+    pub why: String,
+    pub refused: bool,
+    pub too_long: Option<Option<u64>>,
 }
 
 impl Failure {
@@ -614,20 +762,41 @@ impl Failure {
         Failure {
             why,
             refused: false,
+            too_long: None,
         }
     }
 }
 
-fn stream_reply(
+/// Whether an `error` says the request does not fit in the context, and the context's length when it says it
+/// (llama.cpp: `exceed_context_size_error` with `n_ctx`; OpenAI's API: `context_length_exceeded`; others in words).
+pub(super) fn too_long(value: &serde_json::Value) -> Option<Option<u64>> {
+    let error = value.get("error")?;
+    let said = |key: &str| {
+        error
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+    };
+    let words = error_words(value).unwrap_or_default().to_lowercase();
+    let is = said("type") == "exceed_context_size_error"
+        || said("code") == "context_length_exceeded"
+        || words.contains("exceeds the available context size")
+        || words.contains("maximum context length")
+        || words.contains("context length exceeded");
+    is.then(|| error.get("n_ctx").and_then(serde_json::Value::as_u64))
+}
+
+/// The request and its stream of events (`data: {...}` lines, then `data: [DONE]`). An `error` the engine sends,
+/// in the body of a refusal or in the stream, is the failure's sentence. A model that thinks first sends its thinking
+/// apart from its reply (llama-server as `reasoning_content`, Ollama as `reasoning`): it is said as it comes, so that the
+/// window shows the reply is on its way (and, when asked, what it thought). After the reply's end the engine says what
+/// the request took of the context (`usage`), when it counts it.
+pub(super) fn stream_reply(
     port: u16,
-    model: &str,
-    options: &Options,
-    turns: &[Turn],
-    tools: Option<&serde_json::Value>,
+    body: &serde_json::Value,
     stop: &AtomicBool,
-    said: &dyn Fn(Piece),
+    said: &dyn Fn(ChatEvent),
 ) -> Result<Vec<AskedCall>, Failure> {
-    let body = request_body_with(model, options, turns, tools);
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .timeout_connect(Some(Duration::from_secs(10)))
@@ -641,15 +810,18 @@ fn stream_reply(
     let status = response.status().as_u16();
     let reader = response.into_body().into_reader();
     if !(200..300).contains(&status) {
-        let said: serde_json::Value =
+        let answer: serde_json::Value =
             serde_json::from_reader(reader).unwrap_or(serde_json::Value::Null);
         return Err(Failure {
-            why: error_words(&said).unwrap_or_else(|| format!("the server answered {status}")),
+            why: error_words(&answer).unwrap_or_else(|| format!("the server answered {status}")),
             refused: true,
+            too_long: too_long(&answer),
         });
     }
     // the tool calls, as they come in pieces: by their index, the id, the name and the arguments so far
     let mut calls: Vec<AskedCall> = Vec::new();
+    // the reply ended (`finish_reason`): only what it took of the context is still to come
+    let mut finished = false;
     for line in BufReader::new(reader).lines() {
         if stop.load(Ordering::SeqCst) {
             return Ok(Vec::new());
@@ -665,7 +837,28 @@ fn stream_reply(
             continue;
         };
         if let Some(why) = error_words(&event) {
-            return Err(Failure::on_the_way(why));
+            return Err(Failure {
+                why,
+                refused: false,
+                too_long: too_long(&event),
+            });
+        }
+        let counted = event.get("usage").and_then(|u| {
+            Some((
+                u.get("prompt_tokens")?.as_u64()?,
+                u.get("completion_tokens")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0),
+            ))
+        });
+        if let Some((prompt, completion)) = counted {
+            said(ChatEvent::Usage { prompt, completion });
+        }
+        if finished {
+            if counted.is_some() {
+                break;
+            }
+            continue;
         }
         gather_calls(&event, &mut calls);
         let delta = |key: &str| {
@@ -674,20 +867,23 @@ fn stream_reply(
                 .and_then(serde_json::Value::as_str)
                 .filter(|p| !p.is_empty())
         };
-        if delta("reasoning_content").or(delta("reasoning")).is_some() {
-            said(Piece::Thinking);
+        if let Some(thought) = delta("reasoning_content").or(delta("reasoning")) {
+            said(ChatEvent::Thinking(thought.to_string()));
         }
         if let Some(piece) = delta("content") {
-            said(Piece::Text(piece.to_string()));
+            said(ChatEvent::Text(piece.to_string()));
         }
         if let Some(why) = event
             .pointer("/choices/0/finish_reason")
             .filter(|r| !r.is_null())
         {
-            said(Piece::Finished(
+            said(ChatEvent::Finished(
                 why.as_str().unwrap_or_default().to_string(),
             ));
-            break;
+            finished = true;
+            if counted.is_some() {
+                break;
+            }
         }
     }
     for (i, call) in calls.iter_mut().enumerate() {
@@ -945,6 +1141,338 @@ fn floor_char(text: &str, mut at: usize) -> usize {
     at
 }
 
+/// What was pressed on the summary's line, or under it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SummaryAction {
+    Toggle,
+    Copy,
+    Edit,
+    Save,
+    Cancel,
+}
+
+/// The line where the model's view begins (C223): how many messages above it the summary stands for, and Show summary;
+/// opened, the summary (what the model reads in their place) with Copy and Edit, or its box with Save and Cancel while
+/// it is edited.
+fn show_summary_line(
+    ui: &mut egui::Ui,
+    summary: &super::compact::Summary,
+    open: bool,
+    edit: Option<&mut String>,
+    width: f32,
+) -> Option<SummaryAction> {
+    let p = theme::palette();
+    let mut action = None;
+    // the words that fit the column: shorter ones where it is narrow (a list of kept chats beside it, the panel open)
+    let n = summary.upto;
+    let messages = if n == 1 {
+        "1 earlier message".to_string()
+    } else {
+        format!("{n} earlier messages")
+    };
+    let (show, hide) = ("Show summary", "Hide summary");
+    let choices = [
+        (format!("{messages} summarized to make room"), show, hide),
+        (format!("{messages} summarized"), show, hide),
+        (format!("{n} summarized"), "Show", "Hide"),
+    ];
+    let font = egui::FontId::proportional(12.0);
+    let measure = |text: &str| {
+        ui.painter()
+            .layout_no_wrap(text.to_string(), font.clone(), p.muted)
+            .size()
+            .x
+    };
+    let fitting = choices
+        .iter()
+        .find(|(said, show, hide)| {
+            18.0 + measure(said) + 16.0 + measure(if open { hide } else { show }) <= width - 24.0
+        })
+        .unwrap_or(&choices[2]);
+    let said = fitting.0.clone();
+    let link = if open { fitting.2 } else { fitting.1 };
+    let said_width = measure(&said);
+    let link_width = measure(link);
+    let middle = 18.0 + said_width + 16.0 + link_width;
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 24.0), egui::Sense::hover());
+    response.on_hover_text(
+        "Above this line the model reads a summary in place of the messages; below it, every word. The model wrote the \
+         summary itself, so it may leave out a detail: open it to read or correct it.",
+    );
+    let left = (rect.center().x - middle / 2.0).max(rect.left() + 8.0);
+    let y = rect.center().y;
+    let stroke = egui::Stroke::new(1.0, p.line);
+    if left - 10.0 > rect.left() + 8.0 {
+        ui.painter()
+            .hline((rect.left() + 8.0)..=(left - 10.0), y, stroke);
+    }
+    let end = left + middle + 10.0;
+    if end < rect.right() - 8.0 {
+        ui.painter().hline(end..=(rect.right() - 8.0), y, stroke);
+    }
+    icons::paint(
+        ui.painter(),
+        egui::Rect::from_center_size(egui::pos2(left + 6.5, y), egui::vec2(13.0, 13.0)),
+        Icon::Fold,
+        p.muted,
+    );
+    let mut x = left + 18.0;
+    ui.painter().text(
+        egui::pos2(x, y),
+        egui::Align2::LEFT_CENTER,
+        &said,
+        font.clone(),
+        p.muted,
+    );
+    x += said_width + 5.0;
+    ui.painter().text(
+        egui::pos2(x, y),
+        egui::Align2::LEFT_CENTER,
+        "·",
+        font.clone(),
+        p.faint,
+    );
+    x += 11.0;
+    let link_rect = egui::Rect::from_min_size(egui::pos2(x, y - 9.0), egui::vec2(link_width, 18.0));
+    let pressed = ui.interact(
+        link_rect,
+        ui.id().with("summary_link"),
+        egui::Sense::click(),
+    );
+    ui.painter().text(
+        egui::pos2(x, y),
+        egui::Align2::LEFT_CENTER,
+        link,
+        font,
+        if pressed.hovered() {
+            p.text
+        } else {
+            p.accent_text
+        },
+    );
+    if pressed.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    if pressed.clicked() {
+        action = Some(SummaryAction::Toggle);
+    }
+    if !open {
+        return action;
+    }
+    ui.horizontal(|ui| {
+        ui.add_space(8.0);
+        egui::Frame::new()
+            .fill(p.bar)
+            .stroke(egui::Stroke::new(1.0, p.line))
+            .corner_radius(egui::CornerRadius::same(6))
+            .inner_margin(egui::Margin::symmetric(10, 8))
+            .show(ui, |ui| {
+                // as wide as the column leaves it (the room at the left, the frame's margins), and one thing under another
+                ui.set_width((width - 46.0).max(120.0));
+                ui.vertical(|ui| {
+                    let counted = match (summary.before, summary.after) {
+                        (Some(before), Some(after)) => format!(
+                            " (about {} tokens, now {})",
+                            super::compact::tokens_words(before),
+                            super::compact::tokens_words(after)
+                        ),
+                        _ => String::new(),
+                    };
+                    ui.add(
+                        egui::Label::new(
+                            theme::muted(format!(
+                                "What the model reads in place of the messages above{counted}:"
+                            ))
+                            .small(),
+                        )
+                        .wrap(),
+                    );
+                    ui.add_space(4.0);
+                    match edit {
+                        Some(text) => {
+                            ui.add(
+                                egui::TextEdit::multiline(text)
+                                    .desired_rows(6)
+                                    .desired_width(f32::INFINITY),
+                            );
+                            ui.horizontal(|ui| {
+                                if theme::button_sized(
+                                    ui,
+                                    Role::Normal,
+                                    true,
+                                    "Save",
+                                    egui::vec2(0.0, 20.0),
+                                )
+                                .on_hover_text("The model reads it so from the next message on.")
+                                .clicked()
+                                {
+                                    action = Some(SummaryAction::Save);
+                                }
+                                if theme::button_sized(
+                                    ui,
+                                    Role::Quiet,
+                                    true,
+                                    "Cancel",
+                                    egui::vec2(0.0, 20.0),
+                                )
+                                .clicked()
+                                {
+                                    action = Some(SummaryAction::Cancel);
+                                }
+                            });
+                        }
+                        None => {
+                            show_message(ui, &summary.text, None);
+                            ui.horizontal(|ui| {
+                                if theme::button_sized(
+                                    ui,
+                                    Role::Quiet,
+                                    true,
+                                    "Copy",
+                                    egui::vec2(0.0, 18.0),
+                                )
+                                .on_hover_text("Copy the summary.")
+                                .clicked()
+                                {
+                                    action = Some(SummaryAction::Copy);
+                                }
+                                if theme::button_sized(
+                                    ui,
+                                    Role::Quiet,
+                                    true,
+                                    "Edit",
+                                    egui::vec2(0.0, 18.0),
+                                )
+                                .on_hover_text(
+                                    "Correct the summary: the model reads it as you leave it.",
+                                )
+                                .clicked()
+                                {
+                                    action = Some(SummaryAction::Edit);
+                                }
+                            });
+                        }
+                    }
+                });
+            });
+    });
+    ui.add_space(4.0);
+    action
+}
+
+/// What a model thought before its answer, folded above it (C223): its head (`Thought for 14 s`, or how long it has been
+/// thinking), which opens it; opened, the thought in small, faint words beside a line.
+fn show_thought(ui: &mut egui::Ui, turn: usize, head: &str, thought: &str) {
+    let p = theme::palette();
+    let id = egui::Id::new(("thought_open", turn));
+    let open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    // a row of its own id: its words change every second while the model thinks, and a click must still reach it
+    let font = egui::FontId::proportional(12.5);
+    let galley = ui.painter().layout_no_wrap(head.to_string(), font, p.muted);
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(18.0 + galley.size().x + 4.0, 20.0),
+        egui::Sense::hover(),
+    );
+    let row = ui
+        .interact(
+            rect,
+            egui::Id::new(("thought_fold", turn)),
+            egui::Sense::click(),
+        )
+        .on_hover_text(if open {
+            "Hide what it thought."
+        } else {
+            "Show what it thought before this answer."
+        });
+    let color = if row.hovered() { p.text } else { p.muted };
+    let icon = if open {
+        Icon::Chevron
+    } else {
+        Icon::ChevronRight
+    };
+    icons::paint(
+        ui.painter(),
+        egui::Rect::from_center_size(
+            egui::pos2(rect.left() + 6.0, rect.center().y),
+            egui::vec2(11.0, 11.0),
+        ),
+        icon,
+        color,
+    );
+    ui.painter().galley(
+        egui::pos2(rect.left() + 18.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        color,
+    );
+    if row.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    if row.clicked() {
+        ui.data_mut(|d| d.insert_temp(id, !open));
+    }
+    if open {
+        let top = ui.cursor().top();
+        let shown = ui
+            .horizontal(|ui| {
+                ui.add_space(10.0);
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(thought.trim())
+                            .small()
+                            .italics()
+                            .color(p.faint),
+                    )
+                    .wrap(),
+                );
+            })
+            .response
+            .rect;
+        ui.painter().vline(
+            shown.left() + 3.0,
+            top..=shown.bottom(),
+            egui::Stroke::new(2.0, p.line),
+        );
+    }
+    ui.add_space(4.0);
+}
+
+/// What goes between an answer that stopped and what Continue brings: nothing where either side has the space or the
+/// mark itself, a new paragraph where the model begins anew (a capital, a list, a heading), else a space.
+pub(super) fn joint(before: &str, after: &str) -> &'static str {
+    let ended = before.chars().last();
+    let begins = after.chars().next();
+    match (ended, begins) {
+        (None, _) | (_, None) => "",
+        (Some(e), _) if e.is_whitespace() => "",
+        (_, Some(b)) if b.is_whitespace() || ",.;:!?)»”’".contains(b) => "",
+        (_, Some(b)) if b.is_uppercase() || "#*-•|>".contains(b) || b.is_ascii_digit() => "\n\n",
+        _ => " ",
+    }
+}
+
+/// A note under the conversation that informs: a grey (i), then its words, their lines under the first.
+fn info_note(ui: &mut egui::Ui, text: &str) {
+    ui.horizontal_top(|ui| {
+        ui.add_space(8.0);
+        info_mark(ui);
+        ui.vertical(|ui| {
+            ui.set_max_width((ui.available_width() - 8.0).max(80.0));
+            ui.add(egui::Label::new(theme::muted(text).small()).wrap());
+        });
+    });
+}
+
+/// A grey (i) before a note that informs.
+fn info_mark(ui: &mut egui::Ui) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+    icons::paint(
+        ui.painter(),
+        rect.shrink(1.0),
+        Icon::Info,
+        theme::palette().faint,
+    );
+}
+
 /// One message: its lines as Markdown has them, and its code blocks in monospace; the sentence being read aloud lit.
 fn show_message(ui: &mut egui::Ui, text: &str, lit: Option<&str>) {
     let p = theme::palette();
@@ -1009,6 +1537,15 @@ fn error_words(value: &serde_json::Value) -> Option<String> {
         .as_str()
         .or_else(|| error.get("message").and_then(serde_json::Value::as_str))
         .map(str::to_string)
+}
+
+/// A turn as a chat keeps it: who said it, the words, and for a reply what the model thought.
+fn saved_turn(t: &Turn) -> SavedTurn {
+    SavedTurn {
+        from_person: t.from_person,
+        text: t.text.clone(),
+        thought: t.thought.clone(),
+    }
 }
 
 impl App {
@@ -1080,6 +1617,8 @@ impl App {
         turn.pictures = std::mem::take(&mut self.chat.pictures);
         self.chat.turns.push(turn);
         self.chat.tool_rounds = 0;
+        // a message the engine refuses as too long is summarized and asked again, once
+        self.chat.retried = false;
         // the MCP servers that are on start with the first message, and the reply waits for them (C204)
         if !self.tools.started && self.mcp_list().iter().any(|s| !s.disabled) {
             self.start_tools(ctx);
@@ -1094,7 +1633,7 @@ impl App {
 
     /// Where a reply is asked for: the port of the run, and the model that is loaded. With a computer QuickAI set up
     /// shown, its run's API here, through the tunnel.
-    fn chat_target(&self) -> Option<(u16, String)> {
+    pub(super) fn chat_target(&self) -> Option<(u16, String)> {
         if self.setup_in_use().is_some() {
             return self.setup_run()?.chat_target();
         }
@@ -1105,24 +1644,36 @@ impl App {
         Some((port, self.session.model_name()?.to_string()))
     }
 
-    /// Asks for the reply to the conversation as it stands, offering the tools of the MCP servers that are ready.
+    /// Asks for the reply to the conversation as it stands, offering the tools of the MCP servers that are ready. With
+    /// Auto-compact on, a conversation that would leave the reply too little room in the context is summarized first,
+    /// and the reply asked for once the summary came (`compact.rs`). The model reads the turns after the summary whole;
+    /// Continue asks it to go on with its last reply, which the words that come are added to.
     pub(super) fn ask_for_reply(&mut self, ctx: &egui::Context) {
         let Some((port, model)) = self.chat_target() else {
             return;
         };
         self.chat.error = None;
+        if self.stored.auto_compact() && self.needs_room() && self.start_summary(ctx, true) {
+            return;
+        }
         let (tools, names) = self.offered_tools();
         self.chat.tool_names = names;
+        let options = self.reply_options();
+        let mut turns = self.chat.turns[self.chat.summarized_upto()..].to_vec();
+        if self.chat.continuing {
+            turns.push(Turn::said(true, super::compact::CONTINUE_ASK));
+        }
+        self.chat.asked_chars = super::compact::request_chars(&options, &turns);
+        self.chat.asked_tokens = None;
         let ctx = ctx.clone();
-        let (rx, cancel) = spawn_reply_with_tools(
-            port,
-            model,
-            self.chat.options(),
-            self.chat.turns.clone(),
-            tools,
-            move || ctx.request_repaint(),
-        );
-        self.chat.turns.push(Turn::said(false, ""));
+        let (rx, cancel) = spawn_reply_with_tools(port, model, options, turns, tools, move || {
+            ctx.request_repaint()
+        });
+        if !self.chat.continuing {
+            self.chat.turns.push(Turn::said(false, ""));
+        }
+        self.chat.cut_off = false;
+        self.chat.room_note = None;
         self.chat.reply = Some(rx);
         self.chat.cancel = Some(cancel);
         self.chat.started = Some(Instant::now());
@@ -1171,6 +1722,7 @@ impl App {
             return;
         }
         self.chat.turns.pop();
+        self.chat.retried = false;
         self.ask_for_reply(ctx);
     }
 
@@ -1184,6 +1736,16 @@ impl App {
             self.chat.turns.truncate(at);
             self.chat.input = turn.text;
             self.chat.error = None;
+            self.chat.cut_off = false;
+            // a summary of turns that are gone stands for nothing (the last message is never in one)
+            if self
+                .chat
+                .summary
+                .as_ref()
+                .is_some_and(|s| s.upto > self.chat.turns.len())
+            {
+                self.chat.summary = None;
+            }
         }
     }
 
@@ -1191,27 +1753,40 @@ impl App {
     pub(super) fn poll_chat(&mut self) {
         // the run the chat talks to stopped: the one here, or the one on the computer QuickAI set up (where nothing
         // runs here, so this computer's server being stopped says nothing of it)
-        if self.chat.reply.is_some() && !self.chat_running() {
+        if self.chat.replying() && !self.chat_running() {
             self.chat.stop();
         }
         let Some(rx) = &self.chat.reply else {
             return;
         };
         let mut ended = false;
+        // a request the engine refused as too long, and the length of the context when it said it
+        let mut too_long: Option<Option<u64>> = None;
         while let Ok(event) = rx.try_recv() {
             match event {
-                ChatEvent::Thinking => {
+                ChatEvent::Thinking(piece) => {
                     if self.chat.first.is_none() && self.chat.thinking.is_none() {
                         self.chat.thinking = Some(Instant::now());
+                    }
+                    if let Some(last) = self.chat.turns.last_mut().filter(|t| !t.from_person) {
+                        last.thought.push_str(&piece);
                     }
                 }
                 ChatEvent::Text(piece) => {
                     if self.chat.first.is_none() {
                         self.chat.first = Some(Instant::now());
                     }
-                    self.chat.thinking = None;
+                    let thought_for = self.chat.thinking.take().map(|t| t.elapsed().as_secs());
+                    let first_of_more = self.chat.continuing && self.chat.pieces == 0;
                     self.chat.pieces += 1;
                     if let Some(last) = self.chat.turns.last_mut().filter(|t| !t.from_person) {
+                        if thought_for.is_some() {
+                            last.thought_secs = thought_for;
+                        }
+                        // what Continue brings goes on from where the answer stopped
+                        if first_of_more {
+                            last.text.push_str(joint(&last.text, &piece));
+                        }
                         last.text.push_str(&piece);
                     }
                 }
@@ -1243,70 +1818,124 @@ impl App {
                 }
                 ChatEvent::Notice(said) => self.chat.notice = Some(said),
                 ChatEvent::Finished(why) => self.chat.finish = Some(why),
+                ChatEvent::Usage { prompt, .. } => self.chat.asked_tokens = Some(prompt),
                 ChatEvent::Done => ended = true,
                 ChatEvent::Failed(why) => {
                     self.chat.error = Some(why);
                     ended = true;
                 }
+                ChatEvent::TooLong { context, .. } => {
+                    too_long = Some(context);
+                    ended = true;
+                }
             }
         }
-        if ended {
-            self.chat.reply = None;
-            self.chat.cancel = None;
-            // a model that only thought stopped before its answer: an empty reply would be dropped unsaid, so why it
-            // stopped is said, by what the engine gave as the reason (the limit the person set, or the context filled)
-            let finish = self.chat.finish.take();
-            let limit = self.chat.max_tokens;
-            let context = self.values.int("ctx_size");
-            let nothing = self
-                .chat
-                .turns
-                .last()
-                .is_some_and(|t| !t.from_person && t.text.is_empty() && t.calls.is_empty());
-            if let Some(since) = self.chat.thinking.take() {
-                if nothing && self.chat.error.is_none() {
-                    self.chat.error = Some(stopped_thinking_words(
-                        since.elapsed().as_secs(),
-                        finish.as_deref(),
-                        limit,
-                        context,
-                    ));
-                }
-            } else if !nothing && self.chat.error.is_none() && finish.as_deref() == Some("length") {
-                // an answer that was cut off says so, and why
-                self.chat.notice = Some(cut_off_words(limit, context));
+        if !ended {
+            return;
+        }
+        self.chat.reply = None;
+        self.chat.cancel = None;
+        let continued = std::mem::take(&mut self.chat.continuing);
+        // a model that only thought stopped before its answer: an empty reply would be dropped unsaid, so why it
+        // stopped is said, by what the engine gave as the reason (the limit the person set, or the context filled)
+        let finish = self.chat.finish.take();
+        let limit = self.chat.max_tokens;
+        let context = self.chat_context();
+        let words_of = context.and_then(|c| i64::try_from(c).ok());
+        let compacts = self.stored.auto_compact();
+        let nothing = self
+            .chat
+            .turns
+            .last()
+            .is_some_and(|t| !t.from_person && t.text.is_empty() && t.calls.is_empty());
+        if let Some(said_context) = too_long {
+            // the engine said how long its context is: it is what the next request is reckoned against
+            if let Some(n) = said_context {
+                self.note_context(n);
             }
-            let stats = match (self.chat.started, self.chat.first) {
-                (Some(started), Some(first)) => Some(Stats {
-                    tokens: self.chat.pieces,
-                    first_ms: first.duration_since(started).as_millis() as u64,
-                    total_ms: started.elapsed().as_millis() as u64,
-                }),
-                _ => None,
-            };
-            match self.chat.turns.last_mut() {
-                // a reply that said nothing (and asked for no tool) is not kept as a turn
-                Some(last)
-                    if !last.from_person && last.text.is_empty() && last.calls.is_empty() =>
-                {
-                    self.chat.turns.pop();
-                }
-                Some(last) if !last.from_person => last.stats = stats,
-                _ => {}
+            if compacts && !self.chat.retried {
+                // made room for and asked again, once (`poll_capabilities`): as it was asked, Continue too
+                self.chat.too_long = true;
+                self.chat.continuing = continued;
+            } else {
+                self.chat.error = Some(super::compact::too_long_words(context, compacts));
             }
-            // the tools it asked for: those allowed always run, the others wait for the person (C204)
-            self.settle_new_calls();
-            self.keep_conversation();
-            // a first reply is the last step of Getting started, remembered once
-            if self.chat.error.is_none()
-                && self.chat.turns.last().is_some_and(|t| !t.from_person)
-                && !self.stored.said_hello()
-            {
-                let mut stored = self.settings_now();
-                stored.set_said_hello();
-                self.write_settings(&stored);
-                self.stored = stored;
+        }
+        if let Some(since) = self.chat.thinking.take() {
+            let secs = since.elapsed().as_secs();
+            if let Some(last) = self.chat.turns.last_mut().filter(|t| !t.from_person) {
+                last.thought_secs = Some(secs);
             }
+            if nothing && self.chat.error.is_none() && !self.chat.too_long {
+                self.chat.error = Some(stopped_thinking_words(
+                    secs,
+                    finish.as_deref(),
+                    limit,
+                    words_of,
+                ));
+            }
+        } else if !nothing && self.chat.error.is_none() && finish.as_deref() == Some("length") {
+            // an answer that was cut off says so, and why; Continue goes on with it
+            self.chat.cut_off = true;
+            self.chat.cut_by_context = limit.is_none();
+            self.chat.notice = Some(cut_off_words(limit, words_of, compacts));
+        }
+        // what the request took of the context, as the engine counted it, with the words of the reply
+        if let Some(prompt) = self
+            .chat
+            .asked_tokens
+            .take()
+            .filter(|_| self.chat.error.is_none())
+        {
+            let used =
+                super::compact::Used::counted(prompt, self.chat.pieces, self.chat.asked_chars);
+            // (an answer the full context cut off says it already)
+            if !compacts && !(self.chat.cut_off && self.chat.cut_by_context) {
+                self.chat.room_note = context
+                    .filter(|c| used.tokens as f64 >= *c as f64 * super::compact::NEARLY_FULL)
+                    .map(|c| (used.tokens, c));
+            }
+            self.chat.used = Some(used);
+        }
+        let stats = match (self.chat.started, self.chat.first) {
+            (Some(started), Some(first)) => Some(Stats {
+                tokens: self.chat.pieces,
+                first_ms: first.duration_since(started).as_millis() as u64,
+                total_ms: started.elapsed().as_millis() as u64,
+            }),
+            _ => None,
+        };
+        match self.chat.turns.last_mut() {
+            // a reply that said nothing (and asked for no tool) is not kept as a turn
+            Some(last) if !last.from_person && last.text.is_empty() && last.calls.is_empty() => {
+                self.chat.turns.pop();
+            }
+            // what Continue added is counted with what came before it
+            Some(last) if !last.from_person && continued => {
+                last.stats = match (last.stats, stats) {
+                    (Some(before), Some(now)) => Some(Stats {
+                        tokens: before.tokens + now.tokens,
+                        first_ms: before.first_ms,
+                        total_ms: before.total_ms + now.total_ms,
+                    }),
+                    (before, now) => now.or(before),
+                };
+            }
+            Some(last) if !last.from_person => last.stats = stats,
+            _ => {}
+        }
+        // the tools it asked for: those allowed always run, the others wait for the person (C204)
+        self.settle_new_calls();
+        self.keep_conversation();
+        // a first reply is the last step of Getting started, remembered once
+        if self.chat.error.is_none()
+            && self.chat.turns.last().is_some_and(|t| !t.from_person)
+            && !self.stored.said_hello()
+        {
+            let mut stored = self.settings_now();
+            stored.set_said_hello();
+            self.write_settings(&stored);
+            self.stored = stored;
         }
     }
 
@@ -1334,7 +1963,7 @@ impl App {
     }
 
     /// Writes the conversation down when chats are kept and it has a message.
-    fn keep_conversation(&mut self) {
+    pub(super) fn keep_conversation(&mut self) {
         if !self.chat.keep || self.chat.turns.is_empty() {
             return;
         }
@@ -1344,15 +1973,7 @@ impl App {
             .saved_id
             .clone()
             .unwrap_or_else(|| chats::new_id(&data));
-        let turns: Vec<SavedTurn> = self
-            .chat
-            .turns
-            .iter()
-            .map(|t| SavedTurn {
-                from_person: t.from_person,
-                text: t.text.clone(),
-            })
-            .collect();
+        let turns: Vec<SavedTurn> = self.chat.turns.iter().map(saved_turn).collect();
         let created = chats::load(&data, &id).map_or_else(chats::now, |c| c.created);
         let saved = SavedChat {
             title: chats::title_of(&turns),
@@ -1364,6 +1985,7 @@ impl App {
             created,
             updated: chats::now(),
             turns,
+            summary: self.saved_summary(),
         };
         match chats::save(&data, &saved) {
             Ok(()) => self.chat.saved_id = Some(id),
@@ -1378,14 +2000,36 @@ impl App {
             return;
         };
         self.chat.stop();
+        self.chat.forget_room();
         self.chat.turns = saved
             .turns
             .into_iter()
-            .map(|t| Turn::said(t.from_person, t.text))
+            .map(|t| Turn {
+                thought: t.thought,
+                ..Turn::said(t.from_person, t.text)
+            })
             .collect();
+        // the summary goes on standing for the turns it was made of
+        self.chat.summary = saved
+            .summary
+            .filter(|s| s.upto > 0 && s.upto < self.chat.turns.len())
+            .map(|s| super::compact::Summary {
+                text: s.text,
+                upto: s.upto,
+                before: None,
+                after: None,
+            });
         self.chat.instructions = saved.instructions;
         self.chat.saved_id = Some(saved.id);
         self.chat.error = None;
+    }
+
+    /// The summary as it is kept with the chat.
+    fn saved_summary(&self) -> Option<chats::SavedSummary> {
+        self.chat.summary.as_ref().map(|s| chats::SavedSummary {
+            text: s.text.clone(),
+            upto: s.upto,
+        })
     }
 
     pub(super) fn delete_kept_chat(&mut self, id: &str) {
@@ -1400,15 +2044,7 @@ impl App {
 
     /// Writes the conversation as Markdown where the person says.
     fn export_chat(&mut self) {
-        let turns: Vec<SavedTurn> = self
-            .chat
-            .turns
-            .iter()
-            .map(|t| SavedTurn {
-                from_person: t.from_person,
-                text: t.text.clone(),
-            })
-            .collect();
+        let turns: Vec<SavedTurn> = self.chat.turns.iter().map(saved_turn).collect();
         let chat = SavedChat {
             id: String::new(),
             title: chats::title_of(&turns),
@@ -1419,6 +2055,7 @@ impl App {
             created: 0,
             updated: 0,
             turns,
+            summary: self.saved_summary(),
         };
         let name = format!("{}.md", crate::remote::slug(&chat.title));
         if let Some(path) = rfd::FileDialog::new()
@@ -1562,6 +2199,23 @@ impl App {
                 self.start_hands_free(ui.ctx());
             }
         }
+        // the summary that makes room, written now (C223): whether Auto-compact is on or not
+        let can_summarize = self.chat_running() && !self.chat.replying() && self.can_summarize();
+        let summarize = super::icons::menu_item(
+            ui,
+            super::icons::Icon::Fold,
+            "Summarize earlier messages",
+            can_summarize,
+            false,
+        )
+        .on_hover_text(
+            "Make room in the context now: the model summarizes the earlier messages, and reads the summary in their \
+             place. You still see them all.",
+        );
+        if summarize.clicked() && can_summarize {
+            ui.close();
+            self.summarize_now(ui.ctx());
+        }
         let can_export = !self.chat.turns.is_empty() && !self.chat.replying();
         let export = super::icons::menu_item(
             ui,
@@ -1697,21 +2351,56 @@ impl App {
                 .auto_shrink([false, false])
                 .stick_to_bottom(true)
         });
+        // the summary's line and what was pressed on it, Continue, and the link of the note that the chat is nearly full
+        let mut summary_action: Option<SummaryAction> = None;
+        let mut summary_edit = self.chat.summary_edit.take();
+        let summary_at = self.chat.summary.as_ref().map(|s| s.upto);
+        let show_thoughts = self.stored.show_thinking();
+        let mut go_on = false;
+        let mut compact_on = false;
         if let Some(area) = turns_area {
             area.show(ui, |ui| {
                 ui.add_space(4.0);
                 let width = ui.available_width();
                 for (i, turn) in self.chat.turns.iter().enumerate() {
+                    // where the model's view begins: the summary stands for the turns above (C223)
+                    if Some(i) == summary_at {
+                        if let Some(summary) = &self.chat.summary {
+                            if let Some(action) = show_summary_line(
+                                ui,
+                                summary,
+                                self.chat.summary_open,
+                                summary_edit.as_mut(),
+                                width,
+                            ) {
+                                summary_action = Some(action);
+                            }
+                        }
+                    }
                     let typing =
                         !turn.from_person && self.chat.replying() && i + 1 == self.chat.turns.len();
+                    // a model that thinks first: the reply is on its way, and for how long it has been
+                    let thinking_for = self
+                        .chat
+                        .thinking
+                        .filter(|_| typing && turn.text.is_empty())
+                        .map(|since| {
+                            ui.ctx().request_repaint_after(Duration::from_secs(1));
+                            format!("Thinking… {} s", since.elapsed().as_secs())
+                        });
+                    // what it thought, folded above the answer, when Show thinking is on (C223)
+                    let fold = (show_thoughts && !turn.from_person && !turn.thought.is_empty())
+                        .then(|| match (&thinking_for, turn.thought_secs) {
+                            (Some(now), _) => now.clone(),
+                            (None, Some(secs)) => format!("Thought for {secs} s"),
+                            (None, None) => "Thought".to_string(),
+                        });
                     let text = if typing && turn.text.is_empty() {
-                        match self.chat.thinking {
-                            // a model that thinks first: the reply is on its way, and for how long it has been
-                            Some(since) => {
-                                ui.ctx().request_repaint_after(Duration::from_secs(1));
-                                format!("Thinking… {} s", since.elapsed().as_secs())
-                            }
-                            None => "…".to_string(),
+                        match (&thinking_for, &fold) {
+                            // the fold says it
+                            (Some(_), Some(_)) => String::new(),
+                            (Some(now), None) => now.clone(),
+                            (None, _) => "…".to_string(),
                         }
                     } else {
                         turn.text.clone()
@@ -1768,13 +2457,18 @@ impl App {
                         });
                     } else {
                         // the model's is read as Markdown, at the left; a reply that only asked for tools has no bubble
-                        if !text.is_empty() || turn.calls.is_empty() {
+                        if !text.is_empty() || fold.is_some() || turn.calls.is_empty() {
                             ui.horizontal(|ui| {
                                 ui.add_space(8.0);
                                 bubble.show(ui, |ui| {
                                     ui.set_max_width(width * 0.78);
                                     ui.vertical(|ui| {
-                                        show_message(ui, &text, self.talk.reading_in(i));
+                                        if let Some(head) = &fold {
+                                            show_thought(ui, i, head, &turn.thought);
+                                        }
+                                        if !text.is_empty() {
+                                            show_message(ui, &text, self.talk.reading_in(i));
+                                        }
                                         if let Some(with) = &with {
                                             ui.label(theme::muted(with.as_str()));
                                         }
@@ -1825,6 +2519,23 @@ impl App {
                             {
                                 regenerate = true;
                             }
+                            // an answer that was cut off goes on from where it stopped (C223)
+                            if Some(i) == last_reply
+                                && idle
+                                && self.chat.cut_off
+                                && (!self.chat.cut_by_context || self.can_summarize())
+                                && theme::button_sized(
+                                    ui,
+                                    Role::Normal,
+                                    true,
+                                    "Continue",
+                                    egui::vec2(0.0, 18.0),
+                                )
+                                .on_hover_text("Ask the model to go on with this answer from where it stopped.")
+                                .clicked()
+                            {
+                                go_on = true;
+                            }
                             if let Some(start) = self.show_read_aloud(ui, i) {
                                 read = Some((i, start));
                             }
@@ -1866,19 +2577,95 @@ impl App {
                         ui.label(theme::muted("Starting the MCP servers…"));
                     });
                 }
+                // the summary that makes room, while it is written (C223)
+                if let Some(summarizing) = &self.chat.summarizing {
+                    ui.ctx().request_repaint_after(Duration::from_secs(1));
+                    let messages = match summarizing.messages {
+                        1 => "1 earlier message".to_string(),
+                        n => format!("{n} earlier messages"),
+                    };
+                    ui.horizontal(|ui| {
+                        ui.add_space(8.0);
+                        ui.add(egui::Spinner::new().size(12.0));
+                        ui.label(theme::muted(format!(
+                            "Making room: summarizing {messages}… {} s",
+                            summarizing.started.elapsed().as_secs()
+                        )));
+                    });
+                }
                 if let Some(why) = &self.chat.error {
                     ui.horizontal_wrapped(|ui| {
                         ui.add_space(8.0);
                         ui.colored_label(p.bad, why);
                     });
                 }
+                // what is said under the conversation informs: in grey, with an (i)
                 if let Some(notice) = &self.chat.notice {
+                    info_note(ui, notice);
+                }
+                // nearly full, with Auto-compact off (C223)
+                if let Some((used, context)) = self.chat.room_note.filter(|_| !self.stored.auto_compact()) {
+                    info_note(
+                        ui,
+                        &format!(
+                            "This chat takes {} of the {} context. When it is full, the model cannot answer.",
+                            super::compact::tokens_words(used),
+                            context_words(i64::try_from(context).unwrap_or(i64::MAX))
+                        ),
+                    );
                     ui.horizontal_wrapped(|ui| {
-                        ui.add_space(8.0);
-                        ui.label(egui::RichText::new(notice).small().color(p.warn));
+                        ui.add_space(30.0);
+                        let link = ui
+                            .add(
+                                egui::Label::new(
+                                    egui::RichText::new("Turn on Auto-compact")
+                                        .small()
+                                        .color(p.accent_text),
+                                )
+                                .sense(egui::Sense::click()),
+                            )
+                            .on_hover_text(
+                                "Summarize the earlier messages when the conversation nears the end of the context.",
+                            );
+                        if link.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        compact_on = link.clicked();
+                        ui.label(theme::muted("or start a new chat.").small());
                     });
                 }
             });
+        }
+        match summary_action {
+            Some(SummaryAction::Toggle) => self.chat.summary_open = !self.chat.summary_open,
+            Some(SummaryAction::Copy) => {
+                if let Some(summary) = &self.chat.summary {
+                    ui.ctx().copy_text(summary.text.clone());
+                }
+            }
+            Some(SummaryAction::Edit) => {
+                summary_edit = self.chat.summary.as_ref().map(|s| s.text.clone());
+            }
+            Some(SummaryAction::Save) => {
+                if let (Some(summary), Some(text)) =
+                    (self.chat.summary.as_mut(), summary_edit.take())
+                {
+                    if !text.trim().is_empty() {
+                        summary.text = text.trim().to_string();
+                        summary.after = None;
+                    }
+                }
+                self.keep_conversation();
+            }
+            Some(SummaryAction::Cancel) => summary_edit = None,
+            None => {}
+        }
+        self.chat.summary_edit = summary_edit;
+        if go_on {
+            self.continue_reply(ui.ctx());
+        }
+        if compact_on {
+            self.set_capability(super::compact::Capability::AutoCompact, true);
         }
         if let Some((turn, call, action)) = card {
             match action {
@@ -2302,12 +3089,13 @@ mod tests {
         loop {
             match rx.recv_timeout(Duration::from_secs(20)).expect("an answer") {
                 ChatEvent::Text(piece) => text.push_str(&piece),
-                ChatEvent::Thinking
+                ChatEvent::Thinking(_)
                 | ChatEvent::Calls(_)
                 | ChatEvent::Notice(_)
-                | ChatEvent::Finished(_) => {}
+                | ChatEvent::Finished(_)
+                | ChatEvent::Usage { .. } => {}
                 ChatEvent::Done => break,
-                ChatEvent::Failed(why) => {
+                ChatEvent::Failed(why) | ChatEvent::TooLong { why, .. } => {
                     failed = Some(why);
                     break;
                 }
@@ -2379,9 +3167,23 @@ mod tests {
                 "{said}"
             );
         }
-        // an answer that was cut off says which of the two cut it
-        assert!(cut_off_words(Some(256), Some(4096)).contains("reply limit (256 tokens)"));
-        assert!(cut_off_words(None, Some(8192)).contains("context (8K tokens) was full"));
+        // an answer that was cut off says which of the two cut it, and how it goes on (C223)
+        let limit = cut_off_words(Some(256), Some(4096), false);
+        assert!(
+            limit.contains("reply limit (256 tokens)") && limit.contains("Continue"),
+            "{limit}"
+        );
+        let full = cut_off_words(None, Some(8192), false);
+        assert!(full.contains("context (8K tokens) was full"), "{full}");
+        assert!(
+            full.contains("Turn on Auto-compact") && !full.contains("Continue"),
+            "{full}"
+        );
+        let room = cut_off_words(None, Some(8192), true);
+        assert!(
+            room.contains("Continue summarizes earlier messages"),
+            "{room}"
+        );
     }
 
     #[test]
@@ -2401,6 +3203,8 @@ mod tests {
             let events = [
                 r#"{"choices":[{"delta":{"reasoning_content":"Let me think"},"finish_reason":null}]}"#,
                 r#"{"choices":[{"delta":{},"finish_reason":"length"}]}"#,
+                // what the request took of the context comes after the end, as llama-server and Ollama send it
+                r#"{"choices":[],"usage":{"prompt_tokens":9,"completion_tokens":4,"total_tokens":13}}"#,
             ];
             let mut body = String::new();
             for event in events {
@@ -2427,13 +3231,19 @@ mod tests {
             {
                 ChatEvent::Done => break,
                 ChatEvent::Failed(why) => panic!("{why}"),
-                ChatEvent::Thinking => heard.push("thinking".to_string()),
+                ChatEvent::Thinking(thought) => heard.push(format!("thinking {thought}")),
+                ChatEvent::Usage { prompt, completion } => {
+                    heard.push(format!("usage {prompt} {completion}"))
+                }
                 ChatEvent::Finished(why) => heard.push(format!("finished {why}")),
                 ChatEvent::Text(text) => heard.push(format!("text {text}")),
                 _ => {}
             }
         }
-        assert_eq!(heard, ["thinking", "finished length"]);
+        assert_eq!(
+            heard,
+            ["thinking Let me think", "finished length", "usage 9 4"]
+        );
     }
 
     #[test]
@@ -2443,6 +3253,7 @@ mod tests {
             instructions: Some("  Answer in French.  ".into()),
             temperature: Some(0.333),
             max_tokens: Some(256),
+            ..Options::default()
         };
         let body = request_body("m", &options, &hello);
         assert_eq!(
@@ -2672,6 +3483,99 @@ mod tests {
                 },
             ]
         );
+    }
+
+    /// C223: every request asks the engine to count what it takes (`stream_options`); the summary is read after the
+    /// person's instructions in the system's word; whether to think is said in each engine's own words, and only once
+    /// the person chose.
+    #[test]
+    fn the_request_carries_the_summary_and_whether_to_think_in_the_engines_words() {
+        let hello = [Turn::said(true, "Hello")];
+        let plain = request_body("m", &Options::default(), &hello);
+        assert_eq!(
+            plain["stream_options"],
+            serde_json::json!({"include_usage": true})
+        );
+        assert!(
+            plain.get("chat_template_kwargs").is_none() && plain.get("reasoning_effort").is_none()
+        );
+        let summed = Options {
+            instructions: Some("Answer briefly.".into()),
+            summary: Some("- A garden plan.".into()),
+            ..Options::default()
+        };
+        let system = request_body("m", &summed, &hello)["messages"][0].clone();
+        assert_eq!(system["role"], "system");
+        let said = system["content"].as_str().unwrap();
+        assert!(said.starts_with("Answer briefly.\n\n"), "{said}");
+        assert!(
+            said.ends_with(&format!("{SUMMARY_LEAD}\n\n- A garden plan.")),
+            "{said}"
+        );
+        let alone = Options {
+            summary: Some("- A garden plan.".into()),
+            ..Options::default()
+        };
+        let said = request_body("m", &alone, &hello)["messages"][0]["content"].clone();
+        assert_eq!(said, format!("{SUMMARY_LEAD}\n\n- A garden plan."));
+        let think = |dialect, thinking| {
+            request_body(
+                "m",
+                &Options {
+                    dialect,
+                    thinking,
+                    ..Options::default()
+                },
+                &hello,
+            )
+        };
+        assert_eq!(
+            think(Dialect::LlamaCpp, Some(false))["chat_template_kwargs"],
+            serde_json::json!({"enable_thinking": false})
+        );
+        assert_eq!(
+            think(Dialect::LlamaCpp, Some(true))["chat_template_kwargs"],
+            serde_json::json!({"enable_thinking": true})
+        );
+        assert_eq!(
+            think(Dialect::Ollama, Some(false))["reasoning_effort"],
+            "none"
+        );
+        assert!(think(Dialect::Ollama, Some(true))
+            .get("reasoning_effort")
+            .is_none());
+        assert!(think(Dialect::Other, Some(false))
+            .get("chat_template_kwargs")
+            .is_none());
+        assert!(think(Dialect::LlamaCpp, None)
+            .get("chat_template_kwargs")
+            .is_none());
+    }
+
+    /// C223: a refusal that says the request does not fit in the context is told apart from others, with the context's
+    /// length when the engine gives it.
+    #[test]
+    fn a_request_too_long_for_the_context_is_told_apart() {
+        let llama = serde_json::json!({"error": {"code": 400, "message": "the request exceeds the available context size, try increasing it", "type": "exceed_context_size_error", "n_prompt_tokens": 9000, "n_ctx": 8192}});
+        assert_eq!(too_long(&llama), Some(Some(8192)));
+        let openai = serde_json::json!({"error": {"message": "This model's maximum context length is 4096 tokens.", "code": "context_length_exceeded"}});
+        assert_eq!(too_long(&openai), Some(None));
+        let other = serde_json::json!({"error": {"message": "model 'x' not found"}});
+        assert_eq!(too_long(&other), None);
+        assert_eq!(too_long(&serde_json::json!({"choices": []})), None);
+    }
+
+    /// C223: what Continue brings is joined to the answer as it reads: a new paragraph where the model begins anew, a
+    /// space within a sentence, nothing where either side has the space or the mark.
+    #[test]
+    fn what_continue_brings_is_joined_as_it_reads() {
+        assert_eq!(joint("about the", "The garden"), "\n\n");
+        assert_eq!(joint("about the", "- a list"), "\n\n");
+        assert_eq!(joint("about the", "school garden"), " ");
+        assert_eq!(joint("about the", ", and"), "");
+        assert_eq!(joint("about the ", "school"), "");
+        assert_eq!(joint("about the", " school"), "");
+        assert_eq!(joint("", "The"), "");
     }
 
     /// C204: a call is settled once it ran, failed or was not allowed, and what the model is told says which.

@@ -11,6 +11,17 @@ use serde::{Deserialize, Serialize};
 pub struct SavedTurn {
     pub from_person: bool,
     pub text: String,
+    /// For a reply, what the model thought before it (shown folded, when Show thinking is on); never sent back to it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub thought: String,
+}
+
+/// What the model reads in place of the first messages of a conversation once they were summarized to make room in
+/// the context (Auto-compact): the summary, and how many of the first turns it stands for.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedSummary {
+    pub text: String,
+    pub upto: usize,
 }
 
 /// A kept conversation.
@@ -30,6 +41,9 @@ pub struct SavedChat {
     pub created: u64,
     pub updated: u64,
     pub turns: Vec<SavedTurn>,
+    /// The summary the model reads in place of the first turns, when they were summarized.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<SavedSummary>,
 }
 
 /// What the list of kept chats shows of one.
@@ -164,7 +178,20 @@ pub fn markdown(chat: &SavedChat) -> String {
             chat.instructions.trim()
         ));
     }
-    for turn in &chat.turns {
+    for (i, turn) in chat.turns.iter().enumerate() {
+        // where the model's view began: the summary it read in place of the messages above
+        if let Some(summary) = chat.summary.as_ref().filter(|s| s.upto == i) {
+            let quoted: Vec<String> = summary
+                .text
+                .trim()
+                .lines()
+                .map(|l| format!("> {l}").trim_end().to_string())
+                .collect();
+            out.push_str(&format!(
+                "> **The messages above, summarized to make room in the context:**\n>\n{}\n\n",
+                quoted.join("\n")
+            ));
+        }
         let who = if turn.from_person { "You" } else { "Model" };
         out.push_str(&format!("**{who}:**\n\n{}\n\n", turn.text.trim()));
     }
@@ -180,6 +207,7 @@ mod tests {
         SavedTurn {
             from_person,
             text: text.into(),
+            thought: String::new(),
         }
     }
 
@@ -195,6 +223,7 @@ mod tests {
             created: updated,
             updated,
             turns,
+            summary: None,
         }
     }
 
@@ -243,5 +272,48 @@ mod tests {
         assert!(md.contains("*qwen3:4b, Ollama, on Studio PC*"));
         assert!(md.contains("> **Instructions:** Answer briefly."));
         assert!(md.contains("**You:**\n\nHi") && md.contains("**Model:**\n\nSure."));
+        assert!(!md.contains("summarized"));
+    }
+
+    /// A summary and what the model thought are kept with the chat; a chat kept before either existed still reads, and
+    /// the summary is in the Markdown where the model's view began.
+    #[test]
+    fn a_summary_and_what_was_thought_are_kept_with_the_chat() {
+        let dir = scratch("chats-summary");
+        let mut c = chat("chat-5", 5, "Plan the garden");
+        c.turns.push(turn(true, "And the tank?"));
+        c.turns.push(SavedTurn {
+            thought: "The tank was settled earlier.".into(),
+            ..turn(false, "3,000 litres.")
+        });
+        c.summary = Some(SavedSummary {
+            text: "- A garden plan.\n- Budget agreed.".into(),
+            upto: 2,
+        });
+        save(&dir, &c).unwrap();
+        let again = load(&dir, "chat-5").unwrap();
+        assert_eq!(again, c);
+        let md = markdown(&again);
+        let at = md
+            .find("summarized to make room")
+            .expect("the summary is said");
+        assert!(
+            md[..at].contains("Sure.") && md[at..].contains("And the tank?"),
+            "{md}"
+        );
+        assert!(
+            md.contains("> - A garden plan.\n> - Budget agreed."),
+            "{md}"
+        );
+        // a chat written before summaries and thoughts were kept
+        let old = r#"{"id": "chat-6", "title": "Hi", "model": "m", "created": 1, "updated": 1,
+            "turns": [{"from_person": true, "text": "Hi"}]}"#;
+        std::fs::write(folder(&dir).join("chat-6.json"), old).unwrap();
+        let old = load(&dir, "chat-6").expect("it still reads");
+        assert_eq!(old.summary, None);
+        assert_eq!(old.turns[0].thought, "");
+        // what is not there is not written
+        let text = std::fs::read_to_string(folder(&dir).join("chat-5.json")).unwrap();
+        assert_eq!(text.matches("\"thought\"").count(), 1, "{text}");
     }
 }

@@ -83,6 +83,8 @@ pub(super) enum Icon {
     ChevronRight,
     /// A model the recommended list says to start with: a star, filled.
     Star,
+    /// Earlier messages summarized (C223): lines that grow shorter, and the turn of an arrow.
+    Fold,
 }
 
 /// Draws `icon` in `rect` (it is drawn in the largest square that fits, in the middle) in `color`.
@@ -391,6 +393,12 @@ pub(super) fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Colo
             line(&[(14.6, 9.4), (16.6, 11.4)]);
         }
         Icon::ChevronRight => line(&[(9.0, 6.0), (15.0, 12.0), (9.0, 18.0)]),
+        Icon::Fold => {
+            line(&[(4.0, 6.5), (20.0, 6.5)]);
+            line(&[(4.0, 12.0), (14.0, 12.0)]);
+            line(&[(4.0, 17.5), (9.5, 17.5)]);
+            line(&[(16.5, 14.5), (19.5, 17.5), (16.5, 20.5)]);
+        }
         Icon::Star => {
             // five triangles round a pentagon, each convex, in the order of the hands of a clock
             let point = |r: f32, k: f32| {

@@ -254,6 +254,31 @@ impl App {
             .cloned()
     }
 
+    /// Whether the selected model starts with its thinking off: its mode says `--reasoning off` (Bonsai's), or the
+    /// person's own arguments do (`--reasoning off`, `-rea off`, `--reasoning-budget 0`). The chat's Thinking switch is
+    /// then off until the person turns it on.
+    pub(super) fn starts_without_thinking(&self) -> bool {
+        let off = |words: &[String]| {
+            words.windows(2).any(|w| {
+                (matches!(w[0].as_str(), "--reasoning" | "-rea") && w[1] == "off")
+                    || (w[0] == "--reasoning-budget" && w[1] == "0")
+            }) || words
+                .iter()
+                .any(|w| w == "--reasoning=off" || w == "--reasoning-budget=0")
+        };
+        let own: Vec<String> = if self.engine_has_field(EXTRA_ARGS) {
+            self.values
+                .text(EXTRA_ARGS)
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(str::to_string)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        self.mode_of_selected().is_some_and(|m| off(&m.arg)) || off(&own)
+    }
+
     /// The person's arguments and lines of environment, as chips (none for an engine without the field).
     fn extra_pieces(&self) -> (Vec<Piece>, Vec<Piece>) {
         let args = if self.engine_has_field(EXTRA_ARGS) {
@@ -622,22 +647,35 @@ impl App {
         }
     }
 
-    /// The chips of *How it runs* while the model runs: the context, where it runs, the projector and the extras.
+    /// The chips of *How it runs* while the model runs: the context (with how much of it the chat takes, once the engine
+    /// counted it, filled to that share), where it runs, the projector and the extras.
     pub(super) fn show_run_chips(&self, ui: &mut egui::Ui) {
-        let mut chips: Vec<(Option<Icon>, String, String)> = Vec::new();
+        let mut chips: Vec<(Option<Icon>, String, String, Option<f32>)> = Vec::new();
+        let in_use = self.context_in_use();
         if let Some(remote) = self.remote_in_use() {
-            chips.push((None, format!("on {}", remote.name), self.run_summary()));
+            chips.push((
+                None,
+                format!("on {}", remote.name),
+                self.run_summary(),
+                None,
+            ));
+            if let Some((words, hover, share)) = in_use {
+                chips.push((None, words, hover, Some(share)));
+            }
         } else if let Some(field) = self.context_field() {
-            chips.push(match field.value.as_i64() {
-                Some(tokens) => (
+            chips.push(match (in_use, field.value.as_i64()) {
+                (Some((words, hover, share)), _) => (None, words, hover, Some(share)),
+                (None, Some(tokens)) => (
                     None,
                     super::run_settings::context_words(tokens),
                     format!("Context: {tokens} tokens."),
+                    None,
                 ),
-                None => (
+                (None, None) => (
                     None,
                     format!("{}'s own context", self.engine_name()),
                     "The engine decides the context.".to_string(),
+                    None,
                 ),
             });
             let place = self.place_chip();
@@ -645,6 +683,7 @@ impl App {
                 None,
                 place.clone(),
                 format!("Runs {}.", self.place_words().unwrap_or(place)),
+                None,
             ));
         } else {
             // an engine with no context (ComfyUI): its fields, as the line says them
@@ -656,15 +695,16 @@ impl App {
                 Some(Icon::Eye),
                 "projector".to_string(),
                 format!("Reads pictures through {name}."),
+                None,
             ));
         }
         if let Some((words, said)) = self.extras_running() {
-            chips.push((None, words, said));
+            chips.push((None, words, said, None));
         }
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(5.0, 5.0);
-            for (icon, words, hover) in &chips {
-                pill(ui, *icon, words, hover);
+            for (icon, words, hover, share) in &chips {
+                pill(ui, *icon, words, hover, *share);
             }
         });
     }
@@ -826,7 +866,14 @@ fn typing_box(ui: &mut egui::Ui, typing: &mut Typing, hint: Option<&str>) -> Opt
 }
 
 /// A chip of *How it runs* while the model runs: its words (and picture) on a rounded raised box.
-fn pill(ui: &mut egui::Ui, icon: Option<Icon>, words: &str, hover: &str) {
+/// A chip: its picture and its words, what it says on hover, and the share of it filled in green (the context in use).
+pub(super) fn pill(
+    ui: &mut egui::Ui,
+    icon: Option<Icon>,
+    words: &str,
+    hover: &str,
+    share: Option<f32>,
+) {
     let p = theme::palette();
     let font = egui::FontId::proportional(12.5);
     let galley = ui.painter().layout_no_wrap(words.to_string(), font, p.body);
@@ -846,6 +893,21 @@ fn pill(ui: &mut egui::Ui, icon: Option<Icon>, words: &str, hover: &str) {
                 egui::Stroke::new(1.0, p.line),
                 egui::StrokeKind::Inside,
             );
+        }
+        // the share in use, from the left, in the chip's own shape
+        if let Some(share) = share.filter(|s| *s > 0.0) {
+            let filled = egui::Rect::from_min_max(
+                rect.min,
+                egui::pos2(rect.left() + rect.width() * share.min(1.0), rect.bottom()),
+            );
+            let green = if ui.visuals().dark_mode {
+                p.accent_text.lerp_to_gamma(p.raised, 0.62)
+            } else {
+                p.accent_soft
+            };
+            ui.painter()
+                .with_clip_rect(filled)
+                .rect_filled(rect, 12.0, green);
         }
         let mut x = rect.left() + 9.0;
         if let Some(icon) = icon {

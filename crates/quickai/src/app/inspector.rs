@@ -1,7 +1,8 @@
 //! The panel at the right of the page (UI v3, C203): how the model runs while
-//! it is stopped (the configuration, the presets or the engine's fields, the MCP servers in a line, and how it fits this
-//! computer), and Connect an app while it runs (the addresses, the model's name, the key, the examples and the chat in a
-//! browser). It is what *Change* under the model's name and the Connect an app popover were.
+//! it is stopped (the configuration, the presets or the engine's fields, the capabilities and the MCP servers in a line,
+//! and how it fits this computer at its foot), and Connect an app while it runs (the addresses, the model's name, the
+//! key, the examples, the chat in a browser and the tools), with How it runs at its foot (C223: its chips and the
+//! capabilities). It is what *Change* under the model's name and the Connect an app popover were.
 
 use eframe::egui;
 
@@ -11,13 +12,23 @@ use super::App;
 use crate::events::ServerState;
 
 impl App {
-    /// The panel at the right of the page: This computer at its foot while the model is stopped, the rest
-    /// over it.
+    /// The panel at the right of the page: This computer at its foot while the model is stopped, How it runs while it
+    /// runs (C223), the rest over it.
     pub(super) fn show_inspector(&mut self, ui: &mut egui::Ui) {
         self.refresh_facts();
         self.poll_devices(ui.ctx());
-        let foot =
-            !self.connect_now() && !self.runs_alone() && self.models.get(self.selected).is_some();
+        let connect = self.connect_now();
+        if connect {
+            egui::Panel::bottom("inspector_run_foot")
+                .frame(egui::Frame::new().inner_margin(egui::Margin {
+                    left: 0,
+                    right: 0,
+                    top: 12,
+                    bottom: 0,
+                }))
+                .show(ui, |ui| self.show_run_foot(ui));
+        }
+        let foot = !connect && !self.runs_alone() && self.models.get(self.selected).is_some();
         // the meters of the foot take at most a quarter of the panel's height, and scroll beyond it
         let meters = (ui.available_height() * 0.25).clamp(48.0, 170.0);
         if foot {
@@ -79,6 +90,11 @@ impl App {
                 super::help::mark_spot(ui, super::help::Spot::Extras, extras);
             }
         }
+        // what the chat does besides asking for replies (C223): its switches
+        if !self.runs_alone() && self.can_chat() {
+            let capabilities = ui.scope(|ui| self.show_capabilities(ui)).response.rect;
+            super::help::mark_spot(ui, super::help::Spot::Capabilities, capabilities);
+        }
         // the tools are the chat's: an engine that does not chat (ComfyUI) has none to show
         if !self.runs_alone() && self.can_chat() {
             rule(ui);
@@ -96,8 +112,8 @@ impl App {
 
     /// Connect an app, while it runs (C213), in few words:
     /// the address, the model's name and the key in one box, with a picture each for its
-    /// label; the example closed, copied without being shown; the chat in a browser; how it runs as chips with a lock;
-    /// and the tools. The sentences are in the (i) and the hovers.
+    /// label; the example closed, copied without being shown; the chat in a browser; and the tools. How it runs is at the
+    /// panel's foot (C223). The sentences are in the (i) and the hovers.
     fn show_connect_section(&mut self, ui: &mut egui::Ui) {
         let panel = self.connection_panel();
         let openai = panel.as_ref().is_some_and(|p| p.base_url.ends_with("/v1"));
@@ -139,19 +155,6 @@ impl App {
                 ui.label(theme::muted(text).small());
             });
         }
-        rule(ui);
-        section_head(ui, Icon::Chat, "How it runs", None, |ui| {
-            let (rect, response) =
-                ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
-            icons::paint(
-                ui.painter(),
-                rect.shrink(4.0),
-                Icon::Lock,
-                theme::palette().muted,
-            );
-            response.on_hover_text("Stop the model to change these.");
-        });
-        self.show_run_chips(ui);
         if !self.runs_alone() {
             rule(ui);
             let hover = if self.engine == crate::settings::DEFAULT_ENGINE
@@ -164,6 +167,37 @@ impl App {
             };
             self.show_tools_rows(ui, hover);
         }
+    }
+
+    /// How it runs, at the foot of the panel while the model runs (C223), as This computer is while it is stopped: its
+    /// heading as large as Connect an app's, with the lock that says the chips change once the model is stopped; the
+    /// chips (the context with how much of it the chat takes); and the capabilities, which change while it runs.
+    fn show_run_foot(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette();
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("How it runs")
+                    .size(15.0)
+                    .family(theme::semibold(ui))
+                    .color(p.text),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let (rect, response) =
+                    ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
+                icons::paint(ui.painter(), rect.shrink(4.0), Icon::Lock, p.muted);
+                response.on_hover_text(
+                    "Stop the model to change the context, the graphics and the extras. The capabilities change \
+                     while it runs.",
+                );
+            });
+        });
+        ui.add_space(6.0);
+        self.show_run_chips(ui);
+        if !self.runs_alone() && self.can_chat() {
+            let capabilities = ui.scope(|ui| self.show_capabilities(ui)).response.rect;
+            super::help::mark_spot(ui, super::help::Spot::Capabilities, capabilities);
+        }
+        ui.add_space(4.0);
     }
 
     /// Shows the page of the MCP servers (MCP servers in the sidebar).

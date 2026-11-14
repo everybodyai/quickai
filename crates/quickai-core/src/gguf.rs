@@ -29,6 +29,12 @@ pub struct ModelFacts {
     pub layers: Option<u64>,
     /// The bytes one token of context takes, keys and values at 16 bits (llama.cpp's own default).
     pub kv_bytes_per_token: Option<u64>,
+    /// Its chat template thinks before an answer (`<think>`, `enable_thinking`, `reasoning_content`): what it thought
+    /// comes apart from the answer, for the chat's Show thinking.
+    pub thinks: bool,
+    /// Its chat template can be told to answer without thinking first (`enable_thinking`, as Qwen3 and Qwen3.5 have):
+    /// the chat's Thinking switch is for it.
+    pub thinking_switch: bool,
 }
 
 impl ModelFacts {
@@ -76,6 +82,7 @@ pub fn parse<R: Read + Seek>(mut r: BufReader<R>) -> io::Result<ModelFacts> {
 /// Whether a key is one of those the facts come from, and so worth keeping.
 fn wanted(key: &str) -> bool {
     key == "general.architecture"
+        || key == CHAT_TEMPLATE
         || [
             ".context_length",
             ".block_count",
@@ -91,14 +98,33 @@ fn wanted(key: &str) -> bool {
         .any(|end| key.ends_with(end))
 }
 
+/// The key of the chat template the file carries (Jinja), which says how a conversation is put to the model.
+const CHAT_TEMPLATE: &str = "tokenizer.chat_template";
+
+/// What a chat template says of thinking: whether the model thinks before its answers, and whether it can be told not
+/// to (`enable_thinking`, read by the templates of Qwen3, Qwen3.5 and the models made from them).
+pub fn template_thinking(template: &str) -> (bool, bool) {
+    let switch = template.contains("enable_thinking");
+    let thinks = switch || template.contains("<think>") || template.contains("reasoning_content");
+    (thinks, switch)
+}
+
 /// The facts, from the values kept.
 fn facts(kept: &HashMap<String, Kept>) -> ModelFacts {
+    let (thinks, thinking_switch) = match kept.get(CHAT_TEMPLATE) {
+        Some(Kept::Text(template)) => template_thinking(template),
+        _ => (false, false),
+    };
     let architecture = match kept.get("general.architecture") {
         Some(Kept::Text(a)) => Some(a.clone()),
         _ => None,
     };
     let Some(arch) = architecture.clone() else {
-        return ModelFacts::default();
+        return ModelFacts {
+            thinks,
+            thinking_switch,
+            ..ModelFacts::default()
+        };
     };
     let get = |name: &str| kept.get(&format!("{arch}.{name}"));
     let number = |name: &str| match get(name) {
@@ -138,6 +164,8 @@ fn facts(kept: &HashMap<String, Kept>) -> ModelFacts {
         context_length: number("context_length"),
         layers,
         kv_bytes_per_token,
+        thinks,
+        thinking_switch,
     }
 }
 
@@ -176,10 +204,14 @@ fn value_of<R: Read + Seek>(
             Ok(None)
         }
         8 => {
-            if wanted {
-                Ok(Some(Kept::Text(text_of(r)?)))
+            let len = u64_of(r)?;
+            if wanted && len <= LONGEST_TEXT {
+                let mut b = vec![0u8; len as usize];
+                r.read_exact(&mut b)?;
+                Ok(Some(Kept::Text(String::from_utf8_lossy(&b).into_owned())))
             } else {
-                skip_text(r)?;
+                // a text that is not wanted, or longer than any the facts come from, is stepped over
+                r.seek_relative(i64::try_from(len).map_err(|_| bad("a text is too long"))?)?;
                 Ok(None)
             }
         }
@@ -256,11 +288,6 @@ fn text_of<R: Read>(r: &mut R) -> io::Result<String> {
     let mut b = vec![0u8; len as usize];
     r.read_exact(&mut b)?;
     Ok(String::from_utf8_lossy(&b).into_owned())
-}
-
-fn skip_text<R: Read + Seek>(r: &mut BufReader<R>) -> io::Result<()> {
-    let len = u64_of(r)?;
-    r.seek_relative(i64::try_from(len).map_err(|_| bad("a text is too long"))?)
 }
 
 fn bad(why: &str) -> io::Error {
@@ -373,5 +400,36 @@ mod tests {
         ]));
         assert_eq!(facts.layers, Some(10));
         assert_eq!(facts.kv_bytes_per_token, None);
+    }
+
+    /// The chat's Thinking switch is for a model whose template reads `enable_thinking`; Show thinking for one whose
+    /// template thinks at all; a template that does neither, or none, gives neither.
+    #[test]
+    fn the_chat_template_says_whether_the_model_thinks_and_whether_it_can_be_told_not_to() {
+        let with = |template: &str| {
+            read_bytes(header(&[
+                ("general.architecture", text_value("qwen35")),
+                ("tokenizer.chat_template", text_value(template)),
+                ("qwen35.block_count", u32_value(4)),
+            ]))
+        };
+        let qwen = with("{%- if enable_thinking is defined and enable_thinking is false %}<think>\n\n</think>{% endif %}");
+        assert!(qwen.thinks && qwen.thinking_switch);
+        assert_eq!(qwen.layers, Some(4), "the other facts are read as before");
+        let r1 = with("{{ '<|Assistant|><think>\\n' }}");
+        assert!(r1.thinks && !r1.thinking_switch, "it always thinks");
+        let plain = with("{% for m in messages %}{{ m.content }}{% endfor %}");
+        assert!(!plain.thinks && !plain.thinking_switch);
+        let none = read_bytes(header(&[("general.architecture", text_value("llama"))]));
+        assert!(!none.thinks && !none.thinking_switch);
+        // a template longer than any text the facts are read from is stepped over, and the rest is read
+        let long = "x".repeat(LONGEST_TEXT as usize + 1);
+        let facts = read_bytes(header(&[
+            ("tokenizer.chat_template", text_value(&long)),
+            ("general.architecture", text_value("llama")),
+            ("llama.block_count", u32_value(2)),
+        ]));
+        assert_eq!(facts.layers, Some(2));
+        assert!(!facts.thinks);
     }
 }
