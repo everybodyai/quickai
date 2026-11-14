@@ -95,9 +95,9 @@ impl App {
             let capabilities = ui.scope(|ui| self.show_capabilities(ui)).response.rect;
             super::help::mark_spot(ui, super::help::Spot::Capabilities, capabilities);
         }
-        // the tools are the chat's: an engine that does not chat (ComfyUI) has none to show
+        // the tools are the chat's: an engine that does not chat (ComfyUI) has none to show. Under Capabilities, with no line
+        // between them (C224): both are the chat's, and with the line Tools went past the foot of the window's first size
         if !self.runs_alone() && self.can_chat() {
-            rule(ui);
             let hover = if self.engine == crate::settings::DEFAULT_ENGINE {
                 "The MCP servers the model can use when you chat here, and in Open Chat UI. QuickAI asks before a tool \
                  runs, unless you turned that off in MCP servers."
@@ -282,7 +282,9 @@ pub(super) fn section_head(
     right: impl FnOnce(&mut egui::Ui),
 ) {
     let p = theme::palette();
-    ui.add_space(8.0);
+    // a little closer than they were (8 and 4 points round them), so that the window's first size still shows Tools under
+    // Capabilities (C224) with no scrolling
+    ui.add_space(6.0);
     ui.horizontal(|ui| {
         ui.set_min_height(24.0);
         let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
@@ -296,5 +298,5 @@ pub(super) fn section_head(
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), right);
     });
-    ui.add_space(4.0);
+    ui.add_space(3.0);
 }
