@@ -103,8 +103,12 @@ in separate windows that you can move and resize like any other window.
 
 The panel on the right shows how the model runs: the context size (**4K** to **256K**, each with a dot that shows
 whether it fits, and **Other…** offering more, up to 2M where the model supports it), whether it runs on the graphics
-card, the processor or both, and the tools it may use. The button at the top of the panel hides it, and the button at the right end of the toolbar
-shows it again.
+card, the processor or both, its **Capabilities** and the tools it may use. **Capabilities** has a switch for each
+thing the chat can do: **Auto-compact**, off until you turn it on, summarizes the earlier messages when a conversation
+nears the end of the context, so that the chat can go on, and models that think have **Thinking** and **Show
+thinking**. While the model runs, **How it runs** is at the bottom of the panel and shows how much of the context the
+chat uses, for example **12K of 64K**. The button at the top of the panel hides it, and the button at the right end of
+the toolbar shows it again.
 
 Choose the engine under **This computer**, at the top of the sidebar. An engine that is not yet installed has an
 **Install** button on its page; pulling a model starts Ollama automatically. Help (F1), with illustrated pages, a
@@ -114,19 +118,22 @@ of the sidebar. Settings (Ctrl+,) is in the **QuickAI** menu at the top.
 ## Chat
 
 The page below the toolbar is a chat with the running model, with nothing to install and no browser required.
-Responses stream as they are generated, along with the generation speed (tokens per second). The paper clip attaches
+Responses stream as they are generated, along with the generation speed (tokens per second). While a response is being
+written, the round button at the right of the chat box, or **Esc**, stops it at once; what was written stays, and
+**Continue** lets the model go on from where it stopped. The paper clip attaches
 an image for models that support vision, or inserts a text file into the message, and the wrench next to it offers the
 tools of your MCP servers. A response can be copied or regenerated, and the last message can be edited and sent again.
 The **⋯** menu at the right end of the toolbar contains **Keep chats**, **Options…** (instructions for the model, how
-creative its responses are and their maximum length), **Hands-free** and **Export this chat…**, which saves the chat as
-Markdown.
+creative its responses are and their maximum length), **Hands-free**, **Summarize earlier messages** (what Auto-compact
+does, when you choose; the summary can be read and corrected in the chat) and **Export this chat…**, which saves the
+chat as Markdown.
 
 Conversations are not saved unless you enable **Keep chats** in that menu; each conversation is then stored as a file
 on your computer.
 
-Keyboard shortcuts: Ctrl+Enter starts or stops the model, Ctrl+K adds a model, Ctrl+L focuses the chat box, Ctrl+,
-opens Settings and F1 opens Help. With voice enabled, hold Ctrl+Space to talk, and press Ctrl+Shift+Space to start or
-end hands-free mode.
+Keyboard shortcuts: Ctrl+Enter starts or stops the model, Ctrl+K adds a model, Ctrl+L focuses the chat box, Esc stops
+the response being written, Ctrl+, opens Settings and F1 opens Help. With voice enabled, hold Ctrl+Space to talk, and
+press Ctrl+Shift+Space to start or end hands-free mode.
 
 ## Talk to it (experimental)
 
@@ -135,7 +142,7 @@ microphone and never opens it. Once enabled, the microphone in the chat box tran
 speak, or hold **Ctrl+Space**. Your words appear in the box, where you can edit them before sending. **Read aloud**
 below a response reads it with a voice you install, highlighting the sentence being read. **Hands-free** (in the **⋯**
 menu, or Ctrl+Shift+Space) listens, sends what you said when you pause, reads the response aloud and listens again;
-press **Esc** to end it.
+**Back to chat**, or **Esc**, stops the voice and returns to the chat, where the response stays.
 
 All processing happens on your computer: [quickai-whisper](https://github.com/everybodyai/quickai-whisper), built on
 [whisper.cpp](https://github.com/ggml-org/whisper.cpp), transcribes your speech on the processor. The speech model
