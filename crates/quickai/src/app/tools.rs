@@ -2067,6 +2067,165 @@ for line in sys.stdin:
         app.session.stop_blocking();
     }
 
+    /// A file dropped on the window, as egui-winit gives it.
+    #[derive(Debug)]
+    struct Dropped(std::path::PathBuf);
+
+    impl egui::DroppedFile for Dropped {
+        fn path(&self) -> &Path {
+            &self.0
+        }
+        fn bytes(&self) -> Result<Vec<u8>, String> {
+            std::fs::read(&self.0).map_err(|e| e.to_string())
+        }
+    }
+
+    /// What one frame of the whole window draws, as text, with `input` given to it.
+    #[cfg(unix)]
+    fn painted_with(
+        app: &mut App,
+        ctx: &egui::Context,
+        input: impl FnOnce(&mut egui::RawInput),
+    ) -> String {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(980.0, 680.0),
+            )),
+            ..Default::default()
+        };
+        input(&mut raw);
+        let mut output = ctx.run_ui(raw, |ui| app.show_window(ui));
+        output.textures_delta.clear();
+        fn walk(shape: &egui::epaint::Shape, into: &mut Vec<String>) {
+            match shape {
+                egui::epaint::Shape::Vec(inner) => inner.iter().for_each(|s| walk(s, into)),
+                egui::epaint::Shape::Text(t) => into.push(t.galley.text().to_string()),
+                _ => {}
+            }
+        }
+        let mut texts = Vec::new();
+        for clipped in &output.shapes {
+            walk(&clipped.shape, &mut texts);
+        }
+        texts.join("\n")
+    }
+
+    /// I59 (C226, D1, B): while files are dragged over the window the chat says what a drop does; dropped, a picture goes
+    /// with the next message with its preview, a text file goes into the box, and a folder is said and not looked into.
+    /// The picture goes to the engine with the words. Text pasted that is longer than a message takes is said, and not
+    /// put in the box.
+    #[cfg(unix)]
+    #[test]
+    fn p3_i59_files_dropped_on_the_chat_go_with_the_next_message_and_a_folder_is_said() {
+        let dir = scratch("u14");
+        let fake = FakeOllama::start();
+        fake.add_model("gemma3:4b", 2 * GB);
+        let mut app = app_with(&dir, "ollama", Some(fake.port()), &[]);
+        std::fs::write(dir.join("ollama"), "").unwrap();
+        app.binary = dir.join("ollama");
+        app.models = vec![crate::models::ModelEntry {
+            filename: "gemma3:4b".into(),
+            path: std::path::PathBuf::new(),
+            display: "gemma3:4b".into(),
+            note: "vision".into(),
+            bundled: false,
+            size_bytes: 2 * GB,
+            companions: Vec::new(),
+            mode: None,
+        }];
+        app.selected = 0;
+        let ctx = egui::Context::default();
+        start_with(&mut app, "gemma3:4b");
+        until(&mut app, &ctx, "Ollama to run", |a| {
+            a.session.state() == ServerState::Running
+        });
+
+        let hovered = painted_with(&mut app, &ctx, |raw| {
+            raw.hovered_files.push(egui::HoveredFile::default())
+        });
+        assert!(hovered.contains("Drop to add to your message"), "{hovered}");
+
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            80,
+            40,
+            image::Rgba([9, 99, 199, 255]),
+        ))
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+        std::fs::write(dir.join("chart.png"), png.get_ref()).unwrap();
+        std::fs::write(dir.join("notes.txt"), "buy milk\n").unwrap();
+        std::fs::create_dir_all(dir.join("photos")).unwrap();
+        let dropped = ["chart.png", "notes.txt", "photos"].map(|n| dir.join(n));
+        painted_with(&mut app, &ctx, |raw| {
+            for path in &dropped {
+                raw.dropped_files
+                    .push(std::sync::Arc::new(Dropped(path.clone())));
+            }
+        });
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !app.chat.reading.is_empty() {
+            assert!(
+                Instant::now() < deadline,
+                "what was dropped is still being read"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+            painted_with(&mut app, &ctx, |_| {});
+        }
+        let shown = painted_with(&mut app, &ctx, |_| {});
+        assert_eq!(app.chat.pictures.len(), 1);
+        assert_eq!(app.chat.pictures[0].name, "chart.png");
+        assert_eq!(
+            app.chat.pictures[0].preview.0.as_ref().map(|t| t.size()),
+            Some([128, 64]),
+            "the preview keeps the picture's shape"
+        );
+        assert_eq!(app.chat.input, "notes.txt:\n```\nbuy milk\n```");
+        assert!(
+            shown.contains("photos is a folder: add the files in it, not the folder."),
+            "{shown}"
+        );
+        assert!(
+            !shown.contains("may not see pictures"),
+            "the model says vision: {shown}"
+        );
+
+        // a paste longer than a message takes is said, and the box is as it was
+        ctx.memory_mut(|m| m.request_focus(egui::Id::new("chat_input")));
+        painted_with(&mut app, &ctx, |_| {});
+        let long = "x".repeat(300 * 1024);
+        let said = painted_with(&mut app, &ctx, |raw| {
+            raw.events.push(egui::Event::Paste(long.clone()))
+        });
+        assert_eq!(app.chat.input, "notes.txt:\n```\nbuy milk\n```");
+        assert!(said.contains("too long to paste"), "{said}");
+
+        // sent, the words and the picture are one message, and the notes are gone
+        app.chat.input = "What is in the chart?".into();
+        app.send_chat(&ctx);
+        until(&mut app, &ctx, "the reply", |a| last_reply(a).is_some());
+        assert!(app.chat.given_notes.is_empty());
+        let asked = fake.requests_to("/v1/chat/completions");
+        let content = asked[0].body.as_ref().unwrap()["messages"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["content"]
+            .clone();
+        assert_eq!(content[0]["text"], "What is in the chart?");
+        let url = content[1]["image_url"]["url"].as_str().unwrap();
+        assert!(
+            url.starts_with("data:image/png;base64,iVBORw0KGgo"),
+            "{}",
+            &url[..40]
+        );
+        // the message shows the picture small over its words
+        assert_eq!(app.chat.turns[0].pictures.len(), 1);
+        assert!(app.chat.turns[0].pictures[0].preview.0.is_some());
+        app.session.stop_blocking();
+    }
+
     #[test]
     fn a_tool_is_named_by_its_server_and_itself_in_the_letters_a_function_may_have() {
         assert_eq!(tool_name("files", "read_text_file"), "files_read_text_file");

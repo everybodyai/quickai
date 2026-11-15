@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 use std::io::BufRead;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::Receiver;
 use eframe::egui;
 
+use super::given;
 use super::icons::{self, Icon};
 use super::theme::{self, Role};
 use super::App;
@@ -120,20 +121,45 @@ pub struct AskedCall {
     pub arguments: String,
 }
 
-/// A picture sent with a message: its name, its kind (`image/png`) and its bytes in base64.
+/// A picture sent with a message: its name, its kind (`image/png`) and its bytes in base64, and the small picture of it
+/// the chat shows (C226).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Picture {
     pub name: String,
     pub mime: String,
     pub base64: String,
+    pub preview: Preview,
 }
 
-/// The largest picture and text file a message takes.
-const MOST_PICTURE: u64 = 12 * 1024 * 1024;
-const MOST_TEXT: u64 = 256 * 1024;
+/// The small picture of a picture, once it is in the window's memory (`given::preview_of`); not part of what the
+/// picture is: two pictures are the same whatever their previews.
+#[derive(Clone, Default)]
+pub struct Preview(pub Option<egui::TextureHandle>);
+
+impl PartialEq for Preview {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for Preview {}
+
+impl std::fmt::Debug for Preview {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() {
+            "Preview"
+        } else {
+            "no preview"
+        })
+    }
+}
+
+/// The largest picture and text file a message takes; the text is all the files put in the box, with what is typed.
+pub(super) const MOST_PICTURE: u64 = 12 * 1024 * 1024;
+pub(super) const MOST_TEXT: u64 = 256 * 1024;
 
 /// The kinds of picture a message takes, by ending.
-fn picture_kind(name: &str) -> Option<&'static str> {
+pub(super) fn picture_kind(name: &str) -> Option<&'static str> {
     let lower = name.to_ascii_lowercase();
     let ending = lower.rsplit_once('.')?.1;
     Some(match ending {
@@ -164,48 +190,24 @@ pub fn base64(bytes: &[u8]) -> String {
     out
 }
 
-/// What a file given to a message is: a picture to send with it, or text to put in it (as a block under its name).
-#[derive(Debug, PartialEq, Eq)]
-pub enum Given {
-    Picture(Picture),
-    Text(String),
-}
-
-/// Reads a file the person gave a message, or says why it cannot go with it.
-pub fn read_given(path: &std::path::Path) -> Result<Given, String> {
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let size = std::fs::metadata(path)
-        .map_err(|e| format!("Could not read {name}: {e}"))?
-        .len();
-    if let Some(mime) = picture_kind(&name) {
-        if size > MOST_PICTURE {
-            return Err(format!("{name} is too big to send (12 MB at most)."));
-        }
-        let bytes = std::fs::read(path).map_err(|e| format!("Could not read {name}: {e}"))?;
-        return Ok(Given::Picture(Picture {
-            name,
-            mime: mime.to_string(),
-            base64: base64(&bytes),
-        }));
+/// Base64 (RFC 4648) as the bytes it stands for; `None` when it is not base64.
+#[cfg(test)]
+pub(super) fn base64_decoded(text: &str) -> Option<Vec<u8>> {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let digits: Vec<u32> = text
+        .trim_end_matches('=')
+        .bytes()
+        .map(|b| ALPHABET.iter().position(|a| *a == b).map(|d| d as u32))
+        .collect::<Option<_>>()?;
+    let mut out = Vec::with_capacity(digits.len() * 3 / 4);
+    for chunk in digits.chunks(4) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |n, (i, d)| n | d << (18 - 6 * i));
+        out.extend_from_slice(&n.to_be_bytes()[1..chunk.len()]);
     }
-    if size > MOST_TEXT {
-        return Err(format!(
-            "{name} is too long to put in a message (256 KB of text at most)."
-        ));
-    }
-    let bytes = std::fs::read(path).map_err(|e| format!("Could not read {name}: {e}"))?;
-    match String::from_utf8(bytes) {
-        Ok(text) => Ok(Given::Text(format!(
-            "{name}:\n```\n{}\n```",
-            text.trim_end()
-        ))),
-        Err(_) => Err(format!(
-            "{name} is not text or a picture (PNG, JPEG, WebP, GIF): it cannot go with a message."
-        )),
-    }
+    Some(out)
 }
 
 /// How a reply came: the pieces of it the engine sent (about a token each), the time to the first, and the whole.
@@ -319,6 +321,17 @@ pub struct Chat {
     pub kept: Vec<ChatSummary>,
     /// The pictures that go with the next message.
     pub pictures: Vec<Picture>,
+    /// What was given to the next message and is being read (`given.rs`, C226): picked with the paper clip, pasted or
+    /// dropped on the window.
+    pub(super) reading: Vec<super::given::Reading>,
+    /// Said over the box of what was given and could not go: refused, or past what a message takes.
+    pub given_notes: Vec<String>,
+    /// How many pictures were pasted in this conversation, to name the next (Pasted picture 1, 2, ...).
+    pub pasted: usize,
+    /// The V of Ctrl+V: egui-winit takes its press as the paste and gives egui only its release, so a release of V that
+    /// was not seen pressed is a paste (`v_down`: a "v" being typed), which gave text when `v_pasted`.
+    v_down: bool,
+    v_pasted: bool,
     /// The tools offered with the reply that is coming (C204): the name the model knows each by, to its server and tool.
     pub tool_names: BTreeMap<String, (String, String)>,
     /// How many replies in a row asked for tools since the person's last message.
@@ -1629,6 +1642,148 @@ fn info_mark(ui: &mut egui::Ui) {
     );
 }
 
+/// A note over the box that informs, small and grey after a grey (i), in a row with what goes with the message; the
+/// pointer on either says `more`.
+fn given_note(ui: &mut egui::Ui, text: &str, more: &str) {
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.x = 5.0;
+        let (rect, mark) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+        icons::paint(
+            ui.painter(),
+            rect.shrink(1.0),
+            Icon::Info,
+            theme::palette().faint,
+        );
+        mark.on_hover_text(more);
+        ui.add(egui::Label::new(theme::muted(text).small()).wrap())
+            .on_hover_text(more);
+    });
+}
+
+/// The middle square of a picture of `size`, as a tile shows it.
+fn middle_square(size: [usize; 2]) -> egui::Rect {
+    let (w, h) = (size[0].max(1) as f32, size[1].max(1) as f32);
+    let (dx, dy) = if w > h {
+        ((1.0 - h / w) / 2.0, 0.0)
+    } else {
+        (0.0, (1.0 - w / h) / 2.0)
+    };
+    egui::Rect::from_min_max(egui::pos2(dx, dy), egui::pos2(1.0 - dx, 1.0 - dy))
+}
+
+/// A picture that goes with the next message (C226, B): a square of its middle, its name when the pointer is on it,
+/// and a round × in its corner that takes it off (true when clicked).
+fn picture_tile(ui: &mut egui::Ui, picture: &Picture, at: usize) -> bool {
+    let p = theme::palette();
+    let (rect, tile) = ui.allocate_exact_size(egui::vec2(60.0, 60.0), egui::Sense::hover());
+    match &picture.preview.0 {
+        Some(texture) => {
+            egui::Image::from_texture(egui::load::SizedTexture::from_handle(texture))
+                .uv(middle_square(texture.size()))
+                .corner_radius(7)
+                .paint_at(ui, rect);
+        }
+        None => {
+            ui.painter().rect_filled(rect, 7.0, p.card);
+            icons::paint(
+                ui.painter(),
+                egui::Rect::from_center_size(rect.center(), egui::vec2(20.0, 20.0)),
+                Icon::Image,
+                p.muted,
+            );
+        }
+    }
+    ui.painter().rect_stroke(
+        rect,
+        7.0,
+        egui::Stroke::new(1.0, p.line),
+        egui::StrokeKind::Inside,
+    );
+    let spot = egui::Rect::from_center_size(
+        rect.right_top() + egui::vec2(-11.0, 11.0),
+        egui::vec2(17.0, 17.0),
+    );
+    let close = ui.interact(spot, ui.id().with(("given off", at)), egui::Sense::click());
+    ui.painter().circle_filled(
+        spot.center(),
+        8.5,
+        p.well
+            .gamma_multiply(if close.hovered() { 1.0 } else { 0.85 }),
+    );
+    let arm = 3.0;
+    let stroke = egui::Stroke::new(1.4, p.text);
+    let c = spot.center();
+    ui.painter().line_segment(
+        [c + egui::vec2(-arm, -arm), c + egui::vec2(arm, arm)],
+        stroke,
+    );
+    ui.painter().line_segment(
+        [c + egui::vec2(arm, -arm), c + egui::vec2(-arm, arm)],
+        stroke,
+    );
+    if close.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    } else {
+        tile.on_hover_text(&picture.name);
+    }
+    close.on_hover_text("Take it off this message.").clicked()
+}
+
+/// Over the chat while files are dragged over the window (C226, D1): it darkens under a dashed frame that says what a
+/// drop does; with no model running, that one must run first.
+fn paint_drop_cover(ctx: &egui::Context, rect: egui::Rect, ready: bool) {
+    let p = theme::palette();
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("drop cover"),
+    ));
+    painter.rect_filled(rect, 0.0, p.page.gamma_multiply(0.9));
+    let zone = rect.shrink(12.0);
+    let corners = [
+        zone.left_top(),
+        zone.right_top(),
+        zone.right_bottom(),
+        zone.left_bottom(),
+        zone.left_top(),
+    ];
+    let color = if ready { p.accent_text } else { p.faint };
+    painter.extend(egui::Shape::dashed_line(
+        &corners,
+        egui::Stroke::new(2.0, color),
+        8.0,
+        6.0,
+    ));
+    let middle = zone.center();
+    icons::paint(
+        &painter,
+        egui::Rect::from_center_size(middle - egui::vec2(0.0, 34.0), egui::vec2(34.0, 34.0)),
+        Icon::Download,
+        color,
+    );
+    let (big, small) = if ready {
+        (
+            "Drop to add to your message",
+            "Pictures go with it; text files go into it.",
+        )
+    } else {
+        ("Start a model to add files to a message", "")
+    };
+    painter.text(
+        middle + egui::vec2(0.0, 6.0),
+        egui::Align2::CENTER_CENTER,
+        big,
+        egui::FontId::proportional(17.0),
+        p.text,
+    );
+    painter.text(
+        middle + egui::vec2(0.0, 30.0),
+        egui::Align2::CENTER_CENTER,
+        small,
+        egui::FontId::proportional(12.5),
+        p.muted,
+    );
+}
+
 /// One message: its lines as Markdown has them, and its code blocks in monospace; the sentence being read aloud lit.
 fn show_message(ui: &mut egui::Ui, text: &str, lit: Option<&str>) {
     let p = theme::palette();
@@ -1790,6 +1945,7 @@ impl App {
         self.chat.recalled = None;
         let mut turn = Turn::said(true, text);
         turn.pictures = std::mem::take(&mut self.chat.pictures);
+        self.chat.given_notes.clear();
         self.chat.turns.push(turn);
         self.chat.tool_rounds = 0;
         // a message the engine refuses as too long is summarized and asked again, once
@@ -1863,17 +2019,149 @@ impl App {
         self.chat.notice = None;
     }
 
-    /// A file the person gave the next message: a picture goes with it, text goes in it.
-    pub(super) fn attach_to_message(&mut self, path: &Path) {
-        match read_given(path) {
-            Ok(Given::Picture(picture)) => self.chat.pictures.push(picture),
-            Ok(Given::Text(block)) => {
-                if !self.chat.input.trim().is_empty() {
-                    self.chat.input.push_str("\n\n");
-                }
-                self.chat.input.push_str(&block);
+    /// How much more the next message takes: pictures, and text in the box.
+    fn given_room(&self) -> given::Room {
+        given::Room {
+            pictures: given::MOST_PICTURES.saturating_sub(self.chat.pictures.len()),
+            text: (MOST_TEXT as usize).saturating_sub(self.chat.input.len()),
+        }
+    }
+
+    /// Reads what the person gave the next message (C226), away from the window's thread: it is taken as it is ready.
+    pub(super) fn give(&mut self, source: given::Source, ctx: &egui::Context) {
+        let room = self.given_room();
+        self.chat.reading.push(given::start(source, room, ctx));
+    }
+
+    /// What was given and is read by now: a picture goes with the next message, with its preview; text goes in the box.
+    /// What a message no longer takes (another reading may have filled it meanwhile) is counted, and said.
+    pub(super) fn take_given(&mut self, ctx: &egui::Context) {
+        let mut taken = Vec::new();
+        self.chat.reading.retain(|reading| loop {
+            match reading.rx.try_recv() {
+                Ok(t) => taken.push(t),
+                Err(crossbeam_channel::TryRecvError::Empty) => break true,
+                Err(crossbeam_channel::TryRecvError::Disconnected) => break false,
             }
-            Err(why) => self.chat.error = Some(why),
+        });
+        let mut left = 0;
+        for t in taken {
+            match t {
+                given::Taken::Picture(mut picture, preview) => {
+                    if self.chat.pictures.len() >= given::MOST_PICTURES {
+                        left += 1;
+                        continue;
+                    }
+                    if picture.name.is_empty() {
+                        self.chat.pasted += 1;
+                        picture.name = format!("Pasted picture {}", self.chat.pasted);
+                    }
+                    picture.preview = Preview(preview.map(|image| {
+                        ctx.load_texture(
+                            format!("given {}", picture.name),
+                            image,
+                            egui::TextureOptions::LINEAR,
+                        )
+                    }));
+                    self.chat.pictures.push(picture);
+                }
+                given::Taken::Text(block) => {
+                    if self.chat.input.len() + block.len() + 2 > MOST_TEXT as usize {
+                        let name = block.split_once(":\n").map_or("The file", |(n, _)| n);
+                        self.chat.given_notes.push(format!(
+                            "{name} would make the message longer than 256 KB of text."
+                        ));
+                        continue;
+                    }
+                    if !self.chat.input.trim().is_empty() {
+                        self.chat.input.push_str("\n\n");
+                    }
+                    self.chat.input.push_str(&block);
+                }
+                given::Taken::Refused(why) => self.chat.given_notes.push(why),
+                given::Taken::Left(n) => left += n,
+            }
+        }
+        if left > 0 {
+            self.chat.given_notes.push(format!(
+                "{left} more {} not added: a message takes {} pictures and 256 KB of text at most.",
+                if left == 1 { "file was" } else { "files were" },
+                given::MOST_PICTURES
+            ));
+        }
+    }
+
+    /// Ctrl+V and files dropped on the window, for the next message (C226), while a model runs. A paste of text is the
+    /// box's own, unless it is what a file manager pastes for copied files (the files are then taken), or longer than a
+    /// message takes. A paste that gave no text (egui sees only the release of its V) may be a picture or copied files:
+    /// the clipboard is read for them, unless another field has the keys.
+    fn take_paste_and_drop(&mut self, ui: &mut egui::Ui, ready: bool) {
+        let input_id = egui::Id::new("chat_input");
+        let focused = ui.memory(|m| m.focused());
+        let elsewhere = focused.is_some_and(|id| id != input_id);
+        let mut texts = Vec::new();
+        let mut released = false;
+        ui.input(|i| {
+            for event in &i.events {
+                match event {
+                    egui::Event::Key {
+                        key: egui::Key::V,
+                        pressed,
+                        ..
+                    } => {
+                        if *pressed {
+                            self.chat.v_down = true;
+                        } else {
+                            released |= !self.chat.v_down && !self.chat.v_pasted;
+                            self.chat.v_down = false;
+                            self.chat.v_pasted = false;
+                        }
+                    }
+                    egui::Event::Paste(text) => {
+                        self.chat.v_pasted = true;
+                        texts.push(text.clone());
+                    }
+                    _ => {}
+                }
+            }
+        });
+        let dropped: Vec<PathBuf> = ui.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_path_buf())
+                .filter(|p| !p.as_os_str().is_empty())
+                .collect()
+        });
+        if !ready {
+            return;
+        }
+        if !dropped.is_empty() {
+            self.give(given::Source::Files(dropped), ui.ctx());
+        }
+        if focused == Some(input_id) {
+            for text in texts {
+                let files = given::files_behind(&text);
+                let too_long =
+                    files.is_none() && self.chat.input.len() + text.len() > MOST_TEXT as usize;
+                if files.is_none() && !too_long {
+                    continue;
+                }
+                ui.input_mut(|i| {
+                    i.events
+                        .retain(|e| !matches!(e, egui::Event::Paste(t) if *t == text))
+                });
+                match files {
+                    Some(files) => self.give(given::Source::Files(files), ui.ctx()),
+                    None => self.chat.given_notes.push(
+                        "The text on the clipboard is too long to paste: a message takes 256 KB of text at most."
+                            .into(),
+                    ),
+                }
+            }
+        }
+        if released && !elsewhere {
+            self.give(given::Source::Clipboard, ui.ctx());
         }
     }
 
@@ -2597,11 +2885,27 @@ impl App {
                         .stroke(egui::Stroke::new(1.0, p.line))
                         .corner_radius(egui::CornerRadius::same(6))
                         .inner_margin(egui::Margin::symmetric(10, 6));
-                    let with = (!turn.pictures.is_empty()).then(|| {
-                        let names: Vec<&str> =
-                            turn.pictures.iter().map(|p| p.name.as_str()).collect();
-                        format!("With: {}", names.join(", "))
-                    });
+                    // the pictures that went with a message are shown small over its words (C226, B), each with its name
+                    // when the pointer is on it; one with no preview is named under them
+                    let shown: Vec<(&egui::TextureHandle, egui::Vec2, &str)> = turn
+                        .pictures
+                        .iter()
+                        .filter_map(|pic| {
+                            let texture = pic.preview.0.as_ref()?;
+                            let [w, h] = texture.size();
+                            let wide = (48.0 * w.max(1) as f32 / h.max(1) as f32).clamp(36.0, 120.0);
+                            Some((texture, egui::vec2(wide, 48.0), pic.name.as_str()))
+                        })
+                        .collect();
+                    let unshown: Vec<&str> = turn
+                        .pictures
+                        .iter()
+                        .filter(|pic| pic.preview.0.is_none())
+                        .map(|pic| pic.name.as_str())
+                        .collect();
+                    let with = (!unshown.is_empty()).then(|| format!("With: {}", unshown.join(", ")));
+                    let row = shown.iter().map(|(_, size, _)| size.x).sum::<f32>()
+                        + 6.0 * shown.len().saturating_sub(1) as f32;
                     if turn.from_person {
                         // what the person wrote is as they wrote it, at the right, in a bubble as wide as its words
                         // (measured: a row laid from right to left drew nothing, and a column took the whole width)
@@ -2620,12 +2924,28 @@ impl App {
                                     .x,
                             );
                         }
-                        let inner = inner.ceil() + 1.0;
+                        let inner = inner.max(row.min(wrap)).ceil() + 1.0;
                         ui.horizontal(|ui| {
                             ui.add_space((width - inner - 20.0 - 10.0).max(0.0));
                             bubble.show(ui, |ui| {
                                 ui.set_width(inner);
                                 ui.vertical(|ui| {
+                                    if !shown.is_empty() {
+                                        ui.horizontal_wrapped(|ui| {
+                                            ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                                            for (texture, size, name) in &shown {
+                                                ui.add(
+                                                    egui::Image::from_texture(egui::load::SizedTexture::new(
+                                                        texture.id(),
+                                                        *size,
+                                                    ))
+                                                    .corner_radius(4),
+                                                )
+                                                .on_hover_text(*name);
+                                            }
+                                        });
+                                        ui.add_space(2.0);
+                                    }
                                     ui.add(
                                         egui::Label::new(
                                             egui::RichText::new(text.as_str()).color(p.text),
@@ -2891,27 +3211,37 @@ impl App {
             self.edit_last_message();
         }
         let box_top = ui.cursor().top();
-        // the pictures that go with the next message, each with the way to take it off
-        if !self.chat.pictures.is_empty() {
+        // a run on a computer QuickAI set up may not say its model (llama.cpp serves the one it was started with)
+        let ready = running && (model.is_some() || remote_run.is_some());
+        // what is pasted and dropped, before what goes with the message is drawn (a note of it shows at once) and before
+        // the box sees the keys
+        self.take_paste_and_drop(ui, ready);
+        // what goes with the next message (C226, B): a preview of each picture with the way to take it off, a tile that
+        // waits while what was given is read, and what could not go
+        self.take_given(ui.ctx());
+        let reading = !self.chat.reading.is_empty();
+        if !self.chat.pictures.is_empty() || reading {
             let mut off: Option<usize> = None;
             ui.horizontal_wrapped(|ui| {
-                ui.add_space(6.0);
-                for (i, p) in self.chat.pictures.iter().enumerate() {
-                    if ui
-                        .small_button(format!("{} ×", p.name))
-                        .on_hover_text("Take it off this message.")
-                        .clicked()
-                    {
+                ui.add_space(20.0);
+                ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                for (i, picture) in self.chat.pictures.iter().enumerate() {
+                    if picture_tile(ui, picture, i) {
                         off = Some(i);
                     }
                 }
-                if !self.model_sees_pictures() {
-                    ui.label(
-                        egui::RichText::new(
-                            "This model may not see pictures: one that does says vision, or came with a projector.",
-                        )
-                        .small()
-                        .color(theme::palette().warn),
+                if reading {
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(60.0, 60.0), egui::Sense::hover());
+                    ui.painter().rect_filled(rect, 7.0, p.card);
+                    egui::Spinner::new().paint_at(ui, rect.shrink(20.0));
+                }
+                if !self.chat.pictures.is_empty() && !self.model_sees_pictures() {
+                    ui.add_space(2.0);
+                    given_note(
+                        ui,
+                        "This model may not see pictures.",
+                        "One that does says vision, or came with a projector.",
                     );
                 }
             });
@@ -2919,9 +3249,26 @@ impl App {
                 self.chat.pictures.remove(i);
             }
         }
+        if !self.chat.given_notes.is_empty() {
+            let mut clear = false;
+            ui.horizontal(|ui| {
+                ui.add_space(20.0);
+                let notes = &self.chat.given_notes;
+                let mut said = notes[..notes.len().min(2)].join(" ");
+                if notes.len() > 2 {
+                    said.push_str(&format!(" And {} more could not go.", notes.len() - 2));
+                }
+                given_note(ui, &said, "Nothing is sent until you press Send.");
+                clear = ui
+                    .small_button("×")
+                    .on_hover_text("Close this note.")
+                    .clicked();
+            });
+            if clear {
+                self.chat.given_notes.clear();
+            }
+        }
         let mut attach = false;
-        // a run on a computer QuickAI set up may not say its model (llama.cpp serves the one it was started with)
-        let ready = running && (model.is_some() || remote_run.is_some());
         let recording = self.talk.recording_for_box();
         let frame = egui::Frame::new()
             .fill(p.well)
@@ -2944,8 +3291,8 @@ impl App {
                         ui.spacing_mut().item_spacing.x = 0.0;
                         let clip = icons::icon_button(ui, Icon::Clip, egui::vec2(24.0, 28.0), ready, false)
                             .on_hover_text(
-                                "Add a picture (PNG, JPEG, WebP, GIF) for a model that sees them, or a text file to \
-                                 put in the message.",
+                                "Add pictures (PNG, JPEG, WebP, GIF) for a model that sees them, or text files to \
+                                 put in the message. You can also paste them (Ctrl+V) or drop them on the chat.",
                             );
                         super::help::mark_spot(ui, super::help::Spot::Clip, clip.rect);
                         attach = clip.clicked();
@@ -3026,10 +3373,16 @@ impl App {
                             self.poll_chat();
                         }
                     } else {
-                        let can_send = ready && !self.chat.input.trim().is_empty();
+                        // what was given and is still being read goes with the message: it waits for it
+                        let adding = !self.chat.reading.is_empty();
+                        let can_send = ready && !self.chat.input.trim().is_empty() && !adding;
                         let clicked =
                             icons::icon_button(ui, Icon::Send, egui::vec2(32.0, 28.0), can_send, can_send)
-                                .on_hover_text("Send (Enter). Shift+Enter starts a new line.")
+                                .on_hover_text(if adding {
+                                    "Adding what you gave the message…"
+                                } else {
+                                    "Send (Enter). Shift+Enter starts a new line."
+                                })
                                 .clicked();
                         if can_send && (clicked || enter) {
                             self.send_chat(ui.ctx());
@@ -3055,10 +3408,14 @@ impl App {
                 r.max - egui::vec2(16.0, 10.0),
             ),
         );
+        // files dragged over the window: the chat darkens under a frame that says what a drop does (C226, D1)
+        if ui.input(|i| !i.raw.hovered_files.is_empty()) {
+            paint_drop_cover(ui.ctx(), chat_rect, ready);
+        }
         // hands-free covers the chat (C216, H1)
         self.show_hands_free(ui.ctx(), chat_rect);
         if attach {
-            if let Some(path) = rfd::FileDialog::new()
+            if let Some(paths) = rfd::FileDialog::new()
                 .add_filter(
                     "Pictures and text",
                     &[
@@ -3066,9 +3423,9 @@ impl App {
                     ],
                 )
                 .add_filter("Any file", &["*"])
-                .pick_file()
+                .pick_files()
             {
-                self.attach_to_message(&path);
+                self.give(given::Source::Files(paths), ui.ctx());
             }
         }
     }
@@ -3482,32 +3839,28 @@ mod tests {
             ("foobar", "Zm9vYmFy"),
         ] {
             assert_eq!(base64(plain.as_bytes()), coded, "{plain}");
+            assert_eq!(
+                base64_decoded(coded).as_deref(),
+                Some(plain.as_bytes()),
+                "{coded}"
+            );
         }
         assert_eq!(base64(&[0xff, 0xfe, 0xfd]), "//79");
+        assert_eq!(
+            base64_decoded("//79").as_deref(),
+            Some(&[0xff, 0xfe, 0xfd][..])
+        );
+        assert_eq!(base64_decoded("a*b="), None);
     }
 
     #[test]
-    fn a_picture_goes_with_the_message_and_a_text_file_goes_in_it() {
-        let dir = crate::testkit::scratch("chat-attach");
-        std::fs::write(dir.join("dot.png"), [0x89, b'P', b'N', b'G']).unwrap();
-        std::fs::write(dir.join("notes.md"), "# Notes\nbuy milk\n").unwrap();
-        std::fs::write(dir.join("blob.bin"), [0xff, 0xfe, 0x00, 0x80]).unwrap();
-        let Ok(Given::Picture(picture)) = read_given(&dir.join("dot.png")) else {
-            panic!("a PNG is a picture");
+    fn a_picture_goes_with_the_words_of_its_message() {
+        let picture = Picture {
+            name: "dot.png".into(),
+            mime: "image/png".into(),
+            base64: base64(&[0x89, b'P', b'N', b'G']),
+            preview: Preview::default(),
         };
-        assert_eq!(
-            (picture.name.as_str(), picture.mime.as_str()),
-            ("dot.png", "image/png")
-        );
-        assert_eq!(picture.base64, base64(&[0x89, b'P', b'N', b'G']));
-        assert_eq!(
-            read_given(&dir.join("notes.md")),
-            Ok(Given::Text("notes.md:\n```\n# Notes\nbuy milk\n```".into()))
-        );
-        assert!(
-            read_given(&dir.join("blob.bin")).is_err_and(|w| w.contains("not text or a picture"))
-        );
-
         // the request: the words and the picture as parts of one message
         let mut turn = Turn::said(true, "What is this?");
         turn.pictures.push(picture);

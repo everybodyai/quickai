@@ -11,12 +11,18 @@ path = "src/main.rs"
 
 [dependencies]
 quickai-core = { path = "../quickai-core" }
+# what is pasted into the chat (C226): a picture on the clipboard, or files copied in a file manager. egui reads only
+# text from it; this is the same arboard egui-winit uses, so nothing new is built
+arboard = { version = "3.6.1", default-features = false, features = ["image-data"] }
 quickai-runtime = { path = "../quickai-runtime", default-features = false }
 crossbeam-channel = "0.5.16"
 directories = "6"
 # 0.36.2: a window the compositor is not drawing (Wayland: covered, minimized) no longer keeps its event loop busy
 eframe = "=0.36.2"
 egui = "=0.36.2"
+# the pictures given to a message (C226): a preview of each, and a pasted picture sent as a PNG. PNG and JPEG were
+# already built (arboard, tiff); GIF and WebP are what is new
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 # the fonts of this computer for the scripts the embedded ones lack (app/system_fonts.rs): the font reader egui itself uses
 memmap2 = "0.9"
 skrifa = { version = "0.44", default-features = false, features = ["std"] }

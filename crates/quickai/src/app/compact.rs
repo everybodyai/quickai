@@ -808,6 +808,7 @@ mod tests {
             name: "plot.png".into(),
             mime: "image/png".into(),
             base64: "AAAA".into(),
+            preview: chat::Preview::default(),
         });
         turns[1].calls.push(chat::ToolCall {
             id: "c".into(),

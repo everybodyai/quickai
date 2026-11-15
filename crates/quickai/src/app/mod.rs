@@ -41,6 +41,7 @@ mod engine;
 mod engine_bar;
 mod extras;
 mod foreign_program;
+mod given;
 mod graphics;
 #[cfg(test)]
 mod graphics_tests;

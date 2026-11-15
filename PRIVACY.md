@@ -408,8 +408,9 @@ involved in these connections and receives nothing from them. A problem report r
 you submit it yourself, from your browser.
 
 The chat stores nothing unless you turn on **Keep chats**. When it is on, each conversation is saved as a file in
-QuickAI's own data folder on your computer (`~/.quickai/chats`), and you can delete it from the list. An image you
-attach is sent to the model and is not stored.
+QuickAI's own data folder on your computer (`~/.quickai/chats`), and you can delete it from the list. A picture you
+attach, paste or drop on the chat is sent to the model and is not stored. QuickAI reads the clipboard only when you
+paste (**Ctrl+V**), and the files you drop only when you drop them.
 
 ## Bundled software
 

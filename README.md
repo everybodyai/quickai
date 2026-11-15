@@ -121,8 +121,9 @@ The page below the toolbar is a chat with the running model, with nothing to ins
 Responses stream as they are generated, along with the generation speed (tokens per second). While a response is being
 written, the round button at the right of the chat box, or **Esc**, stops it at once; what was written stays, and
 **Continue** lets the model go on from where it stopped. The paper clip attaches
-an image for models that support vision, or inserts a text file into the message, and the wrench next to it offers the
-tools of your MCP servers. A response can be copied or regenerated, and the last message can be edited and sent again.
+images for models that support vision, or inserts text files into the message; **Ctrl+V** does the same with copied
+files, a screenshot or a copied picture, and so does dropping files on the chat. Each picture shows as a small preview
+until it is sent. The wrench next to the paper clip offers the tools of your MCP servers. A response can be copied or regenerated, and the last message can be edited and sent again.
 The **⋯** menu at the right end of the toolbar contains **Keep chats**, **Options…** (instructions for the model, how
 creative its responses are and their maximum length), **Hands-free**, **Summarize earlier messages** (what Auto-compact
 does, when you choose; the summary can be read and corrected in the chat) and **Export this chat…**, which saves the

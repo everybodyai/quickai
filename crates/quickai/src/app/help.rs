@@ -335,8 +335,12 @@ const PAGES: &[Page] = &[
                  the model responds, the round button at the right of the box stops it, as does **Esc**.",
             )
             .at(Spot::ChatBox),
-            step("The paper clip {clip} attaches an image, for models that support vision, or a text file to read.")
-                .at(Spot::Clip),
+            step(
+                "The paper clip {clip} attaches pictures, for models that support vision, or text files to read. \
+                 **Ctrl+V** adds copied files, a screenshot or a copied picture, and files dropped on the chat are \
+                 added too. A message takes 10 pictures and 256 KB of text at most.",
+            )
+            .at(Spot::Clip),
             step(
                 "Below each response: **Copy**, **Regenerate**, and the generation speed. A response that you stopped, \
                  or that was cut off, also has **Continue**, which asks the model to go on with it.",
@@ -905,8 +909,8 @@ const TOUR: &[(Spot, &str, &str)] = &[
     (
         Spot::ChatBox,
         "Chat",
-        "Type here once the model is running. The paper clip attaches an image or a file, and the wrench shows the \
-         available tools.",
+        "Type here once the model is running. The paper clip attaches pictures or files, as do Ctrl+V and \
+         dropping them on the chat, and the wrench shows the available tools.",
     ),
     (
         Spot::Mic,
