@@ -2068,9 +2068,11 @@ for line in sys.stdin:
     }
 
     /// A file dropped on the window, as egui-winit gives it.
+    #[cfg(unix)]
     #[derive(Debug)]
     struct Dropped(std::path::PathBuf);
 
+    #[cfg(unix)]
     impl egui::DroppedFile for Dropped {
         fn path(&self) -> &Path {
             &self.0
