@@ -106,6 +106,13 @@ pub enum ToolsBehave {
     /// Every message, the person's or what a tool gave back, is answered by a call of the first tool: a model that keeps
     /// asking for tools.
     Loop,
+    /// A message of the person's, in a conversation with no call yet, is answered by a call of the first tool that is cut
+    /// off in the middle of its arguments, the reply ending as `length`: the context filled while the model wrote it
+    /// (C225). Later messages are answered with `reply`.
+    CutOff,
+    /// Every message is answered by a call of the first tool whose arguments are not JSON: a model that keeps writing
+    /// them wrong (C225).
+    LoopBroken,
 }
 
 impl Default for Behave {
@@ -808,7 +815,36 @@ fn v1_chat(shared: &Arc<Mutex<State>>, behave: &Behave, body: Option<Value>, res
         .cloned()
         .unwrap_or(Value::Null);
     let last_role = last.get("role").and_then(Value::as_str).unwrap_or_default();
+    // the arguments of each call of the conversation are read as JSON, as Ollama reads them (and llama.cpp, for
+    // templates such as Qwen's): one that is not refuses the whole request
+    let calls_said: Vec<Value> = body
+        .get("messages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m.get("tool_calls").and_then(Value::as_array))
+        .flatten()
+        .cloned()
+        .collect();
+    let broken = calls_said.iter().any(|c| {
+        c.pointer("/function/arguments")
+            .and_then(Value::as_str)
+            .is_some_and(|a| serde_json::from_str::<Value>(a).is_err())
+    });
+    if broken {
+        return resp.json(
+            400,
+            &json!({"error": {"message": "invalid tool call arguments", "type": "invalid_request_error", "param": null, "code": null}}),
+            "application/json",
+        );
+    }
     let mut reply = behave.reply.clone();
+    let asks = match behave.tools {
+        ToolsBehave::Call => last_role == "user",
+        ToolsBehave::Loop | ToolsBehave::LoopBroken => true,
+        ToolsBehave::CutOff => last_role == "user" && calls_said.is_empty(),
+        ToolsBehave::Ignore | ToolsBehave::Refuse => false,
+    };
     match behave.tools {
         ToolsBehave::Refuse if !tools.is_empty() => {
             return resp.json(
@@ -817,17 +853,19 @@ fn v1_chat(shared: &Arc<Mutex<State>>, behave: &Behave, body: Option<Value>, res
                 "application/json",
             );
         }
-        ToolsBehave::Call | ToolsBehave::Loop
-            if !tools.is_empty() && (last_role == "user" || behave.tools == ToolsBehave::Loop) =>
-        {
+        _ if !tools.is_empty() && asks => {
             let function = tools[0].get("function").cloned().unwrap_or(Value::Null);
             let first = function
                 .pointer("/parameters/properties")
                 .and_then(Value::as_object)
-                .and_then(|p| p.keys().next().cloned());
-            let arguments = match first {
-                Some(key) => json!({ key: "hello" }).to_string(),
-                None => "{}".to_string(),
+                .and_then(|p| p.keys().next().cloned())
+                .unwrap_or_else(|| "text".to_string());
+            let whole = json!({ first: "hello" }).to_string();
+            let (arguments, finish) = match behave.tools {
+                // cut in the middle of the string, as the end of the context cuts it
+                ToolsBehave::CutOff => (whole[..whole.len() - 4].to_string(), "length"),
+                ToolsBehave::LoopBroken => (whole.replace('"', "'"), "tool_calls"),
+                _ => (whole, "tool_calls"),
             };
             let call = json!({"index": 0, "id": "call_fake_1", "type": "function",
                 "function": {"name": function.get("name").cloned().unwrap_or(Value::Null), "arguments": arguments}});
@@ -837,7 +875,7 @@ fn v1_chat(shared: &Arc<Mutex<State>>, behave: &Behave, body: Option<Value>, res
                 json!({"id": "chatcmpl-236", "object": "chat.completion.chunk", "created": created, "model": name,
                     "choices": [{"index": 0, "delta": {"role": "assistant", "content": "", "tool_calls": [call]}, "finish_reason": null}]}),
                 json!({"id": "chatcmpl-236", "object": "chat.completion.chunk", "created": created, "model": name,
-                    "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]}),
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": finish}]}),
             ] {
                 let _ = resp.chunk(format!("data: {event}\n\n").as_bytes());
             }

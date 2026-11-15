@@ -1045,6 +1045,9 @@ Asked for on 2026-10-23 ("Lets stick to classic, but lets turn things around a b
 | I50 | 4.22 | ready | **What the person said of a tool is kept** (C204): Always and Off are in the settings (`app.tool_permissions`) and a window started again knows them; a tool not said of asks; Ask again takes it out of what is kept. | `app/tools.rs` |
 | I51 | 4.22 | ready | **While the model runs, the panel is Connect an app and the chat's box has Tools** (C203, C204): stopped, the panel is *How it runs*; running, it is *Connect an app* with the address and Ollama's own (*Ollama API*), the box's wrench has *1* in its corner, and the sidebar says *MCP servers* with *1 on*. | `app/tools.rs` |
 | I52 | 4.22 | ready | **Tools can run without asking, and the calls in a row have the limit chosen** (the person's request, 2026-11-13): *Allow all tools* on a card runs it and every call after it without a card (`app.tools_allow_all`); a model that keeps asking for tools is stopped after 20 replies in a row, or as many as *Tool calls in a row* says (`app.tool_rounds`), goes on with no limit, and *Stop* ends it. | `app/tools.rs` |
+| I53 | 4.22 | ready | **A tool call the context cut off does not run, and the chat says why** (C225; the person's report, 2026-11-15): a reply that ends as `length` in the middle of a call's arguments runs no tool, even with every tool allowed and no limit of replies with tools; the call says it was cut off, the chat stops with no further request and says the context was full and how to make room (no Continue under it); the next message sends the call back with `{}` as its arguments (the engine refuses arguments that are not JSON), the model is told it was cut off, and the reply comes. | `app/tools.rs` |
+| I54 | 4.22 | ready | **The chat stops after the failures in a row chosen** (C225): a model that keeps asking for a tool with arguments that are not JSON has no call run; after 3 such replies in a row the chat stops and names the tool, even with no limit of replies with tools; after 1 when *Failures in a row* says so (`app.tool_failures`). | `app/tools.rs` |
+| I55 | 4.22 | ready | **An engine that keeps failing after a tool ran stops the chat with its words** (C225): each request failing with 500 is asked again twice after a wait, with the tools and then without them (6 requests), then the chat shows the engine's message and asks nothing more, with no limit of replies with tools. Before, a failed request left the previous reply last, whose calls were settled again and the reply asked for again, without end. | `app/tools.rs` |
 
 ### N. llama.cpp must not change
 
@@ -1058,7 +1061,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 742 / 0 / 16 / 5 (total 763). The test kit has 29 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 745 / 0 / 16 / 5 (total 766). The test kit has 29 tests of its own and the Python fake
 22, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 

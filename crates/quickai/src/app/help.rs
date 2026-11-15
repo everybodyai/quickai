@@ -538,8 +538,9 @@ const PAGES: &[Page] = &[
             step(
                 "On the **MCP servers** page, **Ask before a tool runs** can be turned off so that tools run without asking, and \
                  **Tool calls in a row** sets how many replies in a row may use tools after one message (20 unless you \
-                 choose otherwise, or no limit). Under **What they offer**, each tool can be set to **Ask**, **Always** or \
-                 **Off**. \
+                 choose otherwise, or no limit). **Failures in a row** sets after how many replies whose tool calls all \
+                 failed the chat stops (3 unless you choose otherwise). Under **What they offer**, each tool can be set \
+                 to **Ask**, **Always** or **Off**. \
                  With llama.cpp, its own chat page (**Open Chat UI**) can use the servers as well.",
             ),
         ],

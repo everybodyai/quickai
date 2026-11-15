@@ -17,13 +17,15 @@ use quickai_core::mcp::{self, Server};
 use quickai_runtime::mcp_client::{Client, Tool, ToolOutput};
 use serde_json::{json, Value as Json};
 
-use super::chat::{CallState, ToolCall};
+use super::chat::{CallState, ToolCall, Turn};
 use super::icons::{self, Icon};
 use super::theme::{self, Role};
 use super::App;
 
 /// The limits of replies in a row that may use tools the person can choose (Settings › MCP servers), besides none.
 const TOOL_ROUND_CHOICES: [u32; 4] = [10, 20, 50, 100];
+/// The limits of replies in a row whose tool calls all failed the person can choose (C225); there is no "no limit".
+const TOOL_FAILURE_CHOICES: [u32; 5] = [1, 2, 3, 5, 10];
 /// The longest description of a tool the model is given.
 const MOST_DESCRIPTION: usize = 1024;
 
@@ -377,6 +379,14 @@ impl App {
         self.stored = stored;
     }
 
+    /// Keeps how many replies in a row may end with each of their tool calls failed before the chat stops (C225).
+    pub(super) fn set_tool_failures(&mut self, failures: u32) {
+        let mut stored = self.settings_now();
+        stored.set_tool_failures(failures);
+        self.write_settings(&stored);
+        self.stored = stored;
+    }
+
     /// Keeps what the person said of a tool.
     pub(super) fn set_tool_permission(&mut self, server: &str, tool: &str, permission: Permission) {
         let mut stored = self.settings_now();
@@ -464,23 +474,44 @@ impl App {
         }
     }
 
-    /// The calls of the reply that just ended: those the person allowed always run now, the others wait for them.
-    pub(super) fn settle_new_calls(&mut self) {
+    /// The calls of the reply that just ended: those the person allowed always run now, the others wait for them. Only
+    /// new calls (all asking) are settled: a request that failed leaves the reply before it last, whose calls were
+    /// settled already, and asking again for them would go on without end (C225). The calls of a reply that was cut off
+    /// (`cut`) are not whole: none runs, and the chat stops there; a call whose arguments are not a JSON object does
+    /// not run either, and the model is told why.
+    pub(super) fn settle_new_calls(&mut self, cut: bool) {
         let Some(at) = self.chat.turns.len().checked_sub(1) else {
             return;
         };
-        let count = self.chat.turns[at].calls.len();
-        if count == 0 || self.chat.turns[at].from_person {
+        let turn = &self.chat.turns[at];
+        if turn.from_person || !turn.calls.iter().any(|c| c.state == CallState::Asking) {
+            return;
+        }
+        let count = turn.calls.len();
+        if cut {
+            for call in &mut self.chat.turns[at].calls {
+                call.state = CallState::Failed(super::chat::CALL_CUT_OFF.to_string());
+            }
             return;
         }
         self.chat.tool_rounds += 1;
         self.chat.tools_waiting = true;
         for i in 0..count {
-            let (server, tool, state) = {
+            let (server, tool, state, arguments) = {
                 let call = &self.chat.turns[at].calls[i];
-                (call.server.clone(), call.tool.clone(), call.state.clone())
+                (
+                    call.server.clone(),
+                    call.tool.clone(),
+                    call.state.clone(),
+                    super::chat::call_arguments(&call.arguments),
+                )
             };
             if state != CallState::Asking {
+                continue;
+            }
+            if arguments.is_none() {
+                self.chat.turns[at].calls[i].state =
+                    CallState::Failed(super::chat::CALL_NOT_JSON.to_string());
                 continue;
             }
             if server.is_empty() {
@@ -567,7 +598,8 @@ impl App {
         else {
             return;
         };
-        let arguments: Json = serde_json::from_str(&asked.arguments).unwrap_or_else(|_| json!({}));
+        let arguments: Json =
+            super::chat::call_arguments(&asked.arguments).unwrap_or_else(|| json!({}));
         let ticket = self.tools.call(&asked.server, &asked.tool, arguments);
         let state = match ticket {
             Some(_) => CallState::Running,
@@ -598,6 +630,12 @@ impl App {
             return;
         }
         self.chat.tools_waiting = false;
+        // a model that keeps asking for tools that fail is stopped, whatever the limit of replies with tools (C225)
+        let most = self.stored.tool_failures();
+        if let Some(tools) = failed_in_a_row(&self.chat.turns, most) {
+            self.chat.error = Some(failures_words(most, &tools));
+            return;
+        }
         if let Some(most) = self.stored.tool_rounds() {
             if self.chat.tool_rounds >= most {
                 self.chat.error = Some(format!(
@@ -1015,6 +1053,8 @@ impl App {
         let mut ask = !self.tools_allow_all();
         let mut rounds = self.stored.tool_rounds();
         let mut changed_rounds = false;
+        let mut failures = self.stored.tool_failures();
+        let mut changed_failures = false;
         group(ui, |ui| {
             if switch_row(
                 ui,
@@ -1053,11 +1093,89 @@ impl App {
                         });
                 },
             );
+            row_line(ui);
+            setting_row(
+                ui,
+                "Failures in a row",
+                Some(
+                    "How many replies in a row may end with each of their tool calls failed. Then the chat stops and \
+                     says which tool kept failing, whatever Tool calls in a row allows.",
+                ),
+                None,
+                |ui| {
+                    egui::ComboBox::from_id_salt("tool_failures")
+                        .selected_text(failures.to_string())
+                        .width(120.0)
+                        .show_ui(ui, |ui| {
+                            for choice in TOOL_FAILURE_CHOICES {
+                                if ui
+                                    .selectable_label(failures == choice, choice.to_string())
+                                    .clicked()
+                                {
+                                    failures = choice;
+                                    changed_failures = true;
+                                }
+                            }
+                        });
+                },
+            );
         });
         if changed_rounds {
             self.set_tool_rounds(rounds);
         }
+        if changed_failures {
+            self.set_tool_failures(failures);
+        }
     }
+}
+
+/// The tools of the last `most` replies, when each of them asked for tools and every call of each failed (C225): the
+/// replies since the person's last message, from the last back. A reply with a call that ran, or that the person did not
+/// allow, or with no call, ends the run.
+fn failed_in_a_row(turns: &[Turn], most: u32) -> Option<Vec<String>> {
+    let mut tools: Vec<String> = Vec::new();
+    let mut count = 0;
+    for turn in turns.iter().rev() {
+        let failed = !turn.from_person
+            && !turn.calls.is_empty()
+            && turn
+                .calls
+                .iter()
+                .all(|c| matches!(c.state, CallState::Failed(_)));
+        if !failed {
+            break;
+        }
+        for call in &turn.calls {
+            let name = if call.tool.is_empty() {
+                &call.name
+            } else {
+                &call.tool
+            };
+            if !tools.contains(name) {
+                tools.push(name.clone());
+            }
+        }
+        count += 1;
+        if count >= most {
+            tools.reverse();
+            return Some(tools);
+        }
+    }
+    None
+}
+
+/// What the chat says when it stopped after `most` replies in a row whose tool calls all failed (C225).
+fn failures_words(most: u32, tools: &[String]) -> String {
+    let which = tools.join(", ");
+    let failed = if most == 1 {
+        format!("A tool call of the model failed ({which})")
+    } else {
+        format!("The model's tool calls failed {most} times in a row ({which})")
+    };
+    format!(
+        "{failed}; the chat stopped there. Send a message to go on, or allow more under Failures in a row in MCP \
+         servers."
+    )
 }
 
 /// What can be done with a call of the chat, from its card.
@@ -1588,6 +1706,193 @@ for line in sys.stdin:
             std::thread::sleep(Duration::from_millis(10));
         }
         assert_eq!(app.chat.tool_rounds, rounds, "the chat went on after Stop");
+        assert!(!app.chat.replying() && !app.chat.tools_waiting);
+        app.session.stop_blocking();
+    }
+
+    /// I53 (C225): a reply the context cut off while the model asked for a tool (`finish_reason` `length`, the arguments
+    /// cut in the middle of a string): the tool does not run, the chat stops and says that the context was full, and
+    /// nothing more is asked, even with no limit of replies with tools. The next message sends the call back with `{}`
+    /// for its arguments (an engine refuses a conversation whose arguments are not JSON), and the reply comes.
+    #[cfg(unix)]
+    #[test]
+    fn p3_i53_a_tool_call_the_context_cut_off_does_not_run_and_the_chat_says_why() {
+        let dir = scratch("u11");
+        let Some(echo) = echo_server(&dir) else {
+            return;
+        };
+        let fake = FakeOllama::start();
+        fake.add_model("qwen3:4b", 2 * GB);
+        fake.behave(|b| b.tools = ToolsBehave::CutOff);
+        let mut app = app_with(&dir, "ollama", Some(fake.port()), &[echo]);
+        let ctx = egui::Context::default();
+        start_with(&mut app, "qwen3:4b");
+        until(&mut app, &ctx, "Ollama to run", |a| {
+            a.session.state() == ServerState::Running
+        });
+        app.set_tools_allow_all(true);
+        app.set_tool_rounds(None);
+        app.chat.input = "save the query".into();
+        app.send_chat(&ctx);
+        until(&mut app, &ctx, "the reply that was cut off", |a| {
+            !a.chat.replying() && last_call(a).is_some()
+        });
+        let call = last_call(&app).unwrap().clone();
+        assert_eq!(
+            call.state,
+            CallState::Failed(super::super::chat::CALL_CUT_OFF.to_string())
+        );
+        assert_eq!(call.ticket, None, "the tool ran");
+        let notice = app.chat.notice.clone().expect("the chat says why");
+        assert!(
+            notice.contains("was asking for a tool when the context")
+                && notice.contains("did not run"),
+            "{notice}"
+        );
+        assert!(!app.chat.cut_off, "Continue is offered under a call");
+        assert_eq!(app.chat.error, None);
+        assert!(painted(&mut app, &ctx).contains("so the tool did not run"));
+        // nothing more is asked
+        let asked = fake.requests_to("/v1/chat/completions").len();
+        for _ in 0..30 {
+            frame(&mut app, &ctx);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(fake.requests_to("/v1/chat/completions").len(), asked);
+        assert!(!app.chat.tools_waiting && !app.chat.replying());
+        // the next message: the call goes back with `{}`, the model is told why it did not run, and it answers
+        app.chat.input = "go on".into();
+        app.send_chat(&ctx);
+        until(&mut app, &ctx, "the reply", |a| {
+            last_reply(a).is_some_and(|t| t.starts_with("Hello!"))
+        });
+        assert_eq!(app.chat.error, None);
+        let sent = fake
+            .requests_to("/v1/chat/completions")
+            .last()
+            .unwrap()
+            .body
+            .clone()
+            .unwrap();
+        let messages = sent["messages"].as_array().unwrap();
+        let asking = messages
+            .iter()
+            .find(|m| m.get("tool_calls").is_some())
+            .unwrap();
+        assert_eq!(asking["tool_calls"][0]["function"]["arguments"], "{}");
+        let answer = messages.iter().find(|m| m["role"] == "tool").unwrap();
+        assert!(
+            answer["content"].as_str().unwrap().contains("cut off"),
+            "{answer}"
+        );
+        app.session.stop_blocking();
+    }
+
+    /// I54 (C225): a model that keeps asking for a tool with arguments that are not JSON: no call runs, the model is told
+    /// why, and the chat stops after 3 such replies in a row and names the tool, even with no limit of replies with
+    /// tools; then after as many as *Failures in a row* says (`app.tool_failures`).
+    #[cfg(unix)]
+    #[test]
+    fn p3_i54_the_chat_stops_after_the_failures_in_a_row_chosen() {
+        let dir = scratch("u12");
+        let Some(echo) = echo_server(&dir) else {
+            return;
+        };
+        let fake = FakeOllama::start();
+        fake.add_model("qwen3:4b", 2 * GB);
+        fake.behave(|b| b.tools = ToolsBehave::LoopBroken);
+        let mut app = app_with(&dir, "ollama", Some(fake.port()), &[echo]);
+        let ctx = egui::Context::default();
+        start_with(&mut app, "qwen3:4b");
+        until(&mut app, &ctx, "Ollama to run", |a| {
+            a.session.state() == ServerState::Running
+        });
+        app.set_tools_allow_all(true);
+        app.set_tool_rounds(None);
+        let calls = |a: &App| a.chat.turns.iter().map(|t| t.calls.len()).sum::<usize>();
+
+        app.chat.input = "hello".into();
+        app.send_chat(&ctx);
+        until(&mut app, &ctx, "the chat to stop at 3 failures", |a| {
+            a.chat.error.is_some()
+        });
+        let error = app.chat.error.clone().unwrap();
+        assert!(error.contains("failed 3 times in a row (say)"), "{error}");
+        assert!(error.contains("Failures in a row"), "{error}");
+        assert_eq!(calls(&app), 3);
+        assert!(app.chat.turns.iter().flat_map(|t| t.calls.iter()).all(|c| {
+            c.state == CallState::Failed(super::super::chat::CALL_NOT_JSON.to_string())
+                && c.ticket.is_none()
+        }));
+        assert_eq!(fake.requests_to("/v1/chat/completions").len(), 3);
+
+        // a limit of 1
+        app.set_tool_failures(1);
+        app.chat.input = "again".into();
+        app.send_chat(&ctx);
+        until(&mut app, &ctx, "the chat to stop at 1 failure", |a| {
+            a.chat.error.is_some()
+        });
+        let error = app.chat.error.clone().unwrap();
+        assert!(
+            error.starts_with("A tool call of the model failed (say)"),
+            "{error}"
+        );
+        assert_eq!(calls(&app), 4);
+        app.session.stop_blocking();
+    }
+
+    /// I55 (C225): the engine fails each request after a tool ran (500): it is asked again twice, after a wait, with
+    /// the tools and then without them; then the chat stops and says the engine's words, and nothing more is asked, even
+    /// with no limit of replies with tools. (A failed request used to leave the reply before it last, whose calls were
+    /// settled again and the reply asked for again, without end.)
+    #[cfg(unix)]
+    #[test]
+    fn p3_i55_an_engine_that_keeps_failing_after_a_tool_ran_stops_the_chat_with_its_words() {
+        let dir = scratch("u13");
+        let Some(echo) = echo_server(&dir) else {
+            return;
+        };
+        let fake = FakeOllama::start();
+        fake.add_model("qwen3:4b", 2 * GB);
+        fake.behave(|b| b.tools = ToolsBehave::Call);
+        let mut app = app_with(&dir, "ollama", Some(fake.port()), &[echo]);
+        let ctx = egui::Context::default();
+        start_with(&mut app, "qwen3:4b");
+        until(&mut app, &ctx, "Ollama to run", |a| {
+            a.session.state() == ServerState::Running
+        });
+        app.set_tool_rounds(None);
+        app.chat.input = "hello".into();
+        app.send_chat(&ctx);
+        until(&mut app, &ctx, "the card that asks", |a| {
+            last_call(a).is_some_and(|c| c.state == CallState::Asking)
+        });
+        let route = "/v1/chat/completions";
+        fake.behave(|b| {
+            b.fail_next.insert(route.into(), (500, 100));
+        });
+        let before = fake.requests_to(route).len();
+        let at = app.chat.turns.len() - 1;
+        app.allow_call(at, 0, false);
+        until(&mut app, &ctx, "the error", |a| a.chat.error.is_some());
+        assert_eq!(app.chat.error.as_deref(), Some("injected failure"));
+        assert!(matches!(last_call(&app).unwrap().state, CallState::Done(_)));
+        assert_eq!(
+            fake.requests_to(route).len() - before,
+            6,
+            "3 with the tools, 3 without"
+        );
+        for _ in 0..40 {
+            frame(&mut app, &ctx);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            fake.requests_to(route).len() - before,
+            6,
+            "the chat went on asking"
+        );
+        assert_eq!(app.chat.error.as_deref(), Some("injected failure"));
         assert!(!app.chat.replying() && !app.chat.tools_waiting);
         app.session.stop_blocking();
     }

@@ -132,13 +132,24 @@ addresses. Asked for `shopping.txt` in a folder, Bonsai 2 4B passed the folder i
 full path, it succeeded.
 
 **If responses are slow,** disable the tools you do not need: the description of every offered tool is sent with each
-message. If a long chat runs out of context, choose **Long chats** in the panel on the right of the page.
+message. If a long chat runs out of context, turn on **Auto-compact** under **Capabilities** in the panel on the
+right, or choose a longer context in **How it runs**.
 
 **If the model does not use a tool,** ask it directly and check that the tool is enabled. If it still ignores tools,
 or repeatedly calls them incorrectly, try another model: it must be one designed for tool use, and smaller models make
 more mistakes. A model can request tools twenty times in a row after a single message from you; the chat then stops and
 waits for you. **Tool calls in a row**, under **When the model uses a tool**, sets this limit to 10, 50 or 100, or
 removes it; without a limit, press **Stop** to end a chat in which the model keeps requesting tools.
+
+**If a tool keeps failing,** the model is told why each time and may try again. After three replies in a row in which
+every tool call failed, the chat stops and names the tool, whatever **Tool calls in a row** allows; **Failures in a
+row**, in the same place, sets this number to 1, 2, 5 or 10. A call whose arguments are not valid JSON does not run.
+A call that the end of the context cuts off does not run either: the chat stops and says that the context is full,
+and how to make room.
+
+**If the engine fails a request** (it cannot be reached, is busy, or reports an error of its own), the chat asks again
+twice, one and then two seconds later, and then shows the engine's message. A request the engine refuses for another
+reason is not asked again.
 
 **If the engine does not support tools,** the chat says so below the conversation and answers without them.
 

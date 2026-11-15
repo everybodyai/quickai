@@ -73,6 +73,12 @@ pub const TOOLS_ALLOW_ALL_KEY: &str = "app.tools_allow_all";
 pub const TOOL_ROUNDS_KEY: &str = "app.tool_rounds";
 /// The replies in a row that may use tools, unless the person chose otherwise.
 pub const DEFAULT_TOOL_ROUNDS: u32 = 20;
+/// How many replies in a row may end with each of their tool calls failed before the chat stops and says so (C225),
+/// whatever Tool calls in a row allows; absent is `DEFAULT_TOOL_FAILURES`. There is no "no limit": a model that keeps
+/// asking for a tool that fails the same way would go on alone.
+pub const TOOL_FAILURES_KEY: &str = "app.tool_failures";
+/// The failed replies in a row the chat goes on after, unless the person chose otherwise.
+pub const DEFAULT_TOOL_FAILURES: u32 = 3;
 /// The capabilities of the chat (How it runs, Capabilities): Auto-compact summarizes the earlier messages when the
 /// conversation nears the end of the context (`true`; absent, off); Thinking is `true` or `false` once the person chose
 /// (absent, as the model runs); Show thinking shows what a model thought, folded above its answer (`true`; absent, off).
@@ -475,6 +481,22 @@ impl Settings {
             None => Some(serde_json::Value::from(0)),
         };
         self.set_app_value(TOOL_ROUNDS_KEY, value);
+    }
+
+    /// How many replies in a row may end with each of their tool calls failed before the chat stops (C225).
+    pub fn tool_failures(&self) -> u32 {
+        self.app_value(TOOL_FAILURES_KEY)
+            .and_then(serde_json::Value::as_u64)
+            .map_or(DEFAULT_TOOL_FAILURES, |n| {
+                u32::try_from(n).unwrap_or(u32::MAX).max(1)
+            })
+    }
+
+    /// Keeps it (at least 1); the default takes the key away.
+    pub fn set_tool_failures(&mut self, failures: u32) {
+        let value =
+            (failures != DEFAULT_TOOL_FAILURES).then(|| serde_json::Value::from(failures.max(1)));
+        self.set_app_value(TOOL_FAILURES_KEY, value);
     }
 
     /// Whether the chat summarizes its earlier messages when the conversation nears the end of the context.
@@ -1215,6 +1237,23 @@ default = 1.5
         s.set_tool_rounds(Some(DEFAULT_TOOL_ROUNDS));
         assert_eq!(s.app_value(TOOLS_ALLOW_ALL_KEY), None);
         assert_eq!(s.app_value(TOOL_ROUNDS_KEY), None);
+    }
+
+    /// C225: the chat stops after 3 replies in a row whose tool calls all failed, unless the person chose another number;
+    /// there is no "no limit", and the default is not written down.
+    #[test]
+    fn the_chat_stops_after_three_failed_tool_replies_unless_the_person_chose_otherwise() {
+        let mut s: Settings =
+            serde_json::from_str(r#"{"port": 8080, "ctx_size": 4096, "n_gpu_layers": 999}"#)
+                .unwrap();
+        assert_eq!(s.tool_failures(), DEFAULT_TOOL_FAILURES);
+        s.set_tool_failures(5);
+        assert_eq!(s.tool_failures(), 5);
+        assert_eq!(s.app_value(TOOL_FAILURES_KEY), Some(&serde_json::json!(5)));
+        s.set_tool_failures(0);
+        assert_eq!(s.tool_failures(), 1, "0 is not a limit the chat takes");
+        s.set_tool_failures(DEFAULT_TOOL_FAILURES);
+        assert_eq!(s.app_value(TOOL_FAILURES_KEY), None);
     }
 
     /// The chat's capabilities: Auto-compact and Show thinking are off and Thinking is as the model runs until the

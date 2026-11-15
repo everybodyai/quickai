@@ -540,7 +540,7 @@ impl App {
         let wake = ctx.clone();
         let (rx, cancel) = chat::spawn_request(
             move || wake.request_repaint(),
-            move |stop, send| chat::stream_reply(port, &body, stop, send),
+            move |stop, send| chat::stream_reply_retried(port, &body, stop, send),
         );
         self.chat.summarizing = Some(Summarizing {
             rx,

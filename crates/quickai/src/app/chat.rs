@@ -546,7 +546,8 @@ pub fn spawn_reply(
 }
 
 /// `spawn_reply`, offering the model `tools` (the request's `tools`, C204). An engine that refuses the request with them
-/// is asked again without them, and that is said; one that refuses it as too long for its context is not.
+/// is asked again without them, and that is said; one that refuses it as too long for its context is not. An error that
+/// can pass is asked again after a wait first (`stream_reply_retried`).
 pub fn spawn_reply_with_tools(
     port: u16,
     model: String,
@@ -557,7 +558,7 @@ pub fn spawn_reply_with_tools(
 ) -> (Receiver<ChatEvent>, Arc<AtomicBool>) {
     spawn_request(wake, move |stop, send| {
         let body = request_body_with(&model, &options, &turns, tools.as_ref());
-        let mut outcome = stream_reply(port, &body, stop, send);
+        let mut outcome = stream_reply_retried(port, &body, stop, send);
         if tools.is_some() {
             if let Err(failure) = &outcome {
                 if failure.refused && failure.too_long.is_none() {
@@ -566,12 +567,47 @@ pub fn spawn_reply_with_tools(
                         failure.why
                     )));
                     let body = request_body_with(&model, &options, &turns, None);
-                    outcome = stream_reply(port, &body, stop, send);
+                    outcome = stream_reply_retried(port, &body, stop, send);
                 }
             }
         }
         outcome
     })
+}
+
+/// How long the chat waits before it asks again after an error that can pass (C225): the engine could not be reached,
+/// was busy (429) or failed on its side (5xx), before any of the reply came. Twice, as the OpenAI and Anthropic SDKs do;
+/// then the error is said. Any other error is said at once: the same request would be refused the same way.
+#[cfg(not(test))]
+const RETRY_WAITS: [Duration; 2] = [Duration::from_secs(1), Duration::from_secs(2)];
+#[cfg(test)]
+const RETRY_WAITS: [Duration; 2] = [Duration::from_millis(20), Duration::from_millis(40)];
+
+/// `stream_reply`, asked again after each of `RETRY_WAITS` while it fails in a way that can pass. A stop during a wait
+/// ends it, as a stop during the reply does.
+pub(super) fn stream_reply_retried(
+    port: u16,
+    body: &serde_json::Value,
+    stop: &AtomicBool,
+    said: &dyn Fn(ChatEvent),
+) -> Result<Vec<AskedCall>, Failure> {
+    let mut waits = RETRY_WAITS.iter();
+    loop {
+        let outcome = stream_reply(port, body, stop, said);
+        let Err(failure) = &outcome else {
+            return outcome;
+        };
+        let Some(wait) = waits.next().filter(|_| failure.may_pass) else {
+            return outcome;
+        };
+        let until = Instant::now() + *wait;
+        while Instant::now() < until {
+            if stop.load(Ordering::SeqCst) {
+                return Ok(Vec::new());
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
 }
 
 /// Runs `ask` on a thread of its own, what it says sent as events as it comes: then the tools it asked for and its end,
@@ -615,8 +651,18 @@ pub fn request_body(model: &str, options: &Options, turns: &[Turn]) -> serde_jso
     request_body_with(model, options, turns, None)
 }
 
+/// The arguments of a call, when they are what a tool takes: a JSON object (C225). A reply that the context or the reply
+/// limit cut off ends in the middle of them, and a model can write them wrong.
+pub fn call_arguments(text: &str) -> Option<serde_json::Value> {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .filter(serde_json::Value::is_object)
+}
+
 /// `request_body`, with the tools offered (C204). A reply that asked for tools is said as it was asked, followed by what
-/// came of each call.
+/// came of each call. Arguments that are not a JSON object go back as `{}`: llama.cpp reads those of every call of the
+/// conversation as JSON for templates such as Qwen's, and refuses the whole request when one is not (C225); what came
+/// of the call tells the model why it did not run.
 pub fn request_body_with(
     model: &str,
     options: &Options,
@@ -635,10 +681,14 @@ pub fn request_body_with(
                     .calls
                     .iter()
                     .map(|c| {
+                        let arguments = match call_arguments(&c.arguments) {
+                            Some(_) => c.arguments.as_str(),
+                            None => "{}",
+                        };
                         serde_json::json!({
                             "id": c.id,
                             "type": "function",
-                            "function": {"name": c.name, "arguments": c.arguments},
+                            "function": {"name": c.name, "arguments": arguments},
                         })
                     })
                     .collect();
@@ -784,12 +834,49 @@ pub(super) fn cut_off_words(limit: Option<u32>, context: Option<i64>, compacts: 
     }
 }
 
+/// What the chat says under a reply the engine cut off while the model asked for a tool (C225): the call is not whole,
+/// so it did not run, and the chat stopped. With Auto-compact on, the next message makes room first.
+pub(super) fn cut_call_words(limit: Option<u32>, context: Option<i64>, compacts: bool) -> String {
+    match limit {
+        Some(limit) => format!(
+            "The model was asking for a tool when the reply reached its limit ({limit} tokens), so the tool did not \
+             run. Options… (⋯ at the right of the bar) allows longer answers; then send a message to go on."
+        ),
+        None => {
+            let size = context
+                .map(|c| format!(" ({} tokens)", context_words(c)))
+                .unwrap_or_default();
+            if compacts {
+                format!(
+                    "The model was asking for a tool when the context{size} was full, so the tool did not run. Send \
+                     a message to go on: Auto-compact summarizes earlier messages first to make room."
+                )
+            } else {
+                format!(
+                    "The model was asking for a tool when the context{size} was full, so the tool did not run. Turn \
+                     on Auto-compact in How it runs to make room, choose a longer context, or start a new chat."
+                )
+            }
+        }
+    }
+}
+
+/// What a call that did not run says it came to, when the reply was cut off before the call was whole (C225).
+pub(super) const CALL_CUT_OFF: &str =
+    "The reply was cut off before this call was complete, so the tool did not run.";
+/// … and when its arguments are not a JSON object, as a tool takes them.
+pub(super) const CALL_NOT_JSON: &str =
+    "The arguments of this call are not a valid JSON object, so the tool did not run.";
+
 /// Why a request did not come to its end: the words, whether the engine refused it before any of it came, and whether
 /// that is because it does not fit in the context (with the context's length, when the engine said it).
 pub(super) struct Failure {
     pub why: String,
     pub refused: bool,
     pub too_long: Option<Option<u64>>,
+    /// Before any of the reply came, the engine could not be reached, was busy or failed on its side: asked again a
+    /// little later, the same request may be answered (C225).
+    pub may_pass: bool,
 }
 
 impl Failure {
@@ -798,6 +885,7 @@ impl Failure {
             why,
             refused: false,
             too_long: None,
+            may_pass: false,
         }
     }
 }
@@ -838,9 +926,10 @@ pub(super) fn stream_reply(
         Ok(answer) => answer,
         Err(_) if stop.load(Ordering::SeqCst) => return Ok(Vec::new()),
         Err(e) => {
-            return Err(Failure::on_the_way(format!(
-                "could not reach the server: {e}"
-            )))
+            return Err(Failure {
+                may_pass: true,
+                ..Failure::on_the_way(format!("could not reach the server: {e}"))
+            })
         }
     };
     let status = answer.status;
@@ -848,10 +937,12 @@ pub(super) fn stream_reply(
     if !(200..300).contains(&status) {
         let answer: serde_json::Value =
             serde_json::from_reader(reader).unwrap_or(serde_json::Value::Null);
+        let too_long = too_long(&answer);
         return Err(Failure {
             why: error_words(&answer).unwrap_or_else(|| format!("the server answered {status}")),
             refused: true,
-            too_long: too_long(&answer),
+            may_pass: too_long.is_none() && (status == 429 || status >= 500),
+            too_long,
         });
     }
     // the tool calls, as they come in pieces: by their index, the id, the name and the arguments so far
@@ -881,6 +972,7 @@ pub(super) fn stream_reply(
                 why,
                 refused: false,
                 too_long: too_long(&event),
+                may_pass: false,
             });
         }
         let counted = event.get("usage").and_then(|u| {
@@ -1947,6 +2039,14 @@ impl App {
                 self.chat.error = Some(super::compact::too_long_words(context, compacts));
             }
         }
+        let cut = self.chat.error.is_none() && finish.as_deref() == Some("length");
+        // a reply cut off while it asked for tools: the calls are not whole, and do not run (C225)
+        let calls_cut = cut
+            && self
+                .chat
+                .turns
+                .last()
+                .is_some_and(|t| !t.from_person && !t.calls.is_empty());
         if let Some(since) = self.chat.thinking.take() {
             let secs = since.elapsed().as_secs();
             if let Some(last) = self.chat.turns.last_mut().filter(|t| !t.from_person) {
@@ -1960,7 +2060,11 @@ impl App {
                     words_of,
                 ));
             }
-        } else if !nothing && self.chat.error.is_none() && finish.as_deref() == Some("length") {
+        }
+        if calls_cut {
+            // the chat stops there, and says why and what makes room (a model that thought, then asked, is cut off too)
+            self.chat.notice = Some(cut_call_words(limit, words_of, compacts));
+        } else if !nothing && cut {
             // an answer that was cut off says so, and why; Continue goes on with it
             self.chat.cut_off = true;
             self.chat.cut_by_context = limit.is_none();
@@ -2004,7 +2108,7 @@ impl App {
             _ => {}
         }
         // the tools it asked for: those allowed always run, the others wait for the person (C204)
-        self.settle_new_calls();
+        self.settle_new_calls(calls_cut);
         self.keep_conversation();
         // a first reply is the last step of Getting started, remembered once
         if self.chat.error.is_none()
@@ -3494,6 +3598,81 @@ mod tests {
             failed.is_some_and(|w| w.starts_with("could not reach the server")),
             "a server that is gone was not said"
         );
+    }
+
+    /// C225: an error that can pass (the engine failed on its side, was busy, or could not be reached) is asked again
+    /// twice, after a wait, and then said; any other refusal is said at once, since the same request would be refused
+    /// the same way.
+    #[test]
+    fn an_error_that_can_pass_is_asked_again_twice_and_any_other_is_said_at_once() {
+        let fake = FakeOllama::start();
+        fake.add_model("qwen3:4b", 1 << 30);
+        let hello = || vec![Turn::said(true, "Hello")];
+        let route = "/v1/chat/completions";
+        let asked = || fake.requests_to(route).len();
+        fake.behave(|b| {
+            b.fail_next.insert(route.into(), (503, 2));
+        });
+        let (text, failed) = reply_of(fake.port(), "qwen3:4b", Options::default(), hello());
+        assert_eq!(failed, None);
+        assert!(text.starts_with("Hello!"), "{text}");
+        assert_eq!(asked(), 3);
+        fake.behave(|b| {
+            b.fail_next.insert(route.into(), (500, 5));
+        });
+        let (_, failed) = reply_of(fake.port(), "qwen3:4b", Options::default(), hello());
+        assert_eq!(failed.as_deref(), Some("injected failure"));
+        assert_eq!(asked(), 6, "asked three times in all");
+        fake.behave(|b| {
+            b.fail_next.insert(route.into(), (400, 5));
+        });
+        let (_, failed) = reply_of(fake.port(), "qwen3:4b", Options::default(), hello());
+        assert_eq!(failed.as_deref(), Some("injected failure"));
+        assert_eq!(asked(), 7, "a refusal is said at once");
+    }
+
+    /// C225: arguments that are not a JSON object (a call the context cut off, or one the model wrote wrong) go back to
+    /// the engine as `{}`, which it reads; whole ones go back as they were.
+    #[test]
+    fn arguments_that_are_not_a_json_object_go_back_as_an_empty_object() {
+        let call = |id: &str, arguments: &str| ToolCall {
+            id: id.to_string(),
+            name: "jsonquery_workspace_save".to_string(),
+            server: "jsonquery".to_string(),
+            tool: "workspace_save".to_string(),
+            arguments: arguments.to_string(),
+            state: CallState::Failed(CALL_CUT_OFF.to_string()),
+            open: false,
+            ticket: None,
+        };
+        let mut reply = Turn::said(false, "");
+        reply.calls = vec![
+            call(
+                "c1",
+                "{\"path\": \"q\", \"content\": \"[.departments[] | {\\n  name: .name,",
+            ),
+            call("c2", "[1, 2]"),
+            call("c3", "{\"path\":\"q\"}"),
+        ];
+        let body = request_body_with(
+            "m",
+            &Options::default(),
+            &[Turn::said(true, "save it"), reply],
+            None,
+        );
+        let asked = &body["messages"][1]["tool_calls"];
+        assert_eq!(asked[0]["function"]["arguments"], "{}");
+        assert_eq!(asked[1]["function"]["arguments"], "{}");
+        assert_eq!(asked[2]["function"]["arguments"], "{\"path\":\"q\"}");
+        assert!(body["messages"][2]["content"]
+            .as_str()
+            .unwrap()
+            .contains("cut off"));
+        assert_eq!(
+            call_arguments("{\"a\": 1}"),
+            Some(serde_json::json!({"a": 1}))
+        );
+        assert_eq!(call_arguments("\"text\""), None);
     }
 
     /// C204: a reply that asked for tools goes back to the model as it was asked, each call followed by what came of it
