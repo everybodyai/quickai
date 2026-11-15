@@ -141,11 +141,24 @@ pub fn install(dir: &Path) -> Option<PathBuf> {
         return None;
     }
     std::fs::create_dir_all(dir).ok()?;
+    // Each is written by `cp`, not by this process: a file this process held open for writing cannot be run while a
+    // program that another thread of the tests started at that moment holds it too, from its fork until it runs its
+    // own program ("Text file busy", seen on CI). No process of this one ever holds a file that `cp` wrote.
+    let staged = dir.join(".fake-ssh.py");
+    std::fs::write(&staged, SCRIPT).ok()?;
     for name in ["ssh", "scp"] {
         let path = dir.join(name);
-        std::fs::write(&path, SCRIPT).ok()?;
+        let copied = std::process::Command::new("cp")
+            .arg(&staged)
+            .arg(&path)
+            .status()
+            .is_ok_and(|s| s.success());
+        if !copied {
+            return None;
+        }
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).ok()?;
     }
+    let _ = std::fs::remove_file(&staged);
     Some(dir.join("ssh"))
 }
 

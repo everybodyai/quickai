@@ -3302,6 +3302,10 @@ mod tests {
             let _ = stream.write_all(
                 format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{body}").as_bytes(),
             );
+            // the rest of the request is read before the connection closes: closed with some of it unread, Windows resets
+            // the connection, and the client can lose the answer it has not read yet (os error 10053, seen on CI)
+            let _ = stream.shutdown(std::net::Shutdown::Write);
+            while matches!(stream.read(&mut buf), Ok(n) if n > 0) {}
         });
         let (rx, _cancel) = spawn_reply_with_tools(
             port,
