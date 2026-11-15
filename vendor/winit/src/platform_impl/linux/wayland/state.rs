@@ -1,4 +1,5 @@
-// Changed for QuickAI, 2026-11-05: KDE's blur protocol is taken out. See vendor/README.md in QuickAI's source.
+// Changed for QuickAI, 2026-11-05: KDE's blur protocol is taken out; 2026-11-15: files dropped on a window (dnd.rs). See
+// vendor/README.md in QuickAI's source.
 use std::cell::RefCell;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -13,6 +14,7 @@ use sctk::reexports::client::protocol::wl_surface::WlSurface;
 use sctk::reexports::client::{Connection, Proxy, QueueHandle};
 
 use sctk::compositor::{CompositorHandler, CompositorState};
+use sctk::data_device_manager::DataDeviceManagerState;
 use sctk::output::{OutputHandler, OutputState};
 use sctk::registry::{ProvidesRegistryState, RegistryState};
 use sctk::seat::pointer::ThemedPointer;
@@ -106,6 +108,12 @@ pub struct WinitState {
     /// Fractional scaling manager.
     pub fractional_scaling_manager: Option<FractionalScalingManager>,
 
+    /// The data device manager, for files dropped on a window (dnd.rs).
+    pub data_device_manager: Option<DataDeviceManagerState>,
+
+    /// The window that files are dragged over, from the drag's enter to its leave or drop.
+    pub drag_window: Option<WindowId>,
+
 
     /// Loop handle to re-register event sources, such as keyboard repeat.
     pub loop_handle: LoopHandle<'static, Self>,
@@ -140,10 +148,14 @@ impl WinitState {
         let monitors = output_state.outputs().map(MonitorHandle::new).collect();
 
         let seat_state = SeatState::new(globals, queue_handle);
+        let data_device_manager = DataDeviceManagerState::bind(globals, queue_handle).ok();
 
         let mut seats = AHashMap::default();
         for seat in seat_state.seats() {
-            seats.insert(seat.id(), WinitSeatState::new());
+            let mut winit_seat = WinitSeatState::new();
+            winit_seat.data_device =
+                data_device_manager.as_ref().map(|m| m.get_data_device(queue_handle, &seat));
+            seats.insert(seat.id(), winit_seat);
         }
 
         let (viewporter_state, fractional_scaling_manager) =
@@ -174,6 +186,8 @@ impl WinitState {
             window_events_sink: Default::default(),
             viewporter_state,
             fractional_scaling_manager,
+            data_device_manager,
+            drag_window: None,
 
             seats,
             text_input_state: TextInputState::new(globals, queue_handle).ok(),

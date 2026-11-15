@@ -2,9 +2,9 @@
 
 ## winit
 
-`vendor/winit` is [winit 0.30.13](https://crates.io/crates/winit/0.30.13), the window library under eframe, with two
+`vendor/winit` is [winit 0.30.13](https://crates.io/crates/winit/0.30.13), the window library under eframe, with three
 changes. `[patch.crates-io]` in the root `Cargo.toml` makes every build use it. The commit that adds the copy holds it as
-published, and the commit after it is the first change; the second is its own commit.
+published, and the commit after it is the first change; the second and the third are each a commit of their own.
 
 ### What was done (2026-11-05, for release 0.2.4)
 
@@ -55,6 +55,23 @@ Without `set_frame_callback_patience` winit behaves as published. winit's own re
 [rust-windowing/winit#4668](https://github.com/rust-windowing/winit/issues/4668); eframe 0.36.2 stopped the busy loop
 that came with it ([emilk/egui#8326](https://github.com/emilk/egui/issues/8326)).
 
+### The third change (2026-11-15): files dropped on a window on Wayland
+
+winit takes files dropped on a window on X11, Windows and macOS (`WindowEvent::HoveredFile`, `DroppedFile`), but its
+Wayland backend has no drag-and-drop at all, so a file dropped on QuickAI's chat (C226) did nothing on GNOME or KDE.
+
+- `src/platform_impl/linux/wayland/dnd.rs` (new): a drag that offers `text/uri-list`, as a file manager's does, is
+  accepted as a copy. While it is over a window, the window gets `HoveredFile` with an empty path (the paths are read
+  only once the files are dropped), and `HoveredFileCancelled` when it leaves. Dropped, the list is read through the
+  event loop, never by waiting on it, 4 MB of it at the most, and the window gets `DroppedFile` for each local file in
+  it. Any other drag is refused, as before. winit offers nothing to other programs.
+- `src/platform_impl/linux/wayland/state.rs`: the data device manager, and the window under the drag.
+- `src/platform_impl/linux/wayland/seat/mod.rs`: each seat gets a data device.
+- `src/platform_impl/linux/wayland/mod.rs`: the new module.
+
+Copying and pasting text is egui's (its own clipboard, smithay-clipboard, has a data device of its own), and is as it
+was. When a newer winit takes dropped files on Wayland by itself, this change can go.
+
 ### When eframe moves to a newer winit
 
 1. Replace `winit/` with the new published crate, leaving out `.cargo-ok`, `Cargo.toml.orig` and `Cargo.lock`, and commit
@@ -65,7 +82,8 @@ that came with it ([emilk/egui#8326](https://github.com/emilk/egui/issues/8326))
 3. `python3 scripts/licenses/generate.py` stops if `wayland-protocols-plasma` is back in `Cargo.lock`.
 4. A release build must hold no KDE protocol: `strings -a quickai | grep org_kde` prints nothing.
 5. `cargo test --manifest-path vendor/winit/Cargo.toml --lib frame_patience` (with a target directory outside the copy,
-   and its `Cargo.lock` removed afterwards) tests the patience.
+   and its `Cargo.lock` removed afterwards) tests the patience; `--lib dnd` tests how a list of dropped files is read.
 
 The copy can go once neither change is needed: winit gains a setting to leave the protocol out (or KDE relicenses
-`blur.xml`), and a window the compositor does not draw no longer holds back the others.
+`blur.xml`), a window the compositor does not draw no longer holds back the others, and winit takes dropped files on
+Wayland.
