@@ -77,7 +77,15 @@ pub struct ToolCall {
     pub open: bool,
     /// The ticket of its run, once it runs.
     pub ticket: Option<u64>,
+    /// What it gave is no longer sent to the model, to make room in the context (Auto-compact): `RESULT_LEFT_OUT` is
+    /// sent in its place. The chat still shows it.
+    pub left_out: bool,
 }
+
+/// What the model is told of a call whose result was left out to make room.
+pub(super) const RESULT_LEFT_OUT: &str =
+    "[What this tool gave was left out here to make room in the context. Use the \
+                                          tool again if it is needed.]";
 
 /// What came of a call.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -109,6 +117,15 @@ impl ToolCall {
             CallState::Failed(why) => format!("The tool failed: {why}"),
             CallState::Denied => "The person did not allow this tool to run.".to_string(),
             CallState::Asking | CallState::Running => "The tool did not run.".to_string(),
+        }
+    }
+
+    /// What the model is sent of it: what came of it, or, once that was left out to make room, a word that it was.
+    pub fn sent_answer(&self) -> String {
+        if self.left_out {
+            RESULT_LEFT_OUT.to_string()
+        } else {
+            self.answer()
         }
     }
 }
@@ -372,9 +389,13 @@ pub struct Chat {
     /// The conversation takes most of the context while Auto-compact is off: said under it, with the tokens it takes and
     /// the context's.
     pub room_note: Option<(u64, u64)>,
-    /// The engine refused the request as too long: it is summarized and asked again, once for each message.
+    /// The engine refused the request as too long: room is made for it (`compact.rs`) and it is asked again; once room
+    /// was made all the ways there are, a request refused again is said to be too long. Each reply that comes begins
+    /// it anew.
     pub(super) too_long: bool,
     pub(super) retried: bool,
+    /// The summary that made room for the request was just written: it is sent without another.
+    pub(super) room_made: bool,
 }
 
 /// The most messages Up and Down in the box go back through.
@@ -543,6 +564,7 @@ impl Chat {
         self.room_note = None;
         self.too_long = false;
         self.retried = false;
+        self.room_made = false;
     }
 }
 
@@ -707,7 +729,7 @@ pub fn request_body_with(
                     .collect();
                 let mut said = vec![serde_json::json!({"role": "assistant", "content": t.text, "tool_calls": asked})];
                 said.extend(t.calls.iter().map(|c| {
-                    serde_json::json!({"role": "tool", "tool_call_id": c.id, "content": c.answer()})
+                    serde_json::json!({"role": "tool", "tool_call_id": c.id, "content": c.sent_answer()})
                 }));
                 return said;
             }
@@ -862,7 +884,7 @@ pub(super) fn cut_call_words(limit: Option<u32>, context: Option<i64>, compacts:
             if compacts {
                 format!(
                     "The model was asking for a tool when the context{size} was full, so the tool did not run. Send \
-                     a message to go on: Auto-compact summarizes earlier messages first to make room."
+                     a message to go on: Auto-compact makes room first."
                 )
             } else {
                 format!(
@@ -1341,8 +1363,9 @@ fn show_summary_line(
     let middle = 18.0 + said_width + 16.0 + link_width;
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 24.0), egui::Sense::hover());
     response.on_hover_text(
-        "Above this line the model reads a summary in place of the messages; below it, every word. The model wrote the \
-         summary itself, so it may leave out a detail: open it to read or correct it.",
+        "Above this line the model reads a summary in place of the messages; below it, every word (and, when the line is \
+         among the steps of an answer that used tools, your message that the answer is to, read again before them). \
+         The model wrote the summary itself, so it may leave out a detail: open it to read or correct it.",
     );
     let left = (rect.center().x - middle / 2.0).max(rect.left() + 8.0);
     let y = rect.center().y;
@@ -1976,21 +1999,28 @@ impl App {
     }
 
     /// Asks for the reply to the conversation as it stands, offering the tools of the MCP servers that are ready. With
-    /// Auto-compact on, a conversation that would leave the reply too little room in the context is summarized first,
-    /// and the reply asked for once the summary came (`compact.rs`). The model reads the turns after the summary whole;
+    /// Auto-compact on, room is made first for a request that would take more of the context than the share chosen, at
+    /// each step of a run of tool calls too: what older tools gave is left out, and if that is not enough the earlier
+    /// turns are summarized, the reply asked for once the summary came (`compact.rs`). The model reads the turns after
+    /// the summary whole (led by the message they answer, when the summary ends among the steps of a run of tools);
     /// Continue asks it to go on with its last reply, which the words that come are added to.
     pub(super) fn ask_for_reply(&mut self, ctx: &egui::Context) {
         let Some((port, model)) = self.chat_target() else {
             return;
         };
         self.chat.error = None;
-        if self.stored.auto_compact() && self.needs_room() && self.start_summary(ctx, true) {
+        let may_summarize = !std::mem::take(&mut self.chat.room_made);
+        if self.make_room(ctx, may_summarize) {
             return;
         }
         let (tools, names) = self.offered_tools();
         self.chat.tool_names = names;
         let options = self.reply_options();
-        let mut turns = self.chat.turns[self.chat.summarized_upto()..].to_vec();
+        let all = &self.chat.turns;
+        let mut turns: Vec<Turn> =
+            super::compact::read_from(all, self.chat.summarized_upto(), all.len())
+                .cloned()
+                .collect();
         if self.chat.continuing {
             turns.push(Turn::said(true, super::compact::CONTINUE_ASK));
             if let Some(last) = self.chat.turns.last_mut().filter(|t| !t.from_person) {
@@ -2188,6 +2218,16 @@ impl App {
             return;
         }
         self.chat.turns.pop();
+        // a summary that ended at the reply taken away (among the steps of a run of tools) stands for no turn the model
+        // would read after it: the turns are read whole again, and room made anew
+        if self
+            .chat
+            .summary
+            .as_ref()
+            .is_some_and(|s| s.upto >= self.chat.turns.len())
+        {
+            self.chat.summary = None;
+        }
         self.chat.retried = false;
         self.ask_for_reply(ctx);
     }
@@ -2275,6 +2315,7 @@ impl App {
                                 state: CallState::Asking,
                                 open: false,
                                 ticket: None,
+                                left_out: false,
                             }
                         })
                         .collect();
@@ -2320,12 +2361,15 @@ impl App {
                 self.note_context(n);
             }
             if compacts && !self.chat.retried {
-                // made room for and asked again, once (`poll_capabilities`): as it was asked, Continue too
+                // made room for and asked again (`poll_capabilities`): as it was asked, Continue too
                 self.chat.too_long = true;
                 self.chat.continuing = continued;
             } else {
                 self.chat.error = Some(super::compact::too_long_words(context, compacts));
             }
+        } else {
+            // a request of a run of tool calls that is refused later has room made for it anew
+            self.chat.retried = false;
         }
         let cut = self.chat.error.is_none() && finish.as_deref() == Some("length");
         // a reply cut off while it asked for tools: the calls are not whole, and do not run (C225)
@@ -3997,6 +4041,7 @@ mod tests {
             state: CallState::Failed(CALL_CUT_OFF.to_string()),
             open: false,
             ticket: None,
+            left_out: false,
         };
         let mut reply = Turn::said(false, "");
         reply.calls = vec![
@@ -4041,6 +4086,7 @@ mod tests {
             state,
             open: false,
             ticket: None,
+            left_out: false,
         };
         let mut reply = Turn::said(false, "");
         reply.calls = vec![
@@ -4304,6 +4350,7 @@ mod tests {
             state: CallState::Asking,
             open: false,
             ticket: None,
+            left_out: false,
         };
         assert!(!call.settled());
         call.state = CallState::Running;

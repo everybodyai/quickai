@@ -1052,6 +1052,7 @@ Asked for on 2026-10-23 ("Lets stick to classic, but lets turn things around a b
 | I57 | 4.22 | ready | **What is past the room of a message is counted and not read** (C226): a message takes 10 pictures and 256 KB of text; with three pictures waiting, of 14 dropped seven are taken and seven counted as left, unread; a text file that would make the box longer than 256 KB, or is longer itself, is refused before it is read. | `app/given.rs` |
 | I58 | 4.22 | ready | **A large pasted picture is made smaller and sent as a PNG** (C226): pixels from the clipboard larger than 2048 on their longest side are scaled to it (4096×1024 is sent as 2048×512), smaller ones are sent at their size; the chat names it (*Pasted picture 1*, 2, ...). | `app/given.rs` |
 | I59 | 4.22 | ready | **Files dropped on the chat go with the next message, and a folder is said** (C226, D1, B): while files are dragged over the window the chat says *Drop to add to your message*; dropped, the picture waits over the box with its preview, the text file is in the box, *photos is a folder* is said, and nothing says the model may not see pictures when it says vision; a paste of 300 KB of text is said as too long and leaves the box as it was; sent, the words and the picture are one message (`image_url`, a PNG), and the notes are gone. | `app/tools.rs` |
+| I60 | 4.22 | ready | **A long run of tool calls makes room as it goes** (C227): with Auto-compact on and eight steps whose tools gave 2000 characters each, over 75% of a 4096-token context, what the first five gave is sent as *left out* (the chat keeps it) and nothing is summarized; with twelve steps whose own words are long, under 75% but over the 50% chosen, the first steps are summarized and the reply's request is the summary, the message again, then the last steps whole. | `app/tools.rs` |
 
 ### N. llama.cpp must not change
 
@@ -1065,7 +1066,7 @@ Phase 3 touches the supervisor, the installer, the feed and the proxy that llama
 | N04 | - | spec | Every `cfg` branch compiles for Windows and macOS: `quickai-core` is checked here for `x86_64-pc-windows-gnu`; the application crate by CI. | — |
 | N05 | - | spec | `cargo test --workspace` uses the network only in the tests that say so, and those pass when GitHub's anonymous allowance is used up (R08, the llama.cpp feed test). | — |
 
-**Counts** (`ready` / `red` / `manual` / `spec`): 749 / 0 / 16 / 5 (total 770). The test kit has 29 tests of its own and the Python fake
+**Counts** (`ready` / `red` / `manual` / `spec`): 750 / 0 / 16 / 5 (total 771). The test kit has 29 tests of its own and the Python fake
 22, none of them in the table (they are tests of the tests); the ready tests of the table are the ones that
 describe the application.
 

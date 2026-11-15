@@ -83,6 +83,12 @@ pub const DEFAULT_TOOL_FAILURES: u32 = 3;
 /// conversation nears the end of the context (`true`; absent, off); Thinking is `true` or `false` once the person chose
 /// (absent, as the model runs); Show thinking shows what a model thought, folded above its answer (`true`; absent, off).
 pub const AUTO_COMPACT_KEY: &str = "app.auto_compact";
+/// The share of the context, in percent, from which Auto-compact makes room: a request reckoned to take more of it waits
+/// for the room (absent, `DEFAULT_AUTO_COMPACT_AT`), between `AUTO_COMPACT_LEAST` and `AUTO_COMPACT_MOST`.
+pub const AUTO_COMPACT_AT_KEY: &str = "app.auto_compact_at";
+pub const DEFAULT_AUTO_COMPACT_AT: u32 = 75;
+pub const AUTO_COMPACT_LEAST: u32 = 50;
+pub const AUTO_COMPACT_MOST: u32 = 90;
 pub const THINKING_KEY: &str = "app.thinking";
 pub const SHOW_THINKING_KEY: &str = "app.show_thinking";
 /// Talking to QuickAI (C216): the microphone, the language, the speech model, reading aloud and its voice, as an
@@ -512,6 +518,24 @@ impl Settings {
             AUTO_COMPACT_KEY,
             on.then_some(serde_json::Value::Bool(true)),
         );
+    }
+
+    /// The share of the context, in percent, from which Auto-compact makes room.
+    pub fn auto_compact_at(&self) -> u32 {
+        self.app_value(AUTO_COMPACT_AT_KEY)
+            .and_then(serde_json::Value::as_u64)
+            .map_or(DEFAULT_AUTO_COMPACT_AT, |n| {
+                u32::try_from(n)
+                    .unwrap_or(u32::MAX)
+                    .clamp(AUTO_COMPACT_LEAST, AUTO_COMPACT_MOST)
+            })
+    }
+
+    /// Keeps it (between the least and the most); the default takes the key away.
+    pub fn set_auto_compact_at(&mut self, percent: u32) {
+        let percent = percent.clamp(AUTO_COMPACT_LEAST, AUTO_COMPACT_MOST);
+        let value = (percent != DEFAULT_AUTO_COMPACT_AT).then(|| serde_json::Value::from(percent));
+        self.set_app_value(AUTO_COMPACT_AT_KEY, value);
     }
 
     /// Whether a model that can answer without thinking first is told to think (`Some(true)`) or not (`Some(false)`);
@@ -1254,6 +1278,24 @@ default = 1.5
         assert_eq!(s.tool_failures(), 1, "0 is not a limit the chat takes");
         s.set_tool_failures(DEFAULT_TOOL_FAILURES);
         assert_eq!(s.app_value(TOOL_FAILURES_KEY), None);
+        // the share of the context from which Auto-compact makes room: 75% until chosen, kept between 50% and 90%
+        assert_eq!(s.auto_compact_at(), DEFAULT_AUTO_COMPACT_AT);
+        s.set_auto_compact_at(60);
+        assert_eq!(s.auto_compact_at(), 60);
+        assert_eq!(
+            s.app_value(AUTO_COMPACT_AT_KEY),
+            Some(&serde_json::json!(60))
+        );
+        s.set_auto_compact_at(99);
+        assert_eq!(s.auto_compact_at(), AUTO_COMPACT_MOST);
+        s.set_app_value(AUTO_COMPACT_AT_KEY, Some(serde_json::json!(10)));
+        assert_eq!(
+            s.auto_compact_at(),
+            AUTO_COMPACT_LEAST,
+            "a share written by hand is kept within bounds"
+        );
+        s.set_auto_compact_at(DEFAULT_AUTO_COMPACT_AT);
+        assert_eq!(s.app_value(AUTO_COMPACT_AT_KEY), None);
     }
 
     /// The chat's capabilities: Auto-compact and Show thinking are off and Thinking is as the model runs until the

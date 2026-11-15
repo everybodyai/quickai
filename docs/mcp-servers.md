@@ -133,7 +133,10 @@ full path, it succeeded.
 
 **If responses are slow,** disable the tools you do not need: the description of every offered tool is sent with each
 message. If a long chat runs out of context, turn on **Auto-compact** under **Capabilities** in the panel on the
-right, or choose a longer context in **How it runs**.
+right, or choose a longer context in **How it runs**. Auto-compact makes room between the steps of a long run of tool
+calls too: first, what the older calls gave is no longer sent to the model (the last three stay, and the chat still shows
+each, with a grey (i)); if that is not enough, the model summarizes the earlier steps and reads your message again
+before the last ones. The menu beside its switch sets the share of the context from which it does so.
 
 **If the model does not use a tool,** ask it directly and check that the tool is enabled. If it still ignores tools,
 or repeatedly calls them incorrectly, try another model: it must be one designed for tool use, and smaller models make

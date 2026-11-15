@@ -617,9 +617,9 @@ const PAGES: &[Page] = &[
             step(
                 "**Extras** shows what is added at startup: a vision model's projector, with a switch, and your own \
                  arguments and environment variables, each as a chip you can edit or remove. **Capabilities** has a \
-                 switch for each thing the chat can do, such as **Auto-compact**, which summarizes the earlier \
-                 messages when the conversation nears the end of the context; rest the pointer on one to see what it \
-                 does. **Tools** shows a switch for each MCP server. The gear at the top of the panel opens the \
+                 switch for each thing the chat can do, such as **Auto-compact**, which makes room when the \
+                 conversation nears the end of the context (from the share chosen beside its switch, 75% unless you \
+                 choose otherwise), also during a long run of tool calls; rest the pointer on one to see what it does. **Tools** shows a switch for each MCP server. The gear at the top of the panel opens the \
                  remaining startup settings, including the port.",
             )
             .at(Spot::Extras),
@@ -880,9 +880,10 @@ const TOUR: &[(Spot, &str, &str)] = &[
     (
         Spot::Capabilities,
         "Capabilities",
-        "A switch for each thing the chat can do: Auto-compact summarizes the earlier messages when the conversation \
-         nears the end of the context, and models that think have Thinking and Show thinking. Rest the pointer on \
-         one to see what it does.",
+        "A switch for each thing the chat can do: Auto-compact makes room when the conversation nears the end of the \
+         context (what older tool calls gave is no longer sent, and the earlier messages are summarized), from the \
+         share chosen beside its switch; models that think have Thinking and Show thinking. Rest the pointer on one \
+         to see what it does.",
     ),
     (
         Spot::Tools,

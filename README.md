@@ -104,9 +104,11 @@ in separate windows that you can move and resize like any other window.
 The panel on the right shows how the model runs: the context size (**4K** to **256K**, each with a dot that shows
 whether it fits, and **Other…** offering more, up to 2M where the model supports it), whether it runs on the graphics
 card, the processor or both, its **Capabilities** and the tools it may use. **Capabilities** has a switch for each
-thing the chat can do: **Auto-compact**, off until you turn it on, summarizes the earlier messages when a conversation
-nears the end of the context, so that the chat can go on, and models that think have **Thinking** and **Show
-thinking**. While the model runs, **How it runs** is at the bottom of the panel and shows how much of the context the
+thing the chat can do: **Auto-compact**, off until you turn it on, makes room when a conversation nears the end of the
+context, so that the chat can go on: what older tool calls gave is no longer sent (the chat still shows it), and if that
+is not enough the earlier messages are summarized, also between the steps of a long run of tool calls. The menu beside
+its switch sets the share of the context from which it does so (50% to 90%, 75% unless you choose otherwise). Models
+that think have **Thinking** and **Show thinking**. While the model runs, **How it runs** is at the bottom of the panel and shows how much of the context the
 chat uses, for example **12K of 64K**. The button at the top of the panel hides it, and the button at the right end of
 the toolbar shows it again.
 

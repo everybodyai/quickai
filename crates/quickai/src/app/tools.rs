@@ -1225,6 +1225,7 @@ pub fn tool_card(
                     }
                     CallState::Done(_) => {
                         ui.label(egui::RichText::new("Used").color(p.ok).small());
+                        left_out_mark(ui, call);
                         if ui
                             .small_button(if call.open { "Hide" } else { "Show" })
                             .on_hover_text("What it was given and what it gave back.")
@@ -1235,6 +1236,7 @@ pub fn tool_card(
                     }
                     CallState::Failed(_) => {
                         ui.label(egui::RichText::new("Failed").color(p.bad).small());
+                        left_out_mark(ui, call);
                     }
                     CallState::Denied => {
                         ui.label(theme::muted("Not allowed").small());
@@ -1299,6 +1301,24 @@ pub fn tool_card(
 }
 
 /// The arguments of a call, laid out to be read; as they came when they are not JSON.
+/// A grey (i) beside a call whose result is no longer sent to the model (Auto-compact made room): the pointer on it says so.
+fn left_out_mark(ui: &mut egui::Ui, call: &ToolCall) {
+    if !call.left_out {
+        return;
+    }
+    let (rect, mark) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+    icons::paint(
+        ui.painter(),
+        rect.shrink(1.0),
+        Icon::Info,
+        theme::palette().faint,
+    );
+    mark.on_hover_text(
+        "What this tool gave is no longer sent to the model, to make room in the context (Auto-compact). Show still \
+         shows it here, and the model can use the tool again if it needs it.",
+    );
+}
+
 fn pretty(arguments: &str) -> String {
     serde_json::from_str::<Json>(arguments)
         .ok()
@@ -2239,5 +2259,162 @@ for line in sys.stdin:
     fn a_long_text_is_cut_with_an_ellipsis() {
         assert_eq!(cut("short", 10), "short");
         assert_eq!(cut("abcdef", 3), "abc…");
+    }
+
+    /// I60 (C227): with Auto-compact on, a long run of tool calls after one message makes room as it goes. What the older
+    /// calls gave is left out of what is sent first (the last three stay whole, and the chat still has each); when that
+    /// is not enough, the earlier steps are summarized, and the model reads the message again before the last steps.
+    /// Room is made from the share of the context chosen.
+    #[cfg(unix)]
+    #[test]
+    fn p3_i60_a_long_run_of_tool_calls_makes_room_as_it_goes() {
+        use super::super::chat::{Dialect, RESULT_LEFT_OUT};
+        use super::super::compact::{Capability, RunFacts, SUMMARY_ASK};
+        let dir = scratch("u15");
+        let fake = FakeOllama::start();
+        fake.add_model("qwen3:4b", 2 * GB);
+        let mut app = app_with(&dir, "ollama", Some(fake.port()), &[]);
+        let ctx = egui::Context::default();
+        start_with(&mut app, "qwen3:4b");
+        until(&mut app, &ctx, "Ollama to run", |a| {
+            a.session.state() == ServerState::Running
+        });
+        let (port, model) = app.chat_target().unwrap();
+        app.chat.run_facts = Some(RunFacts {
+            port,
+            model,
+            dialect: Dialect::Ollama,
+            context: Some(4096),
+            asked_again: true,
+            ..RunFacts::default()
+        });
+        app.set_capability(Capability::AutoCompact, true);
+        let step = |i: usize, text: String, gave: String| {
+            let mut t = Turn::said(false, text);
+            t.calls.push(ToolCall {
+                id: format!("call_{i}"),
+                name: "jq_set_query".into(),
+                server: "jq".into(),
+                tool: "set_query".into(),
+                arguments: "{\"query\":\".items\"}".into(),
+                state: CallState::Done(gave),
+                open: false,
+                ticket: None,
+                left_out: false,
+            });
+            t
+        };
+        let replies = || fake.requests_to("/v1/chat/completions");
+        let wait = |app: &mut App, what: &str, done: &dyn Fn(&App) -> bool| {
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while !done(app) {
+                assert!(
+                    Instant::now() < deadline,
+                    "timed out waiting for {what}: {:?}",
+                    app.chat.error
+                );
+                frame(app, &ctx);
+                app.poll_capabilities(&ctx);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        };
+
+        // eight steps that each got 2000 characters back take more than 75% of the 4096 tokens: what the first five
+        // gave is left out, which is room enough, and nothing is summarized
+        app.chat
+            .turns
+            .push(Turn::said(true, "Show what jq can do."));
+        for i in 0..8 {
+            app.chat
+                .turns
+                .push(step(i, format!("Step {i}."), "x".repeat(2000)));
+        }
+        assert!(app.needs_room());
+        app.ask_for_reply(&ctx);
+        wait(&mut app, "the reply", &|a: &App| {
+            !a.chat.replying() && a.chat.turns.len() == 10
+        });
+        assert_eq!(app.chat.error, None);
+        assert!(app.chat.summary.is_none());
+        let left: Vec<bool> = app.chat.turns[1..9]
+            .iter()
+            .map(|t| t.calls[0].left_out)
+            .collect();
+        assert_eq!(left, [true, true, true, true, true, false, false, false]);
+        assert!(
+            matches!(&app.chat.turns[1].calls[0].state, CallState::Done(gave) if gave.len() == 2000),
+            "the chat still has what it gave"
+        );
+        assert_eq!(replies().len(), 1, "nothing was asked but the reply");
+        let sent = replies()[0].body.clone().unwrap();
+        let gave: Vec<String> = sent["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|m| m["role"] == "tool")
+            .map(|m| m["content"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(gave.len(), 8);
+        assert!(gave[..5].iter().all(|g| g == RESULT_LEFT_OUT), "{gave:?}");
+        assert!(gave[5..].iter().all(|g| g.len() == 2000));
+
+        // twelve steps whose own words are long (what their tools gave is short) fit under 75%, but not under the 50%
+        // chosen: the first steps are summarized, and the model reads the message again before the last ones
+        app.chat.new_conversation();
+        app.chat
+            .turns
+            .push(Turn::said(true, "Show more of what jq can do."));
+        for i in 0..12 {
+            app.chat.turns.push(step(
+                i,
+                format!("Step {i}: {}", "y".repeat(600)),
+                "ok".into(),
+            ));
+        }
+        assert!(!app.needs_room());
+        app.set_auto_compact_at(50);
+        assert_eq!(app.stored.auto_compact_at(), 50);
+        assert!(app.needs_room());
+        app.ask_for_reply(&ctx);
+        wait(&mut app, "the summary, then the reply", &|a: &App| {
+            !a.chat.replying() && a.chat.summary.is_some() && a.chat.turns.len() == 14
+        });
+        assert_eq!(app.chat.error, None);
+        let upto = app.chat.summary.as_ref().unwrap().upto;
+        assert!(
+            upto > 1 && upto < 13 && !app.chat.turns[upto].from_person,
+            "{upto}"
+        );
+        let asked = replies();
+        assert_eq!(asked.len(), 3, "the summary, then the reply");
+        // the summary is asked for the message and the first steps, and the reply after it
+        let summary = asked[1].body.clone().unwrap();
+        let messages = summary["messages"].as_array().unwrap();
+        assert_eq!(messages[0]["content"], "Show more of what jq can do.");
+        assert_eq!(messages.last().unwrap()["content"], SUMMARY_ASK);
+        let ids = |m: &[serde_json::Value]| -> Vec<String> {
+            m.iter()
+                .filter(|m| m["role"] == "tool")
+                .map(|m| m["tool_call_id"].as_str().unwrap().to_string())
+                .collect()
+        };
+        assert_eq!(ids(messages).len(), upto - 1);
+        let reply = asked[2].body.clone().unwrap();
+        let messages = reply["messages"].as_array().unwrap();
+        assert_eq!(messages[0]["role"], "system");
+        assert!(
+            messages[0]["content"].as_str().unwrap().contains("Bonsai"),
+            "the summary is read"
+        );
+        assert_eq!(
+            (
+                messages[1]["role"].as_str(),
+                messages[1]["content"].as_str()
+            ),
+            (Some("user"), Some("Show more of what jq can do."))
+        );
+        let kept: Vec<String> = (upto - 1..12).map(|i| format!("call_{i}")).collect();
+        assert_eq!(ids(messages), kept);
+        app.session.stop_blocking();
     }
 }

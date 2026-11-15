@@ -2,10 +2,12 @@
 //!
 //! - what a request takes, reckoned from what the engine counted of the last one (`usage`), for the context chip of How
 //!   it runs and for Auto-compact;
-//! - Auto-compact (off until the person turns it on): once a request would leave the reply too little room, the model
-//!   writes a summary of the earlier turns, which it then reads in their place; the last exchanges stay whole. The same
-//!   summary is written when the person asks (Summarize earlier messages, in the chat's ⋯), and when the engine refuses
-//!   a request as too long;
+//! - Auto-compact (off until the person turns it on): once a request would take more of the context than the share the
+//!   person chose (75% unless they chose otherwise), room is made before it is sent, between the steps of a long run of
+//!   tool calls as well: first what the older tool calls gave is left out of what is sent (at once, and the chat still
+//!   shows it); if that is not enough, the model writes a summary of the earlier turns, which it then reads in their
+//!   place, and the last exchanges (or the last steps of a long one) stay whole. The same summary is written when the
+//!   person asks (Summarize earlier messages, in the chat's ⋯), and when the engine refuses a request as too long;
 //! - Continue, for an answer that was cut off;
 //! - what the run the chat talks to says of itself (its engine, how long its context is, whether its model thinks),
 //!   asked once of each run, through the port the chat uses: this computer's, or a tunnel's to another computer.
@@ -21,9 +23,13 @@ use serde_json::{json, Value};
 use super::chat::{self, ChatEvent, Dialect, Options, Turn};
 use super::App;
 
-/// Auto-compact makes room once a request would take more than this share of the context: the rest is the reply's
-/// (and the thinking of a model that thinks).
-pub(super) const ROOM_TAKEN: f64 = 0.75;
+/// The share of the context from which Auto-compact makes room, as the person can choose it (the rest is the reply's,
+/// and the thinking's of a model that thinks).
+pub(super) const ROOM_CHOICES: [u32; 7] = [50, 60, 70, 75, 80, 85, 90];
+/// When Auto-compact makes room, what the last few tool calls gave stays whole: the model is likeliest to need it.
+const RESULTS_KEPT: usize = 3;
+/// What a tool gave in fewer characters than this is not worth leaving out.
+const LEAVE_OUT_FROM: usize = 400;
 /// From this share of the context on, a conversation is said to be nearly full while Auto-compact is off.
 pub(super) const NEARLY_FULL: f64 = 0.9;
 /// Continue is not asked for when a request would take this share of the context, with Auto-compact off: it would only
@@ -47,8 +53,9 @@ pub(super) const CONTINUE_ASK: &str = "Continue your last answer from exactly wh
 /// what it read of it already.
 pub(super) const SUMMARY_ASK: &str = "Before we go on: write a summary of our conversation so far (with the \
      summary of its earlier part, if you were given one), which you will read instead of the messages above. Keep \
-     what I asked for, what was decided, and every number, price, date and name that may be needed later, exactly \
-     as given. Write short points in the language of our conversation, with no introduction. Do not repeat the \
+     what I asked for, what was decided, what the tools gave that may still be needed, and every number, price, date \
+     and name that may be needed later, exactly as given. If a task is under way, say what is done and what is left \
+     to do. Write short points in the language of our conversation, with no introduction. Do not repeat the \
      messages, and add nothing that we did not say.";
 
 /// What the last request took of the context, as the engine counted it: the conversation as it was sent with the words
@@ -131,10 +138,13 @@ pub(super) struct Probing {
 
 /// The characters of what a request says: the system's word, each message, and each tool call with what came of it (a
 /// picture is reckoned apart).
-pub(super) fn request_chars(options: &Options, turns: &[Turn]) -> usize {
+pub(super) fn request_chars<'a>(
+    options: &Options,
+    turns: impl IntoIterator<Item = &'a Turn>,
+) -> usize {
     let system = chat::system_text(options.instructions.as_deref(), options.summary.as_deref())
         .map_or(0, |t| t.chars().count() + MESSAGE_CHARS);
-    system + turns.iter().map(turn_chars).sum::<usize>()
+    system + turns.into_iter().map(turn_chars).sum::<usize>()
 }
 
 fn turn_chars(t: &Turn) -> usize {
@@ -146,13 +156,32 @@ fn turn_chars(t: &Turn) -> usize {
                 2 * MESSAGE_CHARS
                     + c.name.chars().count()
                     + c.arguments.chars().count()
-                    + c.answer().chars().count()
+                    + c.sent_answer().chars().count()
             })
             .sum::<usize>()
 }
 
-fn pictures(turns: &[Turn]) -> usize {
-    turns.iter().map(|t| t.pictures.len()).sum()
+fn pictures<'a>(turns: impl IntoIterator<Item = &'a Turn>) -> usize {
+    turns.into_iter().map(|t| t.pictures.len()).sum()
+}
+
+/// The person's message that the turns from `at` on answer, when they begin among the model's turns (a summary that
+/// ends between the steps of a long run of tool calls): the model reads it again before them, so that what it reads
+/// still begins with what it was asked.
+pub(super) fn lead_of(turns: &[Turn], at: usize) -> Option<usize> {
+    if !turns.get(at).is_some_and(|t| !t.from_person) {
+        return None;
+    }
+    turns[..at].iter().rposition(|t| t.from_person)
+}
+
+/// The turns the model reads of those from `from` to `end`: led by the message they answer when they begin among the
+/// model's turns (`lead_of`).
+pub(super) fn read_from(turns: &[Turn], from: usize, end: usize) -> impl Iterator<Item = &Turn> {
+    lead_of(turns, from)
+        .map(|i| &turns[i])
+        .into_iter()
+        .chain(turns[from..end].iter())
 }
 
 /// What `chars` characters and `pictures` pictures are reckoned to take of the context, at `per_char` tokens a
@@ -178,11 +207,20 @@ pub(super) fn guess_per_char(turns: &[Turn]) -> f64 {
     }
 }
 
-/// Where a summary of the turns from `from` on should end: before the person's message that begins the last two
-/// exchanges, or only the last when the two would take more than half the context (`kept`, of a turn on), so that the
-/// model reads them whole; never inside an exchange (a reply and the tools it used stay with the message they answer);
-/// and no further than one request for a summary can take (`asked`, of the turns up to an end), but at least one
-/// exchange. `None` when there is nothing to summarize but what is kept whole.
+/// Where a summary of the turns from `from` on should end, by what the turns from one on take (`kept`, with the message
+/// they answer when they begin among the model's turns) and what one request for a summary of the turns up to an end
+/// takes (`asked`):
+///
+/// - before the person's message that begins the last two exchanges, or only the last when the two would take more than
+///   half the context, so that the model reads them whole; never inside an earlier exchange (a reply and the tools it
+///   used stay with the message they answer);
+/// - inside the last exchange, between two of the model's turns (each with the tools it used), when that exchange alone
+///   would take more than half the context, or there is no earlier one: a long run of tool calls after one message.
+///   The last steps that fit in a quarter of the context stay whole (the last one at least), and the model reads the
+///   message they answer again before them (`lead_of`);
+/// - no further than one request for a summary can take, but with one turn at least.
+///
+/// `None` when there is nothing to summarize but what is kept whole.
 pub(super) fn summary_end(
     turns: &[Turn],
     from: usize,
@@ -190,20 +228,34 @@ pub(super) fn summary_end(
     kept: impl Fn(usize) -> u64,
     asked: impl Fn(usize) -> u64,
 ) -> Option<usize> {
-    let starts: Vec<usize> = (from..turns.len())
-        .filter(|&i| turns[i].from_person)
-        .collect();
-    let n = starts.len();
-    if n < 2 {
-        return None;
-    }
-    let mut end = if n >= 3 && kept(starts[n - 2]) <= context / 2 {
-        starts[n - 2]
+    let len = turns.len();
+    let last = turns.iter().rposition(|t| t.from_person)?;
+    // before a message of the person's, after the first that is summarized
+    let wholes: Vec<usize> = (from + 1..len).filter(|&i| turns[i].from_person).collect();
+    // between the model's turns of the last exchange, after its first
+    let steps: Vec<usize> = ((last + 2).max(from + 1)..len).collect();
+    let last_long = kept(last.max(from)) > context / 2;
+    let mut end = if !steps.is_empty() && (last_long || wholes.is_empty()) {
+        steps
+            .iter()
+            .copied()
+            .find(|&i| kept(i) <= context / 4)
+            .unwrap_or(len - 1)
     } else {
-        starts[n - 1]
+        let n = wholes.len();
+        if n == 0 {
+            return None;
+        }
+        if n >= 2 && kept(wholes[n - 2]) <= context / 2 {
+            wholes[n - 2]
+        } else {
+            wholes[n - 1]
+        }
     };
+    // (the ends in order: every message of the person's comes before the steps of the last exchange)
+    let ends: Vec<usize> = wholes.iter().chain(&steps).copied().collect();
     while asked(end) as f64 > context as f64 * 0.6 {
-        match starts.iter().rev().find(|&&s| s < end && s > starts[0]) {
+        match ends.iter().rev().find(|&&e| e < end) {
             Some(&earlier) => end = earlier,
             None => break,
         }
@@ -226,9 +278,9 @@ fn shortened(text: &str, most: usize) -> String {
 /// The turns as the request for a summary gives them: as the chat sent them, but with long messages and what tools gave
 /// shortened, and pictures named instead of sent (a summary needs neither whole, and the request has to fit in the
 /// context however long they were). The arguments of a call stay whole: the engine reads them as JSON.
-fn for_summary(turns: &[Turn]) -> Vec<Turn> {
+fn for_summary<'a>(turns: impl IntoIterator<Item = &'a Turn>) -> Vec<Turn> {
     turns
-        .iter()
+        .into_iter()
         .map(|t| {
             let mut t = t.clone();
             t.text = shortened(&t.text, LONGEST_MESSAGE);
@@ -465,32 +517,87 @@ impl App {
     /// of the last one to come to, or as guessed before it counted any.
     pub(super) fn reckon_next(&self) -> u64 {
         let options = self.reply_options();
-        let turns = &self.chat.turns[self.chat.summarized_upto()..];
-        let mut chars = request_chars(&options, turns);
+        let turns = &self.chat.turns;
+        let from = self.chat.summarized_upto();
+        let read = || read_from(turns, from, turns.len());
+        let mut chars = request_chars(&options, read());
         if self.chat.continuing {
             chars += MESSAGE_CHARS + CONTINUE_ASK.len();
         }
         let per_char = self
             .chat
             .used
-            .map_or_else(|| guess_per_char(turns), |u| u.per_char);
-        reckon(chars, pictures(turns), per_char)
+            .map_or_else(|| guess_per_char(&turns[from..]), |u| u.per_char);
+        reckon(chars, pictures(read()), per_char)
     }
 
-    /// Whether the next request would leave the reply too little room in the context.
+    /// Whether the next request would take more of the context than the share from which Auto-compact makes room.
     pub(super) fn needs_room(&self) -> bool {
+        let share = f64::from(self.stored.auto_compact_at()) / 100.0;
         self.chat_context()
-            .is_some_and(|c| self.reckon_next() as f64 > c as f64 * ROOM_TAKEN)
+            .is_some_and(|c| self.reckon_next() as f64 > c as f64 * share)
     }
 
-    /// Whether there are turns to summarize beyond those kept whole and those summarized already.
+    /// Whether there are turns to summarize beyond those kept whole and those summarized already: an exchange before the
+    /// last, or steps of the last one before its last (`summary_end`).
     pub(super) fn can_summarize(&self) -> bool {
+        let turns = &self.chat.turns;
         let from = self.chat.summarized_upto();
-        self.chat.turns[from..]
+        let wholes = turns.iter().skip(from + 1).any(|t| t.from_person);
+        let steps = turns
             .iter()
-            .filter(|t| t.from_person)
-            .count()
-            >= 2
+            .rposition(|t| t.from_person)
+            .is_some_and(|last| turns.len() > (last + 2).max(from + 1));
+        wholes || steps
+    }
+
+    /// The context chip says at once what the conversation now takes, once room was made.
+    fn reckon_room(&mut self) {
+        let now = self.reckon_next();
+        if let Some(used) = self.chat.used.as_mut() {
+            used.tokens = now;
+        }
+    }
+
+    /// Leaves out of what is sent what the older tool calls of the turns the model reads gave (all but the last
+    /// `RESULTS_KEPT`, and only the long): the first way Auto-compact makes room, at once and without asking the model.
+    /// The chat still shows what they gave, with a grey (i). Whether any was left out.
+    pub(super) fn leave_out_results(&mut self) -> bool {
+        let from = self.chat.summarized_upto();
+        let calls: Vec<&mut chat::ToolCall> = self.chat.turns[from..]
+            .iter_mut()
+            .flat_map(|t| t.calls.iter_mut())
+            .collect();
+        let older = calls.len().saturating_sub(RESULTS_KEPT);
+        let mut any = false;
+        for c in calls.into_iter().take(older) {
+            let long = matches!(
+                c.state,
+                chat::CallState::Done(_) | chat::CallState::Failed(_)
+            ) && c.answer().chars().count() >= LEAVE_OUT_FROM;
+            if long && !c.left_out {
+                c.left_out = true;
+                any = true;
+            }
+        }
+        if any {
+            self.reckon_room();
+        }
+        any
+    }
+
+    /// With Auto-compact on, makes room before a request that would take more of the context than the share chosen,
+    /// between the steps of a long run of tool calls as well: what older tool calls gave is left out, and when that is
+    /// not enough (and `may_summarize`) the model summarizes the earlier turns. Whether the request waits for that
+    /// summary.
+    pub(super) fn make_room(&mut self, ctx: &egui::Context, may_summarize: bool) -> bool {
+        if !self.stored.auto_compact() || !self.needs_room() {
+            return false;
+        }
+        if self.leave_out_results() && !self.needs_room() {
+            return false;
+        }
+        may_summarize && self.start_summary(ctx, true)
     }
 
     /// Starts writing the summary of the earlier turns (and of the summary there was), the reply waiting for it when
@@ -516,14 +623,11 @@ impl App {
             .map_or(0, |s| s.text.chars().count());
         let turns = &self.chat.turns;
         let kept = |at: usize| {
-            reckon(
-                turns[at..].iter().map(turn_chars).sum(),
-                pictures(&turns[at..]),
-                per_char,
-            )
+            let read = || read_from(turns, at, turns.len());
+            reckon(read().map(turn_chars).sum(), pictures(read()), per_char)
         };
         let asked = |end: usize| {
-            let chars = request_chars(&asked_options, &for_summary(&turns[from..end]))
+            let chars = request_chars(&asked_options, &for_summary(read_from(turns, from, end)))
                 + MESSAGE_CHARS
                 + SUMMARY_ASK.len();
             reckon(chars, 0, per_char)
@@ -536,7 +640,8 @@ impl App {
             pictures(&turns[from..end]),
             per_char,
         );
-        let body = summary_request(&model, &options, thinking, &turns[from..end], context);
+        let read: Vec<Turn> = read_from(turns, from, end).cloned().collect();
+        let body = summary_request(&model, &options, thinking, &read, context);
         let wake = ctx.clone();
         let (rx, cancel) = chat::spawn_request(
             move || wake.request_repaint(),
@@ -618,10 +723,15 @@ impl App {
     pub(super) fn poll_capabilities(&mut self, ctx: &egui::Context) {
         self.probe_run(ctx);
         if std::mem::take(&mut self.chat.too_long) {
-            self.chat.retried = true;
-            if !self.start_summary(ctx, true) {
-                self.chat.continuing = false;
-                self.chat.error = Some(too_long_words(self.chat_context(), true));
+            if self.leave_out_results() {
+                // asked again with what older tools gave left out; refused again, the summary is tried
+                self.ask_for_reply(ctx);
+            } else {
+                self.chat.retried = true;
+                if !self.start_summary(ctx, true) {
+                    self.chat.continuing = false;
+                    self.chat.error = Some(too_long_words(self.chat_context(), true));
+                }
             }
         }
         let Some(summarizing) = self.chat.summarizing.as_mut() else {
@@ -653,13 +763,11 @@ impl App {
                     after: done.after,
                 });
                 self.chat.summary_edit = None;
-                // the context chip says at once what the conversation now takes
-                let now = self.reckon_next();
-                if let Some(used) = self.chat.used.as_mut() {
-                    used.tokens = now;
-                }
+                self.reckon_room();
                 self.keep_conversation();
                 if done.then_reply {
+                    // the room is made: the request is not summarized again before it is sent
+                    self.chat.room_made = true;
                     self.ask_for_reply(ctx);
                 }
             }
@@ -727,6 +835,14 @@ impl App {
             wake.request_repaint();
         });
         self.chat.probing = Some(Probing { rx, port, model });
+    }
+
+    /// Writes down the share of the context from which Auto-compact makes room (beside its switch).
+    pub(super) fn set_auto_compact_at(&mut self, percent: u32) {
+        let mut stored = self.settings_now();
+        stored.set_auto_compact_at(percent);
+        self.write_settings(&stored);
+        self.stored = stored;
     }
 
     /// Writes down a capability the person switched (How it runs, Capabilities).
@@ -797,6 +913,45 @@ mod tests {
         assert_eq!(summary_end(&turns, 0, 1000, small, huge), Some(2));
     }
 
+    /// A long run of tool calls after one message (C227): the summary ends between the model's turns, so that the last
+    /// steps that fit in a quarter of the context stay whole (the last one at least) and the model reads the message
+    /// again before them; an exchange before it is summarized with the steps; a short one stays whole.
+    #[test]
+    fn a_long_run_of_tool_calls_is_summarized_between_its_steps() {
+        let mut turns = vec![Turn::said(true, "go")];
+        turns.extend((0..10).map(|i| Turn::said(false, format!("step {i}"))));
+        // each step takes 50, and the message read again before the steps kept 20
+        let kept = |at: usize| (11 - at) as u64 * 50 + if at > 0 { 20 } else { 0 };
+        let small = |_| 10;
+        assert_eq!(summary_end(&turns, 0, 1000, kept, small), Some(7));
+        assert_eq!(lead_of(&turns, 7), Some(0));
+        let read: Vec<&str> = read_from(&turns, 7, turns.len())
+            .map(|t| t.text.as_str())
+            .collect();
+        assert_eq!(read, ["go", "step 6", "step 7", "step 8", "step 9"]);
+        // from that summary on, the next ends further on
+        assert_eq!(summary_end(&turns, 7, 1000, kept, small), Some(8));
+        // the last step alone takes more than a quarter: it is kept, and the rest summarized
+        let big = |at: usize| (11 - at) as u64 * 400;
+        assert_eq!(summary_end(&turns, 0, 1000, big, small), Some(10));
+        // a request for the summary that would take too much ends it earlier, but with one turn at least
+        let asked = |end: usize| end as u64 * 100;
+        assert_eq!(summary_end(&turns, 0, 1000, kept, asked), Some(6));
+        let huge = |_| 10_000;
+        assert_eq!(summary_end(&turns, 0, 1000, kept, huge), Some(2));
+        // a message and its first reply alone: nothing to summarize
+        assert_eq!(summary_end(&turns[..2], 0, 1000, kept, small), None);
+        // with an exchange before it: the long run is summarized between its steps, with the exchange before
+        let mut both = exchange(1);
+        both.extend(turns.iter().cloned());
+        let kept = |at: usize| (13 - at) as u64 * 50 + if at > 2 { 20 } else { 0 };
+        assert_eq!(summary_end(&both, 0, 1000, kept, small), Some(9));
+        assert_eq!(lead_of(&both, 9), Some(2));
+        assert_eq!((lead_of(&both, 2), lead_of(&both, 0)), (None, None));
+        // and when it is short, the exchange before is summarized whole
+        assert_eq!(summary_end(&both, 0, 1000, small, small), Some(2));
+    }
+
     /// The request for a summary gives the conversation as the chat had it (its instructions and the summary there was,
     /// long texts and what tools gave shortened, pictures named), then asks for the summary as the person; without
     /// thinking where the engine can be told, and with a length only where thinking cannot take it.
@@ -819,6 +974,7 @@ mod tests {
             state: chat::CallState::Done("x".repeat(9000)),
             open: false,
             ticket: None,
+            left_out: false,
         });
         let options = Options {
             instructions: Some("Answer briefly.".into()),

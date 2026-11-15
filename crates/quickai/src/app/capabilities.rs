@@ -6,17 +6,22 @@
 
 use eframe::egui;
 
-use super::compact::{tokens_words, Capability};
+use super::compact::{tokens_words, Capability, ROOM_CHOICES};
 use super::icons::Icon;
 use super::theme;
 use super::App;
 
 const HOVER: &str =
     "Switches for how the chat works with the model. Rest the pointer on one to see what it does.";
-const AUTO_COMPACT: &str = "When the conversation nears the end of the context, the model summarizes the earlier \
-                            messages, and the summary is sent in their place, so that the chat can go on. You still see \
-                            every message, and a line in the chat shows where the summary begins. Off: when the context \
-                            is full, the chat stops and says so.";
+const AUTO_COMPACT: &str = "When the conversation would take more of the context than the share chosen beside the \
+                            switch, room is made before the next request, between the steps of a long run of tool calls \
+                            as well: first, what older tool calls gave is no longer sent (the last three stay); if that \
+                            is not enough, the model summarizes the earlier messages, and the summary is sent in their \
+                            place, so that the chat can go on. You still see every message, and a line in the chat \
+                            shows where the summary begins. Off: when the context is full, the chat stops and says so.";
+const AUTO_COMPACT_AT: &str = "Auto-compact makes room once the conversation would take more than this share of the \
+                               context. A higher share keeps more of the conversation whole, but leaves less room for \
+                               the answer (and for the thinking of a model that thinks).";
 const THINKING: &str = "On: the model works through a question before it answers, which helps with logic, maths and \
                         planning. Off: it answers at once, sooner, and its answers take less of the context. From the \
                         next message on.";
@@ -103,6 +108,8 @@ impl App {
             return;
         }
         let mut switched: Option<(Capability, bool)> = None;
+        let mut share = self.stored.auto_compact_at();
+        let mut share_chosen = false;
         for row in &rows {
             // the switch from the right, the name in what is left; what it does on hover of either
             ui.horizontal(|ui| {
@@ -114,6 +121,25 @@ impl App {
                         .changed()
                     {
                         switched = Some((row.which, ticked));
+                    }
+                    // the share of the context from which Auto-compact makes room, beside its switch while it is on
+                    if row.which == Capability::AutoCompact && row.on {
+                        egui::ComboBox::from_id_salt("auto_compact_at")
+                            .selected_text(egui::RichText::new(format!("at {share}%")).small())
+                            .width(64.0)
+                            .show_ui(ui, |ui| {
+                                for choice in ROOM_CHOICES {
+                                    if ui
+                                        .selectable_label(share == choice, format!("{choice}%"))
+                                        .clicked()
+                                    {
+                                        share = choice;
+                                        share_chosen = true;
+                                    }
+                                }
+                            })
+                            .response
+                            .on_hover_text(AUTO_COMPACT_AT);
                     }
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         ui.add_space(22.0);
@@ -128,6 +154,9 @@ impl App {
         }
         if let Some((which, on)) = switched {
             self.set_capability(which, on);
+        }
+        if share_chosen {
+            self.set_auto_compact_at(share);
         }
     }
 
