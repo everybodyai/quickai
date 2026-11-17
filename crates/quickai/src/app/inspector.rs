@@ -28,7 +28,10 @@ impl App {
                 }))
                 .show(ui, |ui| self.show_run_foot(ui));
         }
-        let foot = !connect && !self.runs_alone() && self.models.get(self.selected).is_some();
+        // a computer QuickAI sets up has its own foot: what it is and what the model would take of it (C228)
+        let foot = !connect
+            && !self.runs_alone()
+            && (self.setup_in_use().is_some() || self.models.get(self.selected).is_some());
         // the meters of the foot take at most a quarter of the panel's height, and scroll beyond it
         let meters = (ui.available_height() * 0.25).clamp(48.0, 170.0);
         if foot {
@@ -67,6 +70,10 @@ impl App {
     /// Whether the panel shows Connect an app: the model chosen runs (or the engine that runs on its own does, or one
     /// that lists its models runs with none loaded yet).
     fn connect_now(&self) -> bool {
+        // a computer QuickAI sets up: while its run is up and its ports are here (C228)
+        if self.setup_in_use().is_some() {
+            return self.setup_run().is_some_and(|r| r.running());
+        }
         if self.session.state() != ServerState::Running {
             return false;
         }
@@ -129,6 +136,17 @@ impl App {
         );
         if let Some(panel) = &panel {
             super::api_info::show_connection_box(ui, panel);
+        }
+        // a run on a computer QuickAI sets up: the address is its port, brought here (C228)
+        if let Some(spec) = self.setup_in_use() {
+            ui.add_space(4.0);
+            ui.label(
+                theme::muted(format!(
+                    "{}'s port, brought to this computer. Apps here use this address.",
+                    spec.name
+                ))
+                .small(),
+            );
         }
         ui.add_space(10.0);
         // the chat in a browser: the engine's own page, or its companion's (Open WebUI)

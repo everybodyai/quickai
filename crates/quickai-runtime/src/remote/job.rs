@@ -6,7 +6,10 @@
 //!   started in the background, followed until it is ready, and its ports brought here;
 //! - **find**: a run that goes on there (started earlier, from this window or another) is found, and its ports are
 //!   brought here again;
-//! - **stop**: what runs there is stopped.
+//! - **stop**: what runs there is stopped;
+//! - **facts**, **get**, **delete**, **send_model** (C228): what the computer has for models, a model downloaded there
+//!   by that computer (in the background, followed until it ends), a model deleted there, and one of this computer's
+//!   copied there without a run.
 //!
 //! The tunnel that comes back belongs to whoever asked; the run there does not, and goes on until it is stopped.
 
@@ -19,7 +22,10 @@ use std::time::Duration;
 use crossbeam_channel::{Receiver, Sender};
 use quickai_core::decode::ApiDecoder;
 
+use quickai_core::lookup::present::Download;
+
 use crate::events::Event;
+use crate::facts::ComputerFacts;
 use crate::provision::{EndpointInfo, PortUse};
 use crate::run_file::{RunFile, Status};
 use crate::runtime::process::ephemeral_port;
@@ -56,6 +62,20 @@ pub enum Update {
     },
     /// The model files the computer keeps, for the window's list of that computer.
     Models(Vec<crate::models::KeptModel>),
+    /// What the computer has for models: its memory, its cards and the devices of its llama.cpp (C228).
+    Facts(Box<ComputerFacts>),
+    /// A download goes on there, as its run file says: how far each of its files has got.
+    Getting(Box<RunFile>),
+    /// The download there ended: `done`, `failed` (with why) or `stopped`; its label is what it fetched.
+    GetEnded {
+        label: String,
+        outcome: String,
+        message: Option<String>,
+    },
+    /// A model was deleted there: what was done, as sentences for the log.
+    Deleted(Vec<String>),
+    /// A model file of this computer was copied there (its file name), without a run.
+    Sent(String),
     /// Nothing runs there (what `find` found).
     Nothing,
     /// What ran there has stopped (what `stop` did).
@@ -188,6 +208,13 @@ pub fn find(job: Job, wake: impl Fn() + Send + 'static) -> Receiver<Update> {
             return Ok(());
         }
         let here = run::status(&job.ssh, &job.spec, &computer, &job.version)?;
+        say_facts(&job, &computer, say);
+        // a download that goes on there is said once: the window follows it (`follow_get`)
+        if let Ok(Some(getting)) =
+            run::get_status(&job.ssh, &job.spec, &computer, &job.version).map(|s| s.running)
+        {
+            say(Update::Getting(Box::new(getting)));
+        }
         match here.running {
             // its models are said once its ports are here
             Some(_) => follow(&job, &computer, say, &AtomicBool::new(false)),
@@ -210,6 +237,7 @@ pub fn models(job: Job, wake: impl Fn() + Send + 'static) -> Receiver<Update> {
         }
         let models = run::models(&job.ssh, &job.spec, &computer, &job.version)?;
         say(Update::Models(models));
+        say_facts(&job, &computer, say);
         Ok(())
     })
 }
@@ -219,6 +247,168 @@ pub fn models(job: Job, wake: impl Fn() + Send + 'static) -> Receiver<Update> {
 fn say_models(job: &Job, computer: &Computer, say: &dyn Fn(Update)) {
     if let Ok(models) = run::models(&job.ssh, &job.spec, computer, &job.version) {
         say(Update::Models(models));
+    }
+}
+
+/// What the computer has for models, said for the window's panel; asking that fails says nothing, and the window keeps
+/// what it was told before.
+fn say_facts(job: &Job, computer: &Computer, say: &dyn Fn(Update)) {
+    if let Ok(facts) = run::facts(&job.ssh, &job.spec, computer, &job.version) {
+        say(Update::Facts(Box::new(facts)));
+    }
+}
+
+/// Asks what the job's computer has for models (the ↻ of its foot in the panel): QuickAI is copied there first when it
+/// is not, since it is what answers.
+pub fn facts(job: Job, wake: impl Fn() + Send + 'static) -> Receiver<Update> {
+    spawn(wake, move |say| {
+        let computer = reach(&job, say)?;
+        let facts = run::facts(&job.ssh, &job.spec, &computer, &job.version)?;
+        say(Update::Facts(Box::new(facts)));
+        Ok(())
+    })
+}
+
+/// Has the job's computer download `download` itself, in the background there, and follows it until it ends (then
+/// says the models it keeps). `cancel` ends the following, not the download, which goes on there.
+pub fn get(
+    job: Job,
+    download: Download,
+    wake: impl Fn() + Send + 'static,
+    cancel: Arc<AtomicBool>,
+) -> Receiver<Update> {
+    spawn(wake, move |say| {
+        let computer = reach(&job, say)?;
+        let what = download
+            .primary()
+            .map(|w| w.store_as.clone())
+            .unwrap_or_default();
+        say(Update::Doing(format!(
+            "Starting the download of {what} on {}",
+            job.spec.name
+        )));
+        run::get_start(
+            &job.ssh,
+            &job.scp,
+            &job.spec,
+            &computer,
+            &job.version,
+            &download,
+            None,
+        )?;
+        follow_download(&job, &computer, say, &cancel)
+    })
+}
+
+/// Follows the download that goes on on the job's computer (one found by `find`, or started by another window) until it
+/// ends. `cancel` ends the following, not the download.
+pub fn follow_get(
+    job: Job,
+    wake: impl Fn() + Send + 'static,
+    cancel: Arc<AtomicBool>,
+) -> Receiver<Update> {
+    spawn(wake, move |say| {
+        let computer = probe::probe(&job.ssh, &job.spec, &job.version)?;
+        if computer.headless.is_none() {
+            return Ok(());
+        }
+        follow_download(&job, &computer, say, &cancel)
+    })
+}
+
+/// Stops the download that goes on on the job's computer, then says it stopped and the models it keeps.
+pub fn cancel_get(job: Job, wake: impl Fn() + Send + 'static) -> Receiver<Update> {
+    spawn(wake, move |say| {
+        let computer = probe::probe(&job.ssh, &job.spec, &job.version)?;
+        if computer.headless.is_none() {
+            return Ok(());
+        }
+        let label = run::get_status(&job.ssh, &job.spec, &computer, &job.version)
+            .ok()
+            .and_then(|s| s.running)
+            .map(|r| r.configuration)
+            .unwrap_or_default();
+        run::get_cancel(&job.ssh, &job.spec, &computer, &job.version)?;
+        say(Update::GetEnded {
+            label,
+            outcome: "stopped".into(),
+            message: None,
+        });
+        say_models(&job, &computer, say);
+        Ok(())
+    })
+}
+
+/// Deletes the model file `file` on the job's computer, then says what was done and the models it keeps. One it may
+/// not delete (it came with QuickAI there, or its run uses it) fails with what it said.
+pub fn delete(job: Job, file: String, wake: impl Fn() + Send + 'static) -> Receiver<Update> {
+    spawn(wake, move |say| {
+        let computer = probe::probe(&job.ssh, &job.spec, &job.version)?;
+        if computer.headless.is_none() {
+            return Err(format!(
+                "QuickAI is not on {} yet: it keeps no model QuickAI knows of",
+                job.spec.name
+            ));
+        }
+        let said = run::delete_model(&job.ssh, &job.spec, &computer, &job.version, &file)?;
+        say(Update::Deleted(said));
+        say_models(&job, &computer, say);
+        Ok(())
+    })
+}
+
+/// Copies the model file `local` of this computer to the job's computer, where a run finds the files copied for it,
+/// without starting anything; then says it and the models it keeps.
+pub fn send_model(
+    job: Job,
+    local: PathBuf,
+    file: String,
+    wake: impl Fn() + Send + 'static,
+) -> Receiver<Update> {
+    spawn(wake, move |say| {
+        let computer = reach(&job, say)?;
+        say(Update::Doing(format!(
+            "Copying {file} to {}",
+            job.spec.name
+        )));
+        let (relative, _) = alternatives::copied_model(&computer, &file);
+        deploy::copy_big_file(&job.ssh, &job.scp, &job.spec, &computer, &local, &relative)?;
+        say(Update::Sent(file));
+        say_models(&job, &computer, say);
+        Ok(())
+    })
+}
+
+/// Follows the download there: how far it has got every two seconds while it goes on, then how it ended and the
+/// models the computer keeps now. `cancel` ends the following.
+fn follow_download(
+    job: &Job,
+    computer: &Computer,
+    say: &dyn Fn(Update),
+    cancel: &AtomicBool,
+) -> Result<(), String> {
+    loop {
+        let status = run::get_status(&job.ssh, &job.spec, computer, &job.version)?;
+        match status.running {
+            Some(getting) => say(Update::Getting(Box::new(getting))),
+            None => {
+                let (label, outcome, message) = status.last.map_or_else(
+                    || (String::new(), "done".to_string(), None),
+                    |last| (last.configuration, last.outcome, last.message),
+                );
+                say(Update::GetEnded {
+                    label,
+                    outcome,
+                    message,
+                });
+                say_models(job, computer, say);
+                return Ok(());
+            }
+        }
+        if cancel.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        std::thread::sleep(FOLLOW_EVERY);
     }
 }
 
@@ -248,6 +438,10 @@ pub fn stop(job: Job, wake: impl Fn() + Send + 'static) -> Receiver<Update> {
             run::stop(&job.ssh, &job.spec, &computer, &job.version)?;
         }
         say(Update::Stopped);
+        // what its cards hold now that the model has gone from them
+        if computer.headless.is_some() {
+            say_facts(&job, &computer, say);
+        }
         Ok(())
     })
 }
@@ -392,8 +586,9 @@ fn follow(
                     endpoints,
                     run: Box::new(running),
                 });
-                // what it keeps now: the run may have fetched or been sent its model
+                // what it keeps now: the run may have fetched or been sent its model; and what its cards hold now
                 say_models(job, computer, say);
+                say_facts(job, computer, say);
                 return Ok(());
             }
             Some(_) => say(Update::Status(Box::new(status))),

@@ -114,12 +114,23 @@ pub struct Status {
 
 /// The `run` folder of the data folder `dirs` names (`~/.quickai/run` when it names none).
 pub fn run_dir(dirs: &ConfigDirs) -> PathBuf {
-    let data = dirs.data.clone().unwrap_or_else(|| {
+    data_dir(dirs).join("run")
+}
+
+/// The `get` folder of the data folder `dirs` names (`~/.quickai/get`): the download that goes on on this computer
+/// (`quickai-headless get`, C228), held, said and stopped as a run is, apart from the run (a model is fetched while
+/// another runs).
+pub fn get_dir(dirs: &ConfigDirs) -> PathBuf {
+    data_dir(dirs).join("get")
+}
+
+/// The data folder `dirs` names, `~/.quickai` when it names none.
+fn data_dir(dirs: &ConfigDirs) -> PathBuf {
+    dirs.data.clone().unwrap_or_else(|| {
         directories::BaseDirs::new()
             .map(|d| d.home_dir().join(".quickai"))
             .unwrap_or_else(|| std::env::temp_dir().join(".quickai"))
-    });
-    data.join("run")
+    })
 }
 
 /// Seconds since 1970, now.

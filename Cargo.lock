@@ -2975,6 +2975,7 @@ version = "0.2.10"
 dependencies = [
  "crossbeam-channel",
  "libc",
+ "quickai-core",
  "quickai-runtime",
  "serde_json",
  "windows-sys 0.61.2",

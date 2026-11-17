@@ -8,6 +8,7 @@
 mod args;
 mod background;
 mod free;
+mod get;
 mod render;
 mod signals;
 
@@ -187,6 +188,146 @@ fn list_models(extra: &[std::path::PathBuf], json: bool) -> i32 {
     0
 }
 
+/// `models --delete`: deletes the model file `file` this computer keeps, with the files that came with it that no other
+/// model uses, and says what went (as JSON for the window of another computer). One that came with QuickAI, or that the
+/// run here uses, is not deleted.
+fn delete_model(extra: &[std::path::PathBuf], file: &str, json: bool) -> i32 {
+    let dirs = ConfigDirs::from_environment();
+    let registry = quickai_runtime::config::build_registry(&dirs);
+    let mut hide: Vec<String> = Vec::new();
+    for engine in registry.engines() {
+        for pattern in quickai_runtime::models::companion_patterns_of(engine) {
+            if !hide.contains(&pattern) {
+                hide.push(pattern);
+            }
+        }
+    }
+    let kept = quickai_runtime::models::kept(&dirs, extra, &hide);
+    let Some(model) = kept.iter().find(|m| m.file == file) else {
+        eprintln!("quickai-headless: {file} is not a model file this computer keeps");
+        return 1;
+    };
+    let path = std::path::PathBuf::from(&model.path);
+    let (bundled, _) = quickai_runtime::resolve::models_dirs(&dirs);
+    if path.starts_with(&bundled) {
+        eprintln!(
+            "quickai-headless: {} comes with QuickAI and is not deleted",
+            model.display
+        );
+        return 1;
+    }
+    if in_use(&dirs, model) {
+        eprintln!(
+            "quickai-headless: {} is in use: stop the run first (`quickai-headless down`), then delete it",
+            model.display
+        );
+        return 1;
+    }
+    let report = quickai_runtime::bundles::remove_model(&path);
+    if json {
+        let said = serde_json::json!({
+            "removed": report.removed,
+            "kept": report.kept,
+            "failed": report.failed,
+            "error": report.weights_error,
+        });
+        println!("{said}");
+    } else {
+        match &report.weights_error {
+            None => println!("Deleted {}.", model.file),
+            Some(e) => eprintln!("quickai-headless: could not delete {}: {e}", model.file),
+        }
+        let also: Vec<&str> = report
+            .removed
+            .iter()
+            .map(String::as_str)
+            .filter(|name| *name != model.file)
+            .collect();
+        if !also.is_empty() {
+            println!("Also deleted: {}.", also.join(", "));
+        }
+        for kept in &report.kept {
+            println!("Kept {kept}: another model uses it.");
+        }
+        for failed in &report.failed {
+            println!("Could not delete {failed}.");
+        }
+    }
+    i32::from(report.weights_error.is_some())
+}
+
+/// Whether the run that goes on here uses `model`: the model it says it serves is that file (or its name), its
+/// configuration names the file, or what a run in the background said names it (a file it fetched or was given).
+fn in_use(dirs: &ConfigDirs, model: &quickai_runtime::models::KeptModel) -> bool {
+    let dir = run_file::run_dir(dirs);
+    let Some(run) = run_file::running(&dir) else {
+        return false;
+    };
+    let stem = model
+        .file
+        .strip_suffix(".gguf")
+        .unwrap_or(&model.file)
+        .to_string();
+    let named = |text: &str| text == model.file || text == model.display || text == stem;
+    if run.model.as_deref().is_some_and(named) {
+        return true;
+    }
+    if run.steps.iter().any(|s| s.text.contains(&model.file)) {
+        return true;
+    }
+    if std::fs::read_to_string(&run.configuration).is_ok_and(|text| text.contains(&model.file)) {
+        return true;
+    }
+    // the events file is the run's own only when it was started in the background
+    run.detached
+        && run_file::last_events(&dir, 2000)
+            .iter()
+            .any(|event| event.to_string().contains(&model.file))
+}
+
+/// `computer`: what this computer has for models, as JSON (for the window of another computer) or sentences.
+fn tell_computer(json: bool) -> i32 {
+    let facts = quickai_runtime::facts::gather(&ConfigDirs::from_environment());
+    if json {
+        return match serde_json::to_string(&facts) {
+            Ok(text) => {
+                println!("{text}");
+                0
+            }
+            Err(e) => {
+                eprintln!("quickai-headless: {e}");
+                1
+            }
+        };
+    }
+    let bytes = quickai_runtime::hardware::format_bytes;
+    let mut line = format!("{}, {} of memory", facts.system, bytes(facts.memory_bytes));
+    if facts.memory_free_bytes > 0 {
+        line.push_str(&format!(" ({} free)", bytes(facts.memory_free_bytes)));
+    }
+    if !facts.vendors.is_empty() {
+        line.push_str(&format!(", graphics by {}", facts.vendors.join(" and ")));
+    }
+    println!("{line}.");
+    if !facts.devices_known {
+        println!("The cards and their memory are known once llama.cpp is installed here.");
+    }
+    for device in &facts.devices {
+        println!(
+            "  {} ({}, {}): {} ({} free)",
+            device.name,
+            device.id,
+            device.kind,
+            bytes(device.total_bytes),
+            bytes(device.free_bytes)
+        );
+    }
+    if facts.linked {
+        println!("  The NVIDIA cards are linked (NVLink).");
+    }
+    0
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // QuickAI's other headless commands are the same code in both programs
@@ -213,7 +354,26 @@ fn main() {
             std::process::exit(background::status(&dir, json))
         }
         Ok(Parsed::Free { ports, json }) => std::process::exit(free::run(&ports, json)),
-        Ok(Parsed::Models { dirs, json }) => std::process::exit(list_models(&dirs, json)),
+        Ok(Parsed::Models {
+            dirs,
+            json,
+            delete: None,
+        }) => std::process::exit(list_models(&dirs, json)),
+        Ok(Parsed::Models {
+            dirs,
+            json,
+            delete: Some(file),
+        }) => std::process::exit(delete_model(&dirs, &file, json)),
+        Ok(Parsed::Computer { json }) => std::process::exit(tell_computer(json)),
+        Ok(Parsed::Get(invocation)) => std::process::exit(get::run(&invocation, &args)),
+        Ok(Parsed::GetStatus { json }) => {
+            let dir = run_file::get_dir(&ConfigDirs::from_environment());
+            std::process::exit(get::status(&dir, json))
+        }
+        Ok(Parsed::GetCancel { wait }) => {
+            let dir = run_file::get_dir(&ConfigDirs::from_environment());
+            std::process::exit(get::cancel(&dir, wait))
+        }
         Ok(Parsed::Down { wait }) => {
             let dir = run_file::run_dir(&ConfigDirs::from_environment());
             std::process::exit(background::down(&dir, wait))

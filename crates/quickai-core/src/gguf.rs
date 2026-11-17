@@ -18,8 +18,10 @@ const LONGEST_TEXT: u64 = 1 << 20;
 /// The longest list of numbers kept (a number for each layer).
 const LONGEST_LIST: u64 = 65_536;
 
-/// What a model file says of the memory it needs.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// What a model file says of the memory it needs. Written as JSON, it is what another computer says of the files it
+/// keeps (`quickai-headless models --json`), for the window that cannot read them.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct ModelFacts {
     /// `general.architecture` (`llama`, `qwen3`, `lfm2`...).
     pub architecture: Option<String>,

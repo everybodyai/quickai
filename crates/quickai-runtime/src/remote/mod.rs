@@ -91,6 +91,19 @@ pub struct RemoteSpec {
     /// (`--model-source`, `--model-file`), which another configuration's run would not take.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub accepted: BTreeMap<String, Vec<String>>,
+    /// What was last used there from the window (started, or chosen for it): the window comes back to it when the
+    /// computer is shown again and nothing runs there, unless the person chose another configuration (C228).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last: Option<LastThere>,
+}
+
+/// What was last used on a computer QuickAI sets up: the configuration, by its id in the window, and the model's file
+/// there (`None`: the configuration's own).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LastThere {
+    pub configuration: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 fn ssh_port() -> u16 {
@@ -110,6 +123,7 @@ impl RemoteSpec {
             identity: None,
             way: Way::Attach,
             accepted: BTreeMap::new(),
+            last: None,
         }
     }
 

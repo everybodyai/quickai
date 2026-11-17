@@ -21,6 +21,7 @@ pub mod configurations;
 pub mod devices;
 pub mod downloader;
 pub mod events;
+pub mod facts;
 #[cfg(any(test, feature = "testkit"))]
 pub mod golden;
 pub mod gpu;

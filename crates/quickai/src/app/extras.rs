@@ -377,7 +377,7 @@ impl App {
         if !has_args && !has_env && projector.is_none() && mode.is_none() {
             return;
         }
-        let enabled = !self.session.is_active();
+        let enabled = !self.settings_locked();
         let p = theme::palette();
         let open_id = egui::Id::new("panel_extras_open");
         let open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
@@ -712,7 +712,8 @@ impl App {
     /// Where it runs, in a word or two for a chip: the card, the cards, with the processor, or the processor.
     fn place_chip(&self) -> String {
         use super::graphics::Place;
-        if !self.lists_devices() {
+        // a computer QuickAI sets up says its cards itself (C228), and llama.cpp there is told where it goes
+        if !self.lists_devices() && self.setup_in_use().is_none() {
             // an engine that places it itself (Ollama): its cards, and the share it says it put on them
             if !self.gpu_offload() {
                 return "processor".to_string();
@@ -729,6 +730,13 @@ impl App {
                 "processor".to_string()
             } else {
                 format!("{:.0}% on {named}", share * 100.0)
+            };
+        }
+        // before the computer QuickAI sets up said its cards, what the configuration says
+        if self.setup_in_use().is_some() && !self.cards_known() {
+            return match self.place() {
+                Place::Processor => "processor".to_string(),
+                _ => "graphics card".to_string(),
             };
         }
         let cards = self.ticked_cards();

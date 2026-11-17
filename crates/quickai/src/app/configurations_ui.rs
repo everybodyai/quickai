@@ -466,6 +466,18 @@ impl App {
         // nothing asks about what the window holds (2026-11-09: the window keeps how it ran last, and a configuration is
         // a setup to use, not a document with changes to save): choosing one uses it
         self.choose_configuration(id);
+        // the person's choice: the window does not put another in its place, and a computer QuickAI sets up that is shown
+        // comes back to it (C228)
+        if self.configs.active == id {
+            self.remote.person_chose = true;
+            self.note_last_there();
+            if self.setup_in_use().is_none() {
+                let mut stored = self.settings_now();
+                stored.set_here_configuration(id);
+                self.write_settings(&stored);
+                self.stored = stored;
+            }
+        }
     }
 
     /// The Engine row's sentence for why nothing can be changed now.

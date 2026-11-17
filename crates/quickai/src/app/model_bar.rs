@@ -27,18 +27,30 @@ impl App {
             self.show_page_bar(ui);
             return;
         }
-        let title = self.bar_title();
-        let (said, color) = self.bar_state(state);
-        let status = self.run_status_text(state);
-        let alone = self.runs_alone();
-        let model_page = !alone && !self.needs_install() && !self.models.is_empty();
+        // a computer QuickAI sets up that is shown: its run's model, what the run there does, and Start or Stop for it
+        // (C228)
+        let setup = self.setup_in_use().is_some();
+        let title = if setup {
+            self.setup_bar_title()
+        } else {
+            self.bar_title()
+        };
+        let (said, color, status) = if setup {
+            self.setup_bar_state()
+        } else {
+            let (said, color) = self.bar_state(state);
+            (said, color, self.run_status_text(state))
+        };
+        let alone = self.runs_alone() && !setup;
+        let model_page = setup || (!alone && !self.needs_install() && !self.models.is_empty());
+        let details = model_page && !setup;
         let mut pressed = Press::default();
         ui.horizontal_centered(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(2.0);
                 // the panel at the right, put away (or a window too narrow for it to show by itself): « at the right end
                 // brings it back; shown, its own » puts it away
-                if self.panel_possible() && !self.panel_shown {
+                if (setup || self.panel_possible()) && !self.panel_shown {
                     let show = icons::icon_button(ui, Icon::DoubleLeft, ICON, true, false)
                         .on_hover_text(
                             "Show the panel: how the model runs, and Connect an app while it runs.",
@@ -52,7 +64,7 @@ impl App {
                 }
                 // the pictures, from the right: ⋯ (the chat's; none when there is no
                 // chat and no chat page to set up) and a new chat
-                if self.bar_menu_has_items(model_page) {
+                if self.bar_menu_has_items(model_page, setup) {
                     let more = icons::icon_button(ui, Icon::More, ICON, true, false)
                         .on_hover_text("The chat: Keep chats, Options and Export");
                     help::mark_spot(ui, Spot::ChatMenu, more.rect);
@@ -62,7 +74,7 @@ impl App {
                         .width(250.0)
                         .show(|ui| {
                             ui.set_min_width(250.0);
-                            pressed.more = self.bar_menu(ui, model_page);
+                            pressed.more = self.bar_menu(ui, model_page, setup);
                         });
                 }
                 if model_page && self.can_chat() {
@@ -77,7 +89,12 @@ impl App {
                     .on_disabled_hover_text("New chat: once this one has a message.")
                     .clicked();
                 }
-                if !self.needs_install() && (model_page || alone || self.lists_models()) {
+                if setup {
+                    separator(ui);
+                    let (start, stop) = self.setup_bar_actions(ui, BUTTON);
+                    pressed.setup_start = start;
+                    pressed.setup_stop = stop;
+                } else if !self.needs_install() && (model_page || alone || self.lists_models()) {
                     separator(ui);
                     self.bar_actions(ui, state, active, &mut pressed);
                 }
@@ -105,7 +122,7 @@ impl App {
                             + 8.0
                     };
                     // (i) beside the name opens the model's details
-                    let info_width = if model_page { 30.0 } else { 0.0 };
+                    let info_width = if details { 30.0 } else { 0.0 };
                     let room = ui.available_width();
                     let name_room = (room - state_width - info_width).max(room * 0.35).max(10.0);
                     ui.scope(|ui| {
@@ -129,7 +146,7 @@ impl App {
                             ui.label(egui::RichText::new(version).monospace().color(p.faint));
                         }
                     }
-                    if model_page {
+                    if details {
                         ui.add_space(2.0);
                         pressed.details = icons::icon_button(
                             ui,
@@ -158,13 +175,19 @@ impl App {
     /// The bar over a page of the sidebar: the way back to the model, the page's name, and what it is about.
     fn show_page_bar(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette();
+        let recommended = self.view == super::MainView::Recommended;
+        // the computers it can be for: this one and those QuickAI sets up (C228); with none of those, it says this one
+        let computers = self.computers_to_recommend_for();
         let (title, said) = match self.view {
             super::MainView::Recommended => (
                 super::catalog_view::CATALOG_TITLE.to_string(),
-                format!(
-                    "for this computer · {} of memory",
-                    crate::hardware::format_bytes(self.total_ram_bytes)
-                ),
+                match self.setup_in_use() {
+                    Some(_) => self.there_words(),
+                    None => format!(
+                        "{} of memory",
+                        crate::hardware::format_bytes(self.total_ram_bytes)
+                    ),
+                },
             ),
             _ => (
                 "MCP servers".to_string(),
@@ -192,7 +215,54 @@ impl App {
                     .color(p.text),
             );
             ui.add_space(8.0);
+            let mut chosen: Option<Option<String>> = None;
+            if recommended {
+                ui.label(egui::RichText::new("for").color(p.muted));
+                let shown = self
+                    .setup_in_use()
+                    .map_or_else(|| "this computer".to_string(), |s| s.name.clone());
+                if computers.is_empty() {
+                    ui.label(egui::RichText::new(&shown).color(p.muted));
+                } else {
+                    let button = icons::labelled_button(
+                        ui,
+                        Role::Normal,
+                        true,
+                        Icon::Computer,
+                        &format!("{shown}  ▾"),
+                        28.0,
+                    )
+                    .on_hover_text(
+                        "The computer the models are recommended for, and downloaded to.",
+                    );
+                    egui::Popup::menu(&button)
+                        .align(egui::RectAlign::BOTTOM_START)
+                        .width(220.0)
+                        .show(|ui| {
+                            ui.set_min_width(220.0);
+                            let here = self.setup_in_use().is_none();
+                            if icons::menu_item(ui, Icon::Computer, "This computer", !here, false)
+                                .clicked()
+                            {
+                                chosen = Some(None);
+                                ui.close();
+                            }
+                            for (id, name) in &computers {
+                                let on = self.setup_in_use().is_some_and(|s| &s.id == id);
+                                if icons::menu_item(ui, Icon::Computer, name, !on, false).clicked()
+                                {
+                                    chosen = Some(Some(id.clone()));
+                                    ui.close();
+                                }
+                            }
+                        });
+                }
+                ui.label(egui::RichText::new("·").color(p.faint));
+            }
             ui.add(egui::Label::new(egui::RichText::new(&said).color(p.muted)).truncate());
+            if let Some(id) = chosen {
+                self.choose_runner(id);
+            }
         });
         if back {
             self.view = super::MainView::Model;
@@ -358,11 +428,15 @@ impl App {
 
     /// The ⋯ menu of the bar: the chat's options and the model's menu on a model's page; the configurations and the
     /// engine's builds otherwise. What the model's part asked for comes back.
-    fn bar_menu(&mut self, ui: &mut egui::Ui, model_page: bool) -> Option<BarMenu> {
+    fn bar_menu(&mut self, ui: &mut egui::Ui, model_page: bool, setup: bool) -> Option<BarMenu> {
         let mut asked = None;
         let chat = model_page && self.can_chat();
         if chat {
             self.chat_menu_items(ui);
+        }
+        // a run on another computer has its chat page in the panel, and nothing to set up here
+        if setup {
+            return asked;
         }
         // the chat page of an engine without one of its own (Open WebUI beside Ollama): set it up, or open it while it runs.
         // It is in the panel too while the model runs; here it is also before, as the Server menu had it (UI v2)
@@ -386,9 +460,9 @@ impl App {
 
     /// Whether ⋯ has anything: the chat's items, or the chat page to set up or open. The model's items are on its row in
     /// the sidebar and its details on (i), Configurations in QuickAI ▾ and the panel, the engines in the engine's menu.
-    fn bar_menu_has_items(&self, model_page: bool) -> bool {
+    fn bar_menu_has_items(&self, model_page: bool, setup: bool) -> bool {
         (model_page && self.can_chat())
-            || self.chat_button().filter(|_| !self.runs_alone()).is_some()
+            || (!setup && self.chat_button().filter(|_| !self.runs_alone()).is_some())
     }
 
     /// Does what was pressed in the bar.
@@ -405,6 +479,19 @@ impl App {
         }
         if pressed.stop {
             self.press_stop();
+        }
+        if pressed.setup_start {
+            self.start_pressed_at = Some(std::time::Instant::now());
+            self.start_setup_run(ctx, false);
+        }
+        if pressed.setup_stop {
+            // not the second click of a double-click on Start, which Stop takes the place of
+            let just_started = self
+                .start_pressed_at
+                .is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(800));
+            if !just_started {
+                self.stop_setup_run();
+            }
         }
         if pressed.web_ui {
             if let Some(url) = self
@@ -464,6 +551,9 @@ struct Press {
     load: bool,
     switch: bool,
     stop: bool,
+    /// Start or Stop of the run on the computer QuickAI sets up that is shown.
+    setup_start: bool,
+    setup_stop: bool,
     web_ui: bool,
     panel: bool,
     sidebar: bool,

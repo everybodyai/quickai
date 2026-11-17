@@ -156,7 +156,7 @@ impl App {
             .context_field()
             .and_then(|f| f.range)
             .map_or(131072, |(_, high)| high as i64);
-        match self.model_facts().and_then(|f| f.context_length) {
+        match self.subject_facts().and_then(|f| f.context_length) {
             Some(trained) => field.min(trained as i64),
             None => field,
         }
@@ -333,7 +333,7 @@ impl App {
     /// How the model runs: the configuration in one line, the context as
     /// a grid of lengths, and Graphics. An engine with no context (ComfyUI), or one on another computer, has its fields.
     pub(super) fn show_change_panel(&mut self, ui: &mut egui::Ui) {
-        let running = self.session.is_active();
+        let running = self.settings_locked();
         let grid = self.context_field().is_some() && self.remote_in_use().is_none();
         // the configuration first: it is what the rest belongs to
         self.show_configuration_section(ui);
@@ -362,7 +362,7 @@ impl App {
         let p = theme::palette();
         let now = self.values.int(CONTEXT);
         let most = self.max_context();
-        let trained = self.model_facts().and_then(|f| f.context_length);
+        let trained = self.subject_facts().and_then(|f| f.context_length);
         let suggested = self.suggested_context();
         let own = self.change_custom
             || self.run_choice == Some(RunChoice::Own)

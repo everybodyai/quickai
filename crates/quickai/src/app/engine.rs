@@ -3130,6 +3130,7 @@ files = [ {{ file = "huge-Q4_K_M.gguf", size = 600000000000, sha256 = "{zero}" }
                 ram: 16 * GB,
                 busy: false,
                 bundles: &labels,
+                here_then: None,
             };
             let output = frame(&ctx, egui::vec2(576.0, 60000.0), |ui| {
                 egui::CentralPanel::default().show(ui, |ui| {

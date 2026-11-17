@@ -784,3 +784,37 @@ quickai-headless down [--no-wait]       # stop it, in the background or in anoth
   code and the reason, or after a minute). On Linux and macOS, the run is in its own session; on Windows, it has no console and its own process
   group, and is started outside the job object that Windows' OpenSSH server closes along with the connection (retried without that when the job
   does not allow it; the Task Scheduler is the remaining option if neither works, to be determined on a Windows server).
+
+## 14. What the window of another computer asks besides a run (C228)
+
+The window that sets this computer up ([remote-runs.md](remote-runs.md), section 3.4) asks over SSH for three more things, and each is
+as useful by hand:
+
+```sh
+quickai-headless computer [--json]                      # the memory (and how much is free), the makers of the cards, the devices of llama.cpp
+quickai-headless get get.json [--detach] [--json]       # download the files get.json names into the models folder
+quickai-headless get --status [--json]                  # the download that goes on and how far each file has got, or how the last one ended
+quickai-headless get --cancel [--no-wait]               # stop it (what came stays, and the next download of it goes on from there)
+quickai-headless models --delete FILE [--json]          # delete a model file and what came with it that no other model uses
+```
+
+- **`computer --json`** is `quickai_runtime::facts::ComputerFacts`: the system, the memory and the memory free now, the makers of the
+  graphics cards (`gpu::detect`), and the devices the installed llama.cpp lists (`--list-devices`: each card's name, memory and memory free,
+  and whether two NVIDIA cards are linked). The build is the one a run would use: the one its document finds by itself, else the build
+  installed last in the data folder. Before llama.cpp is installed there, `devices_known` is false and only the makers are known.
+- **`get FILE`** reads a `Download` as JSON (`quickai_core::lookup::present::Download`: each file's address, the name it is kept under, its
+  size and checksum, the bundle it makes; the window writes it from the recommended list or a search), and fetches it as the window fetches
+  a model: into QuickAI's models folder (`--models-dir DIR` for another), checked against the sizes and checksums, a `.part` file going on
+  from where it stopped, and the record that pairs a model with its projector written once all of it is there. `HF_ENDPOINT` puts the hub's
+  addresses on a mirror; `HF_TOKEN` (or `HUGGING_FACE_HUB_TOKEN`) is sent to the hub, or its mirror, and to no other site. A file name that
+  is not a plain name is refused.
+- **One download at a time**, apart from the run: a download is held, said and stopped as a run is, in the `get` folder of the data folder
+  (`~/.quickai/get`: `lock`, `run.json` with a step for each file and its bytes, `last.json` with `done`, `failed` or `stopped`, `stop`,
+  and `events.jsonl` in the background), so a model can be fetched while another runs. A second download exits with 7. `--detach` goes on
+  in the background as `up --detach` does.
+- **`models --delete FILE`** takes a name the `models` listing gives, deletes it with `bundles::remove_model` (the record beside it, and a
+  projector no other model's record names), and with `--json` prints `{"removed", "kept", "failed", "error"}`. A model in the bundled-models
+  folder, or one the run that goes on uses (the model it serves, a file its configuration, its steps or, in the background, its events name),
+  is refused with a sentence, exit code 1.
+- **`models --json`** says, for each file, what its GGUF header says of the memory it needs (`facts`), the bytes of its projector
+  (`projector_bytes`), and the files paired with it (`companions`), which the listing leaves out as models.

@@ -10,6 +10,8 @@ name = "quickai-headless"
 path = "src/main.rs"
 
 [dependencies]
+# the files a download names (`get`), as the window writes them
+quickai-core = { path = "../quickai-core" }
 quickai-runtime = { path = "../quickai-runtime" }
 serde_json = "1"
 

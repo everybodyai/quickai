@@ -80,4 +80,88 @@ impl App {
             .map(|e| e.configuration.name.clone())
             .unwrap_or_else(|| "Default".to_string())
     }
+
+    // what `remote_there` gives the rest of the window (C228): nothing, as no such computer is chosen
+
+    pub(super) fn facts_there(&self) -> Option<&crate::facts::ComputerFacts> {
+        None
+    }
+
+    pub(super) fn asking_facts_there(&self) -> bool {
+        false
+    }
+
+    pub(super) fn ask_facts_there(&mut self, _ctx: &egui::Context) {}
+
+    pub(super) fn ask_facts_there_once(&mut self, _ctx: &egui::Context) {}
+
+    pub(super) fn cards_there(&self) -> Vec<crate::devices::Device> {
+        Vec::new()
+    }
+
+    pub(super) fn ram_there(&self) -> Option<u64> {
+        None
+    }
+
+    pub(super) fn subject_there(&self) -> Option<(u64, Option<&quickai_core::gguf::ModelFacts>)> {
+        None
+    }
+
+    pub(super) fn there_words(&self) -> String {
+        String::new()
+    }
+
+    pub(super) fn computers_to_recommend_for(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
+
+    pub(super) fn have_there(&self) -> Option<std::collections::BTreeMap<String, u64>> {
+        None
+    }
+
+    pub(super) fn setup_bar_title(&self) -> String {
+        String::new()
+    }
+
+    pub(super) fn setup_bar_state(&self) -> (String, egui::Color32, String) {
+        (String::new(), egui::Color32::TRANSPARENT, String::new())
+    }
+
+    pub(super) fn setup_bar_actions(&mut self, _ui: &mut egui::Ui, _height: f32) -> (bool, bool) {
+        (false, false)
+    }
+
+    pub(super) fn show_computer_there(&mut self, _ui: &mut egui::Ui, _meters: f32) {}
+
+    pub(super) fn fetch_there(
+        &mut self,
+        _fetch: &quickai_core::lookup::present::Fetch,
+        _ctx: &egui::Context,
+    ) {
+    }
+
+    pub(super) fn fetch_here_then_copy(
+        &mut self,
+        _fetch: &quickai_core::lookup::present::Fetch,
+        _ctx: &egui::Context,
+    ) {
+    }
+
+    pub(super) fn getting_there(&self) -> Option<(String, String, Option<f32>)> {
+        None
+    }
+
+    pub(super) fn cancel_get_there(&mut self, _ctx: &egui::Context) {}
+
+    pub(super) fn note_last_there(&mut self) {}
+
+    pub(super) fn terminal_shown(&self) -> bool {
+        false
+    }
+
+    pub(super) fn terminal_hover(&self) -> String {
+        String::new()
+    }
+
+    pub(super) fn show_terminal_tab(&mut self, _ui: &mut egui::Ui) {}
 }

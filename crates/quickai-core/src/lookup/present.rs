@@ -225,23 +225,28 @@ pub enum Fetch {
     Files(Download),
 }
 
-/// Files to fetch: the weights first, then the parts of a bundle.
-#[derive(Clone, Debug, PartialEq)]
+/// Files to fetch: the weights first, then the parts of a bundle. Written as JSON, it is what the window sends
+/// another computer to fetch there (`quickai-headless get`).
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Download {
     pub files: Vec<Piece>,
     /// The bundle they are, or `None` for the weights alone.
+    #[serde(default)]
     pub bundle: Option<String>,
     /// Where they come from, for the record that pairs them: `huggingface:owner/repo`.
+    #[serde(default)]
     pub source: String,
     /// The engine's `[[models.mode]]` the model is started in (`embedding`), which the record beside
     /// the weights remembers.
+    #[serde(default)]
     pub mode: Option<String>,
 }
 
 /// One file of a download.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Piece {
     /// The kind of component it is; `None` is the weights.
+    #[serde(default)]
     pub kind: Option<String>,
     /// What the window calls it: `model`, or the part's own word (`projector`).
     pub label: String,
@@ -250,11 +255,14 @@ pub struct Piece {
     pub store_as: String,
     /// The name it has in the repository.
     pub name: String,
+    #[serde(default)]
     pub size: Option<u64>,
     /// What the bytes that arrive must hash to (lower case hexadecimal), when the source says.
+    #[serde(default)]
     pub sha256: Option<String>,
     /// The folder of the models folder it is kept in, for an engine that finds its files by the folder
     /// they are in; `None` is the models folder itself.
+    #[serde(default)]
     pub place: Option<String>,
 }
 

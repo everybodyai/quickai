@@ -199,6 +199,66 @@ pub struct KeptModel {
     /// It is in a folder a run looks in by itself. One elsewhere (copied there for a run, or in a folder of another
     /// disk) is named to `up` with `--models-from` and its folder.
     pub own: bool,
+    /// What its header says of the memory it needs (a GGUF file's), for the window of another computer, which cannot
+    /// read the file; `None` when it could not be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub facts: Option<quickai_core::gguf::ModelFacts>,
+    /// The bytes of the projector the record beside the weights pairs with them, when it is there; 0 when none.
+    #[serde(default)]
+    pub projector_bytes: u64,
+    /// The files the record beside the weights pairs with them (a vision model's projector), those that are there:
+    /// the listing leaves them out as models, and the window of another computer tells by them whether a bundle is
+    /// there whole.
+    #[serde(default)]
+    pub companions: Vec<KeptFile>,
+}
+
+/// A file that goes with a model, as a computer keeps it.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct KeptFile {
+    /// The name it is kept under.
+    pub file: String,
+    pub size: u64,
+}
+
+/// The companions of a model that are there, by the name each is kept under and its size.
+fn kept_files(companions: &[Companion]) -> Vec<KeptFile> {
+    companions
+        .iter()
+        .filter_map(|c| {
+            let meta = std::fs::metadata(&c.path)
+                .ok()
+                .filter(std::fs::Metadata::is_file)?;
+            Some(KeptFile {
+                file: c.path.file_name()?.to_string_lossy().into_owned(),
+                size: meta.len(),
+            })
+        })
+        .collect()
+}
+
+/// What the header of the GGUF file at `path` says of the memory it needs; `None` for another kind of file, or one
+/// that could not be read.
+pub fn header_facts(path: &Path) -> Option<quickai_core::gguf::ModelFacts> {
+    let gguf = path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("gguf"));
+    if !gguf {
+        return None;
+    }
+    let file = std::fs::File::open(path).ok()?;
+    quickai_core::gguf::parse(std::io::BufReader::new(file)).ok()
+}
+
+/// The bytes of the projectors of `companions` that are there (a vision model's `mmproj`).
+fn projector_bytes(companions: &[Companion]) -> u64 {
+    companions
+        .iter()
+        .filter(|c| c.kind == "mmproj")
+        .filter_map(|c| std::fs::metadata(&c.path).ok())
+        .filter(std::fs::Metadata::is_file)
+        .map(|m| m.len())
+        .sum()
 }
 
 /// The patterns of the files that go with a model of `engine` and are not models themselves (`mmproj*.gguf`).
@@ -227,6 +287,9 @@ pub fn kept(
                 continue;
             }
             kept.push(KeptModel {
+                facts: header_facts(&m.path),
+                projector_bytes: projector_bytes(&m.companions),
+                companions: kept_files(&m.companions),
                 file: m.filename,
                 display: m.display,
                 size: m.size_bytes,

@@ -7,6 +7,10 @@
 use std::path::Path;
 use std::time::Duration;
 
+use quickai_core::lookup::present::Download;
+use serde::{Deserialize, Serialize};
+
+use crate::facts::ComputerFacts;
 use crate::provision::EndpointInfo;
 use crate::run_file::{RunFile, Status};
 
@@ -75,6 +79,22 @@ pub fn models(
     version: &str,
 ) -> Result<Vec<crate::models::KeptModel>, String> {
     let mut command = format!("{} models --json", computer.program_command(version));
+    command.push_str(&models_dirs(spec, computer));
+    let said = ssh::run(ssh, spec, &command, STATUS_TIMEOUT)?;
+    if !said.ok() {
+        return Err(failed(spec, "list its models", &said));
+    }
+    serde_json::from_str(said.stdout.trim()).map_err(|e| {
+        format!(
+            "What {} said of its models could not be read: {e}",
+            spec.host.trim()
+        )
+    })
+}
+
+/// ` --models-dir <folder>` for each folder of another disk the person accepted to keep models in on `spec`, for one
+/// configuration or another, once each.
+fn models_dirs(spec: &RemoteSpec, computer: &Computer) -> String {
     let mut folders: Vec<&String> = Vec::new();
     for flags in spec.accepted.values() {
         let mut words = flags.iter();
@@ -86,20 +106,200 @@ pub fn models(
             }
         }
     }
-    for folder in folders {
-        command.push_str(" --models-dir ");
-        command.push_str(&word(computer, folder));
-    }
+    folders
+        .into_iter()
+        .map(|folder| format!(" --models-dir {}", word(computer, folder)))
+        .collect()
+}
+
+/// What `spec` has for models (`quickai-headless computer --json`): its memory, the makers of its cards, and the devices
+/// of the llama.cpp installed there.
+pub fn facts(
+    ssh: &Path,
+    spec: &RemoteSpec,
+    computer: &Computer,
+    version: &str,
+) -> Result<ComputerFacts, String> {
+    let command = format!("{} computer --json", computer.program_command(version));
     let said = ssh::run(ssh, spec, &command, STATUS_TIMEOUT)?;
     if !said.ok() {
-        return Err(failed(spec, "list its models", &said));
+        return Err(failed(spec, "say what it has", &said));
     }
     serde_json::from_str(said.stdout.trim()).map_err(|e| {
         format!(
-            "What {} said of its models could not be read: {e}",
+            "What {} said of itself could not be read: {e}",
             spec.host.trim()
         )
     })
+}
+
+/// Starts the download of `download` on `spec`, in the background (`quickai-headless get --detach`), into
+/// `models_dir` there or QuickAI's models folder: what to fetch is copied there as a file, and the files are fetched
+/// by that computer from where they come from.
+pub fn get_start(
+    ssh: &Path,
+    scp: &Path,
+    spec: &RemoteSpec,
+    computer: &Computer,
+    version: &str,
+    download: &Download,
+    models_dir: Option<&str>,
+) -> Result<(), String> {
+    let text = serde_json::to_string_pretty(download)
+        .map_err(|e| format!("What to fetch could not be written: {e}"))?;
+    // a file of this download's own: two windows may send one to two computers at once
+    static GETS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let file = std::env::temp_dir().join(format!(
+        "quickai-get-{}-{}-{}.json",
+        std::process::id(),
+        GETS.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        spec.id
+    ));
+    std::fs::write(&file, text).map_err(|e| format!("Could not write {}: {e}", file.display()))?;
+    let there = ".quickai/remote/get.json";
+    let copied = deploy::copy_file(ssh, scp, spec, computer, &file, there);
+    let _ = std::fs::remove_file(&file);
+    copied?;
+    let mut command = format!(
+        "{} get {} --detach",
+        computer.program_command(version),
+        computer.shell_path(there)
+    );
+    if let Some(folder) = models_dir {
+        command.push_str(" --models-dir ");
+        command.push_str(&word(computer, folder));
+    }
+    let said = ssh::run(ssh, spec, &command, START_TIMEOUT)?;
+    match said.code {
+        Some(0) => Ok(()),
+        Some(BUSY) => {
+            let text = said.stderr.trim();
+            let line = text
+                .lines()
+                .map(|l| l.trim_start_matches("quickai-headless: ").trim())
+                .find(|l| !l.is_empty())
+                .unwrap_or("another download goes on there");
+            Err(format!("On {}, {line}", spec.name.trim()))
+        }
+        _ => Err(failed(spec, "start the download", &said)),
+    }
+}
+
+/// The download that goes on on `spec`, or how the last one ended (`quickai-headless get --status --json`).
+pub fn get_status(
+    ssh: &Path,
+    spec: &RemoteSpec,
+    computer: &Computer,
+    version: &str,
+) -> Result<Status, String> {
+    let command = format!("{} get --status --json", computer.program_command(version));
+    let said = ssh::run(ssh, spec, &command, STATUS_TIMEOUT)?;
+    if !said.ok() {
+        return Err(failed(spec, "say how its download goes", &said));
+    }
+    serde_json::from_str(said.stdout.trim()).map_err(|e| {
+        format!(
+            "What {} said of its download could not be read: {e}",
+            spec.host.trim()
+        )
+    })
+}
+
+/// Stops the download that goes on on `spec`, and waits until it has (what came so far stays, and a new download of
+/// the same files goes on from there).
+pub fn get_cancel(
+    ssh: &Path,
+    spec: &RemoteSpec,
+    computer: &Computer,
+    version: &str,
+) -> Result<(), String> {
+    let command = format!("{} get --cancel", computer.program_command(version));
+    let said = ssh::run(ssh, spec, &command, STOP_TIMEOUT)?;
+    if said.ok() {
+        Ok(())
+    } else {
+        Err(failed(spec, "stop its download", &said))
+    }
+}
+
+/// Deletes the model file `file` on `spec` (`quickai-headless models --delete`), with the files that went with it that no
+/// other model uses; what was done, as sentences for the log. A model that came with QuickAI there, or that its run
+/// uses, is not deleted: what it said is the error.
+pub fn delete_model(
+    ssh: &Path,
+    spec: &RemoteSpec,
+    computer: &Computer,
+    version: &str,
+    file: &str,
+) -> Result<Vec<String>, String> {
+    let mut command = format!(
+        "{} models --delete {} --json",
+        computer.program_command(version),
+        word(computer, file)
+    );
+    command.push_str(&models_dirs(spec, computer));
+    let said = ssh::run(ssh, spec, &command, STATUS_TIMEOUT)?;
+    if !said.ok() {
+        let text = said.stderr.trim();
+        return Err(
+            match text
+                .lines()
+                .map(|l| l.trim_start_matches("quickai-headless: ").trim())
+                .find(|l| !l.is_empty())
+            {
+                Some(line) => format!("On {}, {line}", spec.name.trim()),
+                None => failed(spec, "delete the model", &said),
+            },
+        );
+    }
+    let report: Deleted = serde_json::from_str(said.stdout.trim()).map_err(|e| {
+        format!(
+            "What {} said of the delete could not be read: {e}",
+            spec.host.trim()
+        )
+    })?;
+    Ok(report.sentences(file, &spec.name))
+}
+
+/// What `models --delete --json` says: the files that went, the ones kept because another model uses them, the ones
+/// that could not be deleted, and why the weights could not be, if they could not.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Deleted {
+    #[serde(default)]
+    pub removed: Vec<String>,
+    #[serde(default)]
+    pub kept: Vec<String>,
+    #[serde(default)]
+    pub failed: Vec<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+impl Deleted {
+    /// The report as the log says a delete here: what went, what else went, what stayed and why, what could not go.
+    pub fn sentences(&self, file: &str, computer: &str) -> Vec<String> {
+        let computer = computer.trim();
+        let mut lines = vec![match &self.error {
+            None => format!("Deleted model on {computer}: {file}"),
+            Some(e) => format!("Could not delete {file} on {computer}: {e}"),
+        }];
+        let also: Vec<&str> = self
+            .removed
+            .iter()
+            .map(String::as_str)
+            .filter(|name| *name != file)
+            .collect();
+        if !also.is_empty() {
+            lines.push(format!("Also deleted: {}.", also.join(", ")));
+        }
+        for kept in &self.kept {
+            lines.push(format!("Kept {kept}: another model uses it."));
+        }
+        for failed in &self.failed {
+            lines.push(format!("Could not delete {failed}"));
+        }
+        lines
+    }
 }
 
 /// Copies what `launch` names to `spec` and starts the run there in the background, with its headless program of
@@ -329,6 +529,30 @@ mod tests {
             program: "llama-server".into(),
             url: url.into(),
         }
+    }
+
+    #[test]
+    fn a_delete_there_is_said_as_one_here_is() {
+        let report: Deleted = serde_json::from_str(
+            r#"{"removed":["m.gguf","mmproj-m.gguf"],"kept":["shared.gguf"],"failed":[],"error":null}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            report.sentences("m.gguf", "Studio"),
+            [
+                "Deleted model on Studio: m.gguf",
+                "Also deleted: mmproj-m.gguf.",
+                "Kept shared.gguf: another model uses it.",
+            ]
+        );
+        let failed = Deleted {
+            error: Some("permission denied".into()),
+            ..Deleted::default()
+        };
+        assert_eq!(
+            failed.sentences("m.gguf", "Studio"),
+            ["Could not delete m.gguf on Studio: permission denied"]
+        );
     }
 
     #[test]

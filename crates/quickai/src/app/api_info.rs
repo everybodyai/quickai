@@ -8,7 +8,7 @@ use quickai_core::plan::ModelInfo;
 
 use super::companion::{ChatAction, ChatButton};
 use super::icons::{self, Icon};
-use super::theme::{self, Role};
+use super::theme;
 use super::App;
 use crate::events::ServerState;
 use crate::launch;
@@ -58,6 +58,22 @@ impl App {
             .engine_doc()
             .and_then(|e| e.doc.provides.web_ui.as_ref())
             .filter(|_| !self.runs_alone());
+        // the run on a computer QuickAI sets up: its chat page, through the tunnel (C228)
+        if let Some(spec) = self.setup_in_use() {
+            let page = self
+                .setup_run()
+                .filter(|r| r.running())
+                .and_then(|r| r.endpoint("page"))?;
+            return Some(ChatButton {
+                label: own.map_or_else(|| "Open the chat page".to_string(), |w| w.label.clone()),
+                enabled: true,
+                hover: format!(
+                    "Open the chat page of the run on {} in your browser, through its port here.",
+                    spec.name
+                ),
+                action: ChatAction::Open(page.url.clone()),
+            });
+        }
         let Some(web_ui) = own else {
             return self.chat_button();
         };
@@ -148,17 +164,6 @@ impl App {
             show_connection_details(ui, &panel);
         });
     }
-}
-
-/// The plug button beside the running model, `size` big: Connect an app opens and closes under it (where it is drawn
-/// is kept for the popover to hang from). `hover` is said when the pointer rests on it.
-#[cfg_attr(not(feature = "remote-setup"), allow(dead_code))]
-pub(super) fn connect_button(ui: &mut egui::Ui, size: egui::Vec2, hover: &str) -> bool {
-    let plug =
-        icons::framed_icon_button(ui, Role::Normal, true, Icon::Plug, size).on_hover_text(hover);
-    ui.data_mut(|d| d.insert_temp(anchor_id(), plug.rect));
-    super::help::mark_spot(ui, super::help::Spot::Plug, plug.rect);
-    plug.clicked()
 }
 
 /// Where the plug button was drawn.

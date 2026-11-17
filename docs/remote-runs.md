@@ -169,6 +169,42 @@ connected (running cfg) etc".
 - **When the window starts**, each computer QuickAI sets up is asked what runs there, and a run that goes on is found
   again with its ports brought here.
 
+### 3.4 The computer's facts, its models, and the panel (C228)
+
+The user asked for the panel at the right "also for remote computers", for the recommended models to be chosen "for
+remote", and for "capabilities like 'delete' models and so on". The window asks the computer it sets up, over SSH,
+with the headless program of its release ([headless.md](headless.md), section 14):
+
+- **What it has for models** (`computer --json`): its memory and how much is free, the makers of its cards, and the
+  devices of the llama.cpp installed there. The window asks when the computer is chosen and its list asked for
+  (`job::find`, `job::models`), once a run is up and after a stop, and when the person asks again (`job::facts`, which
+  copies QuickAI there first when it is not). The panel's foot and the fit of the context count that computer, not
+  this one.
+- **A model downloaded there** (`get --detach`, then `get --status` every two seconds: `job::get`, `job::follow_get`,
+  `job::cancel_get`): the window sends what to fetch, and that computer fetches it itself, over its own connection; it
+  goes on when the window closes, and a window that finds one going on follows it.
+- **A model deleted there** (`models --delete`: `job::delete`), with what came with it that no other model uses; one
+  that came with QuickAI there, or that its run uses, is not deleted, and the window says why.
+- **One of this computer's models copied there** without a run (`job::send_model`), where a run finds the files copied
+  for it (`.quickai/remote/models`).
+- **The models it keeps say what their headers say** (`models --json`: `facts`, `projector_bytes`, `companions`), for
+  the window, which cannot read files there.
+
+In the window (option A of the mockups): the computer chosen in the sidebar has the bar, the chat and the panel of a model
+here. Start and Stop in the bar are its run's; while it gets ready its steps are over the chat; while it runs the panel is
+Connect an app with the tunnel's address, and How it runs is at its foot. Recommended and Add a model are for that
+computer, and Get downloads there (option G1), with *Download here, then copy* for a computer that cannot reach the
+internet. Its models in the sidebar have Copy path and Delete…, and this computer's have *Copy to* it.
+
+- **A run there is kept** when QuickAI is closed, until the person stops it. When the window opens again it shows the
+  computer it showed and brings the run's ports back. Each computer, this one too, comes back to the configuration and
+  model last used on it (`RemoteSpec.last`, `app.here_configuration`), or to the configuration of the run that goes on
+  there, never over a configuration the person chose since.
+- **Terminal** (Settings › Other computers, off unless the person turns it on): a tab beside Log, a shell on the
+  computer shown, by the person's own ssh with BatchMode, one per computer while the window is open. It reads commands a
+  line at a time and has no terminal screen: programs that draw on the screen (top, vim) and password prompts do not
+  work there. Restart ends it and what runs in it.
+
 ## 4. Every release carries the headless program for every system
 
 Each package of the window (the Windows zip, the macOS disk image, the AppImage and the Linux tar.gz) carries a

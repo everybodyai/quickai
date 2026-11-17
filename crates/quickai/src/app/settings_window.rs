@@ -373,6 +373,28 @@ impl App {
             if turned {
                 self.set_remote_setup(on);
             }
+            // a shell there, under the page: only when the person asks for it (C228)
+            let mut terminal = self.stored.remote_terminal();
+            let turned = switch_row(
+                ui,
+                "Terminal for these computers",
+                Some(
+                    "A Terminal tab under the page, beside the log, that runs commands on the computer shown, over \
+                     SSH with your own login.",
+                ),
+                Some(
+                    "Commands run without a terminal screen: programs that draw on the screen (top, vim) and \
+                     password prompts do not work there.",
+                ),
+                &mut terminal,
+                self.remote_setup_on(),
+            );
+            if turned {
+                let mut stored = self.settings_now();
+                stored.set_remote_terminal(terminal);
+                self.write_settings(&stored);
+                self.stored = stored;
+            }
         });
     }
 

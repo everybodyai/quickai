@@ -53,11 +53,7 @@ impl App {
         }
         self.take_shortcuts(ui.ctx(), state, active);
 
-        // the sidebar slides away with the button at its head, and back with the bar's (as in the A6 samples); the page
-        // of a computer QuickAI sets up has no bar, and keeps it
-        if self.setup_in_use().is_some() {
-            self.sidebar_open = true;
-        }
+        // the sidebar slides away with the button at its head, and back with the bar's (as in the A6 samples)
         // (dragged narrower than it can be, it is put away too, and dragged out of the window's edge it comes back)
         let was = self.sidebar_open;
         let mut open = was;
@@ -70,31 +66,29 @@ impl App {
         if open != was {
             self.sidebar_open = open;
         }
-        // a computer QuickAI sets up, chosen in the sidebar: the page of its run (WP4.33), which has its own head
+        // a computer QuickAI sets up, chosen in the sidebar: the same bar, page and panel as a model here, for the run
+        // there (WP4.33, C228)
         let remote_view = self.setup_in_use().is_some();
         let wide = ui.ctx().content_rect().width() >= PANEL_FROM;
-        self.panel_shown = !remote_view
-            && self.view == MainView::Model
-            && self.panel_possible()
+        self.panel_shown = self.view == MainView::Model
+            && (remote_view || self.panel_possible())
             && self.panel_open
             && (wide || self.panel_asked);
-        if !remote_view {
-            egui::Panel::top("bar")
-                .exact_size(super::model_bar::BAR_HEIGHT)
-                .frame(
-                    egui::Frame::new()
-                        .fill(theme::palette().page)
-                        .inner_margin(egui::Margin::symmetric(8, 0)),
-                )
-                .show(ui, |ui| self.show_top_bar(ui, state, active));
-            if self.panel_shown {
-                egui::Panel::right("inspector")
-                    .resizable(true)
-                    .default_size(300.0)
-                    .size_range(260.0..=460.0)
-                    .frame(theme::side_frame(egui::Margin::symmetric(16, 14)))
-                    .show(ui, |ui| self.show_inspector(ui));
-            }
+        egui::Panel::top("bar")
+            .exact_size(super::model_bar::BAR_HEIGHT)
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::palette().page)
+                    .inner_margin(egui::Margin::symmetric(8, 0)),
+            )
+            .show(ui, |ui| self.show_top_bar(ui, state, active));
+        if self.panel_shown {
+            egui::Panel::right("inspector")
+                .resizable(true)
+                .default_size(300.0)
+                .size_range(260.0..=460.0)
+                .frame(theme::side_frame(egui::Margin::symmetric(16, 14)))
+                .show(ui, |ui| self.show_inspector(ui));
         }
         // the log under the page, or the strip at its foot that brings it up
         if self.dock_open {
@@ -102,8 +96,8 @@ impl App {
         } else {
             self.show_log_strip(ui);
         }
-        if self.view != MainView::Model && !remote_view {
-            // a page of the sidebar: the recommended models, or the MCP servers
+        if self.view != MainView::Model {
+            // a page of the sidebar: the recommended models (for the computer shown), or the MCP servers
             egui::CentralPanel::default()
                 .frame(egui::Frame::new().fill(theme::palette().page))
                 .show(ui, |ui| match self.view {
@@ -498,11 +492,14 @@ impl App {
     /// over it, a close button at their right, and one height for both.
     fn show_dock(&mut self, ui: &mut egui::Ui) {
         let live = self.traffic_proxy_on();
+        let terminal = self.terminal_shown();
         let shown = match self.active_tab {
             Tab::Live if live => Tab::Live,
+            Tab::Terminal if terminal => Tab::Terminal,
             _ => Tab::Main,
         };
         let on_live = shown == Tab::Live;
+        let on_terminal = shown == Tab::Terminal;
         if !on_live {
             self.log_unread = false;
         }
@@ -522,7 +519,8 @@ impl App {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.add_space(8.0);
-                    let log = dock_tab(ui, "Log", !on_live).on_hover_text("What the server says as it starts and runs.");
+                    let log = dock_tab(ui, "Log", !on_live && !on_terminal)
+                        .on_hover_text("What the server says as it starts and runs.");
                     mark_spot(ui, Spot::LogTab, log.rect);
                     if log.clicked() {
                         self.active_tab = Tab::Main;
@@ -535,6 +533,13 @@ impl App {
                             .clicked()
                     {
                         self.active_tab = Tab::Live;
+                    }
+                    if terminal
+                        && dock_tab(ui, "Terminal", on_terminal)
+                            .on_hover_text(self.terminal_hover())
+                            .clicked()
+                    {
+                        self.active_tab = Tab::Terminal;
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.add_space(6.0);
@@ -557,6 +562,7 @@ impl App {
                 );
                 match shown {
                     Tab::Live => self.show_live_traffic_tab(ui),
+                    Tab::Terminal => self.show_terminal_tab(ui),
                     _ => egui::Frame::new().fill(theme::palette().log).show(ui, |ui| {
                         ui.set_min_size(ui.available_size());
                         self.show_log_pane(ui);

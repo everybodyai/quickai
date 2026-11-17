@@ -244,8 +244,11 @@ impl App {
     pub(super) fn graphics_cards(&self) -> Vec<Device> {
         // an engine that finds its cards itself (Ollama) names them in its log when it starts (C213)
         if !self.lists_devices() {
-            if self.remote_in_use().is_some() || self.setup_in_use().is_some() || self.in_companion
-            {
+            // a computer QuickAI sets up says its cards itself (`quickai-headless computer`, C228)
+            if self.setup_in_use().is_some() {
+                return self.cards_there();
+            }
+            if self.remote_in_use().is_some() || self.in_companion {
                 return Vec::new();
             }
             return self
@@ -287,7 +290,7 @@ impl App {
     /// The devices field as the place and the cards want it: none for the processor (the GPU layers field says
     /// `--device none` then); built-in graphics left out beside a card of its own, unless they were ticked.
     pub(super) fn settle_devices(&mut self) {
-        if self.engine_has_layers().is_none() || !matches!(self.devices, Devices::Known { .. }) {
+        if self.engine_has_layers().is_none() || !self.cards_known() {
             return;
         }
         let cards = self.graphics_cards();
@@ -400,7 +403,7 @@ impl App {
 
     /// What the engine says it has loaded of the selected model, while it runs (`[models] loaded`, C213).
     pub(super) fn loaded_now(&self) -> Option<&crate::prims::engine_models::LoadedRow> {
-        if !self.session.is_active() {
+        if !self.session.is_active() || self.setup_in_use().is_some() {
             return None;
         }
         let model = self.models.get(self.selected)?;
@@ -449,14 +452,59 @@ impl App {
 
     /// What the selected model needs, when its file says it.
     pub(super) fn need(&self) -> Option<Need> {
-        let model = self.models.get(self.selected)?;
-        let facts = self.model_facts()?;
+        let (weights, facts) = self.subject()?;
+        let facts = facts?;
         Some(Need {
-            // a projector that is attached goes on the card with the weights (C213)
-            weights: model.size_bytes + self.projector_bytes(),
+            weights,
             layers: facts.layers?,
             per_token: facts.kv_bytes_per_token?,
         })
+    }
+
+    /// The model the panel counts, as its bytes (a projector that is attached goes on the card with the weights, C213)
+    /// and what its file says: the selected model here, or the one the next run on the computer QuickAI sets up that is
+    /// shown starts with, once that computer said what it is (C228).
+    pub(super) fn subject(&self) -> Option<(u64, Option<&ModelFacts>)> {
+        if self.setup_in_use().is_some() {
+            return self.subject_there();
+        }
+        let model = self.models.get(self.selected)?;
+        Some((
+            model.size_bytes + self.projector_bytes(),
+            self.model_facts(),
+        ))
+    }
+
+    /// What the file of the model the panel counts says of it.
+    pub(super) fn subject_facts(&self) -> Option<&ModelFacts> {
+        self.subject().and_then(|(_, facts)| facts)
+    }
+
+    /// The memory a fit is counted against: this computer's, or that of the computer QuickAI sets up that is shown (0
+    /// before it said).
+    pub(super) fn ram_for_fit(&self) -> u64 {
+        if self.setup_in_use().is_some() {
+            return self.ram_there().unwrap_or(0);
+        }
+        self.total_ram_bytes
+    }
+
+    /// Whether the cards are known: what the installed llama.cpp listed here, or what the computer QuickAI sets up said
+    /// its llama.cpp lists.
+    pub(super) fn cards_known(&self) -> bool {
+        if self.setup_in_use().is_some() {
+            return self.facts_there().is_some_and(|f| f.devices_known);
+        }
+        matches!(self.devices, Devices::Known { .. })
+    }
+
+    /// Whether how it runs is fixed now: the model runs, here or on the computer QuickAI sets up that is shown (a run
+    /// here does not fix what is sent there, and the other way round).
+    pub(super) fn settings_locked(&self) -> bool {
+        if self.setup_in_use().is_some() {
+            return self.setup_run().is_some_and(|r| r.running() || r.working());
+        }
+        self.session.is_active()
     }
 
     /// The context in force, in tokens (4K when the engine decides it).
@@ -506,10 +554,8 @@ impl App {
     pub(super) fn fit(&self, tokens: u64) -> Option<Fit> {
         let need = self.need()?;
         Some(match (self.place(), self.card_room()) {
-            (Place::Mixed(_), Some(room)) => {
-                split_fit_of(&need, tokens, room, self.total_ram_bytes)
-            }
-            (_, room) => fit_of(&need, tokens, room, self.total_ram_bytes),
+            (Place::Mixed(_), Some(room)) => split_fit_of(&need, tokens, room, self.ram_for_fit()),
+            (_, room) => fit_of(&need, tokens, room, self.ram_for_fit()),
         })
     }
 
@@ -517,12 +563,7 @@ impl App {
     /// goes by, so that it is the longest that runs fast.
     pub(super) fn fit_on_cards(&self, tokens: u64) -> Option<Fit> {
         let need = self.need()?;
-        Some(fit_of(
-            &need,
-            tokens,
-            self.card_room(),
-            self.total_ram_bytes,
-        ))
+        Some(fit_of(&need, tokens, self.card_room(), self.ram_for_fit()))
     }
 
     /// With Card + processor, how many of the model's layers fit on the cards at `tokens`, and of how many.
@@ -536,7 +577,7 @@ impl App {
     /// model just picked, a configuration just chosen, a length of context just chosen, and the cards just known.
     /// Nothing is changed once the person chose where it runs, or while it runs.
     pub(super) fn auto_fit(&mut self) {
-        if self.session.is_active() || self.engine_has_layers().is_none() {
+        if self.settings_locked() || self.engine_has_layers().is_none() {
             return;
         }
         if !self.gpu_auto {
@@ -598,17 +639,13 @@ impl App {
 
     /// What the run takes of each card it goes on, and of the memory.
     pub(super) fn takes(&self) -> Option<(Vec<(Device, Takes)>, Takes)> {
-        let model = self.models.get(self.selected)?;
-        let tokens = self.context_tokens();
         // the projector, when it is attached, is counted with the model
-        let weights = model.size_bytes + self.projector_bytes();
+        let (weights, facts) = self.subject()?;
+        let tokens = self.context_tokens();
         // what a loaded model takes in all is what the engine says (Ollama's /api/ps): the rest of it is its context
         let context = match self.loaded_now() {
             Some(row) => row.size_bytes.saturating_sub(weights + WORK),
-            None => self
-                .model_facts()
-                .and_then(|f| f.context_bytes(tokens))
-                .unwrap_or(0),
+            None => facts.and_then(|f| f.context_bytes(tokens)).unwrap_or(0),
         };
         let cards = self.ticked_cards();
         let share = if cards.is_empty() {
@@ -655,8 +692,9 @@ impl App {
     /// four fifths on the card is still fast, and under two fifths little faster than the processor alone); on the
     /// processor, as its size and the memory say.
     pub(super) fn speed(&self) -> Option<SpeedTier> {
-        let model = self.models.get(self.selected)?;
-        let known = (self.lists_devices() && matches!(self.devices, Devices::Known { .. }))
+        let (size, _) = self.subject()?;
+        let ram = self.ram_for_fit();
+        let known = (self.lists_devices() && self.cards_known())
             || (!self.lists_devices() && !self.graphics_cards().is_empty());
         if known {
             let cards = self.ticked_cards();
@@ -674,26 +712,26 @@ impl App {
                     } else if share >= SPLIT_MEDIUM {
                         SpeedTier::Medium
                     } else {
-                        crate::hardware::speed_tier(model.size_bytes, self.total_ram_bytes, false)
+                        crate::hardware::speed_tier(size, ram, false)
                     }
                 }
-                _ => crate::hardware::speed_tier(model.size_bytes, self.total_ram_bytes, false),
+                _ => crate::hardware::speed_tier(size, ram, false),
             });
         }
+        // of a computer QuickAI sets up whose cards are not known yet, nothing is guessed but from its memory
+        if self.setup_in_use().is_some() {
+            return (ram > 0).then(|| crate::hardware::speed_tier(size, ram, false));
+        }
         let offload = self.speed_basis()?;
-        Some(crate::hardware::speed_tier(
-            model.size_bytes,
-            self.total_ram_bytes,
-            offload,
-        ))
+        Some(crate::hardware::speed_tier(size, ram, offload))
     }
 
     /// Where it runs, in words, for the line of the run (`on the RTX 4090`, `38 of 62 layers on the card`).
     pub(super) fn place_words(&self) -> Option<String> {
-        if !self.lists_devices() {
+        if !self.lists_devices() && self.setup_in_use().is_none() {
             return self.engine_place_words();
         }
-        if !matches!(self.devices, Devices::Known { .. }) {
+        if !self.cards_known() {
             return None;
         }
         let cards = self.ticked_cards();
@@ -757,8 +795,10 @@ impl App {
 
     /// Graphics: where the model runs, and with more than one card, which cards and how it is split between them.
     pub(super) fn show_graphics_section(&mut self, ui: &mut egui::Ui) {
-        let enabled = !self.session.is_active();
-        if self.engine_has_layers().is_some() && self.lists_devices() {
+        let enabled = !self.settings_locked();
+        if self.engine_has_layers().is_some()
+            && (self.lists_devices() || self.setup_in_use().is_some())
+        {
             self.show_llama_graphics(ui, enabled);
         } else if let Some(field) = self.form().and_then(|f| f.field("gpu").cloned()) {
             // Ollama: its own say of the cards, on or off; the cards it named, and how much of the model it put on them
@@ -818,9 +858,25 @@ impl App {
         let p = theme::palette();
         let cards = self.graphics_cards();
         let ticked = self.ticked_cards();
-        let (looking, failed, linked) = match &self.devices {
-            Devices::Known { linked, .. } => (false, None, *linked),
-            Devices::Failed(_, why) => (false, Some(why.clone()), false),
+        // a computer QuickAI sets up says its cards when it is asked (C228): before, or before llama.cpp is installed
+        // there, only their makers are known
+        let there = self.setup_in_use().is_some().then(|| {
+            let facts = self.facts_there();
+            let makers = facts.map(|f| f.vendors.join(", ")).unwrap_or_default();
+            (
+                facts.is_some(),
+                facts.is_some_and(|f| f.devices_known),
+                makers,
+            )
+        });
+        let (looking, failed, linked) = match (&there, &self.devices) {
+            (Some(_), _) => (
+                self.facts_there().is_none() && self.asking_facts_there(),
+                None,
+                self.facts_there().is_some_and(|f| f.linked),
+            ),
+            (None, Devices::Known { linked, .. }) => (false, None, *linked),
+            (None, Devices::Failed(_, why)) => (false, Some(why.clone()), false),
             _ => (true, None, false),
         };
         let mut again = false;
@@ -836,6 +892,21 @@ impl App {
             |ui| match cards.as_slice() {
                 _ if looking => {
                     ui.label(theme::muted("looking…").small());
+                }
+                [] if there.as_ref().is_some_and(|(said, cards, _)| !said || !cards) => {
+                    let (said, _, makers) = there.clone().unwrap_or_default();
+                    if !said {
+                        again = ui.link(egui::RichText::new("Ask").small()).clicked();
+                        ui.label(theme::muted("not known yet ·").small()).on_hover_text(
+                            "The computer says its graphics cards and memory once QuickAI reaches it.",
+                        );
+                    } else {
+                        let words = if makers.is_empty() { "no card found".to_string() } else { makers };
+                        ui.add(egui::Label::new(theme::muted(words).small()).truncate()).on_hover_text(
+                            "Each card's name and memory are known once llama.cpp is installed there: after the first \
+                             start. Until then the context is fitted to the memory.",
+                        );
+                    }
                 }
                 [] => {
                     again = ui.link(egui::RichText::new("Look again").small()).clicked();
@@ -860,7 +931,11 @@ impl App {
             },
         );
         if again {
-            self.look_again();
+            if there.is_some() {
+                self.ask_facts_there(ui.ctx());
+            } else {
+                self.look_again();
+            }
         }
         // with more than one, a tick box for each card
         if cards.len() > 1 {
@@ -920,7 +995,9 @@ impl App {
         let whole_fits = need
             .map(|n| n.weights + WORK <= room_of(&ticked))
             .unwrap_or(true);
-        let have = !ticked.is_empty();
+        // a computer QuickAI sets up whose cards are not known yet keeps what the configuration says
+        let unknown_there = there.as_ref().is_some_and(|(_, cards, _)| !cards);
+        let have = !ticked.is_empty() || unknown_there;
         let many = ticked.len() > 1;
         let lit = match place {
             _ if !have && !looking => 2,
@@ -929,7 +1006,11 @@ impl App {
             Place::Processor => 2,
         };
         let cells = [
-            (if many { "Cards" } else { "Card" }, 1.0, have && whole_fits),
+            (
+                if many { "Cards" } else { "Card" },
+                1.0,
+                have && (whole_fits || unknown_there),
+            ),
             (
                 if many {
                     "Cards + processor"
@@ -937,7 +1018,7 @@ impl App {
                     "Card + processor"
                 },
                 1.7,
-                have && need.is_some(),
+                have && need.is_some() && !unknown_there,
             ),
             ("Processor", 1.1, have),
         ];
@@ -1037,6 +1118,10 @@ impl App {
     /// for the memory, each with the model, its context and llama.cpp's work.
     /// The meters take at most `meters` high, and scroll beyond it (many cards, a short window).
     pub(super) fn show_this_computer(&mut self, ui: &mut egui::Ui, meters: f32) {
+        if self.setup_in_use().is_some() {
+            self.show_computer_there(ui, meters);
+            return;
+        }
         let p = theme::palette();
         let speed = self.speed();
         super::inspector::section_head(
@@ -1094,18 +1179,18 @@ fn is_gguf(path: &Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("gguf"))
 }
 
-fn context_color() -> egui::Color32 {
+pub(super) fn context_color() -> egui::Color32 {
     let p = theme::palette();
     p.accent_text.lerp_to_gamma(p.raised, 0.5)
 }
 
-fn work_color() -> egui::Color32 {
+pub(super) fn work_color() -> egui::Color32 {
     let p = theme::palette();
     p.accent_text.lerp_to_gamma(p.raised, 0.75)
 }
 
 /// A meter: the name and `used of total GB` over a bar of the model, its context and the work.
-fn meter_row(ui: &mut egui::Ui, name: &str, takes: &Takes, total: u64) {
+pub(super) fn meter_row(ui: &mut egui::Ui, name: &str, takes: &Takes, total: u64) {
     let p = theme::palette();
     ui.add_space(6.0);
     ui.horizontal(|ui| {

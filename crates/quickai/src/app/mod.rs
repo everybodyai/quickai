@@ -67,6 +67,10 @@ mod remote_models;
 mod remote_page;
 #[cfg(feature = "remote-setup")]
 mod remote_run;
+#[cfg(feature = "remote-setup")]
+mod remote_terminal;
+#[cfg(feature = "remote-setup")]
+mod remote_there;
 // without runs QuickAI sets up on another computer, what stands in for them: nothing runs there, nothing is drawn
 #[cfg(not(feature = "remote-setup"))]
 #[path = "remote_run_off.rs"]
@@ -335,6 +339,8 @@ enum Tab {
     Live,
     /// The conversation with the model that runs (`chat.rs`).
     Chat,
+    /// A shell on the computer QuickAI sets up that is shown, when Settings has it on (`remote_terminal.rs`, C228).
+    Terminal,
 }
 
 /// One request/response pair shown in the Live traffic tab. `response` fills
@@ -835,6 +841,8 @@ impl App {
             (false, _) | (true, Tab::Chat) => "chat",
             (true, Tab::Main) => "log",
             (true, Tab::Live) => "live",
+            // a shell there is opened again by the person, not by a start of the window
+            (true, Tab::Terminal) => "log",
         });
         settings.set_run_choice(
             self.run_choice_to_keep()

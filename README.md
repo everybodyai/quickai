@@ -196,6 +196,13 @@ your `~/.ssh/config` are suggested). QuickAI tests the connection step by step a
 that fails; then select the computer in the same menu. The model list then shows the models stored on that computer;
 **Start** runs the selected model there, and the chat and **Connect an app** work just as they do locally.
 
+The panel on the right then counts that computer: its memory and graphics cards, where each context length fits, and
+how fast the model should answer there. **Recommended** and **Add a model** are for that computer, and **Get** has it
+download the model itself, in the background; a model of this computer can be copied there, and a model there can be
+deleted from its menu. A model started there keeps running when you close QuickAI, until you stop it, and QuickAI
+connects to it again the next time it starts. An optional **Terminal** tab (**Settings › Other computers**, off unless
+you turn it on) runs commands on that computer.
+
 QuickAI connects using your own `ssh` client (your keys, agent and `~/.ssh/config` are used as they are) and opens no
 network port on either side: the engine on the remote computer listens on its own loopback interface, and an SSH
 tunnel forwards its port to this computer, on the same port number unless you specify another (**Port here**, under

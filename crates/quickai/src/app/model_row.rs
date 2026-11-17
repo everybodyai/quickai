@@ -37,6 +37,9 @@ pub(super) struct RowLook<'a> {
     pub busy: bool,
     /// The words of the engine's bundles (`with projector`).
     pub bundles: &'a [BundleWords],
+    /// The computer QuickAI sets up that Get downloads to, when one is shown (C228): the ▾ also offers to download
+    /// here and copy it there, for a computer that cannot reach the internet.
+    pub here_then: Option<&'a str>,
 }
 
 /// One row: the model, the offer its Get button fetches and the ones its ▾ lists, and what it says.
@@ -62,6 +65,8 @@ pub(super) struct Row<'a> {
 /// What a row asks for.
 pub(super) enum RowAction {
     Fetch(Fetch),
+    /// Download it here, then copy it to the computer QuickAI sets up that is shown (C228).
+    FetchHere(Fetch),
     /// Its details were opened or closed.
     Toggle,
 }
@@ -477,10 +482,14 @@ pub(super) fn show(
             icons::paint(&painter, square, Icon::Check, p.ok);
             words_left = square.right() + 6.0;
         }
+        // on a computer QuickAI sets up that is shown, what it keeps there (C228)
+        let said = look
+            .here_then
+            .map_or_else(|| "Installed".to_string(), |c| format!("On {c}"));
         painter.text(
             Pos2::new(words_left, mid),
             egui::Align2::LEFT_CENTER,
-            "Installed",
+            said,
             FontId::proportional(12.5),
             p.ok,
         );
@@ -560,8 +569,12 @@ pub(super) fn show(
             .width(menu_width)
             .show(|ui| {
                 ui.set_min_width(menu_width);
-                if let Some(fetch) = size_menu(ui, row, look) {
-                    action = Some(RowAction::Fetch(fetch));
+                if let Some((fetch, here)) = size_menu(ui, row, look) {
+                    action = Some(if here {
+                        RowAction::FetchHere(fetch)
+                    } else {
+                        RowAction::Fetch(fetch)
+                    });
                     ui.close();
                 }
             });
@@ -598,7 +611,7 @@ fn menu_width(ui: &egui::Ui, row: &Row<'_>, look: &RowLook<'_>) -> f32 {
 
 /// The ▾ of a row: each size in plain words with the file's name under it, whether it fits, and how big it is; the
 /// sizes with what goes with them (a projector) first, a line, then the model alone.
-fn size_menu(ui: &mut egui::Ui, row: &Row<'_>, look: &RowLook<'_>) -> Option<Fetch> {
+fn size_menu(ui: &mut egui::Ui, row: &Row<'_>, look: &RowLook<'_>) -> Option<(Fetch, bool)> {
     let p = theme::palette();
     let mut chosen = None;
     ui.add_space(2.0);
@@ -673,7 +686,8 @@ fn size_menu(ui: &mut egui::Ui, row: &Row<'_>, look: &RowLook<'_>) -> Option<Fet
                 painter.text(
                     Pos2::new(status_x - 8.0, rect.center().y),
                     egui::Align2::RIGHT_CENTER,
-                    "Installed",
+                    look.here_then
+                        .map_or_else(|| "Installed".to_string(), |c| format!("On {c}")),
                     FontId::proportional(12.0),
                     p.ok,
                 );
@@ -728,7 +742,26 @@ fn size_menu(ui: &mut egui::Ui, row: &Row<'_>, look: &RowLook<'_>) -> Option<Fet
             hover = format!("{hover} {said}");
         }
         if response.on_hover_text(hover).clicked() && enabled {
-            chosen = Some(offer.fetch.clone());
+            chosen = Some((offer.fetch.clone(), false));
+        }
+    }
+    // a computer QuickAI sets up downloads what Get asks for itself; one that cannot reach the internet gets it from here
+    if let Some(computer) = look.here_then {
+        let can = !look.busy && !(look.installed)(row.main);
+        ui.separator();
+        if ui
+            .add_enabled(
+                can,
+                egui::Button::new(format!("Download here, then copy to {computer}")).frame(false),
+            )
+            .on_hover_text(format!(
+                "For a computer that cannot reach the internet: {} is downloaded to this computer, then copied to \
+                 {computer}.",
+                row.title
+            ))
+            .clicked()
+        {
+            chosen = Some((row.main.fetch.clone(), true));
         }
     }
     chosen

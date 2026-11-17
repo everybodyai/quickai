@@ -131,6 +131,8 @@ impl App {
         if self.setup_run().is_some_and(SetupRun::working) {
             return;
         }
+        // what is started there is what the window comes back to (C228)
+        self.note_last_there();
         let (name, text) = self.selected_configuration_text();
         // what was answered about the other ways proposed is kept from one start to the next
         let answers = self
@@ -288,10 +290,12 @@ impl App {
                 self.find_setup_run(&spec, ctx);
             }
         }
-        self.poll_models_there();
+        self.poll_models_there(ctx);
+        self.poll_there(ctx);
         let mut log = Vec::new();
         let mut gone = Vec::new();
         let mut listed: Vec<(String, Vec<crate::models::KeptModel>)> = Vec::new();
+        let mut news: Vec<(String, News)> = Vec::new();
         let mut remembered: Vec<(String, String, Vec<String>)> = Vec::new();
         for (id, run) in self.remote.setup.iter_mut() {
             let name = self
@@ -301,11 +305,15 @@ impl App {
                 .find(|r| &r.id == id)
                 .map_or_else(|| id.clone(), |r| r.name.clone());
             let mut kept = None;
-            if take_updates(run, &name, &mut log, &mut kept) {
+            let mut said = News::default();
+            if take_updates(run, &name, &mut log, &mut kept, &mut said) {
                 gone.push(id.clone());
             }
             if let Some(models) = kept {
                 listed.push((id.clone(), models));
+            }
+            if said.facts.is_some() || said.getting || said.ran.is_some() || said.nothing {
+                news.push((id.clone(), said));
             }
             if !run.remember.is_empty() {
                 remembered.push((
@@ -320,6 +328,10 @@ impl App {
         }
         for (id, models) in listed {
             self.keep_models_there(&id, models);
+        }
+        for (id, said) in news {
+            self.take_there_news(&id, said.facts, said.getting, ctx);
+            self.come_back_to(&id, said.ran, said.nothing);
         }
         // what the person accepted for a computer is kept with it, so that the next run does not ask again
         if !remembered.is_empty() {
@@ -606,6 +618,7 @@ fn take_updates(
     name: &str,
     log: &mut Vec<String>,
     kept: &mut Option<Vec<crate::models::KeptModel>>,
+    news: &mut News,
 ) -> bool {
     let mut said = Vec::new();
     if let Some(updates) = &run.updates {
@@ -661,6 +674,7 @@ fn take_updates(
                 }
                 run.reached = true;
                 run.doing.clear();
+                news.ran = Some(there.name());
                 run.there = Some(there);
                 run.endpoints = endpoints;
                 run.tunnel = Some(tunnel);
@@ -677,7 +691,15 @@ fn take_updates(
             }
             Update::Remember(words) => run.remember.extend(words),
             Update::Models(models) => *kept = Some(models),
-            Update::Nothing | Update::Stopped => gone = true,
+            Update::Facts(facts) => news.facts = Some(*facts),
+            Update::Nothing => {
+                news.nothing = true;
+                gone = true;
+            }
+            Update::Getting(_) => news.getting = true,
+            // what a download, a deletion or a copy says (`remote_there`), not a run
+            Update::GetEnded { .. } | Update::Deleted(_) | Update::Sent(_) => {}
+            Update::Stopped => gone = true,
             Update::Failed(why) => {
                 log.push(format!("[remote] {why}"));
                 run.doing.clear();
@@ -695,6 +717,17 @@ fn take_updates(
         }
     }
     gone
+}
+
+/// What the steps of a run said of the computer besides the run (C228): what it is, and that a download goes on there.
+#[derive(Default)]
+struct News {
+    facts: Option<crate::facts::ComputerFacts>,
+    getting: bool,
+    /// A run goes on there now, of the configuration of this name (as a slug).
+    ran: Option<String>,
+    /// Nothing runs there (what `find` found).
+    nothing: bool,
 }
 
 /// How long ago `started` (seconds since 1970) was, in words: `3 minutes ago`.

@@ -129,9 +129,14 @@ impl App {
         let running = self
             .run_model_there()
             .and_then(|named| there.iter().find(|t| t.is(named)));
-        running
-            .or(there.first())
-            .map(|t| PickThere::There(t.kept.file.clone()))
+        if let Some(t) = running {
+            return Some(PickThere::There(t.kept.file.clone()));
+        }
+        // the model last used there, before the first it keeps (C228)
+        if let Some(last) = self.last_model_there() {
+            return Some(last);
+        }
+        there.first().map(|t| PickThere::There(t.kept.file.clone()))
     }
 
     /// The name of the model the next run on the computer shown starts with, as its list names it.
@@ -175,7 +180,7 @@ impl App {
     }
 
     /// What a Refresh of a computer's list said since the last frame.
-    pub(super) fn poll_models_there(&mut self) {
+    pub(super) fn poll_models_there(&mut self, ctx: &egui::Context) {
         let Some((id, updates)) = &self.remote.listing else {
             return;
         };
@@ -183,9 +188,11 @@ impl App {
         let mut said = None;
         let mut failed = None;
         let mut done = false;
+        let mut facts = None;
         loop {
             match updates.try_recv() {
                 Ok(Update::Models(models)) => said = Some(models),
+                Ok(Update::Facts(f)) => facts = Some(*f),
                 Ok(Update::Failed(why)) => failed = Some(why),
                 Ok(_) => {}
                 Err(TryRecvError::Empty) => break,
@@ -197,6 +204,9 @@ impl App {
         }
         if let Some(models) = said {
             self.keep_models_there(&id, models);
+        }
+        if facts.is_some() {
+            self.take_there_news(&id, facts, false, ctx);
         }
         if let Some(why) = failed {
             self.push_log(format!("[remote] {why}"));
@@ -224,6 +234,8 @@ impl App {
             .as_ref()
             .is_some_and(|(id, _)| *id == spec.id)
             || self.setup_run().is_some_and(|r| r.working());
+        let mut add: Option<bool> = None;
+        let mut cancel_get = false;
         ui.horizontal(|ui| {
             ui.add_space(12.0);
             let family = theme::semibold(ui);
@@ -250,14 +262,90 @@ impl App {
                 {
                     self.refresh_models_there(ui.ctx());
                 }
+                // + : what Get downloads there (C228)
+                let plus = icons::icon_button(ui, Icon::Plus, egui::vec2(24.0, 20.0), true, false)
+                    .on_hover_text(format!(
+                        "Add a model to {}: it downloads it itself, from the recommended models or a search.",
+                        spec.name
+                    ));
+                egui::Popup::menu(&plus)
+                    .align(egui::RectAlign::BOTTOM_END)
+                    .width(230.0)
+                    .show(|ui| {
+                        ui.set_min_width(230.0);
+                        if icons::menu_item(ui, Icon::Bulb, "Recommended", true, false).clicked() {
+                            add = Some(true);
+                            ui.close();
+                        }
+                        if icons::menu_item(ui, Icon::Search, "Search for a model…", true, false).clicked() {
+                            add = Some(false);
+                            ui.close();
+                        }
+                    });
             });
         });
         ui.add_space(2.0);
+        // what is being done there besides a run: a download, a deletion, a copy
+        if let Some((label, line, share)) = self.getting_there() {
+            egui::Frame::new()
+                .inner_margin(egui::Margin {
+                    left: 12,
+                    right: 8,
+                    top: 2,
+                    bottom: 6,
+                })
+                .show(ui, |ui| {
+                    // as wide as the sidebar is, never wider: the words are cut short
+                    ui.set_max_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .small_button("Cancel")
+                                .on_hover_text(format!("Stop the download on {}.", spec.name))
+                                .clicked()
+                            {
+                                cancel_get = true;
+                            }
+                            ui.with_layout(
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    ui.add(
+                                        egui::Label::new(egui::RichText::new(&label).color(p.text))
+                                            .truncate(),
+                                    );
+                                },
+                            );
+                        });
+                    });
+                    let short = line
+                        .strip_prefix(&format!("Downloading on {}: ", spec.name))
+                        .map_or_else(|| line.clone(), |rest| format!("Downloading · {rest}"));
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(short).small().color(p.accent_text))
+                            .truncate(),
+                    )
+                    .on_hover_text(&line);
+                    super::widgets::progress_bar(ui, share);
+                });
+        }
+        if let Some(what) = self.chore_there() {
+            ui.horizontal(|ui| {
+                ui.add_space(12.0);
+                ui.spinner();
+                ui.label(
+                    egui::RichText::new(format!("{what}…"))
+                        .small()
+                        .color(p.faint),
+                );
+            });
+        }
         let pick = self.pick_there();
         let run = self.run_model_there().map(str::to_string);
         let here_open = self.remote.here_open || (known && there.is_empty());
         let mut picked: Option<(PickThere, Option<usize>)> = None;
         let mut fold = false;
+        let mut delete: Option<(String, String)> = None;
+        let mut copy_here: Option<usize> = None;
         egui::ScrollArea::vertical()
             .id_salt("models_there")
             .auto_shrink([false, false])
@@ -300,16 +388,35 @@ impl App {
                     if row.clicked() {
                         picked = Some((PickThere::There(t.kept.file.clone()), None));
                     }
-                    let menu = |ui: &mut egui::Ui| {
+                    let mut menu = |ui: &mut egui::Ui| {
                         if ui.button("Copy name").clicked() {
                             ui.ctx().copy_text(t.kept.file.clone());
                             ui.close();
                         }
+                        if ui
+                            .button("Copy path")
+                            .on_hover_text(format!("Where it is on {}.", spec.name))
+                            .clicked()
+                        {
+                            ui.ctx().copy_text(t.kept.path.clone());
+                            ui.close();
+                        }
+                        ui.separator();
+                        let item = ui
+                            .add_enabled(!running, egui::Button::new("Delete…"))
+                            .on_disabled_hover_text(format!(
+                                "{} runs on {}. Stop it first, then delete it.",
+                                t.name, spec.name
+                            ));
+                        if item.clicked() {
+                            delete = Some((t.kept.file.clone(), t.name.clone()));
+                            ui.close();
+                        }
                     };
-                    row.context_menu(menu);
+                    row.context_menu(&mut menu);
                     if let Some(more) = more {
                         egui::Popup::menu(&more)
-                            .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+                            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                             .show(menu);
                     }
                 }
@@ -383,13 +490,24 @@ impl App {
                     if row.clicked() {
                         picked = Some((PickThere::Here(m.filename.clone()), Some(i)));
                     }
-                    let menu = |ui: &mut egui::Ui| {
+                    let mut menu = |ui: &mut egui::Ui| {
+                        if ui
+                            .button(format!("Copy to {}", spec.name))
+                            .on_hover_text(format!(
+                                "Copy it to {} now, with what goes with it, without starting a run.",
+                                spec.name
+                            ))
+                            .clicked()
+                        {
+                            copy_here = Some(i);
+                            ui.close();
+                        }
                         if ui.button("Copy name").clicked() {
                             ui.ctx().copy_text(m.filename.clone());
                             ui.close();
                         }
                     };
-                    row.context_menu(menu);
+                    row.context_menu(&mut menu);
                     if let Some(more) = more {
                         egui::Popup::menu(&more)
                             .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
@@ -400,6 +518,27 @@ impl App {
         if fold {
             self.remote.here_open = !here_open;
         }
+        if let Some((file, name)) = delete {
+            self.ask_to_delete_there(&file, &name);
+        }
+        if let Some(index) = copy_here {
+            self.copy_model_there(index, ui.ctx());
+        }
+        if cancel_get {
+            self.cancel_get_there(ui.ctx());
+        }
+        match add {
+            Some(true) => {
+                if self.catalog.open {
+                    self.view = super::MainView::Recommended;
+                } else {
+                    self.open_catalog();
+                }
+            }
+            Some(false) => self.open_add_model(),
+            None => {}
+        }
+        self.show_delete_there_dialog(ui.ctx());
         if let Some((pick, index)) = picked {
             // one of this computer's is the window's selected model, which is what is sent and copied there
             if let Some(i) = index.filter(|i| *i != self.selected) {
@@ -408,6 +547,7 @@ impl App {
                 self.leave_configuration_for_model();
             }
             self.remote.picked.insert(spec.id, pick);
+            self.note_last_there();
         }
     }
 }

@@ -34,6 +34,14 @@ pub const RUNNER_KEY: &str = "app.runner";
 /// the person switched it off in Settings.
 pub const REMOTE_SETUP_KEY: &str = "app.remote_setup";
 
+/// Whether the window has a Terminal tab for the computer QuickAI sets up that is shown (C228); absent, it has not:
+/// the person turns it on in Settings.
+pub const REMOTE_TERMINAL_KEY: &str = "app.remote_terminal";
+
+/// The configuration last used on this computer while other computers were chosen in between (C228): the window comes
+/// back to it when this computer is chosen again. Absent until the person chose one here.
+pub const HERE_CONFIGURATION_KEY: &str = "app.here_configuration";
+
 /// The conversations of the Chat tab are kept on this computer (WP4.28); absent, they are not.
 pub const KEEP_CHATS_KEY: &str = "app.keep_chats";
 /// The key under which a first conversation is remembered: the last step of Getting started is done.
@@ -391,6 +399,37 @@ impl Settings {
         self.set_app_value(
             REMOTE_SETUP_KEY,
             (!on).then_some(serde_json::Value::Bool(false)),
+        );
+    }
+
+    /// The configuration last used on this computer (by its id), which the window comes back to from another one.
+    pub fn here_configuration(&self) -> Option<String> {
+        self.app_value(HERE_CONFIGURATION_KEY)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    }
+
+    /// Records it.
+    pub fn set_here_configuration(&mut self, id: &str) {
+        self.set_app_value(
+            HERE_CONFIGURATION_KEY,
+            Some(serde_json::Value::String(id.to_string())),
+        );
+    }
+
+    /// Whether the window has a Terminal tab for the computer QuickAI sets up that is shown: off unless the person
+    /// turned it on.
+    pub fn remote_terminal(&self) -> bool {
+        self.app_value(REMOTE_TERMINAL_KEY)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    }
+
+    /// Records it; off takes the key away.
+    pub fn set_remote_terminal(&mut self, on: bool) {
+        self.set_app_value(
+            REMOTE_TERMINAL_KEY,
+            on.then_some(serde_json::Value::Bool(true)),
         );
     }
 

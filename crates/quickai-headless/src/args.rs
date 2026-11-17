@@ -28,6 +28,25 @@ quickai-headless: run a QuickAI configuration with no window
       The model files this computer keeps for runs: in QuickAI's models folder, copied here for a run
       (from the window of another computer), and in each DIR given (a folder of another disk).
 
+  quickai-headless models --delete FILE [--models-dir DIR]... [--json]
+      Delete the model file FILE (a name `models` gives) and the files that came with it that no other
+      model uses. One that came with QuickAI, or that the run here uses, is not deleted.
+
+  quickai-headless computer [--json]
+      What this computer has for models: its memory and how much is free, the makers of its graphics
+      cards, and each device the installed llama.cpp can put a model on, with its memory.
+
+  quickai-headless get FILE [--models-dir DIR] [--detach] [--json]
+      Download the files FILE names (JSON, as the window of another computer writes it) into QuickAI's
+      models folder here, or DIR; a file that stopped half-way goes on from where it was. One download at
+      a time, while a run goes on or not. `--detach` goes on in the background and returns at once.
+
+  quickai-headless get --status [--json]
+      The download that goes on here and how far it has got, or how the last one ended.
+
+  quickai-headless get --cancel [--no-wait]
+      Stop the download that goes on here, and wait until it has (what came stays, for the next one).
+
   quickai-headless down [--no-wait]
       Stop what runs on this computer, in the background or in another terminal, and wait until it has.
 
@@ -125,6 +144,20 @@ pub struct Invocation {
     pub background: bool,
 }
 
+/// `get FILE`: what to download, where to, and how it is said.
+#[derive(Debug, PartialEq)]
+pub struct GetInvocation {
+    /// The JSON file that says what to download.
+    pub file: PathBuf,
+    /// Where to keep the files, instead of QuickAI's models folder.
+    pub models_dir: Option<PathBuf>,
+    pub json: bool,
+    /// `--detach`: download in the background and return.
+    pub detach: bool,
+    /// `--detached`: this is the download in the background `--detach` started (it is not said in the help).
+    pub background: bool,
+}
+
 /// `init`: the file to fill in.
 #[derive(Debug, PartialEq)]
 pub struct InitInvocation {
@@ -145,10 +178,25 @@ pub enum Parsed {
     Status {
         json: bool,
     },
-    /// `models`: the folders of another disk to look in too, said as JSON or not.
+    /// `models`: the folders of another disk to look in too, said as JSON or not; with `--delete`, the file to delete.
     Models {
         dirs: Vec<PathBuf>,
         json: bool,
+        delete: Option<String>,
+    },
+    /// `computer`, as JSON or not.
+    Computer {
+        json: bool,
+    },
+    /// `get FILE`: a download.
+    Get(GetInvocation),
+    /// `get --status`, as JSON or not.
+    GetStatus {
+        json: bool,
+    },
+    /// `get --cancel`, waiting until it has stopped or not.
+    GetCancel {
+        wait: bool,
     },
     /// `down`, waiting until it has stopped or not.
     Down {
@@ -175,6 +223,8 @@ pub fn parse(args: &[String]) -> Result<Parsed, String> {
         "init" => return parse_init(&args[1..]),
         "status" => return parse_status(&args[1..]),
         "models" => return parse_models(&args[1..]),
+        "computer" => return parse_computer(&args[1..]),
+        "get" => return parse_get(&args[1..]),
         "down" => return parse_down(&args[1..]),
         "free" => return parse_free(&args[1..]),
         other => return Err(format!("`{other}` is not something this does")),
@@ -315,6 +365,7 @@ fn parse_status(args: &[String]) -> Result<Parsed, String> {
 fn parse_models(args: &[String]) -> Result<Parsed, String> {
     let mut dirs = Vec::new();
     let mut json = false;
+    let mut delete = None;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -323,10 +374,86 @@ fn parse_models(args: &[String]) -> Result<Parsed, String> {
             "--models-dir" => dirs.push(PathBuf::from(
                 it.next().ok_or("`--models-dir` needs a value")?,
             )),
+            "--delete" => {
+                let file = it
+                    .next()
+                    .ok_or("`--delete` needs the name of a model file")?;
+                if delete.replace(file.clone()).is_some() {
+                    return Err("one model at a time: `--delete` is given twice".into());
+                }
+            }
             other => return Err(format!("`{other}` is not an option of `models`")),
         }
     }
-    Ok(Parsed::Models { dirs, json })
+    Ok(Parsed::Models { dirs, json, delete })
+}
+
+fn parse_computer(args: &[String]) -> Result<Parsed, String> {
+    let mut json = false;
+    for arg in args {
+        match arg.as_str() {
+            "--help" | "-h" => return Ok(Parsed::Help),
+            "--json" => json = true,
+            other => return Err(format!("`{other}` is not an option of `computer`")),
+        }
+    }
+    Ok(Parsed::Computer { json })
+}
+
+fn parse_get(args: &[String]) -> Result<Parsed, String> {
+    let mut file: Option<PathBuf> = None;
+    let mut models_dir = None;
+    let (mut json, mut detach, mut background) = (false, false, false);
+    let (mut status, mut cancel, mut wait) = (false, false, true);
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--help" | "-h" => return Ok(Parsed::Help),
+            "--json" => json = true,
+            "--detach" => detach = true,
+            "--detached" => background = true,
+            "--status" => status = true,
+            "--cancel" => cancel = true,
+            "--no-wait" => wait = false,
+            "--models-dir" => {
+                models_dir = Some(PathBuf::from(
+                    it.next().ok_or("`--models-dir` needs a value")?,
+                ))
+            }
+            other if other.starts_with('-') => {
+                return Err(format!("`{other}` is not an option of `get`"))
+            }
+            other if file.is_none() => file = Some(PathBuf::from(other)),
+            other => return Err(format!("one file at a time: `{other}` follows the first")),
+        }
+    }
+    if status && cancel {
+        return Err("`get` takes `--status` or `--cancel`, not both".into());
+    }
+    if status || cancel {
+        if let Some(file) = &file {
+            return Err(format!(
+                "`get --{}` takes no file, and `{}` was given",
+                if status { "status" } else { "cancel" },
+                file.display()
+            ));
+        }
+        return Ok(if status {
+            Parsed::GetStatus { json }
+        } else {
+            Parsed::GetCancel { wait }
+        });
+    }
+    let Some(file) = file else {
+        return Err("`get` needs the file that says what to download".into());
+    };
+    Ok(Parsed::Get(GetInvocation {
+        file,
+        models_dir,
+        json,
+        detach,
+        background,
+    }))
 }
 
 fn parse_free(args: &[String]) -> Result<Parsed, String> {
@@ -479,6 +606,55 @@ mod tests {
         );
         assert!(parse(&words("free")).is_err());
         assert!(parse(&words("free http")).is_err());
+    }
+
+    /// C228: what the window of another computer asks: what this one has, a download, how it goes, its stop, and a
+    /// delete.
+    #[test]
+    fn the_words_of_the_window_of_another_computer_are_read() {
+        assert_eq!(
+            parse(&words("computer --json")),
+            Ok(Parsed::Computer { json: true })
+        );
+        assert!(parse(&words("computer now")).unwrap_err().contains("`now`"));
+        assert_eq!(
+            parse(&words(
+                "get /h/.quickai/remote/get.json --detach --models-dir /data"
+            )),
+            Ok(Parsed::Get(GetInvocation {
+                file: PathBuf::from("/h/.quickai/remote/get.json"),
+                models_dir: Some(PathBuf::from("/data")),
+                json: false,
+                detach: true,
+                background: false,
+            }))
+        );
+        match parse(&words("get g.json --detached --json")) {
+            Ok(Parsed::Get(get)) => assert!(get.background && get.json && !get.detach),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(
+            parse(&words("get --status --json")),
+            Ok(Parsed::GetStatus { json: true })
+        );
+        assert_eq!(
+            parse(&words("get --cancel --no-wait")),
+            Ok(Parsed::GetCancel { wait: false })
+        );
+        assert!(parse(&words("get")).unwrap_err().contains("needs the file"));
+        assert!(parse(&words("get --status --cancel")).is_err());
+        assert!(parse(&words("get g.json --status")).is_err());
+        assert!(parse(&words("get a.json b.json")).is_err());
+        assert_eq!(
+            parse(&words("models --delete m.gguf --models-dir /data --json")),
+            Ok(Parsed::Models {
+                dirs: vec![PathBuf::from("/data")],
+                json: true,
+                delete: Some("m.gguf".into()),
+            })
+        );
+        assert!(parse(&words("models --delete")).is_err());
+        assert!(parse(&words("models --delete a --delete b")).is_err());
     }
 
     /// Y60: the words that say what belongs to this computer and where the models come from are read, each as

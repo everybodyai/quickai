@@ -139,6 +139,11 @@ fn name(update: &Update) -> &'static str {
         Update::Nothing => "Nothing",
         Update::Stopped => "Stopped",
         Update::Failed(_) => "Failed",
+        Update::Facts(_) => "Facts",
+        Update::Getting(_) => "Getting",
+        Update::GetEnded { .. } => "GetEnded",
+        Update::Deleted(_) => "Deleted",
+        Update::Sent(_) => "Sent",
     }
 }
 

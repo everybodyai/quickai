@@ -17,6 +17,13 @@ pub fn total_ram_bytes() -> u64 {
     System::new_all().total_memory()
 }
 
+/// The memory free for a program now (what the system could give it, caches included), in bytes.
+pub fn available_ram_bytes() -> u64 {
+    let mut system = System::new();
+    system.refresh_memory();
+    system.available_memory()
+}
+
 pub fn format_bytes(n: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
     let mut size = n as f64;

@@ -249,6 +249,11 @@ impl App {
 
     /// What a button of the results does: the engine pulls a name, or the files are downloaded.
     pub(super) fn fetch_offer(&mut self, fetch: &Fetch, ctx: &egui::Context) {
+        // with a computer QuickAI sets up shown, that computer downloads it itself (C228)
+        if self.setup_in_use().is_some() {
+            self.fetch_there(fetch, ctx);
+            return;
+        }
         match fetch {
             Fetch::Reference(reference) => {
                 if self.lists_models() {
@@ -265,7 +270,7 @@ impl App {
     }
 
     /// Downloads the files of a button into the models folder, as one job.
-    fn fetch_files(&mut self, download: Download, ctx: &egui::Context) {
+    pub(super) fn fetch_files(&mut self, download: Download, ctx: &egui::Context) {
         if self.download.is_some() {
             return;
         }
@@ -325,7 +330,8 @@ impl App {
         if self.lookup.entries.is_empty() {
             return;
         }
-        let busy = self.download.is_some() || self.named.pulling();
+        let busy = self.fetching_now();
+        let here_then = self.setup_in_use().map(|s| s.name.clone());
         let types = self.registry.vocabulary().model_types().to_vec();
         let sizes = self.registry.vocabulary().size_classes().to_vec();
         let bundle_labels: Vec<BundleWords> =
@@ -333,17 +339,19 @@ impl App {
         let entries = std::mem::take(&mut self.lookup.entries);
         let mut size = self.lookup.size.clone();
         let mut chosen: Option<Fetch> = None;
+        let mut chosen_here: Option<Fetch> = None;
         // An engine that keeps its files in folders of their own knows which of them are there: a button
         // whose files all are, at the size the hub says, is marked and does nothing. llama.cpp's results
-        // are what they always were.
-        let have = self.runs_alone().then(|| self.catalog.have.clone());
+        // are what they always were, but on a computer QuickAI sets up, which says what it keeps (C228).
+        let have = (self.runs_alone() || here_then.is_some()).then(|| self.have_now());
         let installed_fn = |offer: &Offer| {
             have.as_ref()
                 .is_some_and(|have| super::catalog_view::installed(offer, have, &[]))
         };
-        let ram = self.total_ram_bytes;
+        let ram = self.ram_for_fit();
         let look = RowLook {
             installed: &installed_fn,
+            here_then: here_then.as_deref(),
             ram,
             busy,
             bundles: &bundle_labels,
@@ -542,8 +550,10 @@ impl App {
                     abilities: false,
                     expandable: false,
                 };
-                if let Some(RowAction::Fetch(fetch)) = model_row::show(ui, &row, &look, false) {
-                    chosen = Some(fetch);
+                match model_row::show(ui, &row, &look, false) {
+                    Some(RowAction::Fetch(fetch)) => chosen = Some(fetch),
+                    Some(RowAction::FetchHere(fetch)) => chosen_here = Some(fetch),
+                    _ => {}
                 }
             }
         };
@@ -561,6 +571,9 @@ impl App {
         self.lookup.order = Some(order);
         if let Some(fetch) = chosen {
             self.fetch_offer(&fetch, ui.ctx());
+        }
+        if let Some(fetch) = chosen_here {
+            self.fetch_here_then_copy(&fetch, ui.ctx());
         }
     }
 }

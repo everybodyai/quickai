@@ -388,6 +388,17 @@ chat. It connects only when you press a button, or press Enter in an input box, 
   no port is opened to the network on either side. QuickAI stores the address, the ports and the name of any key file
   you provide in its settings, and never a password (it cannot prompt for one). That computer, and whoever operates it,
   can see what you send to the models running there.
+  - For a computer QuickAI sets up, QuickAI also asks that computer, over the same SSH connection, how much memory it
+    has and which graphics cards, and which model files it keeps, so that it can show how a model fits there. A model
+    you get for that computer from **Recommended** or **Add a model** is downloaded by that computer itself, over its
+    own internet connection, from the address the list or the search gives (normally `huggingface.co`), unless you
+    choose to download it on this computer and copy it there. A model you delete there is deleted from that computer's
+    disk.
+  - A run on that computer continues after QuickAI is closed, until you stop it; QuickAI connects to it again the next
+    time it starts, and remembers in its settings the configuration and model you last used there.
+  - The **Terminal** tab, which is off unless you turn it on in **Settings › Other computers**, runs the commands you
+    type on that computer through your own `ssh`, with your keys. What they print is shown in the window and is not
+    stored.
 - **MCP servers you add.** Only servers you add yourself under **MCP servers** in the sidebar, and only those that are
   turned on, are used. QuickAI starts them on your computer when you chat (or open that page) in order to list their
   tools, and llama-server also starts them at each **Start** for its own chat page.

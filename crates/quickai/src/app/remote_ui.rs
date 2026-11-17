@@ -79,6 +79,9 @@ pub struct RemoteState {
     /// This computer's models are shown under those of the computer QuickAI sets up (they are folded at first).
     #[cfg(feature = "remote-setup")]
     pub here_open: bool,
+    /// What those computers said they are, the models they download, and the ones deleted or copied there (C228).
+    #[cfg(feature = "remote-setup")]
+    pub there: super::remote_there::ThereState,
     /// What the Live traffic proxies of those runs saw (`job::Traffic`), for the Live traffic tab.
     #[cfg(feature = "remote-setup")]
     pub traffic: (
@@ -87,6 +90,9 @@ pub struct RemoteState {
     ),
     /// The runs that go on there are to be looked for: when the window starts, and when a computer is chosen.
     pub find_wanted: bool,
+    /// The person chose a configuration since the computer shown was chosen (or the window opened): the window does not
+    /// put what runs there, or what was last used there, in its place (C228).
+    pub person_chose: bool,
 }
 
 /// Why the computer in use is not there: it could not be reached, or the connection to it closed during the run.
@@ -134,7 +140,10 @@ impl Default for RemoteState {
             listing: None,
             #[cfg(feature = "remote-setup")]
             here_open: false,
+            #[cfg(feature = "remote-setup")]
+            there: Default::default(),
             find_wanted: true,
+            person_chose: false,
         }
     }
 }
@@ -488,6 +497,19 @@ impl App {
         self.remote.runner = id;
         self.remote.error = None;
         self.remote.find_wanted = true;
+        // coming to a computer again is coming back to what runs there, or was last used there (C228); this computer comes
+        // back to the configuration last chosen on it
+        self.remote.person_chose = false;
+        if self.remote.runner.is_none() && !self.engine_locked() {
+            if let Some(here) = self
+                .stored
+                .here_configuration()
+                .filter(|c| *c != self.configs.active)
+                .filter(|c| self.configuration_entries().iter().any(|e| &e.id == c))
+            {
+                self.choose_configuration(&here);
+            }
+        }
         self.store_remotes();
         self.list_for_where_models_run();
     }
@@ -2017,6 +2039,7 @@ mod tests {
         app.models.iter().map(|m| m.filename.as_str()).collect()
     }
 
+    #[cfg(feature = "remote-setup")]
     fn selected(app: &App) -> Option<&str> {
         app.models.get(app.selected).map(|m| m.filename.as_str())
     }

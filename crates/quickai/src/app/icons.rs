@@ -975,23 +975,6 @@ pub(super) fn copy_button(ui: &mut egui::Ui, salt: &str, text: &str) {
     }
 }
 
-/// A button the size of `copy_button` that opens `url` in the browser.
-#[cfg_attr(not(feature = "remote-setup"), allow(dead_code))]
-pub(super) fn open_button(ui: &mut egui::Ui, url: &str) {
-    if framed_icon_button(
-        ui,
-        theme::Role::Normal,
-        true,
-        Icon::External,
-        egui::vec2(28.0, 24.0),
-    )
-    .on_hover_text("Open in the browser")
-    .clicked()
-    {
-        let _ = webbrowser::open(url);
-    }
-}
-
 /// The colour of the words of a button of `role`: what egui would draw them in, but the role's own for the roles that
 /// have one.
 fn text_color(role: theme::Role, enabled: bool, drawn: Color32) -> Color32 {

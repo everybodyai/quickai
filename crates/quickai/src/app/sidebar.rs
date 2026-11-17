@@ -437,8 +437,11 @@ impl App {
     fn show_nav_rows(&mut self, ui: &mut egui::Ui) {
         if self.can_recommend() {
             let on = self.view == super::MainView::Recommended;
-            let row = nav_row(ui, Icon::Bulb, "Recommended", None, true, on)
-                .on_hover_text("The models that suit this computer, for what you want to do.");
+            let row =
+                nav_row(ui, Icon::Bulb, "Recommended", None, true, on).on_hover_text(format!(
+                    "The models that suit {}, for what you want to do.",
+                    self.computer_words()
+                ));
             if row.clicked() {
                 if self.catalog.open {
                     self.view = super::MainView::Recommended;

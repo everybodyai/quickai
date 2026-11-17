@@ -162,6 +162,29 @@ fn files_in(folder: &Path, in_folder: Option<&str>, into: &mut BTreeMap<String, 
 
 impl App {
     /// Whether the list has a model this engine offers: only then is there a button for it.
+    /// The model files Get's "installed" is read against: this computer's, or those the computer QuickAI sets up that is
+    /// shown keeps (C228).
+    pub(super) fn have_now(&self) -> BTreeMap<String, u64> {
+        if self.setup_in_use().is_some() {
+            return self.have_there().unwrap_or_default();
+        }
+        self.catalog.have.clone()
+    }
+
+    /// Whether a download is under way where Get puts the models: here, or on the computer QuickAI sets up that is shown.
+    pub(super) fn fetching_now(&self) -> bool {
+        if self.setup_in_use().is_some() {
+            return self.getting_there().is_some();
+        }
+        self.download.is_some() || self.named.pulling()
+    }
+
+    /// The computer the models are for, as a sentence names it: `this computer`, or the name of the one shown.
+    pub(super) fn computer_words(&self) -> String {
+        self.setup_in_use()
+            .map_or_else(|| "this computer".to_string(), |s| s.name.clone())
+    }
+
     pub(super) fn can_recommend(&self) -> bool {
         self.registry
             .catalog()
@@ -252,10 +275,17 @@ impl App {
         let bundle_labels: Vec<BundleWords> =
             self.engine_doc().map(bundle_words).unwrap_or_default();
         let verified = self.registry.catalog().verified().map(str::to_string);
-        let ram = self.total_ram_bytes;
+        // for the computer shown: this one, or one QuickAI sets up, by what it said it has (C228)
+        let ram = self.ram_for_fit();
         let listed = self.listed_names();
-        let busy = self.download.is_some() || self.named.pulling();
-        let have = self.catalog.have.clone();
+        let busy = self.fetching_now();
+        let have = self.have_now();
+        let computer = self.computer_words();
+        let here_then = self.setup_in_use().map(|s| s.name.clone());
+        let mut fetch_here: Option<Fetch> = None;
+        if self.setup_in_use().is_some() && self.facts_there().is_none() {
+            self.ask_facts_there_once(ui.ctx());
+        }
         let note = self.catalog.note.clone();
         let entries = std::mem::take(&mut self.catalog.entries);
         let mut what = std::mem::take(&mut self.catalog.browse);
@@ -278,10 +308,13 @@ impl App {
 
         // the progress of what is being fetched, where the person is looking: a download, or a model pulled by the engine
         // (the engine coming up for it, the pull, or why it was not pulled)
-        let download = self
-            .download
-            .as_ref()
-            .map(|job| (job.progress_line(), job.fraction()));
+        let download = match self.setup_in_use() {
+            Some(_) => self.getting_there().map(|(_, line, share)| (line, share)),
+            None => self
+                .download
+                .as_ref()
+                .map(|job| (job.progress_line(), job.fraction())),
+        };
         let server = self.server_name();
         let pulled = match (&self.named.queued, &self.named.pull) {
             (Some(queued), _) => Some((queued.waiting_line(&server), None, false)),
@@ -312,6 +345,8 @@ impl App {
                             verified: verified.as_deref(),
                             note: note.as_deref(),
                             site: site.as_deref(),
+                            computer: &computer,
+                            here_then: here_then.as_deref(),
                         };
                         let mut state = TaskState {
                             page: &mut page,
@@ -320,6 +355,7 @@ impl App {
                             browse: &mut what,
                             focus_search: &mut focus_search,
                             fetch: &mut chosen,
+                            fetch_here: &mut fetch_here,
                             online: &mut search_online,
                         };
                         show_task_page(ui, &view, &mut state);
@@ -449,6 +485,7 @@ impl App {
                         ram,
                         busy,
                         bundles: &bundle_labels,
+                        here_then: here_then.as_deref(),
                     };
                     let words = what.words.trim().to_string();
                     // room under the list for the line at its foot
@@ -579,6 +616,7 @@ impl App {
                                         let opened = expanded.as_deref() == Some(entry.key.as_str());
                                         match model_row::show(ui, &row, &look, opened) {
                                             Some(RowAction::Fetch(fetch)) => chosen = Some(fetch),
+                                            Some(RowAction::FetchHere(fetch)) => fetch_here = Some(fetch),
                                             Some(RowAction::Toggle) => {
                                                 expanded = (!opened).then(|| entry.key.clone());
                                             }
@@ -683,11 +721,19 @@ impl App {
             self.view = super::MainView::Model;
         }
         if cancel {
-            self.cancel_download();
+            if self.setup_in_use().is_some() {
+                self.cancel_get_there(&ctx);
+            } else {
+                self.cancel_download();
+            }
         }
         if let Some(fetch) = chosen {
             self.catalog.note = None;
             self.fetch_offer(&fetch, &ctx);
+        }
+        if let Some(fetch) = fetch_here {
+            self.catalog.note = None;
+            self.fetch_here_then_copy(&fetch, &ctx);
         }
         if let Some(words) = search_online {
             self.search_online(&words, &ctx);
@@ -708,6 +754,11 @@ struct TaskView<'a> {
     note: Option<&'a str>,
     /// The site Add a model searches, for what the list does not have.
     site: Option<&'a str>,
+    /// The computer it is for, as a sentence names it (`this computer`, `Studio`).
+    computer: &'a str,
+    /// The computer QuickAI sets up that Get downloads to, when one is shown: a model can be downloaded here and copied
+    /// there instead.
+    here_then: Option<&'a str>,
 }
 
 /// What the first page changes.
@@ -718,6 +769,8 @@ struct TaskState<'a> {
     browse: &'a mut Browse,
     focus_search: &'a mut bool,
     fetch: &'a mut Option<Fetch>,
+    /// Download here, then copy to the computer shown (C228).
+    fetch_here: &'a mut Option<Fetch>,
     /// Words to look up on that site, in Add a model.
     online: &'a mut Option<String>,
 }
@@ -776,7 +829,7 @@ fn show_task_page(ui: &mut egui::Ui, view: &TaskView<'_>, state: &mut TaskState<
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.label(
-                    egui::RichText::new("Best for this computer")
+                    egui::RichText::new(format!("Best for {}", view.computer))
                         .color(p.text)
                         .family(theme::semibold(ui)),
                 );
@@ -1054,9 +1107,12 @@ fn pick_card(
                 offer_buttons(ui, entry, best, view, state);
                 if !fits {
                     ui.label(
-                        egui::RichText::new("More than this computer's memory holds well.")
-                            .small()
-                            .color(p.warn),
+                        egui::RichText::new(format!(
+                            "More than {}'s memory holds well.",
+                            view.computer
+                        ))
+                        .small()
+                        .color(p.warn),
                     );
                 }
             });
@@ -1102,16 +1158,17 @@ fn offer_buttons(
     let p = theme::palette();
     let open = state.sizes_open.as_deref() == Some(entry.key.as_str());
     let sizes_link = |ui: &mut egui::Ui, state: &mut TaskState<'_>| {
-        if entry.offers.len() < 2 {
+        if entry.offers.len() < 2 && view.here_then.is_none() {
             return;
         }
+        let words = match (open, entry.offers.len() < 2) {
+            (true, true) => "Fewer ways",
+            (true, false) => "Fewer sizes",
+            (false, true) => "Other ways",
+            (false, false) => "Other sizes",
+        };
         let link = ui.add(
-            egui::Button::new(
-                egui::RichText::new(if open { "Fewer sizes" } else { "Other sizes" })
-                    .small()
-                    .color(p.accent_text),
-            )
-            .frame(false),
+            egui::Button::new(egui::RichText::new(words).small().color(p.accent_text)).frame(false),
         );
         if link.clicked() {
             *state.sizes_open = if open { None } else { Some(entry.key.clone()) };
@@ -1121,7 +1178,11 @@ fn offer_buttons(
         if (view.installed)(main) {
             let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
             icons::paint(ui.painter(), rect, Icon::Check, p.ok);
-            ui.label(egui::RichText::new("Installed").color(p.ok));
+            let said = match view.here_then {
+                Some(computer) => format!("On {computer}"),
+                None => "Installed".to_string(),
+            };
+            ui.label(egui::RichText::new(said).color(p.ok));
             return;
         }
         let size = main
@@ -1170,10 +1231,10 @@ fn other_sizes(ui: &mut egui::Ui, entry: &Entry, view: &TaskView<'_>, state: &mu
                 continue;
             }
             let there = (view.installed)(offer);
-            let hover = if there {
-                "Already in your models folder.".to_string()
-            } else {
-                offer.hover.clone()
+            let hover = match (there, view.here_then) {
+                (true, Some(computer)) => format!("Already on {computer}."),
+                (true, None) => "Already in your models folder.".to_string(),
+                (false, _) => offer.hover.clone(),
             };
             if ui
                 .add_enabled(
@@ -1184,6 +1245,24 @@ fn other_sizes(ui: &mut egui::Ui, entry: &Entry, view: &TaskView<'_>, state: &mu
                 .clicked()
             {
                 *state.fetch = Some(offer.fetch.clone());
+            }
+        }
+        // a computer QuickAI sets up downloads what Get asks for itself; one that cannot reach the internet gets it from
+        // here (C228)
+        if let (Some(computer), Some(main)) = (view.here_then, main) {
+            let can = !view.busy && !(view.installed)(main);
+            if ui
+                .add_enabled(
+                    can,
+                    egui::Button::new(format!("Download here, then copy to {computer}")).small(),
+                )
+                .on_hover_text(
+                    "For a computer that cannot reach the internet: it is downloaded to this computer, then copied \
+                     there.",
+                )
+                .clicked()
+            {
+                *state.fetch_here = Some(main.fetch.clone());
             }
         }
     });

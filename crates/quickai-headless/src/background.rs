@@ -30,11 +30,66 @@ pub fn busy(run: Option<&RunFile>) -> String {
     }
 }
 
+/// What is started in the background: a run (`up --detach`), or a download (`get --detach`, C228), each with its own
+/// folder and its own words.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Run,
+    Download,
+}
+
+impl Kind {
+    /// What is said when another of the kind goes on.
+    fn busy(self, run: Option<&RunFile>) -> String {
+        match self {
+            Kind::Run => busy(run),
+            Kind::Download => crate::get::busy(run),
+        }
+    }
+
+    /// What is said once it goes on in the background.
+    fn started(self, run: &RunFile, dir: &Path) -> String {
+        match self {
+            Kind::Run => format!(
+                "\"{}\" runs in the background (process {}), until `quickai-headless down` stops it. \
+                 `quickai-headless status` says how it goes; what it says is in {}.",
+                run.name(),
+                run.pid,
+                run_file::events_path(dir).display()
+            ),
+            Kind::Download => format!(
+                "The download of {} goes on in the background (process {}). `quickai-headless get --status` \
+                 says how far it has got, and `quickai-headless get --cancel` stops it.",
+                run.configuration, run.pid
+            ),
+        }
+    }
+
+    /// What is said when it is still on its way after the wait.
+    fn still(self, pid: u32) -> String {
+        match self {
+            Kind::Run => format!(
+                "The run was started in the background (process {pid}) and is still making its plan. \
+                 `quickai-headless status` says how it goes."
+            ),
+            Kind::Download => format!(
+                "The download was started in the background (process {pid}). `quickai-headless get --status` says \
+                 how far it has got."
+            ),
+        }
+    }
+}
+
 /// `up --detach`: this program again, with `args` but in the background, its events written to the run's folder
 /// `dir`. Returns once the run has made its plan and gone on, or has ended (with its code), or after a minute.
 pub fn start(args: &[String], dir: &Path) -> i32 {
+    begin(args, dir, Kind::Run)
+}
+
+/// `start`, for a run or a download.
+pub fn begin(args: &[String], dir: &Path, kind: Kind) -> i32 {
     if let Some(run) = run_file::running(dir) {
-        eprintln!("quickai-headless: {}", busy(Some(&run)));
+        eprintln!("quickai-headless: {}", kind.busy(Some(&run)));
         return 7;
     }
     let files = std::fs::create_dir_all(dir).and_then(|()| {
@@ -71,15 +126,18 @@ pub fn start(args: &[String], dir: &Path) -> i32 {
     let mut child = match spawn_detached(command) {
         Ok(child) => child,
         Err(e) => {
-            eprintln!("quickai-headless: could not start the run in the background: {e}");
+            eprintln!("quickai-headless: could not start it in the background: {e}");
             return 1;
         }
     };
     let asked = Instant::now();
     loop {
         if let Ok(Some(status)) = child.try_wait() {
-            // it ended before it went on: what it said is the reason
+            // it ended before it went on: what it said is the reason (a download may be done by then)
             let last = run_file::last(dir);
+            if last.as_ref().is_some_and(|l| l.code == 0) {
+                return 0;
+            }
             let why = last
                 .as_ref()
                 .and_then(|l| l.message.clone())
@@ -95,21 +153,11 @@ pub fn start(args: &[String], dir: &Path) -> i32 {
         }
         let run = run_file::read(dir).filter(|r| r.pid == child.id());
         if let Some(run) = run.filter(|r| r.state != "starting") {
-            println!(
-                "\"{}\" runs in the background (process {}), until `quickai-headless down` stops it. \
-                 `quickai-headless status` says how it goes; what it says is in {}.",
-                run.name(),
-                run.pid,
-                run_file::events_path(dir).display()
-            );
+            println!("{}", kind.started(&run, dir));
             return 0;
         }
         if asked.elapsed() > START_WAIT {
-            println!(
-                "The run was started in the background (process {}) and is still making its plan. \
-                 `quickai-headless status` says how it goes.",
-                child.id()
-            );
+            println!("{}", kind.still(child.id()));
             return 0;
         }
         std::thread::sleep(Duration::from_millis(200));
@@ -244,7 +292,7 @@ fn for_how_long(started: u64) -> String {
 }
 
 /// A length of time in words: `40 seconds`, `3 minutes`, `2 hours`, `5 days`.
-fn how_long(seconds: u64) -> String {
+pub(crate) fn how_long(seconds: u64) -> String {
     let (n, unit) = match seconds {
         0..=59 => (seconds, "second"),
         60..=3599 => (seconds / 60, "minute"),

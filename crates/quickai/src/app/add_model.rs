@@ -301,20 +301,23 @@ impl App {
         if entries.is_empty() {
             return;
         }
-        let ram = self.total_ram_bytes;
+        // for the computer shown: this one, or one QuickAI sets up (C228)
+        let ram = self.ram_for_fit();
+        let computer = self.computer_words();
+        let here_then = self.setup_in_use().map(|s| s.name.clone());
         let listed: Vec<String> = if self.lists_models() {
             self.models.iter().map(|m| m.filename.clone()).collect()
         } else {
             Vec::new()
         };
-        let have = &self.catalog.have;
+        let have = &self.have_now();
         let picks = suggestions(&entries, ram);
-        let busy = self.download.is_some() || self.named.pulling();
+        let busy = self.fetching_now();
         let p = theme::palette();
         ui.add_space(14.0);
         ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new("SUGGESTED FOR THIS COMPUTER")
+                egui::RichText::new(format!("SUGGESTED FOR {}", computer.to_uppercase()))
                     .size(11.0)
                     .family(theme::semibold(ui))
                     .color(p.faint),
@@ -338,6 +341,7 @@ impl App {
             ram,
             busy,
             bundles: &bundle_labels,
+            here_then: here_then.as_deref(),
         };
         for (entry, offer) in &picks {
             // the size that fits is the button's; the ▾ has the model's other sizes
@@ -352,8 +356,10 @@ impl App {
                 abilities: true,
                 expandable: false,
             };
-            if let Some(RowAction::Fetch(fetch)) = model_row::show(ui, &row, &look, false) {
-                chosen = Some(fetch);
+            match model_row::show(ui, &row, &look, false) {
+                Some(RowAction::Fetch(fetch)) => chosen = Some((fetch, false)),
+                Some(RowAction::FetchHere(fetch)) => chosen = Some((fetch, true)),
+                _ => {}
             }
         }
         ui.add_space(8.0);
@@ -365,7 +371,7 @@ impl App {
                 .on_hover_text("The whole list QuickAI checked, by kind and size. Nothing is downloaded until you choose.")
                 .clicked();
             // the page of a first run says it under its title
-            if !self.lists_models() && !self.models.is_empty() {
+            if !self.lists_models() && !self.models.is_empty() && self.setup_in_use().is_none() {
                 ui.label(theme::muted(format!(
                     "· A .gguf file in {} shows up by itself.",
                     super::runtime_manager::display_root(&self.models_dir, &self.host_facts.home)
@@ -375,8 +381,10 @@ impl App {
         if all {
             self.open_catalog();
         }
-        if let Some(fetch) = chosen {
-            self.fetch_offer(&fetch, ui.ctx());
+        match chosen {
+            Some((fetch, false)) => self.fetch_offer(&fetch, ui.ctx()),
+            Some((fetch, true)) => self.fetch_here_then_copy(&fetch, ui.ctx()),
+            None => {}
         }
     }
 }

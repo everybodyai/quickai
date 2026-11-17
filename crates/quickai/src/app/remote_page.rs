@@ -1,9 +1,8 @@
-//! The page of a computer QuickAI sets up, when it is the one chosen in the status bar (WP4.33):
-//! the configuration's name in the head with what its run
-//! is doing, the computer under it, and the buttons of what can be done with it (play; while it runs the chat page
-//! in a browser, Connect an app and Stop). While it gets ready its steps are listed, each with how far it has gone;
-//! once it runs, the addresses here. The chat and the log are under it, as on the page of a model, and the chat
-//! talks to that run.
+//! The page of a computer QuickAI sets up, when it is the one chosen in the sidebar (WP4.33, C228): the chat, which
+//! talks to the run there, as the page of a model here is. The bar over it names the model and says what the run is
+//! doing, with Start and Stop, and the panel at its right says how it runs and what that computer has (C228). While the
+//! run gets ready its steps are over the chat, each with how far it has gone; why it could not be done is said there
+//! too.
 
 use eframe::egui;
 
@@ -11,247 +10,54 @@ use crate::run_file::RunStep;
 
 use super::icons::{self, Icon};
 use super::remote_run::SetupRun;
-use super::theme::{self, Role};
+use super::theme;
 use super::App;
 
-/// The side of the buttons of the head, as on the page of a model.
-const BUTTON: f32 = 30.0;
-
-/// What the head says the run is doing.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Shown {
-    /// Nothing runs there, and nothing is being done.
-    Idle,
-    /// It is being found, copied, started, prepared, or stopped.
-    Working,
-    /// It runs there, and its ports are here.
-    Running,
-    /// It could not be done, or the connection closed.
-    Failed,
-}
-
 impl App {
-    /// The page of the computer QuickAI sets up that is chosen: the head, then the chat and the log.
+    /// The page of the computer QuickAI sets up that is chosen: the steps of its run while it gets ready, or why it
+    /// stopped, then the chat and the log.
     pub(super) fn show_remote_page(&mut self, ui: &mut egui::Ui) {
-        let room = ui.available_height();
-        egui::ScrollArea::vertical()
-            .id_salt("remote_page_head")
-            .max_height((room * 0.6).max(140.0))
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                egui::Frame::new()
-                    .inner_margin(egui::Margin {
-                        left: 20,
-                        right: 16,
-                        top: 14,
-                        bottom: 8,
-                    })
-                    .show(ui, |ui| self.show_remote_head(ui));
-            });
-        self.show_page_body(ui);
-    }
-
-    /// The head: the name, what the run is doing, the buttons, the computer, and the steps or the addresses.
-    fn show_remote_head(&mut self, ui: &mut egui::Ui) {
         let Some(spec) = self.setup_in_use().cloned() else {
             return;
         };
         let p = theme::palette();
         let run = self.setup_run();
-        let shown = match run {
-            Some(r) if r.running() => Shown::Running,
-            Some(r) if r.working() => Shown::Working,
-            Some(r) if r.failed.is_some() => Shown::Failed,
-            _ => Shown::Idle,
-        };
-        let configuration = run
-            .map(|r| r.configuration.clone())
-            .filter(|c| !c.is_empty())
-            .unwrap_or_else(|| self.selected_configuration_name());
+        let working = run.is_some_and(|r| r.working() && !r.running());
+        let failed = run.and_then(|r| r.failed.clone()).filter(|_| !working);
         let doing = run.map(|r| r.doing.clone()).unwrap_or_default();
-        let computer_line = run
-            .and_then(|r| r.there.as_ref())
-            .and_then(|t| t.computer.clone())
-            .map_or_else(
-                || format!("on {} · {}", spec.name, spec.host),
-                |c| format!("on {} · {c}", spec.name),
-            );
-        let page = run.and_then(|r| r.endpoint("page")).map(|e| e.url.clone());
-        let mut pressed = Pressed::default();
-        ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                match shown {
-                    Shown::Running => {
-                        pressed.stop = stop_button(ui, &format!("Stop the run on {}.", spec.name));
-                        pressed.connect = super::api_info::connect_button(
-                            ui,
-                            egui::Vec2::splat(BUTTON),
-                            "Connect an app: the address here to give another app, with an example.",
-                        );
-                        if page.is_some() {
-                            pressed.page = icons::framed_icon_button(
-                                ui,
-                                Role::Normal,
-                                true,
-                                Icon::Globe,
-                                egui::Vec2::splat(BUTTON),
-                            )
-                            .on_hover_text("Open its chat page in your browser.")
-                            .clicked();
-                        }
-                    }
-                    Shown::Working => {
-                        pressed.stop = stop_button(
-                            ui,
-                            &format!("Stop: what is being done on {} stops there.", spec.name),
-                        );
-                    }
-                    Shown::Idle | Shown::Failed => {
-                        let hint = format!(
-                            "Start: run \"{configuration}\" on {}. QuickAI copies itself there when it needs to, \
-                             installs what is missing, and brings its ports here (Ctrl+Enter).",
-                            spec.name
-                        );
-                        pressed.start = icons::framed_icon_button(
-                            ui,
-                            Role::Primary,
-                            true,
-                            Icon::Play,
-                            egui::Vec2::splat(BUTTON),
-                        )
-                        .on_hover_text(hint)
-                        .clicked();
-                    }
-                }
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(&configuration)
-                                .size(20.0)
-                                .family(theme::semibold(ui))
-                                .color(p.text),
-                        )
-                        .truncate(),
-                    );
-                    match shown {
-                        Shown::Running => {
-                            state_words(ui, p.ok, &format!("Running on {}", spec.name))
-                        }
-                        Shown::Working if doing.starts_with("Stopping") => {
-                            state_words(ui, p.warn, "Stopping…")
-                        }
-                        Shown::Working => {
-                            ui.add_space(6.0);
-                            ui.spinner();
-                            ui.label(egui::RichText::new("Getting ready").color(p.warn));
-                        }
-                        Shown::Failed => state_words(ui, p.bad, "Stopped"),
-                        Shown::Idle => {}
-                    }
+        if working || failed.is_some() {
+            let room = ui.available_height();
+            egui::ScrollArea::vertical()
+                .id_salt("remote_page_head")
+                .max_height((room * 0.6).max(140.0))
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin {
+                            left: 20,
+                            right: 16,
+                            top: 14,
+                            bottom: 8,
+                        })
+                        .show(ui, |ui| {
+                            if let Some(why) = &failed {
+                                ui.label(egui::RichText::new(why).color(p.bad));
+                                ui.label(theme::muted(
+                                    "Press Start to try again. The Computers window tests the connection step by step.",
+                                ));
+                            } else if let Some(run) = run {
+                                show_steps(ui, run, &spec.name);
+                                if !doing.starts_with("Stopping") && !doing.starts_with("Looking") {
+                                    ui.label(theme::muted(
+                                        "You can close QuickAI meanwhile; it carries on there.",
+                                    ));
+                                }
+                            }
+                        });
                 });
-            });
-        });
-        ui.label(theme::muted(computer_line));
-        ui.add_space(8.0);
-        let mut chats_there = false;
-        match shown {
-            Shown::Running => {
-                if let Some(run) = run {
-                    show_addresses(ui, run);
-                    chats_there = run.endpoint("api").is_some();
-                }
-                ui.label(theme::muted(format!(
-                    "It runs on {} until you stop it, also when QuickAI is closed.",
-                    spec.name
-                )));
-            }
-            Shown::Working => {
-                if let Some(run) = run {
-                    show_steps(ui, run, &spec.name);
-                }
-                if !doing.starts_with("Stopping") && !doing.starts_with("Looking") {
-                    ui.label(theme::muted(
-                        "You can close QuickAI meanwhile; it carries on there.",
-                    ));
-                }
-            }
-            Shown::Failed => {
-                let why = run.and_then(|r| r.failed.clone()).unwrap_or_default();
-                ui.label(egui::RichText::new(why).color(p.bad));
-                ui.label(theme::muted(
-                    "Press the play button to try again. The Computers window tests the connection step by step.",
-                ));
-            }
-            Shown::Idle => {
-                // with the model picked in the list of that computer
-                let with = self
-                    .picked_there_name()
-                    .map(|model| format!(" with {model}"))
-                    .unwrap_or_default();
-                ui.label(theme::muted(format!(
-                    "The play button runs \"{configuration}\"{with} on {}: QuickAI copies itself there when it needs \
-                     to, installs what is missing, and brings its ports here. It runs there until you stop it.",
-                    spec.name
-                )));
-            }
         }
-        // the chat talks to that run: how much of its context the conversation takes, and the capabilities (C223)
-        if chats_there {
-            if let Some((words, hover, share)) = self.context_in_use() {
-                ui.add_space(6.0);
-                super::extras::pill(ui, None, &words, &hover, Some(share));
-            }
-            self.show_capabilities(ui);
-        }
-        if pressed.start {
-            self.start_pressed_at = Some(std::time::Instant::now());
-            self.start_setup_run(ui.ctx(), false);
-        }
-        if pressed.stop {
-            // not the second click of a double-click on the play button, which Stop takes the place of
-            let just_started = self
-                .start_pressed_at
-                .is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(800));
-            if !just_started {
-                self.stop_setup_run();
-            }
-        }
-        if pressed.connect {
-            self.show_api_info = !self.show_api_info;
-        }
-        if let Some(url) = page.filter(|_| pressed.page) {
-            let _ = webbrowser::open(&url);
-        }
+        self.show_page_body(ui);
     }
-}
-
-/// Pressed in the head this frame.
-#[derive(Default)]
-struct Pressed {
-    start: bool,
-    stop: bool,
-    connect: bool,
-    page: bool,
-}
-
-/// The stop button, `hover` said when the pointer rests on it.
-fn stop_button(ui: &mut egui::Ui, hover: &str) -> bool {
-    icons::framed_icon_button(
-        ui,
-        Role::Danger,
-        true,
-        Icon::Stop,
-        egui::Vec2::splat(BUTTON),
-    )
-    .on_hover_text(hover)
-    .clicked()
-}
-
-/// What the run is doing, after its name: a dot and words in the colour of the state.
-fn state_words(ui: &mut egui::Ui, color: egui::Color32, words: &str) {
-    ui.add_space(6.0);
-    theme::dot(ui, 8.0, 4.0, color);
-    ui.label(egui::RichText::new(words).color(color));
 }
 
 /// The steps of a run that is getting ready: QuickAI on the computer, each step of the configuration's plan with how
@@ -369,44 +175,4 @@ fn step_row(
         });
     }
     ui.add_space(2.0);
-}
-
-/// The addresses here of what the run started, each with its copy button.
-fn show_addresses(ui: &mut egui::Ui, run: &SetupRun) {
-    let p = theme::palette();
-    theme::card(ui, |ui| {
-        ui.set_max_width(620.0);
-        ui.label(egui::RichText::new("ADDRESSES HERE").small().color(p.muted));
-        for endpoint in &run.endpoints {
-            let what = match endpoint.role.as_str() {
-                "api" => "API",
-                "page" => "Chat page",
-                other => other,
-            };
-            ui.separator();
-            ui.horizontal(|ui| {
-                // each word at the left of its column (sized labels are centred in theirs), so the names and the
-                // addresses line up under each other
-                let left = egui::Layout::left_to_right(egui::Align::Center);
-                ui.allocate_ui_with_layout(egui::vec2(80.0, 22.0), left, |ui| {
-                    ui.set_min_width(80.0);
-                    ui.label(egui::RichText::new(what).color(p.muted))
-                        .on_hover_text(&endpoint.program);
-                });
-                // the room of the address: what is left beside its two buttons
-                let room = (ui.available_width() - 72.0).max(40.0);
-                ui.allocate_ui_with_layout(egui::vec2(room, 22.0), left, |ui| {
-                    ui.set_min_width(room);
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(&endpoint.url).monospace().color(p.text),
-                        )
-                        .truncate(),
-                    );
-                });
-                icons::open_button(ui, &endpoint.url);
-                icons::copy_button(ui, &format!("remote {what}"), &endpoint.url);
-            });
-        }
-    });
 }
